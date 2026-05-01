@@ -1,0 +1,554 @@
+#!/usr/bin/env python3
+"""Repeatable preflight, inventory, scan, Ollama, and Codex runner for odoo-codereview."""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import csv
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+SKILL_DIR = Path(__file__).resolve().parents[1]
+DEFAULT_RULES = SKILL_DIR / "rules" / "odoo.yml"
+DEFAULT_MODEL = "qwen3:0.6b"
+
+HUNTERS = [
+    ("01-access-control", "Access Control", "ACL CSV, ir.rule, groups, sudo/with_user/with_context misuse, portal/user/admin boundaries."),
+    ("02-controller-route", "Controller / Route", "@http.route, auth, csrf, request.params/jsonrequest, IDOR, unsafe response data."),
+    ("03-orm-sql-domain", "ORM / SQL / Domain", "cr.execute, dynamic SQL, domains, search/read/write/unlink misuse, mass assignment."),
+    ("04-qweb-xss", "QWeb / XSS", "t-raw, Markup, fields.Html(sanitize=False), mail templates, website/portal rendering."),
+    ("05-business-logic", "Business Logic", "state transitions, approvals, workflow bypass, wizards, server actions, cron."),
+    ("06-secrets-config", "Secrets / Config", "hardcoded secrets, ir.config_parameter, creds in logs/config/templates."),
+    ("07-external-integration", "External Integration", "webhooks, outbound requests, SSRF-ish behavior, file import, scheduled jobs."),
+    ("08-data-exposure", "Data Exposure", "portal access, attachments, chatter, report generation, multi-company leakage."),
+    ("09-dependency", "Dependency", "Python package CVEs, Odoo addon dependencies, JS/assets, reachable dependency paths."),
+]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run repeatable setup for the odoo-codereview Odoo audit harness.")
+    parser.add_argument("target", nargs="?", default=".", help="Odoo repo/addons path. Defaults to current directory.")
+    parser.add_argument("--out", help="Output directory. Defaults to <target>/.audit")
+    parser.add_argument("--modules", help="Comma-separated module names to include")
+    parser.add_argument("--odoo-version", help="Override Odoo version in run plan")
+    parser.add_argument("--quick", action="store_true", help="Skip automated scanners and discourse prep")
+    parser.add_argument("--no-discourse", action="store_true")
+    parser.add_argument("--no-local-qwen", action="store_true", help="Skip Ollama/Qwen advisory pass")
+    parser.add_argument("--local-model", default=DEFAULT_MODEL, help=f"Ollama model. Default: {DEFAULT_MODEL}")
+    parser.add_argument("--allow-missing-lanes", action="store_true", help="Continue if Codex or Qwen is unavailable")
+    parser.add_argument("--joern", action="store_true", help="Run Joern if installed")
+    parser.add_argument("--runtime", action="store_true", help="Create runtime evidence directories and plan")
+    parser.add_argument("--zap-target", help="ZAP target URL; requires --runtime")
+    parser.add_argument("--no-codex", action="store_true", help="Skip Codex hunter execution")
+    parser.add_argument("--codex-model", default="gpt-5.3-codex", help="Codex model")
+    parser.add_argument("--codex-budget", choices=["low", "normal", "deep"], default="normal")
+    parser.add_argument("--codex-mode", choices=["run", "prepare"], default="run", help="Run Codex tasks or only write prompts")
+    parser.add_argument("--requirements", help="Requirements/spec file for Phase 7.8")
+    parser.add_argument("--no-html", action="store_true")
+    parser.add_argument("--json", action="store_true", dest="emit_json")
+    parser.add_argument("--preflight-only", action="store_true", help="Write run plan/tooling, then stop")
+    parser.add_argument("--no-scans", action="store_true", help="Skip scanners even when not --quick")
+    return parser.parse_args()
+
+
+def rel(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
+def should_skip(path: Path) -> bool:
+    parts = set(path.parts)
+    return bool(parts & {".git", ".hg", ".svn", ".audit", "__pycache__", ".venv", "venv", "node_modules"})
+
+
+def which(name: str) -> str | None:
+    return shutil.which(name)
+
+
+def run(cmd: list[str], cwd: Path, log_path: Path, stdout_path: Path | None = None, timeout: int = 1800) -> dict:
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    record = {"started": started, "cmd": cmd, "cwd": str(cwd)}
+    with log_path.open("a", encoding="utf-8") as log:
+        log.write("$ " + " ".join(cmd) + "\n")
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+        )
+        output = completed.stdout or ""
+        if stdout_path:
+            stdout_path.parent.mkdir(parents=True, exist_ok=True)
+            stdout_path.write_text(output, encoding="utf-8", errors="replace")
+        with log_path.open("a", encoding="utf-8") as log:
+            log.write(output[-12000:])
+            log.write(f"\n[exit {completed.returncode}]\n\n")
+        record.update({"returncode": completed.returncode, "output": str(stdout_path) if stdout_path else output[-2000:]})
+    except subprocess.TimeoutExpired as exc:
+        with log_path.open("a", encoding="utf-8") as log:
+            log.write(f"\n[TIMEOUT after {timeout}s]\n\n")
+        record.update({"returncode": 124, "error": f"timeout after {timeout}s"})
+    except Exception as exc:  # noqa: BLE001
+        with log_path.open("a", encoding="utf-8") as log:
+            log.write(f"\n[ERROR {exc}]\n\n")
+        record.update({"returncode": 1, "error": str(exc)})
+    record["finished"] = dt.datetime.now(dt.timezone.utc).isoformat()
+    return record
+
+
+def parse_manifest(path: Path) -> dict:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        data = ast.literal_eval(text)
+        if not isinstance(data, dict):
+            data = {}
+    except Exception as exc:  # noqa: BLE001
+        data = {"_parse_error": str(exc)}
+    return data
+
+
+def find_manifests(repo: Path, allowed_modules: set[str] | None) -> list[dict]:
+    manifests = []
+    for path in repo.rglob("__manifest__.py"):
+        if should_skip(path):
+            continue
+        module = path.parent.name
+        if allowed_modules and module not in allowed_modules:
+            continue
+        data = parse_manifest(path)
+        manifests.append(
+            {
+                "module": module,
+                "path": rel(path, repo),
+                "dir": rel(path.parent, repo),
+                "name": data.get("name"),
+                "version": data.get("version"),
+                "license": data.get("license"),
+                "depends": data.get("depends", []),
+                "data": data.get("data", []),
+                "demo": data.get("demo", []),
+                "external_dependencies": data.get("external_dependencies", {}),
+                "installable": data.get("installable", True),
+                "application": data.get("application", False),
+                "parse_error": data.get("_parse_error"),
+            }
+        )
+    return sorted(manifests, key=lambda item: item["module"])
+
+
+ROUTE_RE = re.compile(r"@http\.route\((?P<args>.*?)\)", re.DOTALL)
+KW_RE = re.compile(r"(?P<key>auth|csrf|type|methods)\s*=\s*(?P<value>[^,\)]*)")
+
+
+def extract_routes(repo: Path, manifests: list[dict]) -> list[dict]:
+    module_dirs = {item["module"]: repo / item["dir"] for item in manifests}
+    routes = []
+    for module, module_dir in module_dirs.items():
+        for path in module_dir.rglob("*.py"):
+            if should_skip(path):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for match in ROUTE_RE.finditer(text):
+                line = text.count("\n", 0, match.start()) + 1
+                tail = text[match.end() : match.end() + 500]
+                def_match = re.search(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", tail)
+                kwargs = {m.group("key"): m.group("value").strip() for m in KW_RE.finditer(match.group("args"))}
+                routes.append(
+                    {
+                        "module": module,
+                        "file": rel(path, repo),
+                        "line": line,
+                        "function": def_match.group(1) if def_match else None,
+                        "route_args": " ".join(match.group("args").split())[:500],
+                        "auth": kwargs.get("auth", "user(default)"),
+                        "csrf": kwargs.get("csrf", "True(default)"),
+                        "type": kwargs.get("type", "http(default)"),
+                        "methods": kwargs.get("methods"),
+                    }
+                )
+    return routes
+
+
+def index_acl(repo: Path, manifests: list[dict]) -> list[dict]:
+    rows = []
+    for item in manifests:
+        module_dir = repo / item["dir"]
+        for path in module_dir.rglob("ir.model.access.csv"):
+            if should_skip(path):
+                continue
+            try:
+                with path.open(newline="", encoding="utf-8", errors="replace") as handle:
+                    for row in csv.DictReader(handle):
+                        row["_module"] = item["module"]
+                        row["_file"] = rel(path, repo)
+                        rows.append(row)
+            except Exception as exc:  # noqa: BLE001
+                rows.append({"_module": item["module"], "_file": rel(path, repo), "_error": str(exc)})
+    return rows
+
+
+def scan_patterns(repo: Path, manifests: list[dict]) -> dict:
+    patterns = {
+        "sudo": r"\.sudo\(",
+        "with_user": r"\.with_user\(",
+        "with_context": r"\.with_context\(",
+        "raw_sql": r"\.cr\.execute\(|\bcr\.execute\(",
+        "request_params": r"request\.params|request\.jsonrequest",
+        "safe_eval": r"\bsafe_eval\(",
+        "t_raw": r"t-raw\s*=",
+        "markup": r"\bMarkup\(",
+        "attachments": r"ir\.attachment|public\s*=\s*True",
+    }
+    compiled = {key: re.compile(value) for key, value in patterns.items()}
+    counts = {key: 0 for key in patterns}
+    hits = {key: [] for key in patterns}
+    module_dirs = [repo / item["dir"] for item in manifests]
+    for module_dir in module_dirs:
+        for path in module_dir.rglob("*"):
+            if should_skip(path) or path.suffix not in {".py", ".xml", ".csv"}:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for key, regex in compiled.items():
+                matches = list(regex.finditer(text))
+                counts[key] += len(matches)
+                for match in matches[:20]:
+                    hits[key].append({"file": rel(path, repo), "line": text.count("\n", 0, match.start()) + 1})
+    return {"counts": counts, "sample_hits": hits}
+
+
+def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[dict], acl_rows: list[dict], pattern_summary: dict, args: argparse.Namespace) -> None:
+    inv = out / "inventory"
+    inv.mkdir(parents=True, exist_ok=True)
+    (inv / "manifests.json").write_text(json.dumps(manifests, indent=2), encoding="utf-8")
+    (inv / "routes.json").write_text(json.dumps(routes, indent=2), encoding="utf-8")
+    (inv / "acl-index.json").write_text(json.dumps(acl_rows, indent=2), encoding="utf-8")
+    (inv / "sharp-edge-index.json").write_text(json.dumps(pattern_summary, indent=2), encoding="utf-8")
+    graph = {item["module"]: item.get("depends", []) for item in manifests}
+    (inv / "depends-graph.json").write_text(json.dumps(graph, indent=2), encoding="utf-8")
+
+    lines = ["# Phase 0 - Odoo Module Inventory", ""]
+    lines.append(f"Target: `{repo}`")
+    lines.append(f"Modules found: {len(manifests)}")
+    if args.modules:
+        lines.append(f"Module filter: `{args.modules}`")
+    lines.append("")
+    lines.append("| Module | Name | Version | Depends | Manifest |")
+    lines.append("| --- | --- | --- | --- | --- |")
+    for item in manifests:
+        depends = ", ".join(item.get("depends") or [])
+        lines.append(f"| `{item['module']}` | {item.get('name') or ''} | {item.get('version') or ''} | {depends} | `{item['path']}` |")
+    (out / "00-modules.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    surface = ["# Phase 1 - Odoo Attack Surface Map", ""]
+    surface.append(f"Odoo version override: `{args.odoo_version or 'not provided'}`")
+    surface.append(f"Routes found: {len(routes)}")
+    surface.append(f"ACL rows found: {len(acl_rows)}")
+    surface.append("")
+    surface.append("## Route Summary")
+    surface.append("")
+    surface.append("| Auth | Count |")
+    surface.append("| --- | ---: |")
+    by_auth: dict[str, int] = {}
+    for route in routes:
+        by_auth[route["auth"]] = by_auth.get(route["auth"], 0) + 1
+    for auth, count in sorted(by_auth.items()):
+        surface.append(f"| `{auth}` | {count} |")
+    surface.append("")
+    surface.append("## Sharp Edge Counts")
+    surface.append("")
+    surface.append("| Pattern | Count |")
+    surface.append("| --- | ---: |")
+    for key, count in sorted(pattern_summary["counts"].items()):
+        surface.append(f"| `{key}` | {count} |")
+    surface.append("")
+    surface.append("This is a machine inventory, not a finding list. Phase 7 still decides exploitability.")
+    (out / "01-attack-surface.md").write_text("\n".join(surface) + "\n", encoding="utf-8")
+
+
+def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, list[str]]:
+    tools = {name: which(name) for name in ["codex", "ollama", "semgrep", "bandit", "ruff", "pylint", "pre-commit", "codeql", "pyre", "pip-audit", "osv-scanner", "joern-parse", "dot"]}
+    lane_errors: list[str] = []
+    if not args.no_codex and not tools["codex"]:
+        lane_errors.append("Codex CLI not found; use --no-codex or --allow-missing-lanes.")
+    if not args.no_local_qwen:
+        if not tools["ollama"]:
+            lane_errors.append("Ollama not found; use --no-local-qwen or --allow-missing-lanes.")
+        else:
+            try:
+                listed = subprocess.run(["ollama", "list"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15)
+                if args.local_model not in listed.stdout:
+                    lane_errors.append(f"Ollama model {args.local_model!r} not found; pull it or use --allow-missing-lanes.")
+            except Exception as exc:  # noqa: BLE001
+                lane_errors.append(f"Could not query Ollama models: {exc}")
+    plan = {
+        "target": str(repo),
+        "out": str(out),
+        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "odoo_version": args.odoo_version,
+        "modules": args.modules,
+        "quick": args.quick,
+        "local_qwen_enabled": not args.no_local_qwen,
+        "local_model": args.local_model,
+        "codex_enabled": not args.no_codex,
+        "codex_model": args.codex_model,
+        "codex_budget": args.codex_budget,
+        "codex_mode": args.codex_mode,
+        "runtime": args.runtime,
+        "zap_target": args.zap_target,
+        "requirements": args.requirements,
+        "tools": tools,
+        "lane_errors": lane_errors,
+    }
+    return plan, lane_errors
+
+
+def run_scanners(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) -> list[dict]:
+    if args.quick or args.no_scans:
+        return [{"phase": "scans", "status": "skipped", "reason": "--quick or --no-scans"}]
+    records = []
+    scans = out / "scans"
+    for sub in ["semgrep", "bandit", "ruff", "pylint-odoo", "oca-precommit", "codeql", "joern", "pysa", "deps"]:
+        (scans / sub).mkdir(parents=True, exist_ok=True)
+
+    if which("semgrep"):
+        records.append(run(["semgrep", "--config", str(DEFAULT_RULES), "--config", "p/python", "--config", "p/owasp-top-ten", "--config", "p/trailofbits", "--json", "--output", str(scans / "semgrep" / "results.json"), "--metrics=off", str(repo)], repo, log_path, timeout=2400))
+        records.append(run(["semgrep", "--config", str(DEFAULT_RULES), "--config", "p/python", "--sarif", "--output", str(scans / "semgrep" / "results.sarif"), "--metrics=off", str(repo)], repo, log_path, timeout=2400))
+    else:
+        records.append({"tool": "semgrep", "status": "missing"})
+
+    if which("bandit"):
+        records.append(run(["bandit", "-r", str(repo), "-f", "json", "-o", str(scans / "bandit" / "results.json"), "-lll", "--exclude", "*/tests/*,*/test_*"], repo, log_path))
+    else:
+        records.append({"tool": "bandit", "status": "missing"})
+
+    if which("ruff"):
+        records.append(run(["ruff", "check", str(repo), "--output-format=json"], repo, log_path, scans / "ruff" / "results.json"))
+    else:
+        records.append({"tool": "ruff", "status": "missing"})
+
+    if which("pylint"):
+        records.append(run(["pylint", "--load-plugins", "pylint_odoo", "--disable=all", "--enable=odoolint", str(repo)], repo, log_path, scans / "pylint-odoo" / "results.txt", timeout=2400))
+    else:
+        records.append({"tool": "pylint", "status": "missing"})
+
+    if which("pre-commit") and (repo / ".pre-commit-config.yaml").exists():
+        records.append(run(["pre-commit", "run", "--all-files", "--config", str(repo / ".pre-commit-config.yaml")], repo, log_path, scans / "oca-precommit" / "results.txt", timeout=2400))
+    else:
+        records.append({"tool": "pre-commit", "status": "missing_or_no_config"})
+
+    if which("codeql"):
+        db = out / "codeql-dbs" / f"{repo.name or 'repo'}-python-db"
+        records.append(run(["codeql", "database", "create", str(db), "--language=python", f"--source-root={repo}", "--build-mode=none"], repo, log_path, timeout=3600))
+        records.append(run(["codeql", "database", "analyze", str(db), "codeql/python-queries:codeql-suites/python-security-and-quality.qls", "codeql/python-queries:codeql-suites/python-security-experimental.qls", "--format=sarif-latest", f"--output={scans / 'codeql' / 'results.sarif'}", "--download"], repo, log_path, timeout=3600))
+    else:
+        records.append({"tool": "codeql", "status": "missing"})
+
+    if args.joern and which("joern-parse"):
+        cpg = scans / "joern" / "cpg.bin"
+        records.append(run(["joern-parse", str(repo), "--language", "pythonsrc", "-o", str(cpg)], repo, log_path, timeout=3600))
+    elif args.joern:
+        records.append({"tool": "joern-parse", "status": "missing"})
+
+    if which("pip-audit"):
+        records.append(run(["pip-audit", "--path", str(repo), "--format", "json", "--output", str(scans / "deps" / "pip-audit.json")], repo, log_path, timeout=1800))
+    else:
+        records.append({"tool": "pip-audit", "status": "missing"})
+
+    if which("osv-scanner"):
+        records.append(run(["osv-scanner", "--recursive", "--format", "json", "--output", str(scans / "deps" / "osv-scanner.json"), str(repo)], repo, log_path, timeout=1800))
+    else:
+        records.append({"tool": "osv-scanner", "status": "missing"})
+    return records
+
+
+def run_qwen(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) -> dict:
+    qwen_dir = out / "local-qwen"
+    qwen_dir.mkdir(parents=True, exist_ok=True)
+    if args.no_local_qwen:
+        return {"status": "skipped", "reason": "--no-local-qwen"}
+    if not which("ollama"):
+        return {"status": "skipped", "reason": "ollama missing"}
+    prompt = f"""You are a local HINT-only reviewer for an Odoo source audit.
+Do not create final findings. Summarize likely risky modules and obvious scanner noise.
+
+Read these artifacts conceptually:
+- {out / '00-modules.md'}
+- {out / '01-attack-surface.md'}
+- {out / 'inventory' / 'sharp-edge-index.json'}
+
+Return three short sections:
+1. Module risk notes
+2. Scanner triage hints
+3. Obvious reject candidates
+"""
+    result = run(["ollama", "run", args.local_model, prompt], repo, log_path, qwen_dir / "module-notes.md", timeout=900)
+    (qwen_dir / "scanner-triage.md").write_text("See module-notes.md. Scanner-specific triage is advisory only.\n", encoding="utf-8")
+    (qwen_dir / "reject-candidates.md").write_text("See module-notes.md. Claude must verify before rejecting anything.\n", encoding="utf-8")
+    return result
+
+
+def codex_prompt(name: str, title: str, focus: str, repo: Path, out: Path, args: argparse.Namespace) -> str:
+    depth = {
+        "low": "Prioritize highest-risk public/portal surfaces and scanner hits. Keep output concise.",
+        "normal": "Review the whole scoped repo with emphasis on reachable Odoo trust-boundary bugs.",
+        "deep": "Do a deep pass across the whole scoped repo, including lower-risk modules and variants.",
+    }[args.codex_budget]
+    return f"""You are the odoo-codereview {title} hunter for an Odoo source-code audit.
+
+Repository: {repo}
+Audit output directory: {out}
+Focus: {focus}
+Depth: {depth}
+
+Use these artifacts first:
+- {out / '00-modules.md'}
+- {out / '01-attack-surface.md'}
+- {out / 'inventory' / 'manifests.json'}
+- {out / 'inventory' / 'routes.json'}
+- {out / 'inventory' / 'acl-index.json'}
+- {out / 'inventory' / 'sharp-edge-index.json'}
+- {out / 'local-qwen' / 'module-notes.md'} if present
+- scanner outputs under {out / 'scans'} if present
+
+Output candidate findings only. For each candidate include:
+- title
+- affected file:line
+- attacker role needed
+- source-to-sink path
+- concrete payload or reproduction sketch
+- why Odoo ACL/record rules do not block it
+- severity suggestion with confidence
+- what Claude must verify in Phase 7
+
+Do not report style issues, scanner-only issues, or theoretical risks without a sink.
+"""
+
+
+def run_codex(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) -> list[dict]:
+    codex_dir = out / "codex" / "hunters"
+    prompt_dir = codex_dir / "prompts"
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+    records = []
+    if args.no_codex:
+        return [{"status": "skipped", "reason": "--no-codex"}]
+    if not which("codex"):
+        return [{"status": "skipped", "reason": "codex missing"}]
+    for slug, title, focus in HUNTERS:
+        prompt = codex_prompt(slug, title, focus, repo, out, args)
+        prompt_path = prompt_dir / f"{slug}.md"
+        output_path = codex_dir / f"{slug}.md"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        if args.codex_mode == "prepare":
+            records.append({"hunter": slug, "status": "prepared", "prompt": str(prompt_path), "output": str(output_path)})
+            continue
+        cmd = [
+            "codex",
+            "exec",
+            "-C",
+            str(repo),
+            "-m",
+            args.codex_model,
+            "-s",
+            "read-only",
+            "--skip-git-repo-check",
+            "-o",
+            str(output_path),
+            prompt,
+        ]
+        records.append(run(cmd, repo, log_path, output_path, timeout=3600))
+    return records
+
+
+def write_tooling(out: Path, plan: dict, scanner_records: list[dict], qwen_record: dict | None, codex_records: list[dict] | None) -> None:
+    data = {
+        "plan": plan,
+        "scanner_records": scanner_records,
+        "qwen_record": qwen_record,
+        "codex_records": codex_records,
+    }
+    (out / "tooling.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+    lines = ["# Tooling and Run Plan", ""]
+    lines.append(f"Target: `{plan['target']}`")
+    lines.append(f"Output: `{plan['out']}`")
+    lines.append(f"Created: `{plan['created_at']}`")
+    lines.append(f"Odoo version override: `{plan.get('odoo_version') or 'not provided'}`")
+    lines.append(f"Local Qwen enabled: `{plan['local_qwen_enabled']}` (`{plan['local_model']}`)")
+    lines.append(f"Codex enabled: `{plan['codex_enabled']}` (`{plan['codex_model']}`, budget `{plan['codex_budget']}`, mode `{plan['codex_mode']}`)")
+    lines.append(f"Runtime enabled: `{plan['runtime']}`")
+    lines.append("")
+    lines.append("## Tool Paths")
+    lines.append("")
+    for name, path in sorted(plan["tools"].items()):
+        lines.append(f"- `{name}`: `{path or 'missing'}`")
+    if plan["lane_errors"]:
+        lines.append("")
+        lines.append("## Lane Errors")
+        lines.extend(f"- {error}" for error in plan["lane_errors"])
+    (out / "tooling.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    args = parse_args()
+    repo = Path(args.target).expanduser().resolve()
+    if not repo.exists():
+        print(f"Target does not exist: {repo}", file=sys.stderr)
+        return 2
+    if args.zap_target and not args.runtime:
+        print("--zap-target requires --runtime", file=sys.stderr)
+        return 2
+    out = Path(args.out).expanduser().resolve() if args.out else repo / ".audit"
+    out.mkdir(parents=True, exist_ok=True)
+    for sub in ["inventory", "scans", "agents", "codex", "variants", "runtime", "attack-graphs", "requirements"]:
+        (out / sub).mkdir(parents=True, exist_ok=True)
+    log_path = out / "commands.log"
+
+    plan, lane_errors = preflight(args, repo, out)
+    if lane_errors and not args.allow_missing_lanes:
+        write_tooling(out, plan, [], None, None)
+        print("Preflight failed:")
+        for error in lane_errors:
+            print(f"- {error}")
+        print(f"Run plan written to {out / 'tooling.md'}")
+        return 3
+
+    allowed_modules = {part.strip() for part in args.modules.split(",") if part.strip()} if args.modules else None
+    manifests = find_manifests(repo, allowed_modules)
+    routes = extract_routes(repo, manifests)
+    acl_rows = index_acl(repo, manifests)
+    pattern_summary = scan_patterns(repo, manifests)
+    write_inventory(repo, out, manifests, routes, acl_rows, pattern_summary, args)
+
+    scanner_records: list[dict] = []
+    qwen_record: dict | None = None
+    codex_records: list[dict] | None = None
+    if not args.preflight_only:
+        scanner_records = run_scanners(args, repo, out, log_path)
+        qwen_record = run_qwen(args, repo, out, log_path)
+        codex_records = run_codex(args, repo, out, log_path)
+    write_tooling(out, plan, scanner_records, qwen_record, codex_records)
+
+    print(f"odoo-review-run complete")
+    print(f"Target: {repo}")
+    print(f"Output: {out}")
+    print(f"Modules: {len(manifests)}")
+    print(f"Routes: {len(routes)}")
+    print(f"Run plan: {out / 'tooling.md'}")
+    print(f"Next: Claude should continue Phase 5.5/6/7 validation using the generated artifacts.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

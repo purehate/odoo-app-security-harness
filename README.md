@@ -2,7 +2,7 @@
 
 Claude Code harness for repeatable Odoo source-code security reviews.
 
-The harness provides one comprehensive command, `/odoo-code-review`, plus `/odoo-pr-review` as an alias. Claude Code remains the lead reviewer and final arbiter. Local Ollama/Qwen provides private hint-only triage. Codex/OpenAI handles token-heavy hunter passes, discourse drafts, chaining drafts, evidence packs, and report drafts.
+The harness provides one comprehensive command, `/odoo-code-review`. Claude Code remains the lead reviewer and final arbiter. Local Ollama/Qwen provides private hint-only triage. Codex/OpenAI handles token-heavy hunter passes, discourse drafts, chaining drafts, evidence packs, and report drafts.
 
 ## What It Does
 
@@ -26,9 +26,7 @@ cd odoo-codereview-harness
 The installer copies:
 
 - `commands/odoo-code-review.md` -> `~/.claude/commands/odoo-code-review.md`
-- `commands/odoo-pr-review.md` -> `~/.claude/commands/odoo-pr-review.md`
 - `skills/odoo-codereview/` -> `~/.claude/skills/odoo-codereview/`
-- `skills/odoo-prreview/` -> `~/.claude/skills/odoo-prreview/`
 - a convenience symlink `~/.local/bin/odoo-review-run`
 
 ## Prerequisites
@@ -57,12 +55,6 @@ From Claude Code:
 
 ```text
 /odoo-code-review /path/to/odoo-addons --allow-missing-lanes
-```
-
-Alias:
-
-```text
-/odoo-pr-review /path/to/odoo-addons --allow-missing-lanes
 ```
 
 Direct runner:
@@ -113,4 +105,3 @@ Important artifacts:
 ## Sharing Notes
 
 This repo does not include private Odoo source code, API keys, Claude session data, or local `.audit/` outputs. Review generated reports before sharing them outside a client or team boundary.
-

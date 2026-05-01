@@ -1,0 +1,125 @@
+rules:
+  - id: odoo-public-route-with-sudo
+    patterns:
+      - pattern: |
+          @http.route(..., auth=$AUTH, ...)
+          def $F(...):
+            ...
+            $X.sudo()
+            ...
+      - metavariable-regex:
+          metavariable: $AUTH
+          regex: ^['"]public['"]$
+    message: Public Odoo route invokes sudo(); verify the response does not expose protected model data.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-269"
+      odoo: true
+
+  - id: odoo-public-route-with-cr-execute
+    patterns:
+      - pattern: |
+          @http.route(..., auth=$AUTH, ...)
+          def $F(...):
+            ...
+            self.env.cr.execute(...)
+            ...
+      - metavariable-regex:
+          metavariable: $AUTH
+          regex: ^['"]public['"]$
+    message: Public Odoo route reaches raw SQL; verify parameterization, authorization, and returned data.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-89"
+      odoo: true
+
+  - id: odoo-csrf-disabled-route
+    pattern-either:
+      - pattern: |
+          @http.route(..., csrf=False, ...)
+          def $F(...):
+            ...
+      - pattern: |
+          @http.route(..., csrf=$FALSE, ...)
+          def $F(...):
+            ...
+    message: Odoo route disables CSRF; verify this is a signed webhook or otherwise protected endpoint.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-352"
+      odoo: true
+
+  - id: odoo-request-params-to-write
+    pattern-either:
+      - pattern: $MODEL.write(request.params)
+      - pattern: $MODEL.write(request.jsonrequest)
+      - pattern: $MODEL.create(request.params)
+      - pattern: $MODEL.create(request.jsonrequest)
+      - pattern: $MODEL.search(request.params)
+      - pattern: $MODEL.search_read(request.params)
+    message: Request-controlled data flows directly into ORM operation; verify field allowlist and authorization.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-915"
+      odoo: true
+
+  - id: odoo-string-built-sql
+    pattern-either:
+      - pattern: self.env.cr.execute(f"...")
+      - pattern: self.env.cr.execute("..." % ...)
+      - pattern: self.env.cr.execute("..." + ...)
+      - pattern: cr.execute(f"...")
+      - pattern: cr.execute("..." % ...)
+      - pattern: cr.execute("..." + ...)
+    message: SQL query appears string-built; verify query text is static and values are parameterized.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-89"
+      odoo: true
+
+  - id: odoo-safe-eval
+    pattern-either:
+      - pattern: safe_eval($EXPR, ...)
+      - pattern: tools.safe_eval.safe_eval($EXPR, ...)
+    message: safe_eval is reachable; verify attacker control, globals, and execution context.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-94"
+      odoo: true
+
+  - id: odoo-html-sanitize-disabled
+    pattern: fields.Html(..., sanitize=False, ...)
+    message: HTML field disables sanitization; verify values cannot be written by untrusted users.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-79"
+      odoo: true
+
+  - id: odoo-markup-constructor
+    pattern: Markup(...)
+    message: Markup bypasses escaping; verify input is trusted or sanitized before rendering.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-79"
+      odoo: true
+
+  - id: odoo-qweb-t-raw
+    patterns:
+      - pattern-regex: "t-raw\\s*="
+    message: QWeb t-raw bypasses escaping; verify rendered value is trusted or sanitized.
+    severity: WARNING
+    languages: [generic]
+    paths:
+      include:
+        - "*.xml"
+    metadata:
+      cwe: "CWE-79"
+      odoo: true
