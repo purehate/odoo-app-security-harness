@@ -4,6 +4,16 @@ Claude Code harness for repeatable Odoo source-code security reviews.
 
 Provides one comprehensive command, `/odoo-code-review`. Claude Code remains the lead reviewer and final arbiter. Local Ollama/Qwen provides private hint-only triage. Codex/OpenAI handles token-heavy hunter passes, discourse drafts, chaining drafts, evidence packs, and report drafts.
 
+## Architecture
+
+```text
+Odoo Application Security Harness
+├── Detection Engine          — Semgrep, Bandit, Ruff, pylint-odoo, CodeQL, Joern, pip-audit, osv-scanner
+├── Agent Framework           — Claude Code lead + local Ollama/Qwen triage + Codex hunter passes
+├── Validation Pipeline       — 6-gate fp-check, evidence packs, variant analysis, chaining
+└── Attack Graph Analysis     — Phase 7.6 graph construction and Graphviz render
+```
+
 ## What It Does
 
 - Inventories Odoo modules and manifests.
