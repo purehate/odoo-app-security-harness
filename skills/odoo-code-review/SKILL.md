@@ -1,5 +1,5 @@
 ---
-name: odoo-codereview
+name: odoo-code-review
 description: Source-code security review for Odoo using one Claude Code command with three lanes: Claude Code as lead reviewer/orchestrator, local Ollama/Qwen for private advisory triage, and Codex/OpenAI as the heavy worker for Odoo specialist hunters, discourse, chaining drafts, variant analysis, PoC/artifact work, and report drafting. Structured 0–8 phase audit of any Odoo addon repo. Phase 0 inventories modules + manifests. Phase 1 maps Odoo attack surface (routes/ACL/cron/mail). Phase 1.5 runs local Ollama/Qwen advisory triage for private first-pass module summaries and scanner-hint review. Phases 2–4.5 run Semgrep+custom Odoo rules, Bandit, ruff, pylint-odoo, OCA pre-commit, CodeQL Python, Joern (optional), Pysa, pip-audit, osv-scanner. Phase 5 delegates Odoo specialist hunter passes to Codex by default. Phase 5.5 delegates discourse draft to Codex, with Claude resolving disputes. Phase 6 uses Codex for chaining draft, Claude finalizes. Phase 7 uses Codex evidence packs/variant drafts, Claude performs final 6-gate verdicts. Phase 7.5 runtime testing and Phase 7.6 attack graphs are Codex/script heavy. Phase 8 uses Codex report draft, Claude final edits. Use when the user asks for a security review, code review, "audit this Odoo repo", appsec review, vuln hunt, or pentest of Odoo source. Outputs evidence-backed findings only — no scanner noise, no theoretical concerns, no style nits.
 allowed-tools:
   - Read
@@ -68,7 +68,7 @@ Run them in order. Don't skip Phase 0/1 — without the module inventory and att
 Start every `/odoo-code-review` run by invoking the bundled runner:
 
 ```bash
-~/.claude/skills/odoo-codereview/scripts/odoo-review-run <target> <flags>
+~/.claude/skills/odoo-code-review/scripts/odoo-review-run <target> <flags>
 ```
 
 The runner handles preflight, output directory creation, manifest inventory, attack-surface indexing, scanner execution, Ollama/Qwen advisory output, and Codex hunter launch/prompt prep. Claude Code then continues with discourse, chaining, Phase 7 validation, severity decisions, and final report editing.
@@ -217,7 +217,7 @@ Auto-runs when Phase 6 produced 2+ chained findings. Emits Graphviz DOT + render
 
 Runs by default on CRITICAL/HIGH ACCEPT findings unless `--no-codex` is set. Because Codex already performed heavy evidence work, this pass must use a fresh Codex prompt/session that sees only the final finding card and source snippets, not the prior Codex draft. Each finding is handed to Codex/OpenAI for independent verdict + PoC-write attempt. Reconciliation table:
 
-| Codex                   | odoo-codereview | Result                                        |
+| Codex                   | odoo-code-review | Result                                        |
 | ----------------------- | --------------- | --------------------------------------------- |
 | ACCEPT                  | ACCEPT          | keep ACCEPT, +1 confidence                    |
 | REJECT                  | ACCEPT          | force NEEDS-MANUAL, log disagreement          |

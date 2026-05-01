@@ -128,7 +128,7 @@ semgrep \
   <repo>
 ```
 
-Maintain the custom rule pack alongside the skill, not per-repo. Recommended path: `~/.config/odoo-codereview/odoo-rules/` (referenced from the slash command).
+Maintain the custom rule pack alongside the skill, not per-repo. Recommended path: `~/.config/odoo-code-review/odoo-rules/` (referenced from the slash command).
 
 ## Phase 2.5 — Bandit
 
@@ -239,7 +239,7 @@ Standard CodeQL Python queries don't model Odoo sources/sinks (`request.params`,
 - Treat `Cursor.execute(arg)` on first positional arg as a SqlSink (when not parameterised).
 - Treat `safe_eval(arg, ...)` as a CodeExecutionSink.
 
-Maintain custom QL pack in `~/.config/odoo-codereview/codeql-odoo/` and reference via `--threads`/`--ram` for HUGE repos.
+Maintain custom QL pack in `~/.config/odoo-code-review/codeql-odoo/` and reference via `--threads`/`--ram` for HUGE repos.
 
 ## Phase 4 — Pysa (Optional)
 

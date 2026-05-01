@@ -1,5 +1,5 @@
 ---
-description: Odoo source-code security review — kicks off the odoo-codereview pipeline against an Odoo addon repo.
+description: Odoo source-code security review — kicks off the odoo-code-review pipeline against an Odoo addon repo.
 ---
 
 # /odoo-code-review
@@ -30,12 +30,12 @@ Run a technique-organized Odoo security review of source code (Phases 0 → 1 �
 
 ## What It Does
 
-Invokes the `odoo-codereview` skill which runs the full Odoo pipeline:
+Invokes the `odoo-code-review` skill which runs the full Odoo pipeline:
 
 Before manual review work, run the local harness runner to create the repeatable artifact base:
 
 ```bash
-~/.claude/skills/odoo-codereview/scripts/odoo-review-run <target> <flags>
+~/.claude/skills/odoo-code-review/scripts/odoo-review-run <target> <flags>
 ```
 
 Use `--codex-mode prepare` when you want Claude to inspect/launch Codex prompts manually. Use the default `--codex-mode run` for the full one-command three-lane workflow.
@@ -106,7 +106,7 @@ Written to `<repo>/.audit/` (or `--out <dir>`):
 
 ## Skill Behavior
 
-The odoo-codereview skill handles dispatch, tracking via TaskCreate, and final report assembly. See `~/.claude/skills/odoo-codereview/SKILL.md` for the full contract and `references/` for hunter prompts (`agent-prompts.md`), triage rubric (`triage.md`), workflow detail (`workflow.md`), and Odoo language patterns (`lang-odoo.md`, `lang-qweb.md`).
+The odoo-code-review skill handles dispatch, tracking via TaskCreate, and final report assembly. See `~/.claude/skills/odoo-code-review/SKILL.md` for the full contract and `references/` for hunter prompts (`agent-prompts.md`), triage rubric (`triage.md`), workflow detail (`workflow.md`), and Odoo language patterns (`lang-odoo.md`, `lang-qweb.md`).
 
 ## Philosophy
 

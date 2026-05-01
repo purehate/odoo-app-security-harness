@@ -372,7 +372,7 @@ EOF
 
 ### Validate Joern hits before reporting
 
-Joern is path-rich but noisy. Treat hits as **leads** for Phase 5 hunters, not findings. odoo-codereview Phase 7 fp-check still applies — read the bytes.
+Joern is path-rich but noisy. Treat hits as **leads** for Phase 5 hunters, not findings. odoo-code-review Phase 7 fp-check still applies — read the bytes.
 
 ### Skip when
 
@@ -634,7 +634,7 @@ Runs after Phase 7 fp-check + Phase 7.6 graphs, before output assembly. Skip onl
 
 ### Reconciliation table
 
-| Codex                   | odoo-codereview | Result                                        |
+| Codex                   | odoo-code-review | Result                                        |
 | ----------------------- | --------------- | --------------------------------------------- |
 | ACCEPT                  | ACCEPT          | keep ACCEPT, +1 confidence                    |
 | REJECT                  | ACCEPT          | force NEEDS-MANUAL, log disagreement          |
@@ -729,7 +729,7 @@ HTML sections, in order:
    - Confidence Score, Reachability
    - Attack Graph (inline SVG when chained — Phase 7.6)
    - Codex Second Opinion (Phase 7.7 — CRITICAL/HIGH only): verdict, PoC writeability, assumption challenge, reconciliation note
-   - Second-Opinion Disagreement (when Codex and odoo-codereview disagree, surface clearly)
+   - Second-Opinion Disagreement (when Codex and odoo-code-review disagree, surface clearly)
 5. **Chained Attack Paths** — each chain rendered with inline SVG from Phase 7.6, lists composing findings with anchor links.
 6. **Dependency CVE Reachability Results** — table: CVE, package, vulnerable symbol, reachable yes/no, evidence path.
 7. **Negative-Space Audit** — insecure-defaults missed by hunters (Odoo section).

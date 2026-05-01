@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repeatable preflight, inventory, scan, Ollama, and Codex runner for odoo-codereview."""
+"""Repeatable preflight, inventory, scan, Ollama, and Codex runner for odoo-code-review."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ HUNTERS = [
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run repeatable setup for the odoo-codereview Odoo audit harness.")
+    parser = argparse.ArgumentParser(description="Run repeatable setup for the odoo-code-review Odoo audit harness.")
     parser.add_argument("target", nargs="?", default=".", help="Odoo repo/addons path. Defaults to current directory.")
     parser.add_argument("--out", help="Output directory. Defaults to <target>/.audit")
     parser.add_argument("--modules", help="Comma-separated module names to include")
@@ -406,7 +406,7 @@ def codex_prompt(name: str, title: str, focus: str, repo: Path, out: Path, args:
         "normal": "Review the whole scoped repo with emphasis on reachable Odoo trust-boundary bugs.",
         "deep": "Do a deep pass across the whole scoped repo, including lower-risk modules and variants.",
     }[args.codex_budget]
-    return f"""You are the odoo-codereview {title} hunter for an Odoo source-code audit.
+    return f"""You are the odoo-code-review {title} hunter for an Odoo source-code audit.
 
 Repository: {repo}
 Audit output directory: {out}

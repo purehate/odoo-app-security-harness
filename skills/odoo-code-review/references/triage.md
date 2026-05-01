@@ -57,7 +57,7 @@ Hand off to AppSec / pentest team with the source pointer and the test you'd run
 **Auditor:** AI-assisted (Claude-led with Codex/Qwen support)  
 **Repo:** <git remote + commit hash>
 **Scope:** <module list or "full repo">
-**Method:** odoo-codereview skill, 4-phase technique-organized audit
+**Method:** odoo-code-review skill, 4-phase technique-organized audit
 
 ## Findings Table
 

@@ -1,8 +1,8 @@
-# odoo-codereview-harness
+# Odoo Application Security Harness
 
 Claude Code harness for repeatable Odoo source-code security reviews.
 
-The harness provides one comprehensive command, `/odoo-code-review`. Claude Code remains the lead reviewer and final arbiter. Local Ollama/Qwen provides private hint-only triage. Codex/OpenAI handles token-heavy hunter passes, discourse drafts, chaining drafts, evidence packs, and report drafts.
+Provides one comprehensive command, `/odoo-code-review`. Claude Code remains the lead reviewer and final arbiter. Local Ollama/Qwen provides private hint-only triage. Codex/OpenAI handles token-heavy hunter passes, discourse drafts, chaining drafts, evidence packs, and report drafts.
 
 ## What It Does
 
@@ -18,15 +18,15 @@ The scanner and model outputs are leads, not final findings. The final report st
 ## Install
 
 ```bash
-git clone <your-fork-url> odoo-codereview-harness
-cd odoo-codereview-harness
+git clone <your-fork-url> odoo-app-security-harness
+cd odoo-app-security-harness
 ./install.sh
 ```
 
 The installer copies:
 
 - `commands/odoo-code-review.md` -> `~/.claude/commands/odoo-code-review.md`
-- `skills/odoo-codereview/` -> `~/.claude/skills/odoo-codereview/`
+- `skills/odoo-code-review/` -> `~/.claude/skills/odoo-code-review/`
 - a convenience symlink `~/.local/bin/odoo-review-run`
 
 ## Prerequisites
