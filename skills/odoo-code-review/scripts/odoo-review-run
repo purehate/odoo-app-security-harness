@@ -7,6 +7,7 @@ import argparse
 import ast
 import csv
 import datetime as dt
+import fnmatch
 import json
 import os
 import re
@@ -20,6 +21,13 @@ SKILL_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_RULES = SKILL_DIR / "rules" / "odoo.yml"
 DEFAULT_MODEL = "qwen3:0.6b"
 CWE_MAP_SRC = SKILL_DIR / "references" / "cwe-map.json"
+
+ACCEPTED_RISKS_FILES = [
+    ".audit-accepted-risks.yml",
+    ".audit-accepted-risks.yaml",
+    ".audit-accepted-risks.json",
+]
+ACCEPTED_RISKS_REQUIRED = ("id", "title", "file", "reason", "owner", "accepted", "expires")
 
 HUNTERS = [
     ("01-access-control", "Access Control", "ACL CSV, ir.rule, groups, sudo/with_user/with_context misuse, portal/user/admin boundaries."),
@@ -63,6 +71,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scope", help="Path to scope.yml accepted-risks file (suppresses matching findings).")
     parser.add_argument("--pr", help="GitHub PR number; scope review to files changed in this PR (requires gh CLI).")
     parser.add_argument("--pr-repo", help="GitHub repo (owner/name) for --pr; defaults to gh-detected origin.")
+    parser.add_argument("--accepted-risks", help="Path to per-finding accepted-risks suppression file (YAML or JSON). Defaults to <repo>/.audit-accepted-risks.{yml,yaml,json}.")
+    parser.add_argument("--check-only-accepted-risks", action="store_true", help="Validate accepted-risks file, write inventory, then exit. Non-zero on errors or expired entries.")
     args = parser.parse_args()
     # findings.json is now emitted by default. --json kept as compat no-op; --no-json opts out.
     args.emit_json = not args.no_emit_json
@@ -511,6 +521,207 @@ def write_module_risk(out: Path, risk_rows: list[dict]) -> None:
     (out / "module-risk.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _load_accepted_risks_file(path: Path) -> object:
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".json":
+        return json.loads(text)
+    try:
+        import yaml  # noqa: PLC0415
+    except ImportError as exc:
+        raise RuntimeError(
+            f"Cannot read {path.name}: pyyaml is not installed. "
+            "Install pyyaml or convert the file to .json format."
+        ) from exc
+    return yaml.safe_load(text)
+
+
+def _validate_accepted_risks(data: object, source: Path) -> tuple[list[dict], list[str]]:
+    errors: list[str] = []
+    if not isinstance(data, dict):
+        return [], [f"{source.name}: top-level must be a mapping with `version` and `risks`."]
+    if data.get("version") != 1:
+        errors.append(f"{source.name}: top-level `version` must equal 1.")
+    risks = data.get("risks", [])
+    if not isinstance(risks, list):
+        errors.append(f"{source.name}: `risks` must be a list.")
+        return [], errors
+    seen_ids: set[str] = set()
+    today = dt.date.today()
+    cleaned: list[dict] = []
+    for index, entry in enumerate(risks):
+        prefix = f"{source.name}#{index}"
+        if not isinstance(entry, dict):
+            errors.append(f"{prefix}: entry must be a mapping.")
+            continue
+        for field in ACCEPTED_RISKS_REQUIRED:
+            value = entry.get(field)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                errors.append(f"{prefix}: `{field}` is required.")
+        entry_id = entry.get("id")
+        if entry_id in seen_ids:
+            errors.append(f"{prefix}: duplicate id `{entry_id}`.")
+        elif entry_id:
+            seen_ids.add(entry_id)
+        accepted_date = expires_date = None
+        try:
+            accepted_date = dt.date.fromisoformat(str(entry.get("accepted", "")))
+        except ValueError:
+            errors.append(f"{prefix}: `accepted` must be YYYY-MM-DD.")
+        try:
+            expires_date = dt.date.fromisoformat(str(entry.get("expires", "")))
+        except ValueError:
+            errors.append(f"{prefix}: `expires` must be YYYY-MM-DD.")
+        if accepted_date and accepted_date > today:
+            errors.append(f"{prefix}: `accepted` is in the future.")
+        if accepted_date and expires_date and accepted_date > expires_date:
+            errors.append(f"{prefix}: `accepted` is after `expires`.")
+        pattern_kind = entry.get("pattern_kind", "literal")
+        if pattern_kind not in ("literal", "regex"):
+            errors.append(f"{prefix}: `pattern_kind` must be 'literal' or 'regex'.")
+        match_value = entry.get("match")
+        if pattern_kind == "regex" and match_value:
+            try:
+                re.compile(match_value)
+            except re.error as exc:
+                errors.append(f"{prefix}: `match` regex does not compile: {exc}")
+        lines = entry.get("lines")
+        lines_ok = (
+            lines is None
+            or isinstance(lines, int)
+            or (
+                isinstance(lines, list)
+                and len(lines) == 2
+                and all(isinstance(coord, int) for coord in lines)
+            )
+        )
+        if not lines_ok:
+            errors.append(f"{prefix}: `lines` must be an int or [start, end] of ints.")
+        cleaned.append(
+            {
+                **entry,
+                "_accepted_date": accepted_date,
+                "_expires_date": expires_date,
+                "_pattern_kind": pattern_kind,
+            }
+        )
+    return cleaned, errors
+
+
+def _is_stale(entry: dict, repo: Path) -> bool:
+    pattern = str(entry.get("file") or "")
+    if not pattern:
+        return True
+    if any(ch in pattern for ch in "*?["):
+        for path in repo.rglob("*"):
+            if should_skip(path):
+                continue
+            if fnmatch.fnmatch(rel(path, repo), pattern):
+                return False
+        return True
+    return not (repo / pattern).exists()
+
+
+def load_accepted_risks(args: argparse.Namespace, repo: Path) -> dict:
+    candidates: list[Path] = []
+    if args.accepted_risks:
+        candidates.append(Path(args.accepted_risks).expanduser().resolve())
+    else:
+        candidates.extend(repo / name for name in ACCEPTED_RISKS_FILES)
+    chosen: Path | None = next((path for path in candidates if path.exists()), None)
+    inventory = {
+        "version": 1,
+        "loaded_from": "none" if not chosen else (rel(chosen, repo) if chosen.is_relative_to(repo) else str(chosen)),
+        "loaded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "active": [],
+        "expired": [],
+        "stale": [],
+        "errors": [],
+    }
+    if not chosen:
+        return inventory
+    try:
+        data = _load_accepted_risks_file(chosen)
+    except (RuntimeError, json.JSONDecodeError, ValueError) as exc:
+        inventory["errors"].append(f"{chosen.name}: failed to parse: {exc}")
+        return inventory
+    cleaned, errors = _validate_accepted_risks(data or {}, chosen)
+    inventory["errors"].extend(errors)
+    today = dt.date.today()
+    for entry in cleaned:
+        expires = entry.get("_expires_date")
+        days_remaining = (expires - today).days if expires else None
+        record = {
+            "id": entry.get("id"),
+            "title": entry.get("title"),
+            "file": entry.get("file"),
+            "lines": entry.get("lines"),
+            "match": entry.get("match"),
+            "pattern_kind": entry.get("_pattern_kind", "literal"),
+            "fingerprint": entry.get("fingerprint"),
+            "reason": entry.get("reason"),
+            "owner": entry.get("owner"),
+            "accepted": str(entry.get("accepted", "")),
+            "expires": str(entry.get("expires", "")),
+            "severity_was": entry.get("severity_was"),
+            "references": entry.get("references"),
+            "days_remaining": days_remaining,
+        }
+        if expires and expires < today:
+            inventory["expired"].append(record)
+        elif _is_stale(entry, repo):
+            inventory["stale"].append(record)
+        else:
+            inventory["active"].append(record)
+    return inventory
+
+
+def write_accepted_risks_artifacts(out: Path, inventory: dict) -> None:
+    inv_dir = out / "inventory"
+    inv_dir.mkdir(parents=True, exist_ok=True)
+    (inv_dir / "accepted-risks.json").write_text(json.dumps(inventory, indent=2), encoding="utf-8")
+
+    lines = ["# Accepted Risks (Phase 0)", ""]
+    lines.append(f"Loaded from: `{inventory.get('loaded_from')}`")
+    lines.append(f"Loaded at: `{inventory.get('loaded_at')}`")
+    lines.append("")
+    lines.append(f"- Active: **{len(inventory['active'])}**")
+    lines.append(f"- Expired (re-review needed): **{len(inventory['expired'])}**")
+    lines.append(f"- Stale (file/glob matched nothing): **{len(inventory['stale'])}**")
+    if inventory["errors"]:
+        lines.append("")
+        lines.append("## Errors — run aborted unless suppression file is fixed")
+        lines.append("")
+        for err in inventory["errors"]:
+            lines.append(f"- {err}")
+    sections = (
+        ("Active", inventory["active"]),
+        ("Expired (re-review)", inventory["expired"]),
+        ("Stale (file/pattern not found in repo)", inventory["stale"]),
+    )
+    for header, bucket in sections:
+        if not bucket:
+            continue
+        lines.append("")
+        lines.append(f"## {header}")
+        lines.append("")
+        lines.append("| ID | Title | File | Lines | Owner | Expires | Days |")
+        lines.append("| --- | --- | --- | --- | --- | --- | ---: |")
+        for entry in bucket:
+            lns = entry.get("lines")
+            if isinstance(lns, list):
+                lns_str = f"{lns[0]}-{lns[1]}"
+            elif lns is not None:
+                lns_str = str(lns)
+            else:
+                lns_str = "—"
+            days = entry.get("days_remaining")
+            days_str = "—" if days is None else str(days)
+            lines.append(
+                f"| `{entry.get('id')}` | {entry.get('title')} | `{entry.get('file')}` | {lns_str} | {entry.get('owner')} | {entry.get('expires')} | {days_str} |"
+            )
+    (out / "00-accepted-risks.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[dict], acl_rows: list[dict], pattern_summary: dict, args: argparse.Namespace) -> None:
     inv = out / "inventory"
     inv.mkdir(parents=True, exist_ok=True)
@@ -870,12 +1081,26 @@ Depth: {depth}
 Use these artifacts first:
 - {out / '00-modules.md'}
 - {out / '01-attack-surface.md'}
+- {out / '00-accepted-risks.md'}
 - {out / 'inventory' / 'manifests.json'}
 - {out / 'inventory' / 'routes.json'}
 - {out / 'inventory' / 'acl-index.json'}
 - {out / 'inventory' / 'sharp-edge-index.json'}
+- {out / 'inventory' / 'accepted-risks.json'}
 - {out / 'local-qwen' / 'module-notes.md'} if present
 - scanner outputs under {out / 'scans'} if present
+
+Suppression contract (accepted-risks.json):
+- Load the `active` array. Before emitting any finding, compute its fingerprint
+  (sha256 over normalized "{{file}}:{{primary_line}}:{{sink_kind}}:{{title_lower}}",
+   first 16 hex chars).
+- If a finding fingerprint appears in any `active.fingerprint`, drop it silently.
+- Otherwise, fall back to legacy match: if `file` matches and `lines` range contains
+  the primary line and `match` regex/substring matches code at that line, drop it.
+- For `expired` entries, emit the finding normally and add a note:
+  "Expired accepted-risk AR-NNN — re-review."
+- Stale entries are not your concern.
+- Never write to the accepted-risks file.
 
 Output candidate findings only. For each candidate include:
 - title
@@ -886,6 +1111,7 @@ Output candidate findings only. For each candidate include:
 - why Odoo ACL/record rules do not block it
 - severity suggestion with confidence
 - what Claude must verify in Phase 7
+- fingerprint (16-hex) computed as above
 
 Do not report style issues, scanner-only issues, or theoretical risks without a sink.
 """
@@ -977,6 +1203,22 @@ def main() -> int:
             print(f"- {error}")
         print(f"Run plan written to {out / 'tooling.md'}")
         return 3
+
+    accepted_risks = load_accepted_risks(args, repo)
+    write_accepted_risks_artifacts(out, accepted_risks)
+    if accepted_risks["errors"]:
+        print("Accepted-risks file has validation errors:")
+        for err in accepted_risks["errors"]:
+            print(f"- {err}")
+        print(f"See {out / '00-accepted-risks.md'}")
+        return 4
+    if args.check_only_accepted_risks:
+        expired = len(accepted_risks["expired"])
+        stale = len(accepted_risks["stale"])
+        print(f"Accepted-risks: active={len(accepted_risks['active'])} expired={expired} stale={stale}")
+        print(f"Inventory: {out / 'inventory' / 'accepted-risks.json'}")
+        print(f"Report: {out / '00-accepted-risks.md'}")
+        return 1 if expired else 0
 
     allowed_modules = {part.strip() for part in args.modules.split(",") if part.strip()} if args.modules else None
     manifests = find_manifests(repo, allowed_modules)

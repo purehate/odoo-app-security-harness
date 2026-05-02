@@ -16,6 +16,7 @@ Odoo version: <e.g., 17.0 community + custom addons>
 Module map (Phase 0): <paste manifest summaries — name, version, depends, data files, controllers>
 Attack surface map (Phase 1): <routes, models touched by public routes, ACL CSV files, ir.rule records, cron jobs>
 Scan feed (Phases 2–4.5): <paths to semgrep/bandit/ruff/pylint-odoo/oca-precommit/codeql/pysa/deps SARIF or JSON>
+Accepted-risks inventory (Phase 0): <OUT>/inventory/accepted-risks.json (loaded from <repo>/.audit-accepted-risks.yml; empty list if no file)
 Your scope: <module list this hunter owns>
 
 Reference files (read as needed):
@@ -23,8 +24,17 @@ Reference files (read as needed):
 - references/lang-qweb.md  — QWeb / OWL templating sinks
 - references/sharp-edges.md — footgun APIs (Odoo section)
 - references/insecure-defaults.md — config-level defaults (Odoo section)
-- references/fp-check.md   — 6-gate triage
+- references/fp-check.md   — 7-gate triage (Gate 0 = accepted-risks suppression)
+- references/accepted-risks.md — fingerprint canonicalisation + match rules
 - references/finding-template.md — output format
+
+Suppression contract (read accepted-risks.json before scanning):
+1. For each candidate finding compute fingerprint = sha256(f"{file}:{primary_line}:{sink_kind}:{title.strip().lower()}")[:16].
+2. If any in-date entry's `fingerprint` equals it, DROP the finding silently (Gate 0 MATCH; do not emit).
+3. If an entry has no `fingerprint`, fall back to legacy match: file glob → optional lines window → optional match substring/regex per references/accepted-risks.md.
+4. Treat entries with `expires < today` as NOT-MATCH (do NOT suppress) so the human sees the expiry surface in 00-accepted-risks.md.
+5. Never invent or hand-edit a `fingerprint` to suppress a finding — fingerprints come from the report-export button or recompute path.
+6. Emit a one-line debug header in your output: "Suppressed: AR-001 (F-1 fingerprint a7598a4c4035d920), AR-003 (...)" so the orchestrator can audit.
 
 Output contract:
 - Either "NO BUGS FOUND IN <scope>"
@@ -33,6 +43,7 @@ Output contract:
 - Cite file:line for every claim
 - Group sub-findings under one parent if they share root cause (e.g., five sudo() misuses on the same controller class is one finding with a sub-table)
 - Skip historical fixed CVEs unless you can prove a regression in this codebase
+- For every emitted finding, include a `Fingerprint:` line right under `**File:**` so the report can stamp the per-card data attribute and the "Mark as accepted risk" button can pre-fill its YAML
 
 Finding format:
 
@@ -40,6 +51,8 @@ Finding format:
 **Severity:** CRITICAL / HIGH / MEDIUM / LOW
 **Confidence:** HIGH / MEDIUM / LOW
 **File:** path/to/file.ext:LINE
+**Fingerprint:** <16-hex sha256 prefix from f"{file}:{primary_line}:{sink_kind}:{title.strip().lower()}">
+**Sink kind:** <controller_route|cr_execute|qweb_t_raw|ir_rule_domain|sudo_call|mass_assignment|safe_eval|webhook_csrf|attachment_public|dependency|chain_node>
 **CWE:** CWE-XXX
 **Odoo surface:** <route / model / view / cron / wizard / server-action>
 

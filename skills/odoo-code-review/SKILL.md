@@ -149,6 +149,8 @@ Use `-s workspace-write` only for artifact-generation tasks under `<OUT>` such a
 
 Enumerate every addon. Parse every `__manifest__.py` (name, version, depends, data, external_dependencies, license). Build the depends-graph. Tag origin (core/enterprise/OCA/custom/third-party). Index every `data:` entry so Phase 1 and Phase 5 can grep into them. Writes `<OUT>/00-modules.md` and `<OUT>/inventory/`.
 
+Phase 0 also loads the optional accepted-risks suppression file (`<repo>/.audit-accepted-risks.yml`, override with `--accepted-risks <path>`). The loader validates schema (per `references/accepted-risks.md`), aborts the run on validation errors, and writes `<OUT>/00-accepted-risks.md` (human-readable summary, EXPIRED + STALE buckets) plus `<OUT>/inventory/accepted-risks.json` (machine-readable). Hunters and Phase 7 Gate 0 read the JSON to suppress already-triaged findings via stable 16-hex `fingerprint` (primary key, sha256 over `f"{file}:{primary_line}:{sink_kind}:{title.strip().lower()}"[:16]`) or legacy `file`/`lines`/`match` heuristic. Each emitted finding in `findings.html` carries a "Mark as accepted risk" button that copies a pre-filled YAML stanza in our exact schema, so adding a new suppression is one click. This is the per-finding fingerprint layer; `--scope <file>` (see Flags) is the broader engagement-scope layer with its own coarser `accepted_risks` block.
+
 ### Phase 1 — Odoo Attack Surface Map
 
 Identify Odoo version + edition + Python + Postgres + Werkzeug. Map HTTP routes (`@http.route` decorators with auth/csrf/type/methods), RPC entry points (`xmlrpc/2/object`, `jsonrpc`), portal routes (`/my/*`), models touched by public/portal routes, ACL CSV rows, `ir.rule` records, server actions, cron, mail templates. Risk-rank modules 1–5. Plan hunter assignments. Writes `<OUT>/01-attack-surface.md`.
@@ -199,6 +201,8 @@ Delegate the 9 technique hunter passes to Codex by default to preserve Claude li
 
 Claude's job in Phase 5 is to prepare compact packets, launch/track Codex tasks, and spot-check returned claims before Phase 5.5. Claude should not spend context doing full hunter sweeps unless Codex is unavailable.
 
+Hunter packets MUST include the path to `<OUT>/inventory/accepted-risks.json`. Each hunter computes the candidate fingerprint before emitting and silently drops any match (Gate 0 short-circuit) so the lead session never sees re-litigated findings. Hunters also stamp every emitted finding with a `Fingerprint:` line and `Sink kind:` line per the contract in `references/agent-prompts.md`, so `findings.html` can wire the per-card "Mark as accepted risk" button without recomputation.
+
 The 10 Odoo hunters:
 
 1. **Access Control** — ACL CSV, `ir.rule`, groups, `sudo()`/`with_user()`/`with_context()` misuse
@@ -232,20 +236,21 @@ Ask Codex for a chaining draft, then have Claude finalize. Combine findings into
 
 The chaining hunter (#10) gets discourse-CONNECT entries as high-prior chain candidates.
 
-### Phase 7 — Validation (6-Gate fp-check + Variant Analysis + Negative Space)
+### Phase 7 — Validation (7-Gate fp-check + Variant Analysis + Negative Space)
 
 Three sub-passes:
 
 1. **Codex evidence pack per finding** — source context, reachability trace, attacker-control notes, PoC sketch, assumptions.
-2. **Claude 6-gate fp-check per finding** — source-matches → reachable → attacker-controls → realistic-preconditions → pseudocode-PoC → impact-matches-severity. ACCEPT only if all 6 PASS. (`references/fp-check.md`)
+2. **Claude 7-gate fp-check per finding** — Gate 0 (accepted-risks suppression: fingerprint primary, legacy fallback, expiry check) → source-matches → reachable → attacker-controls → realistic-preconditions → pseudocode-PoC → impact-matches-severity. ACCEPT only if Gate 0 is NOT-MATCH AND every substantive gate PASSes. Gate 0 MATCH → SKIP (recorded in `<OUT>/00-accepted-risks.md`, never enters `findings.md`). (`references/fp-check.md`)
 3. **Codex variant analysis draft on each ACCEPT** — extract bug shape, fan out grep/Semgrep across the whole repo, group siblings under the parent finding. Claude reviews the grouped variants. (`references/variant-analysis.md`)
 4. **Negative-space audit** — Codex drafts checklist coverage; Claude confirms any reportable gaps. (`references/insecure-defaults.md`, distinct from `references/sharp-edges.md`.)
 
 Triage:
 
-- **ACCEPT** — all 6 gates PASS. Real, exploitable, meaningful impact.
+- **ACCEPT** — Gate 0 NOT-MATCH and all 6 substantive gates PASS. Real, exploitable, meaningful impact.
 - **DOWNGRADE** — gates 1–5 PASS, gate 6 fails — keep finding, lower severity.
 - **REJECT** — any of gates 1–3 FAIL.
+- **SKIP** — Gate 0 MATCH (already triaged in accepted-risks file). Tracked in `<OUT>/00-accepted-risks.md`, not in `findings.md`.
 - **NEEDS MANUAL TESTING** — plausible from source but a gate requires runtime confirmation.
 
 Triage rubric + output format: `references/triage.md`.
@@ -336,9 +341,11 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 - `--json` — emit `findings.json` sidecar in Phase 8.
 - `--modules <list>` — restrict scope to comma-separated module names.
 - `--odoo-version <N>` — override Odoo version detection (e.g., `17.0`).
-- `--scope <file>` — apply a `scope.yml` (`excluded_modules`, `excluded_paths`, `accepted_risks` with id/module/file/rule/cwe/line_range/reason/expires). Exclusions filter Phase 0 manifests; accepted-risks become SARIF `suppressions` at export time. See `references/scope.example.yml`.
+- `--scope <file>` — apply a `scope.yml` (`excluded_modules`, `excluded_paths`, `accepted_risks` with id/module/file/rule/cwe/line_range/reason/expires). Exclusions filter Phase 0 manifests; accepted-risks become SARIF `suppressions` at export time. Coarse-grained engagement scope. See `references/scope.example.yml`.
 - `--pr <n>` — restrict scope to files changed in PR `<n>` (uses `gh pr view --json files`). Combine with `--pr-repo owner/repo` if not in the same checkout.
 - `--pr-repo <owner/repo>` — override PR-target repo for `--pr`.
+- `--accepted-risks <path>` — override default `<repo>/.audit-accepted-risks.{yml,yaml,json}` location. Per-finding fingerprint suppression layer (distinct from `--scope`'s coarser layer). See `references/accepted-risks.md`.
+- `--check-only-accepted-risks` — validate accepted-risks file, write `<OUT>/inventory/accepted-risks.json` + `<OUT>/00-accepted-risks.md`, then exit. Non-zero on validation errors or expired entries. Use in CI to catch rot.
 
 ## Post-Processing Scripts
 
@@ -424,7 +431,9 @@ Hunters know Odoo semantics. The two trust boundaries (`auth='public'` and `sudo
 - `references/triage.md` — rubric, output format, stats template
 - `references/findings-schema.md` — `findings.json` schema (v1.0) consumed by export/diff
 - `references/cwe-map.json` — 19 Odoo bug-shape → CWE/CAPEC/OWASP mappings (auto-copied to `inventory/cwe-map.json`)
-- `references/scope.example.yml` — scope.yml schema (excluded_modules / excluded_paths / accepted_risks)
+- `references/scope.example.yml` — scope.yml schema (excluded_modules / excluded_paths / accepted_risks — coarse engagement-scope layer)
+- `references/accepted-risks.md` — per-finding fingerprint suppression schema (fine-grained exclusion-bucket layer; fingerprint canonicalisation, legacy match rules, expiry semantics)
+- `references/accepted-risks.example.yml` — copy-paste template for `<repo>/.audit-accepted-risks.yml`
 - `references/html-report.md` — single-file `findings.html` spec (no CDN, embedded SVG, sortable table, severity colors, print-friendly)
 - `templates/github-action.yml` — drop-in GitHub Action for PR-scoped review + SARIF upload + sticky delta comments
 - `/odoo-code-review` — slash command to kick off the whole pipeline

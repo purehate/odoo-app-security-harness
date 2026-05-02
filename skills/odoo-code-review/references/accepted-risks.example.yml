@@ -1,0 +1,124 @@
+# Accepted-Risks file — copy to <repo-root>/.audit-accepted-risks.yml and edit.
+#
+# Schema reference: ~/.claude/skills/odoo-code-review/references/accepted-risks.md
+#
+# RULES (loader will fail the run if violated):
+#   - id must be unique within this file
+#   - reason, owner, accepted, expires are mandatory
+#   - expires must be a real date; cadence: 365 days
+#   - file is repo-relative; globs allowed
+#   - lines is optional: int or [start, end]
+#   - match is optional: literal substring (default) or regex (set pattern_kind: regex)
+#   - if expires < today, the entry is treated as EXPIRED and surfaces in 00-accepted-risks.md
+#   - if file/lines/match never matches a real finding, the entry is STALE and is logged
+#
+# Narrow your fingerprints. One entry per accepted risk shape, not per module.
+
+version: 1
+
+risks:
+  # ---------------------------------------------------------------------------
+  # Example 1: Public route intentionally allowed to write across event types
+  # ---------------------------------------------------------------------------
+  - id: AR-001
+    # Copied verbatim from the "Mark as accepted risk" button on F-1 in findings.html.
+    # Fingerprint short-circuits the file/lines/match heuristic; legacy fields kept
+    # for human readability and as a fallback if the report is regenerated.
+    fingerprint: 7c1f4a9b2e5d8a31
+    title: trustedsec_events public check-in submit accepts non-conference events
+    file: trustedsec_events/controllers/checkin.py
+    lines: [175, 260]
+    match: 'auth=[\"\\\']public[\"\\\']'
+    pattern_kind: regex
+    reason: |
+      Conference partner program intentionally accepts walk-in registrations
+      from non-conference events; product+legal accepted the partner-data risk
+      after compensating control was added (registration_id is logged + emailed
+      to security@trustedsec.com for human review within 24h). Re-evaluate when
+      partner-data flow is migrated to authenticated portal (FY27 plan).
+    owner: martin.bos@trustedsec.com
+    accepted: 2026-01-12
+    expires: 2026-07-12
+    severity_was: HIGH
+    references:
+      - https://github.com/odshweb/trustedsec/pull/467
+      - SARB-2026-014
+
+  # ---------------------------------------------------------------------------
+  # Example 2: sudo() usage in a portal route — has a documented pre-check
+  # ---------------------------------------------------------------------------
+  - id: AR-002
+    title: trustedsec_co_wo portal/document-detail uses sudo for cross-company read
+    file: trustedsec_co_wo/controllers/portal.py
+    lines: [88, 120]
+    match: '_document_check_access'
+    reason: |
+      sudo() is necessary to traverse partner_id parents for document
+      permission lookups across companies. _document_check_access is invoked
+      before any read/write so attacker cannot pivot. Verified by F-3 audit
+      pack (2025-Q4). Revisit if multi-company ACL refactor lands.
+    owner: martin.bos@trustedsec.com
+    accepted: 2025-11-04
+    expires: 2026-11-04
+    severity_was: MEDIUM
+    references:
+      - https://github.com/odshweb/trustedsec/pull/411
+
+  # ---------------------------------------------------------------------------
+  # Example 3: TAP cross-company read — accepted with compensating ACL
+  # ---------------------------------------------------------------------------
+  - id: AR-003
+    title: trustedsec_tap intentionally exposes all sale.order to TAP group
+    file: trustedsec_tap/security/tap_security.xml
+    lines: [35, 45]
+    match: 'domain_force=\"\\[\\(1, *=, *1\\)\\]\"'
+    pattern_kind: regex
+    reason: |
+      TAP user role is internal-only, requires explicit assignment by sales-ops,
+      and is gated by a manual approval workflow tracked in HubSpot. Cross-
+      company read is the explicit business requirement (TAP analysts review
+      pipeline across the whole org). Audit log captures every TAP read.
+      Re-evaluate when the TAP analyst persona is moved to a per-region scope.
+    owner: martin.bos@trustedsec.com
+    accepted: 2026-02-20
+    expires: 2027-02-20
+    severity_was: HIGH
+    references:
+      - https://github.com/odshweb/trustedsec/issues/389
+
+  # ---------------------------------------------------------------------------
+  # Example 4: csrf=False with HMAC verification — vendor webhook
+  # ---------------------------------------------------------------------------
+  - id: AR-004
+    # No fingerprint: this is a hand-written shape-suppression entry intended
+    # to cover any csrf=False line in this controller, current or future.
+    # The loader's legacy-match path handles it.
+    title: HubSpot webhook controller intentionally csrf=False (HMAC-verified)
+    file: trustedsec_hubspot/controllers/webhook.py
+    match: 'csrf=False'
+    reason: |
+      HubSpot webhook verifies X-HubSpot-Signature-v3 via hmac.compare_digest
+      against shared secret pulled from ir.config_parameter at every request.
+      CSRF is not in the threat model — only HubSpot-signed POSTs with replay
+      protection (timestamp tolerance 5m) are accepted.
+    owner: martin.bos@trustedsec.com
+    accepted: 2025-09-15
+    expires: 2026-09-15
+    severity_was: LOW
+    references:
+      - https://github.com/odshweb/trustedsec/pull/302
+
+  # ---------------------------------------------------------------------------
+  # Example 5 (EXPIRED — kept for documentation; will surface as warning until renewed)
+  # ---------------------------------------------------------------------------
+  - id: AR-099
+    title: Legacy sample entry — already expired, demonstrates expired flow
+    file: trustedsec_legacy/controllers/old.py
+    lines: 42
+    reason: |
+      Sample entry showing what an expired record looks like. Real entries
+      should be renewed with a fresh expires date OR removed.
+    owner: martin.bos@trustedsec.com
+    accepted: 2024-01-01
+    expires: 2024-12-31
+    severity_was: LOW

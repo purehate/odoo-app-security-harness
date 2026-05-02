@@ -1,10 +1,26 @@
-# fp-check — 6-Gate Verification
+# fp-check — 7-Gate Verification (Gate 0 + 6 substantive gates)
 
-Replaces the loose "read the bytes" Phase 4 with a structured pass per finding. Every finding (hunter-originated or scanner-originated) goes through all 6 gates before triage.
+Replaces the loose "read the bytes" Phase 4 with a structured pass per finding. Every finding (hunter-originated or scanner-originated) goes through Gate 0 first, then if not suppressed, all 6 substantive gates before triage.
 
-A finding can ACCEPT only if every gate is **PASS**. Any FAIL → DOWNGRADE or REJECT (rubric in `triage.md`). Any "can't tell" → NEEDS-MANUAL-TESTING.
+A finding can ACCEPT only if Gate 0 is **NOT-MATCH** AND every substantive gate is **PASS**. Gate 0 MATCH → SKIP (do not emit; track in `<OUT>/00-accepted-risks.md`). Any substantive FAIL → DOWNGRADE or REJECT (rubric in `triage.md`). Any "can't tell" → NEEDS-MANUAL-TESTING.
 
-## The 6 Gates
+## The Gates
+
+### Gate 0 — Accepted-risks suppression (run first, short-circuits the rest)
+
+Cross-reference the candidate finding against `<OUT>/inventory/accepted-risks.json` (loaded by `odoo-review-run` from `<repo>/.audit-accepted-risks.yml` in Phase 0). For each loaded entry:
+
+1. **Fingerprint match (primary, short-circuits the rest):** compute the candidate's fingerprint via `sha256(f"{file}:{primary_line}:{sink_kind}:{title.strip().lower()}")[:16]` (canonicalisation matches `references/accepted-risks.md`). If equal to the entry's `fingerprint`, MATCH.
+2. **Legacy match (fallback, only when entry has no fingerprint):** apply `file` glob → `lines` window → optional `match` substring/regex per `references/accepted-risks.md` § Fingerprint matching. All present sub-checks must pass to MATCH.
+3. **Expiry check:** if MATCH but `expires < today`, treat as NOT-MATCH and add to `<OUT>/00-accepted-risks.md` "EXPIRED" section so the human renews or removes.
+
+PASS criterion (= NOT-MATCH): no entry matched, finding proceeds to Gate 1.
+SKIP verdict (= MATCH, in-date): record `Suppressed by AR-NNN` in `<OUT>/00-accepted-risks.md`. Do not emit, do not run Gates 1-6, do not include in `findings.md`.
+
+REJECT triggers:
+
+- Loader reported any validation error (`odoo-review-run` aborts before Phase 5; do not silently ignore).
+- The accepted-risks file path is missing but `--accepted-risks <path>` was passed; same abort behaviour.
 
 ### Gate 1 — Source matches claim
 
@@ -93,14 +109,15 @@ Append this block to the finding before triage:
 ```
 **fp-check**
 
-| Gate | Verdict | Note                                                  |
-|------|---------|-------------------------------------------------------|
-| 1    | PASS    | Confirmed at <file>:<line>, code matches description. |
-| 2    | PASS    | Reachable via POST /api/X (no auth).                  |
-| 3    | PASS    | `req.body.url` reaches `httpClient.fetch(...)` unchanged. |
-| 4    | PASS    | Anon attacker, default config.                        |
-| 5    | PASS    | PoC: `curl -X POST .../api/X -d '{"url":"http://169.254.169.254/..."}'` |
-| 6    | PASS    | HIGH — pre-auth SSRF to cloud metadata = creds.       |
+| Gate | Verdict   | Note                                                  |
+|------|-----------|-------------------------------------------------------|
+| 0    | NOT-MATCH | No accepted-risks entry matches fingerprint or legacy match. |
+| 1    | PASS      | Confirmed at <file>:<line>, code matches description. |
+| 2    | PASS      | Reachable via POST /api/X (no auth).                  |
+| 3    | PASS      | `req.body.url` reaches `httpClient.fetch(...)` unchanged. |
+| 4    | PASS      | Anon attacker, default config.                        |
+| 5    | PASS      | PoC: `curl -X POST .../api/X -d '{"url":"http://169.254.169.254/..."}'` |
+| 6    | PASS      | HIGH — pre-auth SSRF to cloud metadata = creds.       |
 
 **Triage:** ACCEPT
 ```
@@ -110,16 +127,30 @@ Or, if any gate fails:
 ```
 **fp-check**
 
-| Gate | Verdict | Note                                                  |
-|------|---------|-------------------------------------------------------|
-| 1    | PASS    | Source matches.                                       |
-| 2    | PASS    | Reachable.                                            |
-| 3    | FAIL    | Validator at line 142 enforces allowlist; payload cannot escape. |
-| 4    | -       | Skipped — earlier gate failed.                        |
-| 5    | -       | Skipped.                                              |
-| 6    | -       | Skipped.                                              |
+| Gate | Verdict   | Note                                                  |
+|------|-----------|-------------------------------------------------------|
+| 0    | NOT-MATCH | No accepted-risks entry matches.                      |
+| 1    | PASS      | Source matches.                                       |
+| 2    | PASS      | Reachable.                                            |
+| 3    | FAIL      | Validator at line 142 enforces allowlist; payload cannot escape. |
+| 4    | -         | Skipped — earlier gate failed.                        |
+| 5    | -         | Skipped.                                              |
+| 6    | -         | Skipped.                                              |
 
 **Triage:** REJECT (validator blocks attacker control at line 142)
+```
+
+Or, if Gate 0 matches an accepted-risks entry:
+
+```
+**fp-check**
+
+| Gate | Verdict | Note                                                          |
+|------|---------|---------------------------------------------------------------|
+| 0    | MATCH   | Suppressed by AR-001 (fingerprint a7598a4c4035d920, in-date). |
+| 1-6  | -       | Skipped — Gate 0 short-circuits.                              |
+
+**Triage:** SKIP (do not emit; recorded in 00-accepted-risks.md)
 ```
 
 ## Anti-patterns
@@ -128,6 +159,8 @@ Or, if any gate fails:
 - Using NEEDS-MANUAL as a parking lot. NEEDS-MANUAL means "plausible from source, requires runtime confirmation". If the gates fail in source, REJECT.
 - Letting the hunter's confidence rating drive the gate verdict. The hunter is a hint; the gates are the source of truth.
 - Skipping Gate 5 because the bug "is obviously real". A finding without a PoC is not shippable.
+- Treating Gate 0 as a default-MATCH so finishing the review feels faster. Gate 0 is the only gate that REMOVES findings without grading them — abuse it and you ship a clean report covering up real bugs. Re-verify fingerprint and expiry every run; don't grandfather suppressions in.
+- Hand-typing a `fingerprint` to silence a finding you don't want to deal with. Fingerprints come from the report-export button or the loader's recompute path; an entry with a fingerprint that doesn't actually match any real finding is STALE and surfaces in `00-accepted-risks.md`.
 
 ## When to use NEEDS-MANUAL
 
