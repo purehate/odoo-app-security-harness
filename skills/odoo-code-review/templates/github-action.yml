@@ -91,17 +91,6 @@ jobs:
             ${{ env.CODEX_INSTALLED == '1' && ' ' || '--no-codex' }} \
             --json
 
-      - name: Export SARIF + fingerprints + bounty
-        if: ${{ hashFiles('.audit/findings.json') != '' }}
-        run: odoo-review-export .audit
-
-      - name: Upload SARIF to Code Scanning
-        if: ${{ hashFiles('.audit/findings.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: .audit/findings.sarif
-          category: odoo-security-harness
-
       - name: Download baseline (main branch findings)
         if: github.event_name == 'pull_request'
         continue-on-error: true
@@ -110,21 +99,31 @@ jobs:
           workflow: odoo-security.yml
           branch: main
           name: odoo-findings
-          path: .baseline
+          path: .audit-baseline
 
-      - name: Diff vs baseline
-        if: ${{ github.event_name == 'pull_request' && hashFiles('.baseline/findings.json') != '' }}
-        run: odoo-review-diff .baseline/findings.json .audit/findings.json
+      - name: Finalize (export SARIF + fingerprints + bounty + diff + CI gate)
+        if: ${{ hashFiles('.audit/findings.json') != '' }}
+        run: |
+          # --fail-on high: exit non-zero on ACCEPT critical/high (fails the PR check).
+          # --fail-on critical: only fail on critical. Set --fail-on none to disable gate.
+          odoo-review-finalize .audit --fail-on high
+
+      - name: Upload SARIF to Code Scanning
+        if: ${{ always() && hashFiles('.audit/findings.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: .audit/findings.sarif
+          category: odoo-security-harness
 
       - name: PR comment (delta summary)
-        if: ${{ github.event_name == 'pull_request' && hashFiles('.audit/delta.md') != '' }}
+        if: ${{ always() && github.event_name == 'pull_request' && hashFiles('.audit/delta.md') != '' }}
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           path: .audit/delta.md
           header: odoo-security-harness
 
       - name: Upload findings artifact
-        if: ${{ hashFiles('.audit/findings.json') != '' }}
+        if: ${{ always() && hashFiles('.audit/findings.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: odoo-findings
@@ -135,4 +134,5 @@ jobs:
             .audit/module-risk.md
             .audit/bounty/
             .audit/delta.md
+            .audit/finalize.log
           retention-days: 90

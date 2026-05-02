@@ -68,7 +68,14 @@ If the lead session supports `/goals`, use `<OUT>/goals.md` after the runner com
 18. **Phase 7.8 — Requirements Verification (only with `--requirements`).** Extract claims, compile predicates, dispatch judges, repair-loop (≤2 rounds). Files R-N findings.
 19. **Phase 8 — Output Assembly.** Codex drafts `findings.md` + `findings.html` + `findings.json` + reproducibility appendix. Claude performs final edit and removes unsupported claims. `findings.json` and `findings.html` are emitted by default; opt out with `--no-json` / `--no-html`.
 20. **Phase 8.5 — Directive Loop (optional, any phase).** When Claude needs a focused rerun mid-review (deeper portal-route + sudo scan, PoC sketch for one finding, narrative on an ACL gap), copy `<OUT>/directives/_template.md` to `D-NNNN-<slug>.md`, fill the YAML + body, then run `odoo-review-rerun <directive>`. Result lands in `directives/results/`. Use sparingly; not a replacement for Phase 5 hunters.
-21. **Phase 8.6 — Auto-Export (default on).** Once `findings.json` exists, Claude runs `odoo-review-export <OUT>` to emit `findings.sarif` (SARIF 2.1.0 for GitHub Code Scanning), `findings-fingerprints.json` (cross-run dedup hashes), and `bounty/F-N.md` (HackerOne/Intigriti drafts per ACCEPT, suppressed entries skipped). If a baseline exists at `<OUT>/../.audit-baseline/findings.json` (or the path passed to `--baseline`), Claude also runs `odoo-review-diff <baseline> <OUT>/findings.json` to emit `delta.md` + `delta.json`. Skip with `--no-export`.
+21. **Phase 8.6 — Finalize (default on).** Once `findings.json` exists, Claude runs:
+
+    ```bash
+    odoo-review-finalize <OUT> [--baseline <path>] [--fail-on high]
+    ```
+
+    `odoo-review-finalize` is the canonical wrapper. It (a) calls `odoo-review-export` to emit `findings.sarif` (SARIF 2.1.0 for GitHub Code Scanning), `findings-fingerprints.json` (cross-run dedup hashes), and `bounty/F-N.md` (HackerOne/Intigriti drafts per ACCEPT, suppressed entries skipped); (b) auto-detects a baseline at `<OUT>/../.audit-baseline/findings.json` or `$ODOO_REVIEW_BASELINE` (or honors `--baseline`) and calls `odoo-review-diff` to emit `delta.md` + `delta.json`; (c) stamps `<OUT>/finalize.log`; (d) exits non-zero when ACCEPT findings meet/exceed `--fail-on` (default `high`) — usable as a CI gate. Skip with `--no-export`.
+
 22. **Phase 8.7 — AI-Driven Iteration Loop (the product).** This harness runs three AI lanes — Claude, Codex, local Ollama/Qwen. Use them. After Phase 8.6 the lead session (Claude):
     1. Re-reads `findings.json` + `delta.md` + every REJECT/DOWNGRADE 6-gate verdict.
     2. For each finding where 6-gate clearly fails (gate 1/2/3 FAIL with cited line evidence), drafts an `accepted_risks` entry into `<OUT>/scope-suggestions.yml` with: `id`, `finding_id`, `rule`, `cwe`, `file`, `line_range`, `reason` (citing the failing gate + code evidence), `expires` (default 90d).

@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""Finalize a completed odoo-code-review run.
+
+Usage:
+    odoo-review-finalize <OUT> [--baseline <path>] [--no-diff] [--no-bounty]
+                                [--fail-on critical|high|medium|low|none]
+
+Wraps Phase 8.6 post-processing into one CI-friendly command:
+
+    1. Require <OUT>/findings.json (Phase 8 must have completed).
+    2. Run odoo-review-export <OUT>          → SARIF + fingerprints + bounty drafts.
+    3. Auto-detect baseline (or use --baseline) and run odoo-review-diff.
+    4. Stamp <OUT>/finalize.log with timestamps + exit codes.
+    5. Exit non-zero when ACCEPT findings exceed the --fail-on threshold (CI gate).
+
+Baseline auto-detection order:
+    a. --baseline <path>
+    b. env ODOO_REVIEW_BASELINE
+    c. <OUT>/../.audit-baseline/findings.json
+    d. <OUT>/../.audit-baseline.json
+
+Designed for non-Claude invocation paths: CI (GitHub Actions, GitLab, Drone),
+cron loops, codex-only sessions, or any pure-CLI consumer that needs the full
+output set without orchestrating odoo-review-export + odoo-review-diff manually.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+EXPORT_BIN = SCRIPT_DIR / "odoo-review-export"
+DIFF_BIN = SCRIPT_DIR / "odoo-review-diff"
+
+SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Finalize an odoo-code-review run (export + diff + CI gate).")
+    parser.add_argument("out", help="Path to .audit/ directory containing findings.json.")
+    parser.add_argument("--baseline", help="Baseline findings.json or .audit/ directory for diff. Default: auto-detect.")
+    parser.add_argument("--no-diff", action="store_true", help="Skip odoo-review-diff even if a baseline is found.")
+    parser.add_argument("--no-bounty", action="store_true", help="Skip bounty/F-N.md drafts (passes --no-bounty to export).")
+    parser.add_argument(
+        "--fail-on",
+        choices=["critical", "high", "medium", "low", "none"],
+        default="high",
+        help="Exit non-zero when ACCEPT severity meets/exceeds this. 'none' disables the gate. Default: high.",
+    )
+    return parser.parse_args()
+
+
+def resolve_out(out: str) -> Path:
+    p = Path(out).expanduser().resolve()
+    if not p.exists():
+        sys.exit(f"odoo-review-finalize: {p} does not exist")
+    if p.is_file() and p.name == "findings.json":
+        return p.parent
+    if p.is_dir():
+        return p
+    sys.exit(f"odoo-review-finalize: {p} is not a .audit/ directory or findings.json")
+
+
+def detect_baseline(out: Path, explicit: str | None) -> Path | None:
+    if explicit:
+        p = Path(explicit).expanduser().resolve()
+        if p.exists():
+            return p
+        sys.exit(f"odoo-review-finalize: --baseline {p} not found")
+    env_baseline = os.environ.get("ODOO_REVIEW_BASELINE")
+    if env_baseline:
+        p = Path(env_baseline).expanduser().resolve()
+        if p.exists():
+            return p
+    parent = out.parent
+    candidates = [
+        parent / ".audit-baseline" / "findings.json",
+        parent / ".audit-baseline.json",
+        parent / "audit-baseline" / "findings.json",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
+
+
+def load_findings(findings_path: Path) -> dict:
+    with findings_path.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def shell(cmd: list[str], log_lines: list[str]) -> int:
+    log_lines.append(f"$ {' '.join(cmd)}")
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except FileNotFoundError as exc:
+        log_lines.append(f"  FAIL: {exc}")
+        return 127
+    if proc.stdout:
+        log_lines.extend(f"  {line}" for line in proc.stdout.rstrip().splitlines())
+    if proc.stderr:
+        log_lines.extend(f"  STDERR: {line}" for line in proc.stderr.rstrip().splitlines())
+    log_lines.append(f"  exit={proc.returncode}")
+    return proc.returncode
+
+
+def count_accepts_by_severity(findings_doc: dict) -> dict[str, int]:
+    counts = {k: 0 for k in SEVERITY_RANK}
+    for f in findings_doc.get("findings", []):
+        if (f.get("triage") or "").upper() != "ACCEPT":
+            continue
+        sev = (f.get("severity") or "medium").lower()
+        counts[sev] = counts.get(sev, 0) + 1
+    return counts
+
+
+def evaluate_gate(counts: dict[str, int], fail_on: str) -> tuple[int, str]:
+    if fail_on == "none":
+        return 0, "gate disabled (--fail-on none)"
+    threshold = SEVERITY_RANK[fail_on]
+    failing = sum(n for sev, n in counts.items() if SEVERITY_RANK.get(sev, 0) >= threshold)
+    if failing > 0:
+        return 2, f"GATE FAIL: {failing} ACCEPT finding(s) at severity >= {fail_on}"
+    return 0, f"gate pass: 0 ACCEPT finding(s) at severity >= {fail_on}"
+
+
+def main() -> int:
+    args = parse_args()
+    out = resolve_out(args.out)
+    findings_path = out / "findings.json"
+    if not findings_path.exists():
+        sys.exit(
+            f"odoo-review-finalize: {findings_path} not found. Phase 8 must complete and emit findings.json "
+            "before finalize runs."
+        )
+
+    log_lines: list[str] = [
+        f"# odoo-review-finalize",
+        f"started: {dt.datetime.now(dt.timezone.utc).isoformat()}",
+        f"out: {out}",
+        f"findings: {findings_path}",
+    ]
+
+    if not EXPORT_BIN.exists():
+        export_cmd = [shutil.which("odoo-review-export") or "odoo-review-export"]
+    else:
+        export_cmd = [sys.executable, str(EXPORT_BIN)]
+    export_cmd.append(str(out))
+    if args.no_bounty:
+        export_cmd.extend(["--sarif", "--fingerprints"])
+    export_rc = shell(export_cmd, log_lines)
+
+    diff_rc = 0
+    baseline = None if args.no_diff else detect_baseline(out, args.baseline)
+    if baseline:
+        log_lines.append(f"baseline: {baseline}")
+        if not DIFF_BIN.exists():
+            diff_cmd = [shutil.which("odoo-review-diff") or "odoo-review-diff"]
+        else:
+            diff_cmd = [sys.executable, str(DIFF_BIN)]
+        diff_cmd.extend([str(baseline), str(findings_path)])
+        diff_rc = shell(diff_cmd, log_lines)
+    else:
+        log_lines.append("baseline: none (skipping diff)")
+
+    findings_doc = load_findings(findings_path)
+    counts = count_accepts_by_severity(findings_doc)
+    log_lines.append(f"accepts_by_severity: {counts}")
+    gate_rc, gate_msg = evaluate_gate(counts, args.fail_on)
+    log_lines.append(gate_msg)
+
+    log_lines.append(f"finished: {dt.datetime.now(dt.timezone.utc).isoformat()}")
+    log_lines.append(f"export_rc={export_rc} diff_rc={diff_rc} gate_rc={gate_rc}")
+
+    log_path = out / "finalize.log"
+    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+
+    print("\n".join(log_lines))
+
+    if export_rc != 0:
+        return export_rc
+    if diff_rc != 0:
+        return diff_rc
+    return gate_rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())

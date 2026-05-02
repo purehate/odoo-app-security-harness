@@ -342,10 +342,11 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 
 ## Post-Processing Scripts
 
-The runner emits `findings.json`. Three companion scripts process it:
+The runner emits `findings.json` (after Phase 8). Four companion scripts process it:
 
-- `odoo-review-export <.audit-dir>` — emits `findings.sarif` (SARIF 2.1.0 for GitHub Code Scanning), `findings-fingerprints.json` (stable cross-run dedup), and `bounty/F-N.md` (HackerOne/Intigriti drafts per ACCEPT). Honors `scope.json` accepted_risks as SARIF `suppressions` unless `--no-suppress`.
-- `odoo-review-diff <baseline> <current>` — classifies findings new / fixed / unchanged / changed (severity OR triage delta) by `fingerprint`. Emits `delta.md` + `delta.json`.
+- **`odoo-review-finalize <OUT>`** — canonical Phase 8.6 wrapper. Runs export + diff, auto-detects baseline (`<OUT>/../.audit-baseline/findings.json` or `$ODOO_REVIEW_BASELINE`), stamps `finalize.log`, exits non-zero when ACCEPT severity ≥ `--fail-on` (default `high`). Use this from CI / cron / non-Claude paths. `--fail-on none` disables the gate.
+- `odoo-review-export <.audit-dir>` — direct SARIF 2.1.0 + fingerprints + bounty/F-N.md emit. Called by `finalize`; expose for one-off re-export. Honors `scope.json` accepted_risks as SARIF `suppressions` unless `--no-suppress`.
+- `odoo-review-diff <baseline> <current>` — classifies findings new / fixed / unchanged / changed (severity OR triage delta) by `fingerprint`. Emits `delta.md` + `delta.json`. Called by `finalize` when baseline detected.
 - `odoo-review-rerun <directive>` — directive feedback-loop dispatcher (Qwen or Codex). See "Directive Feedback Loop" above.
 
 ## CI Template

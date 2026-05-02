@@ -109,8 +109,9 @@ The installer copies:
 - convenience symlinks in `~/.local/bin/`:
   - `odoo-review-run` — main pipeline runner
   - `odoo-review-rerun` — directive dispatcher (Qwen/Codex re-task)
-  - `odoo-review-export` — SARIF + fingerprints + bounty drafts
-  - `odoo-review-diff` — baseline vs current findings comparison
+  - `odoo-review-finalize` — Phase 8.6 wrapper: export + diff + CI gate (default for CI / cron / non-Claude paths)
+  - `odoo-review-export` — direct SARIF + fingerprints + bounty drafts (called by finalize)
+  - `odoo-review-diff` — direct baseline vs current comparison (called by finalize)
 
 ## Prerequisites
 
@@ -178,23 +179,33 @@ odoo-review-run /path/to/odoo-addons --scope ./scope.yml
 
 ## Post-Processing
 
-After a run produces `.audit/findings.json`, export to industry formats:
+`/odoo-code-review` runs Phase 8.6 finalize automatically. For non-Claude paths (CI, cron, codex-only sessions, manual re-export), call the wrapper directly:
 
 ```bash
-odoo-review-export .audit
-# Emits:
-#   .audit/findings.sarif              — SARIF 2.1.0 (GitHub Code Scanning, GitLab, etc.)
-#   .audit/findings-fingerprints.json  — stable cross-run dedup hashes
-#   .audit/bounty/F-N.md               — HackerOne/Intigriti-shaped drafts (one per ACCEPT)
+odoo-review-finalize .audit                          # auto-detect baseline + run gate (default --fail-on high)
+odoo-review-finalize .audit --baseline .baseline     # explicit baseline path
+odoo-review-finalize .audit --fail-on critical       # only fail on critical ACCEPT
+odoo-review-finalize .audit --fail-on none           # disable CI gate
+odoo-review-finalize .audit --no-bounty --no-diff    # SARIF + fingerprints only
 ```
 
-Compare against a baseline (e.g., main-branch `.audit/`) for delta tracking:
+Emits:
+
+- `.audit/findings.sarif` — SARIF 2.1.0 (GitHub Code Scanning, GitLab, etc.)
+- `.audit/findings-fingerprints.json` — stable cross-run dedup hashes
+- `.audit/bounty/F-N.md` — HackerOne/Intigriti-shaped drafts (one per ACCEPT, suppressed entries skipped)
+- `.audit/delta.md` + `.audit/delta.json` — diff vs baseline (when baseline detected)
+- `.audit/finalize.log` — audit trail of what ran, exit codes, ACCEPT counts
+
+Exit code: `0` pass, `2` ACCEPT exceeds gate, non-zero forwarded from export/diff failures.
+
+Baseline auto-detection order: `--baseline <path>` → `$ODOO_REVIEW_BASELINE` → `.audit-baseline/findings.json` → `.audit-baseline.json`.
+
+If you only want one stage, the underlying scripts are still exposed:
 
 ```bash
-odoo-review-diff .baseline/findings.json .audit/findings.json
-# Emits:
-#   .audit/delta.md   — markdown summary (new / fixed / changed / unchanged)
-#   .audit/delta.json — machine-readable delta
+odoo-review-export .audit                            # SARIF + fingerprints + bounty (no diff, no gate)
+odoo-review-diff .baseline/findings.json .audit/findings.json   # delta only
 ```
 
 ## CI Integration
@@ -202,9 +213,10 @@ odoo-review-diff .baseline/findings.json .audit/findings.json
 Drop-in GitHub Action template at `skills/odoo-code-review/templates/github-action.yml`:
 
 - Runs PR-scoped review on every PR (`--pr <n>`), full sweep on push to main + weekly schedule.
+- Calls `odoo-review-finalize .audit --fail-on high` — single step replaces export + diff + gate. Exit code fails the PR check on ACCEPT critical/high.
 - Uploads `findings.sarif` to GitHub Code Scanning (inline PR annotations + Security tab).
-- Posts a sticky PR comment with delta vs main baseline.
-- Persists `findings.json` + `delta.md` + `bounty/` as 90-day artifacts.
+- Posts a sticky PR comment with delta vs main baseline (`.audit/delta.md`).
+- Persists `findings.json` + `delta.md` + `bounty/` + `finalize.log` as 90-day artifacts.
 
 Copy to `.github/workflows/odoo-security.yml` in your addons repo and set `OPENAI_API_KEY` secret if Codex lane is desired.
 
@@ -242,6 +254,7 @@ Post-processing artifacts (after `odoo-review-export` / `odoo-review-diff`):
 - `findings-fingerprints.json` — stable hashes for cross-run dedup
 - `bounty/F-N.md` — bounty submission drafts (one per ACCEPT, suppressed entries skipped)
 - `delta.md`, `delta.json` — baseline-vs-current diff
+- `finalize.log` — Phase 8.6 audit trail (commands, exit codes, ACCEPT counts, gate verdict)
 
 ## Sharing Notes
 
