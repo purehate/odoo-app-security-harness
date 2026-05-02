@@ -19,6 +19,7 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_RULES = SKILL_DIR / "rules" / "odoo.yml"
 DEFAULT_MODEL = "qwen3:0.6b"
+CWE_MAP_SRC = SKILL_DIR / "references" / "cwe-map.json"
 
 HUNTERS = [
     ("01-access-control", "Access Control", "ACL CSV, ir.rule, groups, sudo/with_user/with_context misuse, portal/user/admin boundaries."),
@@ -200,33 +201,142 @@ def index_acl(repo: Path, manifests: list[dict]) -> list[dict]:
     return rows
 
 
+SHARP_EDGE_PATTERNS = {
+    "sudo": r"\.sudo\(",
+    "with_user": r"\.with_user\(",
+    "with_context": r"\.with_context\(",
+    "raw_sql": r"\.cr\.execute\(|\bcr\.execute\(",
+    "request_params": r"request\.params|request\.jsonrequest",
+    "safe_eval": r"\bsafe_eval\(",
+    "t_raw": r"t-raw\s*=",
+    "markup": r"\bMarkup\(",
+    "attachments": r"ir\.attachment|public\s*=\s*True",
+}
+
+
+SHARP_EDGE_WEIGHTS = {
+    "sudo": 3,
+    "with_user": 2,
+    "with_context": 1,
+    "raw_sql": 4,
+    "request_params": 2,
+    "safe_eval": 5,
+    "t_raw": 4,
+    "markup": 2,
+    "attachments": 1,
+}
+
+
 def scan_patterns(repo: Path, manifests: list[dict]) -> dict:
-    patterns = {
-        "sudo": r"\.sudo\(",
-        "with_user": r"\.with_user\(",
-        "with_context": r"\.with_context\(",
-        "raw_sql": r"\.cr\.execute\(|\bcr\.execute\(",
-        "request_params": r"request\.params|request\.jsonrequest",
-        "safe_eval": r"\bsafe_eval\(",
-        "t_raw": r"t-raw\s*=",
-        "markup": r"\bMarkup\(",
-        "attachments": r"ir\.attachment|public\s*=\s*True",
-    }
-    compiled = {key: re.compile(value) for key, value in patterns.items()}
-    counts = {key: 0 for key in patterns}
-    hits = {key: [] for key in patterns}
-    module_dirs = [repo / item["dir"] for item in manifests]
-    for module_dir in module_dirs:
+    compiled = {key: re.compile(value) for key, value in SHARP_EDGE_PATTERNS.items()}
+    counts = {key: 0 for key in SHARP_EDGE_PATTERNS}
+    hits: dict[str, list[dict]] = {key: [] for key in SHARP_EDGE_PATTERNS}
+    per_module: dict[str, dict[str, int]] = {item["module"]: {key: 0 for key in SHARP_EDGE_PATTERNS} for item in manifests}
+    for item in manifests:
+        module = item["module"]
+        module_dir = repo / item["dir"]
         for path in module_dir.rglob("*"):
             if should_skip(path) or path.suffix not in {".py", ".xml", ".csv"}:
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
             for key, regex in compiled.items():
                 matches = list(regex.finditer(text))
+                if not matches:
+                    continue
                 counts[key] += len(matches)
+                per_module[module][key] += len(matches)
                 for match in matches[:20]:
-                    hits[key].append({"file": rel(path, repo), "line": text.count("\n", 0, match.start()) + 1})
-    return {"counts": counts, "sample_hits": hits}
+                    hits[key].append({
+                        "module": module,
+                        "file": rel(path, repo),
+                        "line": text.count("\n", 0, match.start()) + 1,
+                    })
+    return {"counts": counts, "sample_hits": hits, "per_module": per_module}
+
+
+def compute_module_risk(manifests: list[dict], routes: list[dict], acl_rows: list[dict], pattern_summary: dict) -> list[dict]:
+    """Heuristic risk score per module. Higher = audit first."""
+    routes_by_module: dict[str, int] = {}
+    public_by_module: dict[str, int] = {}
+    for r in routes:
+        routes_by_module[r["module"]] = routes_by_module.get(r["module"], 0) + 1
+        auth = (r.get("auth") or "").lower()
+        if "public" in auth or "none" in auth:
+            public_by_module[r["module"]] = public_by_module.get(r["module"], 0) + 1
+    acl_by_module: dict[str, int] = {}
+    acl_global_by_module: dict[str, int] = {}
+    for row in acl_rows:
+        mod = row.get("_module") or ""
+        if not mod:
+            continue
+        acl_by_module[mod] = acl_by_module.get(mod, 0) + 1
+        if not (row.get("group_id:id") or row.get("group_id") or "").strip():
+            acl_global_by_module[mod] = acl_global_by_module.get(mod, 0) + 1
+    per_module = pattern_summary.get("per_module", {})
+
+    rows: list[dict] = []
+    for item in manifests:
+        module = item["module"]
+        route_count = routes_by_module.get(module, 0)
+        public_count = public_by_module.get(module, 0)
+        acl_count = acl_by_module.get(module, 0)
+        acl_global = acl_global_by_module.get(module, 0)
+        sharp = per_module.get(module, {})
+        sharp_score = sum(sharp.get(k, 0) * SHARP_EDGE_WEIGHTS.get(k, 1) for k in SHARP_EDGE_PATTERNS)
+        score = route_count * 1 + public_count * 5 + acl_global * 3 + sharp_score
+        band = "low"
+        if score >= 50:
+            band = "critical"
+        elif score >= 25:
+            band = "high"
+        elif score >= 10:
+            band = "medium"
+        rows.append({
+            "module": module,
+            "score": score,
+            "band": band,
+            "routes": route_count,
+            "public_routes": public_count,
+            "acl_rows": acl_count,
+            "acl_global_rows": acl_global,
+            "sharp_edge_score": sharp_score,
+            "sharp_edges": sharp,
+        })
+    rows.sort(key=lambda r: (-r["score"], r["module"]))
+    return rows
+
+
+def copy_cwe_map(out: Path) -> None:
+    """Copy CWE/CAPEC bug-shape map to inventory/ for hunter and Phase 7 use."""
+    if not CWE_MAP_SRC.exists():
+        return
+    inv = out / "inventory"
+    inv.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(CWE_MAP_SRC, inv / "cwe-map.json")
+
+
+def write_module_risk(out: Path, risk_rows: list[dict]) -> None:
+    inv = out / "inventory"
+    inv.mkdir(parents=True, exist_ok=True)
+    (inv / "module-risk.json").write_text(json.dumps(risk_rows, indent=2), encoding="utf-8")
+
+    lines = [
+        "# Module Risk Score",
+        "",
+        "Heuristic-only ranking to focus audit attention. Higher = read first.",
+        "Score = routes + 5×public_routes + 3×ACL global rows + Σ(sharp_edge × weight).",
+        "Bands: critical ≥50, high 25-49, medium 10-24, low <10. Not a finding list — Phase 7 still decides exploitability.",
+        "",
+        "| Module | Band | Score | Routes | Public | ACL Global | Sharp Edge |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for r in risk_rows:
+        lines.append(
+            f"| `{r['module']}` | {r['band']} | {r['score']} | {r['routes']} | {r['public_routes']} | "
+            f"{r['acl_global_rows']} | {r['sharp_edge_score']} |"
+        )
+    lines.append("")
+    (out / "module-risk.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[dict], acl_rows: list[dict], pattern_summary: dict, args: argparse.Namespace) -> None:
@@ -694,6 +804,9 @@ def main() -> int:
     acl_rows = index_acl(repo, manifests)
     pattern_summary = scan_patterns(repo, manifests)
     write_inventory(repo, out, manifests, routes, acl_rows, pattern_summary, args)
+    risk_rows = compute_module_risk(manifests, routes, acl_rows, pattern_summary)
+    write_module_risk(out, risk_rows)
+    copy_cwe_map(out)
     write_goals_guide(repo, out, manifests, routes, args)
     write_directives_seed(out)
 

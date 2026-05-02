@@ -1,0 +1,126 @@
+{
+  "schema_version": "1.0",
+  "description": "Bug-shape → CWE/CAPEC mapping for common Odoo source-code findings. Used by Phase 7/8 to tag findings.",
+  "mappings": {
+    "sudo_misuse_idor": {
+      "label": "sudo() bypasses ACL leading to cross-record access",
+      "cwe": ["CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "portal_route_no_auth": {
+      "label": "@http.route(auth='public') exposing privileged action",
+      "cwe": ["CWE-306", "CWE-862"],
+      "capec": ["CAPEC-115"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "csrf_state_change_get": {
+      "label": "State-changing route accepts GET / missing methods=['POST']",
+      "cwe": ["CWE-352"],
+      "capec": ["CAPEC-62"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "raw_sql_injection": {
+      "label": "cr.execute with f-string / .format / % concatenation of user input",
+      "cwe": ["CWE-89"],
+      "capec": ["CAPEC-66"],
+      "owasp": "A03:2021 Injection"
+    },
+    "qweb_xss_t_raw": {
+      "label": "QWeb t-raw rendering attacker-controlled string",
+      "cwe": ["CWE-79"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "html_field_no_sanitize": {
+      "label": "fields.Html(sanitize=False) on user-writable field",
+      "cwe": ["CWE-79", "CWE-80"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "safe_eval_user_input": {
+      "label": "safe_eval over attacker-controlled expression",
+      "cwe": ["CWE-94", "CWE-95"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "domain_injection": {
+      "label": "search/read domain built from request.params without validation",
+      "cwe": ["CWE-20", "CWE-639"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A03:2021 Injection"
+    },
+    "ssrf_outbound_request": {
+      "label": "requests.get / urllib URL controlled by user input",
+      "cwe": ["CWE-918"],
+      "capec": ["CAPEC-664"],
+      "owasp": "A10:2021 Server-Side Request Forgery"
+    },
+    "path_traversal_attachment": {
+      "label": "ir.attachment / file path joined with user input without normalize",
+      "cwe": ["CWE-22"],
+      "capec": ["CAPEC-126"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "hardcoded_secret": {
+      "label": "API key / password / token committed to source",
+      "cwe": ["CWE-798", "CWE-259"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "secrets_in_logs": {
+      "label": "Secrets / PII written to ir.logging or _logger",
+      "cwe": ["CWE-532"],
+      "capec": ["CAPEC-215"],
+      "owasp": "A09:2021 Security Logging and Monitoring Failures"
+    },
+    "weak_crypto": {
+      "label": "MD5/SHA1/non-constant-time comparison of secrets",
+      "cwe": ["CWE-327", "CWE-208"],
+      "capec": ["CAPEC-97"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "deserialize_user_input": {
+      "label": "pickle / marshal / yaml.load on attacker bytes",
+      "cwe": ["CWE-502"],
+      "capec": ["CAPEC-586"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "mass_assignment": {
+      "label": "create/write accepts arbitrary fields from request",
+      "cwe": ["CWE-915"],
+      "capec": ["CAPEC-77"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "ir_rule_global_bypass": {
+      "label": "Record rule scoped to global=True opens cross-company read",
+      "cwe": ["CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "external_id_xml_id_clobber": {
+      "label": "Module overwrites external ID owned by another module",
+      "cwe": ["CWE-668", "CWE-732"],
+      "capec": ["CAPEC-1"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "dependency_known_cve": {
+      "label": "Reachable dependency with known CVE",
+      "cwe": ["CWE-1104", "CWE-937"],
+      "capec": ["CAPEC-438"],
+      "owasp": "A06:2021 Vulnerable and Outdated Components"
+    },
+    "open_redirect_portal": {
+      "label": "Portal redirect honors attacker-controlled URL",
+      "cwe": ["CWE-601"],
+      "capec": ["CAPEC-178"],
+      "owasp": "A03:2021 Injection"
+    },
+    "race_condition_state": {
+      "label": "Stage transition / approval check vulnerable to TOCTOU",
+      "cwe": ["CWE-367", "CWE-362"],
+      "capec": ["CAPEC-29"],
+      "owasp": "A04:2021 Insecure Design"
+    }
+  }
+}
