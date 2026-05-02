@@ -64,7 +64,7 @@ install_dir() {
 install_file "$ROOT/commands/odoo-code-review.md" "$CLAUDE_HOME/commands/odoo-code-review.md"
 install_dir "$ROOT/skills/odoo-code-review" "$CLAUDE_HOME/skills/odoo-code-review"
 
-for script in odoo-review-run odoo-review-rerun odoo-review-export; do
+for script in odoo-review-run odoo-review-rerun odoo-review-export odoo-review-diff; do
   chmod +x "$CLAUDE_HOME/skills/odoo-code-review/scripts/$script"
   ln -sf "$CLAUDE_HOME/skills/odoo-code-review/scripts/$script" "$HOME/.local/bin/$script"
 done
@@ -73,5 +73,6 @@ echo "Installed Odoo Application Security Harness into $CLAUDE_HOME"
 echo "Runner:  $HOME/.local/bin/odoo-review-run"
 echo "Rerun:   $HOME/.local/bin/odoo-review-rerun"
 echo "Export:  $HOME/.local/bin/odoo-review-export"
+echo "Diff:    $HOME/.local/bin/odoo-review-diff"
 echo "Command: /odoo-code-review"
 

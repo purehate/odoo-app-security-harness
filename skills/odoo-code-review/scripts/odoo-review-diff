@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""Diff two findings.json snapshots → new / fixed / unchanged / changed-severity.
+
+Usage:
+    odoo-review-diff <baseline.json> <current.json> [--out <delta.md>] [--json <delta.json>]
+    odoo-review-diff <baseline.audit-dir> <current.audit-dir>
+
+Both inputs may be a findings.json file or a .audit/ directory containing one.
+
+Match key: `fingerprint` field. If missing, falls back to (rule_id, file, line) tuple.
+Status categories:
+    - new            : in current, not in baseline
+    - fixed          : in baseline, not in current (presumed remediated)
+    - unchanged      : same fingerprint, same severity + triage
+    - changed        : same fingerprint, different severity OR triage
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Diff two findings.json snapshots.")
+    parser.add_argument("baseline", help="Baseline findings.json or .audit/ directory.")
+    parser.add_argument("current", help="Current findings.json or .audit/ directory.")
+    parser.add_argument("--out", help="Markdown output path. Default: <current-dir>/delta.md")
+    parser.add_argument("--json", dest="json_out", help="JSON output path. Default: <current-dir>/delta.json")
+    return parser.parse_args()
+
+
+def resolve(p: str) -> Path:
+    path = Path(p).expanduser().resolve()
+    if path.is_dir():
+        candidate = path / "findings.json"
+        if candidate.exists():
+            return candidate
+        raise FileNotFoundError(f"No findings.json in {path}")
+    if path.is_file():
+        return path
+    raise FileNotFoundError(p)
+
+
+def normalize_line(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def fingerprint_for(f: dict) -> str:
+    if f.get("fingerprint"):
+        return f["fingerprint"]
+    parts = [
+        (f.get("rule_id") or f.get("title") or "")[:80],
+        f.get("file", ""),
+        str(f.get("line", "")),
+        normalize_line((f.get("description") or f.get("attack_path") or "")[:200]),
+    ]
+    return "sha256:" + hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def index(findings: list[dict]) -> dict[str, dict]:
+    return {fingerprint_for(f): f for f in findings}
+
+
+def classify(baseline_idx: dict, current_idx: dict) -> dict:
+    new: list[dict] = []
+    fixed: list[dict] = []
+    unchanged: list[dict] = []
+    changed: list[dict] = []
+
+    for fp, cur in current_idx.items():
+        if fp not in baseline_idx:
+            new.append(cur)
+            continue
+        base = baseline_idx[fp]
+        sev_changed = (base.get("severity") or "") != (cur.get("severity") or "")
+        triage_changed = (base.get("triage") or "") != (cur.get("triage") or "")
+        if sev_changed or triage_changed:
+            changed.append({
+                "current": cur,
+                "baseline": base,
+                "severity_changed": sev_changed,
+                "triage_changed": triage_changed,
+            })
+        else:
+            unchanged.append(cur)
+
+    for fp, base in baseline_idx.items():
+        if fp not in current_idx:
+            fixed.append(base)
+
+    return {"new": new, "fixed": fixed, "unchanged": unchanged, "changed": changed}
+
+
+def severity_rank(sev: str) -> int:
+    return {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}.get((sev or "").lower(), 2)
+
+
+def render_md(delta: dict, baseline_path: Path, current_path: Path) -> str:
+    lines = [
+        "# Findings Delta",
+        "",
+        f"- Baseline: `{baseline_path}`",
+        f"- Current:  `{current_path}`",
+        f"- Generated: {dt.datetime.now(dt.timezone.utc).isoformat()}",
+        "",
+        "## Summary",
+        "",
+        f"- New:       **{len(delta['new'])}**",
+        f"- Fixed:     **{len(delta['fixed'])}**",
+        f"- Changed:   **{len(delta['changed'])}**",
+        f"- Unchanged: **{len(delta['unchanged'])}**",
+        "",
+    ]
+
+    if delta["new"]:
+        lines.extend(["## New Findings", "", "| ID | Severity | Triage | File:Line | Title |", "| --- | --- | --- | --- | --- |"])
+        for f in sorted(delta["new"], key=lambda x: -severity_rank(x.get("severity") or "")):
+            lines.append(
+                f"| {f.get('id', '?')} | {f.get('severity', '?')} | {f.get('triage', '?')} | "
+                f"`{f.get('file', '?')}:{f.get('line', '?')}` | {f.get('title', '?')} |"
+            )
+        lines.append("")
+
+    if delta["fixed"]:
+        lines.extend(["## Fixed Findings", "", "| ID | Severity | File:Line | Title |", "| --- | --- | --- | --- |"])
+        for f in sorted(delta["fixed"], key=lambda x: -severity_rank(x.get("severity") or "")):
+            lines.append(
+                f"| {f.get('id', '?')} | {f.get('severity', '?')} | "
+                f"`{f.get('file', '?')}:{f.get('line', '?')}` | {f.get('title', '?')} |"
+            )
+        lines.append("")
+
+    if delta["changed"]:
+        lines.extend(["## Changed Findings", "", "| ID | Title | Severity (base→cur) | Triage (base→cur) |", "| --- | --- | --- | --- |"])
+        for entry in delta["changed"]:
+            cur = entry["current"]
+            base = entry["baseline"]
+            sev = f"{base.get('severity', '?')} → {cur.get('severity', '?')}"
+            tri = f"{base.get('triage', '?')} → {cur.get('triage', '?')}"
+            lines.append(
+                f"| {cur.get('id', '?')} | {cur.get('title', '?')} | {sev} | {tri} |"
+            )
+        lines.append("")
+
+    if not (delta["new"] or delta["fixed"] or delta["changed"]):
+        lines.append("No new, fixed, or changed findings between baseline and current.")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def main() -> int:
+    args = parse_args()
+    baseline_path = resolve(args.baseline)
+    current_path = resolve(args.current)
+
+    baseline_doc = json.loads(baseline_path.read_text(encoding="utf-8"))
+    current_doc = json.loads(current_path.read_text(encoding="utf-8"))
+
+    baseline_idx = index(baseline_doc.get("findings", []))
+    current_idx = index(current_doc.get("findings", []))
+    delta = classify(baseline_idx, current_idx)
+
+    out_dir = current_path.parent
+    md_path = Path(args.out).expanduser().resolve() if args.out else out_dir / "delta.md"
+    json_path = Path(args.json_out).expanduser().resolve() if args.json_out else out_dir / "delta.json"
+
+    md_path.write_text(render_md(delta, baseline_path, current_path), encoding="utf-8")
+    json_path.write_text(json.dumps({
+        "baseline": str(baseline_path),
+        "current": str(current_path),
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "summary": {k: len(v) for k, v in delta.items()},
+        "delta": delta,
+    }, indent=2), encoding="utf-8")
+
+    print(f"Delta:")
+    print(f"  new={len(delta['new'])} fixed={len(delta['fixed'])} changed={len(delta['changed'])} unchanged={len(delta['unchanged'])}")
+    print(f"  md:   {md_path}")
+    print(f"  json: {json_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
