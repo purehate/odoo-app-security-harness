@@ -61,6 +61,7 @@ If the lead session supports `/goals`, use `<OUT>/goals.md` after the runner com
 17. **Phase 7.7 — Fresh Codex Adversarial Check.** Different session = blind-spot diversity. Runs on CRITICAL/HIGH ACCEPT unless `--no-codex`. Reconciliation table covers ACCEPT/REJECT/DOWNGRADE combos + PoC writeability.
 18. **Phase 7.8 — Requirements Verification (only with `--requirements`).** Extract claims, compile predicates, dispatch judges, repair-loop (≤2 rounds). Files R-N findings.
 19. **Phase 8 — Output Assembly.** Codex drafts `findings.md` + `findings.html` + reproducibility appendix. Claude performs final edit and removes unsupported claims. `--json` adds `findings.json` sidecar.
+20. **Phase 8.5 — Directive Loop (optional, any phase).** When Claude needs a focused rerun mid-review (deeper portal-route + sudo scan, PoC sketch for one finding, narrative on an ACL gap), copy `<OUT>/directives/_template.md` to `D-NNNN-<slug>.md`, fill the YAML + body, then run `odoo-review-rerun <directive>`. Result lands in `directives/results/`. Use sparingly; not a replacement for Phase 5 hunters.
 
 ## Output
 
@@ -68,6 +69,7 @@ Written to `<repo>/.audit/` (or `--out <dir>`):
 
 - `00-modules.md`, `01-attack-surface.md` — Phase 0/1 maps
 - `goals.md` — suggested `/goals` objective, budget guidance, and phase checkpoints for the lead review session
+- `directives/` — feedback-loop dispatch directory: `README.md`, `_template.md`, `D-NNNN-*.md`, `results/`. Claude writes directives; `odoo-review-rerun` dispatches to Qwen or Codex
 - `local-qwen/` — Phase 1.5 advisory notes: `module-notes.md`, `scanner-triage.md`, `reject-candidates.md`
 - `inventory/` — manifest JSON, depends graph, ACL CSV index, route map
 - `scans/semgrep/`, `scans/bandit/`, `scans/ruff/`, `scans/pylint-odoo/`, `scans/oca-precommit/`, `scans/codeql/`, `scans/joern/`, `scans/pysa/`, `scans/deps/` — raw scan outputs

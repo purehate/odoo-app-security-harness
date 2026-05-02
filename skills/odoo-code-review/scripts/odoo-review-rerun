@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""Dispatch a single directive file to its target lane (Qwen or Codex).
+
+Usage:
+    odoo-review-rerun <path-to-directive.md> [--force] [--dry-run]
+
+Reads the YAML frontmatter, dispatches to the named lane, writes the result to
+`<directives>/results/<id>-<slug>.result.md`, and updates status in the directive.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.DOTALL)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Dispatch a single odoo-code-review directive to its lane.")
+    parser.add_argument("directive", help="Path to D-NNNN-<slug>.md directive file.")
+    parser.add_argument("--force", action="store_true", help="Run even if status is already 'done'.")
+    parser.add_argument("--dry-run", action="store_true", help="Print the command that would run; don't execute.")
+    parser.add_argument("--repo", help="Override repo root (default: parent of .audit/).")
+    return parser.parse_args()
+
+
+def parse_frontmatter(text: str) -> tuple[dict, str]:
+    """Parse minimal YAML-ish frontmatter. Supports scalars and one-level lists."""
+    match = FRONTMATTER_RE.match(text)
+    if not match:
+        raise ValueError("Directive missing YAML frontmatter (--- ... ---)")
+    raw, body = match.group(1), match.group(2)
+    meta: dict = {}
+    current_list_key: str | None = None
+    for line in raw.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line.startswith("  - ") and current_list_key:
+            meta[current_list_key].append(line[4:].strip())
+            continue
+        current_list_key = None
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip()
+        value = value.split("#", 1)[0].strip().strip('"').strip("'")
+        if value == "":
+            meta[key] = []
+            current_list_key = key
+        else:
+            meta[key] = value
+    return meta, body
+
+
+def update_status(directive_path: Path, status: str) -> None:
+    text = directive_path.read_text(encoding="utf-8")
+    new = re.sub(r"^status:\s*\S+", f"status: {status}", text, count=1, flags=re.MULTILINE)
+    directive_path.write_text(new, encoding="utf-8")
+
+
+def find_repo(directive_path: Path) -> Path:
+    """Walk up from directive to find the directory that owns .audit/."""
+    p = directive_path.resolve()
+    while p != p.parent:
+        if p.name == ".audit":
+            return p.parent
+        p = p.parent
+    raise RuntimeError("Could not locate .audit/ ancestor of directive.")
+
+
+def collect_scope_files(repo: Path, scope: list[str]) -> list[Path]:
+    found: list[Path] = []
+    for entry in scope:
+        candidate = (repo / entry).resolve()
+        if candidate.exists():
+            found.append(candidate)
+    return found
+
+
+def build_prompt(meta: dict, body: str, repo: Path, scope_files: list[Path]) -> str:
+    lines = [
+        f"# Directive {meta.get('id', '?')} ({meta.get('task_type', '?')})",
+        "",
+        f"From phase: {meta.get('from_phase', '?')}",
+        f"Target lane: {meta.get('target_lane', '?')}",
+        f"Repo: {repo}",
+        "",
+        "## Body",
+        "",
+        body.strip(),
+        "",
+        "## Scope Files",
+        "",
+    ]
+    if not scope_files:
+        lines.append("(none specified — answer at repo level)")
+    else:
+        for f in scope_files:
+            try:
+                rel = f.relative_to(repo)
+            except ValueError:
+                rel = f
+            lines.append(f"- `{rel}`")
+    lines.extend([
+        "",
+        "## Output Rules",
+        "",
+        "- Cite file:line for every concrete claim.",
+        "- Do not modify source files.",
+        "- If hint-only (Qwen lane), do not give ACCEPT/REJECT verdicts.",
+        "- Keep response self-contained — it will be filed alongside the directive.",
+    ])
+    return "\n".join(lines)
+
+
+def dispatch_qwen(prompt: str, model: str, scope_files: list[Path], dry_run: bool) -> tuple[bool, str]:
+    if not shutil.which("ollama"):
+        return False, "ollama binary not found in PATH"
+    file_section = ""
+    for f in scope_files:
+        try:
+            content = f.read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            content = f"<could not read: {exc}>"
+        file_section += f"\n\n--- {f} ---\n{content}"
+    full_prompt = prompt + file_section
+    cmd = ["ollama", "run", model]
+    if dry_run:
+        return True, f"[dry-run] {' '.join(cmd)}\n--- prompt ---\n{full_prompt[:2000]}\n..."
+    try:
+        proc = subprocess.run(cmd, input=full_prompt, text=True, capture_output=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        return False, "ollama timed out after 900s"
+    if proc.returncode != 0:
+        return False, f"ollama exited {proc.returncode}\n{proc.stderr}"
+    return True, proc.stdout
+
+
+def dispatch_codex(prompt: str, model: str, repo: Path, task_type: str, dry_run: bool) -> tuple[bool, str]:
+    if not shutil.which("codex"):
+        return False, "codex binary not found in PATH"
+    sandbox = "workspace-write" if task_type == "build-poc" else "read-only"
+    cmd = [
+        "codex", "exec",
+        "-C", str(repo),
+        "-m", model,
+        "-s", sandbox,
+        "--ask-for-approval", "never",
+        "--", prompt,
+    ]
+    if dry_run:
+        return True, "[dry-run] " + " ".join(repr(c) if " " in c else c for c in cmd)
+    try:
+        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=1800)
+    except subprocess.TimeoutExpired:
+        return False, "codex timed out after 1800s"
+    if proc.returncode != 0:
+        return False, f"codex exited {proc.returncode}\n{proc.stderr}"
+    return True, proc.stdout
+
+
+def write_result(directive_path: Path, success: bool, output: str, meta: dict) -> Path:
+    directives_dir = directive_path.parent
+    results_dir = directives_dir / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    result_name = directive_path.stem + ".result.md"
+    result_path = results_dir / result_name
+    header = [
+        f"# Directive Result — {meta.get('id', directive_path.stem)}",
+        "",
+        f"- Source: `{directive_path.name}`",
+        f"- Lane: {meta.get('target_lane', '?')}",
+        f"- Task: {meta.get('task_type', '?')}",
+        f"- Completed: {dt.datetime.now(dt.timezone.utc).isoformat()}",
+        f"- Status: {'success' if success else 'failed'}",
+        "",
+        "---",
+        "",
+    ]
+    result_path.write_text("\n".join(header) + (output or "(no output)") + "\n", encoding="utf-8")
+    return result_path
+
+
+def main() -> int:
+    args = parse_args()
+    directive_path = Path(args.directive).expanduser().resolve()
+    if not directive_path.exists():
+        print(f"Directive not found: {directive_path}", file=sys.stderr)
+        return 2
+    if directive_path.name in {"_template.md", "README.md"}:
+        print("Refusing to dispatch the template/README. Copy to D-NNNN-<slug>.md first.", file=sys.stderr)
+        return 2
+
+    text = directive_path.read_text(encoding="utf-8")
+    try:
+        meta, body = parse_frontmatter(text)
+    except ValueError as exc:
+        print(f"Could not parse directive: {exc}", file=sys.stderr)
+        return 2
+
+    if meta.get("status") == "done" and not args.force:
+        print(f"Directive already done. Use --force to rerun. ({directive_path})")
+        return 0
+
+    target_lane = (meta.get("target_lane") or "").lower()
+    if target_lane not in {"qwen", "codex"}:
+        print(f"Invalid target_lane: {meta.get('target_lane')!r}. Must be 'qwen' or 'codex'.", file=sys.stderr)
+        return 2
+
+    repo = Path(args.repo).resolve() if args.repo else find_repo(directive_path)
+    scope = meta.get("scope") if isinstance(meta.get("scope"), list) else []
+    scope_files = collect_scope_files(repo, scope)
+    prompt = build_prompt(meta, body, repo, scope_files)
+
+    update_status(directive_path, "running")
+
+    task_type = meta.get("task_type", "")
+    if target_lane == "qwen":
+        model = meta.get("model") or "qwen3:0.6b"
+        ok, output = dispatch_qwen(prompt, model, scope_files, args.dry_run)
+    else:
+        model = meta.get("model") or "gpt-5.3-codex"
+        ok, output = dispatch_codex(prompt, model, repo, task_type, args.dry_run)
+
+    result_path = write_result(directive_path, ok, output, meta)
+    update_status(directive_path, "done" if ok else "failed")
+
+    print(f"Directive: {directive_path}")
+    print(f"Lane: {target_lane} ({model})")
+    print(f"Status: {'done' if ok else 'failed'}")
+    print(f"Result: {result_path}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

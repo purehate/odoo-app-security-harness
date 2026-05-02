@@ -90,6 +90,23 @@ Goal checkpoints should mirror the review gates:
 - Phase 7 candidate findings have final triage and 6-gate reasoning.
 - Phase 8 final report and reproducibility appendix are written.
 
+## Directive Feedback Loop
+
+When the lead session reads existing `.audit/` artifacts and concludes a lane needs rework — for example, "rescan portal routes for `@http.route` + `sudo()` combos" or "Codex builds a PoC sketch for finding F-7" — Claude writes a directive instead of doing the work itself.
+
+Workflow:
+
+1. The runner seeds `<OUT>/directives/` with `README.md` and `_template.md` on every run.
+2. Claude copies `_template.md` to `D-NNNN-<slug>.md`, fills the YAML frontmatter (`target_lane`, `task_type`, `scope`, `model`) and body (Why / Ask / Expected Output).
+3. Run the dispatcher:
+   ```bash
+   odoo-review-rerun <OUT>/directives/D-0001-portal-sudo.md
+   ```
+4. The dispatcher writes `<OUT>/directives/results/D-0001-portal-sudo.result.md` and flips the directive's `status:` from `pending` → `done` (or `failed`).
+5. Claude reads the result, decides whether to issue more directives, fold the result into the relevant phase artifact, or move on.
+
+`target_lane: qwen` produces hint-only output (no ACCEPT/REJECT). `target_lane: codex` runs read-only by default and `workspace-write` only when `task_type: build-poc`. Use directives sparingly — they exist for targeted follow-ups, not full hunter passes (those still live in Phase 5).
+
 ## One-Command Three-Lane Orchestration
 
 When run from Claude Code via `/odoo-code-review`, use all three lanes in one run:
@@ -233,13 +250,13 @@ Auto-runs when Phase 6 produced 2+ chained findings. Emits Graphviz DOT + render
 Runs by default on CRITICAL/HIGH ACCEPT findings unless `--no-codex` is set. Because Codex already performed heavy evidence work, this pass must use a fresh Codex prompt/session that sees only the final finding card and source snippets, not the prior Codex draft. Each finding is handed to Codex/OpenAI for independent verdict + PoC-write attempt. Reconciliation table:
 
 | Codex                   | odoo-code-review | Result                                        |
-| ----------------------- | --------------- | --------------------------------------------- |
-| ACCEPT                  | ACCEPT          | keep ACCEPT, +1 confidence                    |
-| REJECT                  | ACCEPT          | force NEEDS-MANUAL, log disagreement          |
-| DOWNGRADE               | ACCEPT          | re-evaluate severity if limiting factor sound |
-| writes PoC              | no PoC          | attach Codex PoC, raise confidence            |
-| no PoC and no other PoC | n/a             | downgrade to NEEDS-MANUAL                     |
-| ACCEPT                  | DOWNGRADE       | keep DOWNGRADE, note Codex stronger view      |
+| ----------------------- | ---------------- | --------------------------------------------- |
+| ACCEPT                  | ACCEPT           | keep ACCEPT, +1 confidence                    |
+| REJECT                  | ACCEPT           | force NEEDS-MANUAL, log disagreement          |
+| DOWNGRADE               | ACCEPT           | re-evaluate severity if limiting factor sound |
+| writes PoC              | no PoC           | attach Codex PoC, raise confidence            |
+| no PoC and no other PoC | n/a              | downgrade to NEEDS-MANUAL                     |
+| ACCEPT                  | DOWNGRADE        | keep DOWNGRADE, note Codex stronger view      |
 
 Outputs → `<OUT>/codex/second-opinion/verdicts/F-N.md` + `<OUT>/codex/second-opinion/reconciliation.md`.
 

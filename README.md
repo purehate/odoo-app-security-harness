@@ -28,16 +28,19 @@ Three parallel lanes feed Claude's final validation. Claude Code stays lead and 
             ▼                       ▼                       ▼
   ┌──────────────────────┐ ┌──────────────────────────┐ ┌──────────────────────┐
   │  Lane 1              │ │  Lane 2                  │ │  Lane 3              │
-  │  Claude Code         │ │  Local Ollama/Qwen       │ │  Codex / OpenAI      │
-  │  (lead)              │ │  (private triage)        │ │  (execution engine)  │
+  │  Claude Code         │ │  Runner + Ollama/Qwen    │ │  Codex / OpenAI      │
+  │  (lead)              │ │  (local triage)          │ │  (execution engine)  │
   ├──────────────────────┤ ├──────────────────────────┤ ├──────────────────────┤
-  │ • orchestration      │ │ • inventory              │ │ • hunter passes      │
-  │ • attack surface     │ │ • module notes           │ │ • discourse drafts   │
-  │   (final pass)       │ │ • manifest parsing       │ │ • chaining drafts    │
-  │ • /goals tracking    │ │ • route/sudo/QWeb detect │ │ • evidence packs     │
-  │ • 6-gate fp-check    │ │ • scanner triage         │ │ • test/fuzz scripts  │
-  │ • final report       │ │ • hint-only signal       │ │ • report drafts      │
-  │                      │ │ • offline, no egress     │ │                      │
+  │ • orchestration      │ │ Runner (Python):         │ │ • hunter passes      │
+  │ • attack surface     │ │  • inventory             │ │ • discourse drafts   │
+  │   (final pass)       │ │  • manifest parsing (AST)│ │ • chaining drafts    │
+  │ • /goals tracking    │ │  • route/sudo/QWeb index │ │ • evidence packs     │
+  │ • 6-gate fp-check    │ │  • scanner exec          │ │ • test/fuzz scripts  │
+  │ • directive author   │ │ Qwen (LLM):              │ │ • report drafts      │
+  │ • final report       │ │  • module narrative      │ │                      │
+  │                      │ │  • scanner triage        │ │                      │
+  │                      │ │  • hint-only signal      │ │                      │
+  │                      │ │  • offline, no egress    │ │                      │
   └──────────┬───────────┘ └────────────┬─────────────┘ └──────────┬───────────┘
              │                          │                          │
              │      ┌───────────────────┴────────────────────┐     │
@@ -51,12 +54,13 @@ Three parallel lanes feed Claude's final validation. Claude Code stays lead and 
              │                          │                          │
              │                          ▼                          │
              │       ┌────────────────────────────────────┐        │
-             └──────▶│  Claude directives → re-task lanes │◀───────┘
+             └──────▶│  directives/D-NNNN-<slug>.md       │◀───────┘
+                     │  → odoo-review-rerun → lane redo   │
                      │  (iterative loop, targeted reruns) │
                      └────────────────────────────────────┘
 ```
 
-Lane outputs are leads only. Nothing ships until Claude's 6-gate validation confirms. Claude re-tasks lanes when deeper coverage needed (e.g. "rescan portal routes with `sudo()`" → Lane 2 reruns + Lane 3 builds exploit path).
+Lane outputs are leads only. Nothing ships until Claude's 6-gate validation confirms. When deeper coverage needed, Claude writes a directive file (`<OUT>/directives/D-NNNN-<slug>.md`) and `odoo-review-rerun` dispatches it to Qwen or Codex — result lands in `directives/results/`.
 
 ## What It Does
 

@@ -355,6 +355,93 @@ def write_goals_guide(repo: Path, out: Path, manifests: list[dict], routes: list
     (out / "goals.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_directives_seed(out: Path) -> None:
+    """Seed the directives feedback-loop directory with README + template."""
+    directives_dir = out / "directives"
+    directives_dir.mkdir(parents=True, exist_ok=True)
+    (directives_dir / "results").mkdir(parents=True, exist_ok=True)
+
+    readme = [
+        "# Directives — Claude → Lane Feedback Loop",
+        "",
+        "Claude Code (the lead) writes directive files here when a lane needs to rerun with",
+        "tighter focus or generate a new artifact. The `odoo-review-rerun` helper picks up a",
+        "single directive file, dispatches it to the named lane (Qwen or Codex), writes the",
+        "result alongside, and flips status to `done`.",
+        "",
+        "## Workflow",
+        "",
+        "1. Claude reads existing `.audit/` artifacts and decides a lane needs rework.",
+        "2. Claude copies `_template.md` to `D-NNNN-<slug>.md` and fills in the YAML + body.",
+        "3. Claude (or the user) runs:",
+        "   ```bash",
+        "   odoo-review-rerun .audit/directives/D-0001-portal-sudo.md",
+        "   ```",
+        "4. The helper writes `results/D-0001-portal-sudo.result.md` and updates the directive",
+        "   frontmatter `status:` to `done` (or `failed`).",
+        "5. Claude reads the result, decides whether to issue more directives or move on.",
+        "",
+        "## Status Lifecycle",
+        "",
+        "`pending` → `running` → `done` | `failed`",
+        "",
+        "## Naming",
+        "",
+        "`D-NNNN-<short-slug>.md` — incrementing 4-digit ID, lowercase slug. Keep slug short",
+        "(`portal-sudo`, `xss-mail-template`, `idor-attachment-download`).",
+        "",
+        "## Examples",
+        "",
+        "- `D-0001-portal-sudo.md` — rescan `@http.route` + `sudo()` combos in `addons/portal/`",
+        "- `D-0002-xss-evidence.md` — Codex builds PoC sketch for QWeb `t-raw` finding F-7",
+        "- `D-0003-acl-coverage.md` — Qwen narrative on ACL gap in `hr_holidays` module",
+        "",
+        "Directives stay in this directory across runs. Already-`done` directives are skipped",
+        "by the helper unless invoked with `--force`.",
+        "",
+    ]
+    (directives_dir / "README.md").write_text("\n".join(readme) + "\n", encoding="utf-8")
+
+    template = [
+        "---",
+        "id: D-NNNN",
+        "created_at: YYYY-MM-DDTHH:MM:SSZ",
+        "from_phase: \"5.5\"             # which phase issued this directive",
+        "target_lane: codex             # qwen | codex",
+        "task_type: rerun-hunter        # rerun-hunter | focus-scan | build-poc | verify-claim | narrative",
+        "status: pending                # pending | running | done | failed",
+        "model:                         # optional override (e.g. qwen3:0.6b, gpt-5.3-codex)",
+        "scope:",
+        "  - addons/<module>/<file>.py  # one or more paths relative to repo root",
+        "deadline_phase: \"6\"            # latest phase that can still consume this result",
+        "---",
+        "",
+        "## Why",
+        "",
+        "Short reason this directive exists. What did Claude observe in the current artifacts",
+        "that warrants a focused rerun?",
+        "",
+        "## Ask",
+        "",
+        "One specific question or task. Avoid open-ended sweeps — directives are for targeted",
+        "follow-ups, not full hunter passes.",
+        "",
+        "## Expected Output",
+        "",
+        "Describe the shape of the answer (markdown table, PoC script, narrative paragraph,",
+        "evidence bundle). The helper writes the lane's response to",
+        "`results/<id>-<slug>.result.md`.",
+        "",
+        "## Constraints",
+        "",
+        "- Read-only unless `task_type: build-poc` (then `workspace-write` under `<OUT>`).",
+        "- Cite file:line for every claim. No speculation.",
+        "- Hint-only if `target_lane: qwen` — no ACCEPT/REJECT verdicts.",
+        "",
+    ]
+    (directives_dir / "_template.md").write_text("\n".join(template) + "\n", encoding="utf-8")
+
+
 def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, list[str]]:
     tools = {name: which(name) for name in ["codex", "ollama", "semgrep", "bandit", "ruff", "pylint", "pre-commit", "codeql", "pyre", "pip-audit", "osv-scanner", "joern-parse", "dot"]}
     lane_errors: list[str] = []
@@ -588,7 +675,7 @@ def main() -> int:
         return 2
     out = Path(args.out).expanduser().resolve() if args.out else repo / ".audit"
     out.mkdir(parents=True, exist_ok=True)
-    for sub in ["inventory", "scans", "agents", "codex", "variants", "runtime", "attack-graphs", "requirements"]:
+    for sub in ["inventory", "scans", "agents", "codex", "variants", "runtime", "attack-graphs", "requirements", "directives", "directives/results"]:
         (out / sub).mkdir(parents=True, exist_ok=True)
     log_path = out / "commands.log"
 
@@ -608,6 +695,7 @@ def main() -> int:
     pattern_summary = scan_patterns(repo, manifests)
     write_inventory(repo, out, manifests, routes, acl_rows, pattern_summary, args)
     write_goals_guide(repo, out, manifests, routes, args)
+    write_directives_seed(out)
 
     scanner_records: list[dict] = []
     qwen_record: dict | None = None
