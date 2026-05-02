@@ -14,6 +14,42 @@ Odoo Application Security Harness
 └── Attack Graph Analysis     — Phase 7.6 graph construction and Graphviz render
 ```
 
+## Lanes
+
+Three parallel lanes feed Claude's final validation. Claude Code stays lead and final arbiter.
+
+```text
+                       ┌──────────────────────────┐
+                       │   Odoo source repo +     │
+                       │   /odoo-code-review      │
+                       └────────────┬─────────────┘
+                                    │
+            ┌───────────────────────┼───────────────────────┐
+            ▼                       ▼                       ▼
+  ┌──────────────────┐   ┌──────────────────────┐  ┌────────────────────┐
+  │  Lane 1          │   │  Lane 2              │  │  Lane 3            │
+  │  Claude Code     │   │  Local Ollama/Qwen   │  │  Codex / OpenAI    │
+  │  (lead)          │   │  (private triage)    │  │  (token-heavy)     │
+  ├──────────────────┤   ├──────────────────────┤  ├────────────────────┤
+  │ • inventory      │   │ • module notes       │  │ • hunter passes    │
+  │ • attack surface │   │ • hint-only signal   │  │ • discourse drafts │
+  │ • orchestration  │   │ • offline, no egress │  │ • chaining drafts  │
+  │ • /goals tracking│   │                      │  │ • evidence packs   │
+  │ • 6-gate fp-check│   │                      │  │ • report drafts    │
+  └────────┬─────────┘   └──────────┬───────────┘  └──────────┬─────────┘
+           │                        │                         │
+           │   ┌────────────────────┴─────────────────────┐   │
+           └──▶│   .audit/ artifacts (leads, not final)   │◀──┘
+               └────────────────────┬─────────────────────┘
+                                    ▼
+                       ┌──────────────────────────┐
+                       │  Claude 6-gate validation│
+                       │  → final report          │
+                       └──────────────────────────┘
+```
+
+Lane outputs are leads only. Nothing ships until Claude's 6-gate validation confirms.
+
 ## What It Does
 
 - Inventories Odoo modules and manifests.
