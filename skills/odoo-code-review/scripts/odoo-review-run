@@ -54,7 +54,8 @@ HUNTERS = [
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run repeatable setup for the odoo-code-review Odoo audit harness.")
     parser.add_argument("target", nargs="?", default=".", help="Odoo repo/addons path. Defaults to current directory.")
-    parser.add_argument("--out", help="Output directory. Defaults to <target>/.audit")
+    parser.add_argument("--out", help="Output directory. Defaults to <target>/.audit-YYYYMMDD-HHMM (stamped per run).")
+    parser.add_argument("--prune-old-runs", type=int, metavar="N", help="After successful run, keep only the most recent N stamped <target>/.audit-YYYYMMDD-HHMM/ dirs.")
     parser.add_argument("--modules", help="Comma-separated module names to include")
     parser.add_argument("--odoo-version", help="Override Odoo version in run plan")
     parser.add_argument("--quick", action="store_true", help="Skip automated scanners and discourse prep")
@@ -84,6 +85,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--check-only-accepted-risks", action="store_true", help="Validate accepted-risks file, write inventory, then exit. Non-zero on errors or expired entries.")
     parser.add_argument("--fix-list", help="Path to fix-it list tracking file (YAML or JSON). Defaults to <repo>/.audit-fix-list.{yml,yaml,json}.")
     parser.add_argument("--check-only-fix-list", action="store_true", help="Validate fix-list file, write inventory, then exit. Non-zero on validation errors or overdue open/in-progress entries.")
+    parser.add_argument("--no-server-actions", action="store_true", help="Skip docs/server_actions/*.py loose-Python sweep (default: include).")
+    parser.add_argument("--no-scripts", action="store_true", help="Skip scripts/*.py loose-Python sweep (default: include).")
+    parser.add_argument("--no-breadth", action="store_true", help="Skip Phase 1.7 breadth-sweep dispatch plan emission (default: emit).")
+    parser.add_argument("--breadth-chunk-size", type=int, default=40, help="Files per breadth-sweep subagent chunk. Default: 40.")
+    parser.add_argument("--phase1-min-lines-per-module", type=int, default=4, help="Phase 1 fail-loud threshold: minimum lines of attack-surface content per in-scope module. Default: 4.")
+    parser.add_argument("--no-phase1-assert", action="store_true", help="Disable Phase 1 fail-loud assertion (escape hatch; not recommended).")
     args = parser.parse_args()
     # findings.json is now emitted by default. --json kept as compat no-op; --no-json opts out.
     args.emit_json = not args.no_emit_json
@@ -99,7 +106,9 @@ def rel(path: Path, root: Path) -> str:
 
 def should_skip(path: Path) -> bool:
     parts = set(path.parts)
-    return bool(parts & {".git", ".hg", ".svn", ".audit", "__pycache__", ".venv", "venv", "node_modules"})
+    if parts & {".git", ".hg", ".svn", ".audit", "__pycache__", ".venv", "venv", "node_modules", ".worktrees"}:
+        return True
+    return any(part.startswith(".audit-") and part not in {".audit-accepted-risks.yml", ".audit-accepted-risks.yaml", ".audit-accepted-risks.json", ".audit-fix-list.yml", ".audit-fix-list.yaml", ".audit-fix-list.json", ".audit-baseline"} for part in path.parts)
 
 
 def which(name: str) -> str | None:
@@ -324,9 +333,61 @@ def find_manifests(repo: Path, allowed_modules: set[str] | None) -> list[dict]:
                 "installable": data.get("installable", True),
                 "application": data.get("application", False),
                 "parse_error": data.get("_parse_error"),
+                "origin": "addon",
             }
         )
     return sorted(manifests, key=lambda item: item["module"])
+
+
+LOOSE_PY_DIRS: dict[str, str] = {
+    # subdir-relative-to-repo : origin-tag
+    "docs/server_actions": "server_action",
+    "scripts": "script",
+}
+
+
+def find_loose_python(repo: Path, args: argparse.Namespace) -> list[dict]:
+    """Index loose Python files outside __manifest__.py addons.
+
+    Treat each file as a pseudo-module so it flows through write_inventory,
+    extract_routes, scan_patterns, and codex_prompt without special-casing.
+    """
+    pseudo: list[dict] = []
+    skip_origins: set[str] = set()
+    if args.no_server_actions:
+        skip_origins.add("server_action")
+    if args.no_scripts:
+        skip_origins.add("script")
+    for subdir, origin in LOOSE_PY_DIRS.items():
+        if origin in skip_origins:
+            continue
+        base = repo / subdir
+        if not base.exists() or not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*.py")):
+            if should_skip(path):
+                continue
+            module = f"{origin}:{path.stem}"
+            pseudo.append(
+                {
+                    "module": module,
+                    "path": rel(path, repo),
+                    "dir": rel(path.parent, repo),
+                    "name": f"{origin} {path.stem}",
+                    "version": None,
+                    "license": None,
+                    "depends": [],
+                    "data": [],
+                    "demo": [],
+                    "external_dependencies": {},
+                    "installable": True,
+                    "application": False,
+                    "parse_error": None,
+                    "origin": origin,
+                    "_loose_file": rel(path, repo),
+                }
+            )
+    return pseudo
 
 
 ROUTE_RE = re.compile(r"@http\.route\((?P<args>.*?)\)", re.DOTALL)
@@ -334,11 +395,17 @@ KW_RE = re.compile(r"(?P<key>auth|csrf|type|methods)\s*=\s*(?P<value>[^,\)]*)")
 
 
 def extract_routes(repo: Path, manifests: list[dict]) -> list[dict]:
-    module_dirs = {item["module"]: repo / item["dir"] for item in manifests}
     routes = []
-    for module, module_dir in module_dirs.items():
-        for path in module_dir.rglob("*.py"):
-            if should_skip(path):
+    for item in manifests:
+        module = item["module"]
+        loose_file = item.get("_loose_file")
+        if loose_file:
+            file_paths = [repo / loose_file]
+        else:
+            module_dir = repo / item["dir"]
+            file_paths = list(module_dir.rglob("*.py"))
+        for path in file_paths:
+            if should_skip(path) or not path.exists() or path.is_dir():
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
             for match in ROUTE_RE.finditer(text):
@@ -413,9 +480,14 @@ def scan_patterns(repo: Path, manifests: list[dict]) -> dict:
     per_module: dict[str, dict[str, int]] = {item["module"]: {key: 0 for key in SHARP_EDGE_PATTERNS} for item in manifests}
     for item in manifests:
         module = item["module"]
-        module_dir = repo / item["dir"]
-        for path in module_dir.rglob("*"):
-            if should_skip(path) or path.suffix not in {".py", ".xml", ".csv"}:
+        loose_file = item.get("_loose_file")
+        if loose_file:
+            file_paths = [repo / loose_file]
+        else:
+            module_dir = repo / item["dir"]
+            file_paths = list(module_dir.rglob("*"))
+        for path in file_paths:
+            if should_skip(path) or path.is_dir() or path.suffix not in {".py", ".xml", ".csv"}:
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
             for key, regex in compiled.items():
@@ -943,25 +1015,59 @@ def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[d
     graph = {item["module"]: item.get("depends", []) for item in manifests}
     (inv / "depends-graph.json").write_text(json.dumps(graph, indent=2), encoding="utf-8")
 
+    by_origin: dict[str, int] = {}
+    for item in manifests:
+        origin = item.get("origin") or "addon"
+        by_origin[origin] = by_origin.get(origin, 0) + 1
+
     lines = ["# Phase 0 - Odoo Module Inventory", ""]
     lines.append(f"Target: `{repo}`")
     lines.append(f"Modules found: {len(manifests)}")
+    for origin, count in sorted(by_origin.items()):
+        lines.append(f"- `origin={origin}`: {count}")
     if args.modules:
         lines.append(f"Module filter: `{args.modules}`")
     lines.append("")
-    lines.append("| Module | Name | Version | Depends | Manifest |")
-    lines.append("| --- | --- | --- | --- | --- |")
+    lines.append("| Module | Origin | Name | Version | Depends | Manifest |")
+    lines.append("| --- | --- | --- | --- | --- | --- |")
     for item in manifests:
         depends = ", ".join(item.get("depends") or [])
-        lines.append(f"| `{item['module']}` | {item.get('name') or ''} | {item.get('version') or ''} | {depends} | `{item['path']}` |")
+        origin = item.get("origin") or "addon"
+        lines.append(f"| `{item['module']}` | {origin} | {item.get('name') or ''} | {item.get('version') or ''} | {depends} | `{item['path']}` |")
     (out / "00-modules.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    routes_by_module: dict[str, list[dict]] = {}
+    for route in routes:
+        routes_by_module.setdefault(route["module"], []).append(route)
+    acl_by_module: dict[str, list[dict]] = {}
+    for row in acl_rows:
+        mod = row.get("_module")
+        if mod:
+            acl_by_module.setdefault(mod, []).append(row)
+    py_files_by_module: dict[str, list[str]] = {}
+    for item in manifests:
+        module = item["module"]
+        loose_file = item.get("_loose_file")
+        if loose_file:
+            py_files_by_module[module] = [loose_file]
+            continue
+        module_dir = repo / item["dir"]
+        files = []
+        for path in module_dir.rglob("*.py"):
+            if should_skip(path) or path.is_dir():
+                continue
+            files.append(rel(path, repo))
+        py_files_by_module[module] = sorted(files)
+
+    (inv / "py-files-by-module.json").write_text(json.dumps(py_files_by_module, indent=2), encoding="utf-8")
 
     surface = ["# Phase 1 - Odoo Attack Surface Map", ""]
     surface.append(f"Odoo version override: `{args.odoo_version or 'not provided'}`")
+    surface.append(f"Modules in scope: {len(manifests)}")
     surface.append(f"Routes found: {len(routes)}")
     surface.append(f"ACL rows found: {len(acl_rows)}")
     surface.append("")
-    surface.append("## Route Summary")
+    surface.append("## Route Summary by Auth")
     surface.append("")
     surface.append("| Auth | Count |")
     surface.append("| --- | ---: |")
@@ -971,13 +1077,56 @@ def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[d
     for auth, count in sorted(by_auth.items()):
         surface.append(f"| `{auth}` | {count} |")
     surface.append("")
-    surface.append("## Sharp Edge Counts")
+    surface.append("## Global Sharp-Edge Counts")
     surface.append("")
     surface.append("| Pattern | Count |")
     surface.append("| --- | ---: |")
     for key, count in sorted(pattern_summary["counts"].items()):
         surface.append(f"| `{key}` | {count} |")
     surface.append("")
+    surface.append("## Per-Module Surface Index")
+    surface.append("")
+    surface.append("Every in-scope module gets a section. Hunters MUST cite at least one file:line per module under `Reviewed:` (REJECT cases included).")
+    surface.append("")
+    per_module_counts = pattern_summary.get("per_module", {})
+    for item in manifests:
+        module = item["module"]
+        origin = item.get("origin") or "addon"
+        surface.append(f"### `{module}`  (origin: {origin})")
+        surface.append("")
+        if item.get("name") or item.get("version"):
+            surface.append(f"- **Name/Version:** {item.get('name') or '(no name)'} / {item.get('version') or '(no version)'}")
+        depends = ", ".join(item.get("depends") or [])
+        if depends:
+            surface.append(f"- **Depends:** {depends}")
+        py_files = py_files_by_module.get(module, [])
+        surface.append(f"- **Python files:** {len(py_files)}")
+        if py_files:
+            sample = py_files[:8]
+            surface.append("  - " + "\n  - ".join(f"`{p}`" for p in sample))
+            if len(py_files) > 8:
+                surface.append(f"  - … +{len(py_files) - 8} more")
+        module_routes = routes_by_module.get(module, [])
+        if module_routes:
+            surface.append(f"- **HTTP routes:** {len(module_routes)}")
+            for route in module_routes[:10]:
+                args_str = route.get("route_args") or ""
+                surface.append(f"  - `{route['file']}:{route['line']}` `{route.get('function') or '?'}` auth=`{route.get('auth')}` csrf=`{route.get('csrf')}` type=`{route.get('type')}`")
+            if len(module_routes) > 10:
+                surface.append(f"  - … +{len(module_routes) - 10} more routes")
+        else:
+            surface.append("- **HTTP routes:** none")
+        module_acl = acl_by_module.get(module, [])
+        if module_acl:
+            surface.append(f"- **ACL CSV rows:** {len(module_acl)}")
+        counts = per_module_counts.get(module, {})
+        flagged = {k: v for k, v in counts.items() if v}
+        if flagged:
+            counts_str = ", ".join(f"{k}={v}" for k, v in sorted(flagged.items()))
+            surface.append(f"- **Sharp-edge hits:** {counts_str}")
+        else:
+            surface.append("- **Sharp-edge hits:** none")
+        surface.append("")
     surface.append("This is a machine inventory, not a finding list. Phase 7 still decides exploitability.")
     (out / "01-attack-surface.md").write_text("\n".join(surface) + "\n", encoding="utf-8")
 
@@ -1147,6 +1296,115 @@ def write_directives_seed(out: Path) -> None:
     (directives_dir / "_template.md").write_text("\n".join(template) + "\n", encoding="utf-8")
 
 
+def emit_breadth_dispatch(out: Path, manifests: list[dict], routes: list[dict], pattern_summary: dict, args: argparse.Namespace) -> None:
+    """Emit Phase 1.7 breadth-sweep dispatch plan.
+
+    Lead Claude reads inventory/breadth/dispatch.json and spawns one Agent per
+    chunk to do an eve-cc style breadth pass. Outputs go to inventory/breadth/leads.md.
+    """
+    if args.no_breadth:
+        return
+    breadth_dir = out / "inventory" / "breadth"
+    breadth_dir.mkdir(parents=True, exist_ok=True)
+
+    py_by_module: dict[str, list[str]] = {}
+    for item in manifests:
+        module = item["module"]
+        loose_file = item.get("_loose_file")
+        if loose_file:
+            py_by_module.setdefault(module, []).append(loose_file)
+            continue
+        module_dir = (Path(args.target).expanduser().resolve() / item["dir"]).resolve()
+        if not module_dir.exists():
+            continue
+        for path in sorted(module_dir.rglob("*.py")):
+            if should_skip(path):
+                continue
+            try:
+                py_by_module.setdefault(module, []).append(str(path.relative_to(Path(args.target).expanduser().resolve())))
+            except ValueError:
+                py_by_module.setdefault(module, []).append(str(path))
+
+    sharp = pattern_summary.get("by_module", {})
+    chunks: list[dict] = []
+    chunk_id = 1
+    chunk_size = max(1, args.breadth_chunk_size)
+    for module in sorted(py_by_module.keys()):
+        files = py_by_module[module]
+        module_sharp = sharp.get(module, {})
+        for i in range(0, len(files), chunk_size):
+            piece = files[i:i + chunk_size]
+            chunks.append({
+                "chunk_id": f"BR-{chunk_id:03d}",
+                "module": module,
+                "files": piece,
+                "file_count": len(piece),
+                "sharp_edges_in_module": module_sharp,
+                "agent": "Agent",
+                "subagent_type": "general-purpose",
+                "objective": "eve-cc style breadth review for Odoo security: enumerate every public route, sudo() use, sql_query, eval/exec, ir.rule gap, and authentication boundary in this chunk; output candidate findings as leads (file:line, attack idea, suspected severity).",
+            })
+            chunk_id += 1
+
+    dispatch_path = breadth_dir / "dispatch.json"
+    dispatch_path.write_text(json.dumps({"chunks": chunks}, indent=2), encoding="utf-8")
+
+    md_lines = ["# Phase 1.7 — Breadth Sweep Dispatch", ""]
+    md_lines.append(f"Total chunks: {len(chunks)} (chunk size {chunk_size})")
+    md_lines.append("")
+    md_lines.append("Lead Claude: dispatch each chunk via the Agent tool in parallel batches.")
+    md_lines.append("Each subagent reviews its file slice for Odoo-specific security issues and")
+    md_lines.append("appends its leads to `inventory/breadth/leads.md` (one section per chunk).")
+    md_lines.append("Hunters in Phase 5 read leads.md as additional input.")
+    md_lines.append("")
+    md_lines.append("| Chunk | Module | Files |")
+    md_lines.append("|-------|--------|-------|")
+    for c in chunks:
+        md_lines.append(f"| {c['chunk_id']} | {c['module']} | {c['file_count']} |")
+    (breadth_dir / "dispatch.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    leads_path = breadth_dir / "leads.md"
+    if not leads_path.exists():
+        leads_path.write_text(
+            "# Phase 1.7 — Breadth Sweep Leads\n\n"
+            "_Lead Claude appends one section per chunk after dispatch completes._\n\n"
+            "## Format\n\n"
+            "```\n"
+            "## BR-NNN — <module>\n"
+            "- file:line — <one-line lead>\n"
+            "```\n",
+            encoding="utf-8",
+        )
+
+
+def assert_phase1_populated(out: Path, manifests: list[dict], args: argparse.Namespace) -> list[str]:
+    """Phase 1 fail-loud: assert 01-attack-surface.md has at least N lines per in-scope module.
+
+    Returns list of error strings (empty if pass).
+    """
+    if args.no_phase1_assert:
+        return []
+    surface_path = out / "01-attack-surface.md"
+    if not surface_path.exists():
+        return [f"Phase 1 fail-loud: {surface_path} does not exist"]
+    text = surface_path.read_text(encoding="utf-8")
+    errors: list[str] = []
+    threshold = max(1, args.phase1_min_lines_per_module)
+    for item in manifests:
+        module = item["module"]
+        marker = f"### `{module}`"
+        if marker not in text:
+            errors.append(f"Phase 1 fail-loud: module `{module}` missing per-module surface section in 01-attack-surface.md")
+            continue
+        idx = text.index(marker)
+        next_marker_idx = text.find("\n### ", idx + len(marker))
+        section = text[idx:next_marker_idx] if next_marker_idx != -1 else text[idx:]
+        non_empty_lines = [line for line in section.splitlines() if line.strip() and not line.strip().startswith("#")]
+        if len(non_empty_lines) < threshold:
+            errors.append(f"Phase 1 fail-loud: module `{module}` only has {len(non_empty_lines)} content line(s) in 01-attack-surface.md (threshold: {threshold})")
+    return errors
+
+
 def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, list[str]]:
     tools = {name: which(name) for name in ["codex", "ollama", "semgrep", "bandit", "ruff", "pylint", "pre-commit", "codeql", "pyre", "pip-audit", "osv-scanner", "joern-parse", "dot"]}
     lane_errors: list[str] = []
@@ -1299,8 +1557,21 @@ Use these artifacts first:
 - {out / 'inventory' / 'sharp-edge-index.json'}
 - {out / 'inventory' / 'accepted-risks.json'}
 - {out / 'inventory' / 'fix-list.json'}
+- {out / 'inventory' / 'py-files-by-module.json'}
+- {out / 'inventory' / 'breadth' / 'leads.md'} if present (breadth-pass leads from Phase 1.7)
 - {out / 'local-qwen' / 'module-notes.md'} if present
 - scanner outputs under {out / 'scans'} if present
+
+Coverage-proof contract (MANDATORY):
+- Read `inventory/py-files-by-module.json`. For every module in scope, you MUST
+  open and read at least one file relevant to your hunter focus. If a module has
+  zero files matching your focus, write a one-line justification.
+- Emit a `Reviewed:` block at the very top of your output, listing each module
+  on its own line as: `module_name: file_a.py:Lstart-Lend, file_b.py:Lstart-Lend`
+  (use real line ranges you actually inspected; do NOT fabricate). When you
+  skipped a module, write: `module_name: SKIPPED — <one-line reason>`.
+- Empty Reviewed: blocks are a contract violation. Phase 5.6 will diff your
+  Reviewed: list against py-files-by-module.json and flag missing modules.
 
 Suppression contract (accepted-risks.json):
 - Load the `active` array. Before emitting any finding, compute its fingerprint
@@ -1413,7 +1684,11 @@ def main() -> int:
     if args.zap_target and not args.runtime:
         print("--zap-target requires --runtime", file=sys.stderr)
         return 2
-    out = Path(args.out).expanduser().resolve() if args.out else repo / ".audit"
+    if args.out:
+        out = Path(args.out).expanduser().resolve()
+    else:
+        stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
+        out = repo / f".audit-{stamp}"
     out.mkdir(parents=True, exist_ok=True)
     for sub in ["inventory", "scans", "agents", "codex", "variants", "runtime", "attack-graphs", "requirements", "directives", "directives/results"]:
         (out / sub).mkdir(parents=True, exist_ok=True)
@@ -1461,6 +1736,10 @@ def main() -> int:
 
     allowed_modules = {part.strip() for part in args.modules.split(",") if part.strip()} if args.modules else None
     manifests = find_manifests(repo, allowed_modules)
+    loose = find_loose_python(repo, args)
+    if loose:
+        print(f"Loose Python sweep: {len(loose)} pseudo-module(s) added (origins: {sorted({m.get('origin','?') for m in loose})})")
+    manifests = manifests + loose
 
     scope_data: dict = {}
     if args.scope:
@@ -1494,6 +1773,17 @@ def main() -> int:
     write_goals_guide(repo, out, manifests, routes, args)
     write_directives_seed(out)
     write_scope_artifact(out, scope_data, args, pr_files)
+    emit_breadth_dispatch(out, manifests, routes, pattern_summary, args)
+
+    phase1_errors = assert_phase1_populated(out, manifests, args)
+    if phase1_errors:
+        print("Phase 1 fail-loud assertion FAILED:")
+        for err in phase1_errors:
+            print(f"- {err}")
+        print(f"See {out / '01-attack-surface.md'}")
+        print("Fix the inventory generation or pass --no-phase1-assert to skip (not recommended).")
+        write_tooling(out, plan, [], None, None)
+        return 6
 
     scanner_records: list[dict] = []
     qwen_record: dict | None = None
@@ -1511,6 +1801,19 @@ def main() -> int:
     print(f"Routes: {len(routes)}")
     print(f"Run plan: {out / 'tooling.md'}")
     print(f"Next: Claude should continue Phase 5.5/6/7 validation using the generated artifacts.")
+
+    if args.prune_old_runs and args.prune_old_runs > 0:
+        stamped = sorted(
+            (p for p in repo.glob(".audit-*")
+             if p.is_dir() and len(p.name) == len(".audit-YYYYMMDD-HHMM")
+             and p.name[7:].replace("-", "").isdigit()),
+            key=lambda p: p.name,
+        )
+        to_delete = stamped[: -args.prune_old_runs] if len(stamped) > args.prune_old_runs else []
+        for old in to_delete:
+            shutil.rmtree(old)
+            print(f"Pruned old run: {old.name}")
+
     return 0
 
 

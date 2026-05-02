@@ -45,6 +45,30 @@ Output contract:
 - Skip historical fixed CVEs unless you can prove a regression in this codebase
 - For every emitted finding, include a `Fingerprint:` line right under `**File:**` so the report can stamp the per-card data attribute and the "Mark as accepted risk" button can pre-fill its YAML
 
+Coverage-proof contract (MANDATORY — Phase 5.6 will diff this):
+- Read `<OUT>/inventory/py-files-by-module.json` before scanning. For every module
+  in scope, you MUST open and read at least one file relevant to your hunter focus.
+- Begin your output with a `Reviewed:` block at the very top:
+
+```
+
+Reviewed:
+module_name: file_a.py:Lstart-Lend, file_b.py:Lstart-Lend
+module_name_b: SKIPPED — <one-line justification>
+
+```
+
+- Use real line ranges you actually inspected; do NOT fabricate.
+- An empty or missing `Reviewed:` block is a contract violation. Phase 5.6 will
+diff your `Reviewed:` list against `py-files-by-module.json` and flag missing
+modules in `<OUT>/coverage/gaps.md` for re-dispatch.
+
+Phase 1.7 breadth-leads ingestion:
+- If `<OUT>/inventory/breadth/leads.md` exists, read it before scanning. Lead
+Claude has populated it with eve-cc style file-by-file leads from a parallel
+breadth pass. Use those leads to pivot into deep analysis on candidates that
+match your hunter focus. Cite the lead `BR-NNN` in your finding when relevant.
+
 Finding format:
 
 ## Finding N — <Title>

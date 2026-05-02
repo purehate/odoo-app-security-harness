@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Phase 5.6 — coverage diff for hunter Reviewed: blocks.
+
+Diffs each hunter's Reviewed: block (from codex/hunters/*.md and agents/*.md)
+against inventory/py-files-by-module.json, then flags modules a hunter never
+opened.
+
+Usage:
+    odoo-review-coverage <OUT> [--fail-on-gap] [--threshold N]
+
+Outputs:
+    <OUT>/coverage/coverage.json   machine-readable coverage matrix
+    <OUT>/coverage/coverage.md     human-readable gap report
+    <OUT>/coverage/gaps.md         per-hunter list of unreviewed modules
+
+Exit codes:
+    0  no gaps (or --no fail flag)
+    1  gaps detected and --fail-on-gap set
+    2  bad input
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+
+REVIEWED_RE = re.compile(r"^reviewed:\s*$", re.IGNORECASE | re.MULTILINE)
+
+
+def parse_reviewed_block(text: str) -> dict[str, str]:
+    """Extract the Reviewed: block from a hunter output.
+
+    Returns {module: line_or_skip_reason}. Lines after `Reviewed:` until a blank
+    line, `## ` heading, or end of file are parsed as `module: details`.
+    """
+    match = REVIEWED_RE.search(text)
+    if not match:
+        return {}
+    start = match.end()
+    block: dict[str, str] = {}
+    for raw in text[start:].splitlines():
+        line = raw.strip()
+        if not line:
+            if block:
+                break
+            continue
+        if line.startswith("#") or line.startswith("```"):
+            break
+        if ":" not in line:
+            continue
+        if line.startswith("- "):
+            line = line[2:].strip()
+        module, details = line.split(":", 1)
+        module = module.strip().strip("`")
+        details = details.strip()
+        if module and details:
+            block[module] = details
+    return block
+
+
+def collect_hunter_files(out: Path) -> list[Path]:
+    files: list[Path] = []
+    for sub in ("codex/hunters", "agents", "codex"):
+        d = out / sub
+        if d.exists():
+            for path in sorted(d.rglob("*.md")):
+                if path.name.startswith("_"):
+                    continue
+                files.append(path)
+    return files
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Phase 5.6 coverage diff")
+    parser.add_argument("out", help="Audit output directory (e.g. .audit-YYYYMMDD-HHMM)")
+    parser.add_argument("--fail-on-gap", action="store_true", help="Exit non-zero if any gap")
+    parser.add_argument("--threshold", type=int, default=0, help="Allow up to N missing modules per hunter")
+    args = parser.parse_args()
+
+    out = Path(args.out).expanduser().resolve()
+    if not out.exists():
+        print(f"Output dir missing: {out}", file=sys.stderr)
+        return 2
+    py_index = out / "inventory" / "py-files-by-module.json"
+    if not py_index.exists():
+        print(f"Missing {py_index} — run odoo-review-run first.", file=sys.stderr)
+        return 2
+
+    py_by_module = json.loads(py_index.read_text(encoding="utf-8"))
+    expected_modules = sorted(py_by_module.keys())
+
+    coverage_dir = out / "coverage"
+    coverage_dir.mkdir(parents=True, exist_ok=True)
+
+    hunter_paths = collect_hunter_files(out)
+    matrix: dict[str, dict[str, str]] = {}
+    gaps: dict[str, list[str]] = {}
+
+    for path in hunter_paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001
+            print(f"WARN: cannot read {path}: {exc}", file=sys.stderr)
+            continue
+        block = parse_reviewed_block(text)
+        if not block:
+            continue
+        hunter_id = path.stem
+        matrix[hunter_id] = block
+        missing = [m for m in expected_modules if m not in block]
+        if missing:
+            gaps[hunter_id] = missing
+
+    coverage_payload = {
+        "expected_modules": expected_modules,
+        "hunters": matrix,
+        "gaps": gaps,
+        "threshold": args.threshold,
+    }
+    (coverage_dir / "coverage.json").write_text(json.dumps(coverage_payload, indent=2), encoding="utf-8")
+
+    md = ["# Phase 5.6 — Hunter Coverage Diff", ""]
+    md.append(f"Modules expected: {len(expected_modules)}")
+    md.append(f"Hunters with Reviewed: blocks: {len(matrix)}")
+    md.append(f"Hunters with gaps: {len(gaps)}")
+    md.append("")
+    md.append("## Coverage Matrix")
+    md.append("")
+    md.append("| Hunter | Modules reviewed | Modules missing |")
+    md.append("|--------|------------------|-----------------|")
+    for hunter_id in sorted(matrix.keys()):
+        reviewed = len(matrix[hunter_id])
+        missing = len(gaps.get(hunter_id, []))
+        md.append(f"| `{hunter_id}` | {reviewed}/{len(expected_modules)} | {missing} |")
+    (coverage_dir / "coverage.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+
+    gap_md = ["# Phase 5.6 — Per-Hunter Coverage Gaps", ""]
+    if not gaps:
+        gap_md.append("No gaps detected. Every hunter declared coverage for every in-scope module.")
+    else:
+        for hunter_id in sorted(gaps.keys()):
+            gap_md.append(f"## `{hunter_id}`")
+            gap_md.append("")
+            for module in gaps[hunter_id]:
+                gap_md.append(f"- `{module}`")
+            gap_md.append("")
+    (coverage_dir / "gaps.md").write_text("\n".join(gap_md) + "\n", encoding="utf-8")
+
+    over_threshold = {h: m for h, m in gaps.items() if len(m) > args.threshold}
+    print(f"odoo-review-coverage: hunters={len(matrix)} gaps={len(gaps)} over_threshold={len(over_threshold)}")
+    print(f"Report: {coverage_dir / 'coverage.md'}")
+    print(f"Gaps:   {coverage_dir / 'gaps.md'}")
+    if args.fail_on_gap and over_threshold:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

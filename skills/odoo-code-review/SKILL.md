@@ -155,9 +155,19 @@ Phase 0 also loads the optional fix-it tracking file (`<repo>/.audit-fix-list.ym
 
 ### Phase 1 — Odoo Attack Surface Map
 
-Identify Odoo version + edition + Python + Postgres + Werkzeug. Map HTTP routes (`@http.route` decorators with auth/csrf/type/methods), RPC entry points (`xmlrpc/2/object`, `jsonrpc`), portal routes (`/my/*`), models touched by public/portal routes, ACL CSV rows, `ir.rule` records, server actions, cron, mail templates. Risk-rank modules 1–5. Plan hunter assignments. Writes `<OUT>/01-attack-surface.md`.
+Identify Odoo version + edition + Python + Postgres + Werkzeug. Map HTTP routes (`@http.route` decorators with auth/csrf/type/methods), RPC entry points (`xmlrpc/2/object`, `jsonrpc`), portal routes (`/my/*`), models touched by public/portal routes, ACL CSV rows, `ir.rule` records, server actions, cron, mail templates. Risk-rank modules 1–5. Plan hunter assignments. Writes `<OUT>/01-attack-surface.md` with a per-module surface section so downstream hunters know exactly what each module exposes.
+
+**Default scope expansion (2026-05):** the runner now also sweeps `docs/server_actions/*.py` and `scripts/*.py` as pseudo-modules (origin tags `server_action` / `script`). Disable with `--no-server-actions` / `--no-scripts` if reviewing a tree that uses those folders for non-Odoo content.
+
+**Phase 1 fail-loud (2026-05):** the runner asserts each in-scope module has at least `--phase1-min-lines-per-module` (default 4) content lines in `01-attack-surface.md`. A near-empty surface map silently misroutes hunters; the runner now exits with code 6 when the threshold is missed. Override with `--no-phase1-assert` (escape hatch — not recommended).
 
 See `references/workflow.md` Phase 1 for the full checklist.
+
+### Phase 1.7 — Breadth Sweep Dispatch (eve-cc style)
+
+Runner emits `<OUT>/inventory/breadth/dispatch.json` listing file chunks (default 40 files / chunk; override via `--breadth-chunk-size`). Lead Claude dispatches one Agent (`subagent_type: general-purpose`) per chunk in parallel batches, eve-cc style. Each subagent enumerates every public route, `sudo()`, `cr.execute`, `eval/exec`, `ir.rule` gap, and authentication boundary in its slice and appends a section to `<OUT>/inventory/breadth/leads.md`.
+
+The hunters in Phase 5 ingest `leads.md` as additional input. This pairs eve-cc breadth with harness depth: every file gets a fast scan, then specialist hunters pivot into deep analysis on the leads. Disable with `--no-breadth`.
 
 ### Phase 1.5 — Local Qwen / Ollama Advisory Check
 
@@ -203,7 +213,9 @@ Delegate the 9 technique hunter passes to Codex by default to preserve Claude li
 
 Claude's job in Phase 5 is to prepare compact packets, launch/track Codex tasks, and spot-check returned claims before Phase 5.5. Claude should not spend context doing full hunter sweeps unless Codex is unavailable.
 
-Hunter packets MUST include the path to `<OUT>/inventory/accepted-risks.json` and `<OUT>/inventory/fix-list.json`. Each hunter computes the candidate fingerprint before emitting and silently drops any accepted-risks match (Gate 0 short-circuit) so the lead session never sees re-litigated findings. Hunters also stamp every emitted finding with a `Fingerprint:` line and `Sink kind:` line per the contract in `references/agent-prompts.md`, so `findings.html` can wire the per-card buttons without recomputation. Hunters do **not** suppress on a fix-list match; instead they tag emitted findings: `Tracked by FIX-NNN (target YYYY-MM-DD)` for `open`/`in-progress`, `REGRESSION — fix-list FIX-NNN marked status=fixed` for `fixed` (a flagged regression), `wontfix per FIX-NNN` for `wontfix`. The full reconciliation buckets are produced in Phase 8 from `inventory/fix-list.json` cross-referenced against the final ACCEPT findings.
+Hunter packets MUST include the paths to `<OUT>/inventory/accepted-risks.json`, `<OUT>/inventory/fix-list.json`, `<OUT>/inventory/py-files-by-module.json`, and `<OUT>/inventory/breadth/leads.md` (if present).
+
+**Coverage-proof contract (2026-05):** every hunter MUST emit a `Reviewed:` block at the very top of its output listing the modules and concrete file:line ranges it inspected. Empty `Reviewed:` blocks are a contract violation. Phase 5.6 diffs the `Reviewed:` blocks against `py-files-by-module.json` and emits per-hunter gaps for re-dispatch. Each hunter computes the candidate fingerprint before emitting and silently drops any accepted-risks match (Gate 0 short-circuit) so the lead session never sees re-litigated findings. Hunters also stamp every emitted finding with a `Fingerprint:` line and `Sink kind:` line per the contract in `references/agent-prompts.md`, so `findings.html` can wire the per-card buttons without recomputation. Hunters do **not** suppress on a fix-list match; instead they tag emitted findings: `Tracked by FIX-NNN (target YYYY-MM-DD)` for `open`/`in-progress`, `REGRESSION — fix-list FIX-NNN marked status=fixed` for `fixed` (a flagged regression), `wontfix per FIX-NNN` for `wontfix`. The full reconciliation buckets are produced in Phase 8 from `inventory/fix-list.json` cross-referenced against the final ACCEPT findings.
 
 The 10 Odoo hunters:
 
@@ -225,6 +237,16 @@ Full prompt templates: `references/agent-prompts.md`.
 Delegate the first discourse draft to Codex. Hunters review each other's findings using AGREE / CHALLENGE / CONNECT / SURFACE tags. Claude resolves disputed CHALLENGE items and decides what enters Phase 6. Skip only if `--quick` or repo SMALL.
 
 Pattern: `references/discourse.md`.
+
+### Phase 5.6 — Hunter Coverage Diff (eve-cc gap closure)
+
+Run `scripts/odoo-review-coverage <OUT>` after Phase 5 hunters return. The script:
+
+1. Reads `<OUT>/inventory/py-files-by-module.json` for the expected module set.
+2. Parses the `Reviewed:` block from every `<OUT>/codex/hunters/*.md` and `<OUT>/agents/*.md`.
+3. Emits `<OUT>/coverage/coverage.{json,md}` (matrix) and `<OUT>/coverage/gaps.md` (per-hunter missing modules).
+
+Pass `--fail-on-gap` in CI to block merges when any hunter skipped a module without justification. When gaps are detected, lead Claude re-dispatches the affected hunters with a tighter scope. This phase is the eve-cc countermeasure: it forces every module to be opened by every relevant hunter, eliminating the silent-skip class that produced the 15-vs-53 finding-count gap.
 
 ### Phase 6 — Cross-Agent Correlation (Chaining)
 
@@ -300,9 +322,10 @@ Phase 8 also performs **fix-list reconciliation** against `inventory/fix-list.js
 ## Workflow Checklist (Track in TaskCreate)
 
 - [ ] Phase 0: create `<OUT>` dir, find every `__manifest__.py`, parse to JSON, build depends graph, tag origins.
-- [ ] Phase 1: identify Odoo version + stack, map HTTP/RPC/portal surface, ACL CSV, `ir.rule`, cron, mail templates, draft hunter assignments.
+- [ ] Phase 1: identify Odoo version + stack, map HTTP/RPC/portal surface, ACL CSV, `ir.rule`, cron, mail templates, draft hunter assignments. Runner asserts ≥ N content lines per module in `01-attack-surface.md` (fail-loud, exit code 6).
 - [ ] If available, create/update the lead-session `/goals` objective from `<OUT>/goals.md`; keep TaskCreate for per-phase and per-hunter progress.
 - [ ] Phase 1.5 (unless `--no-local-qwen`): run local Ollama/Qwen advisory module notes and scanner-hint triage → `<OUT>/local-qwen/`.
+- [ ] Phase 1.7 (unless `--no-breadth`): read `inventory/breadth/dispatch.json`, dispatch Agent calls in parallel batches (eve-cc breadth pass), collect leads into `inventory/breadth/leads.md`.
 - [ ] Phase 2: Semgrep community + custom Odoo rules → `<OUT>/scans/semgrep/`.
 - [ ] Phase 2.5: Bandit → `<OUT>/scans/bandit/`.
 - [ ] Phase 2.6: ruff + pylint-odoo + OCA pre-commit → `<OUT>/scans/ruff/`, `pylint-odoo/`, `oca-precommit/`.
@@ -310,9 +333,10 @@ Phase 8 also performs **fix-list reconciliation** against `inventory/fix-list.js
 - [ ] Phase 3.5 (only if `--joern`): build CPG, run query batch → `<OUT>/scans/joern/`.
 - [ ] Phase 4: Pysa (optional, skip on Pyre failure) → `<OUT>/scans/pysa/`.
 - [ ] Phase 4.5: pip-audit + osv-scanner → `<OUT>/scans/deps/`.
-- [ ] Phase 5: launch Codex hunter tasks #1–#9 with Phase 0/1 packets, Qwen hints, and scan paths.
+- [ ] Phase 5: launch Codex hunter tasks #1–#9 with Phase 0/1 packets, Qwen hints, scan paths, and `inventory/breadth/leads.md`. Each hunter MUST emit a `Reviewed:` block.
 - [ ] Phase 5: Claude spot-checks hunter outputs for unsupported claims before discourse.
 - [ ] Phase 5.5: Codex discourse draft; Claude resolves CHALLENGE items (skip if `--quick` or SMALL repo).
+- [ ] Phase 5.6: run `scripts/odoo-review-coverage <OUT>`. Re-dispatch any hunter with gaps in `coverage/gaps.md`.
 - [ ] Phase 6: Codex chaining draft; Claude finalizes chained paths.
 - [ ] Phase 7: Codex evidence packs; Claude 6-gate fp-check per finding.
 - [ ] Phase 7: Codex variant-analysis fan-out per ACCEPT; Claude verifies grouped variants.
@@ -353,6 +377,12 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 - `--check-only-accepted-risks` — validate accepted-risks file, write `<OUT>/inventory/accepted-risks.json` + `<OUT>/00-accepted-risks.md`, then exit. Non-zero on validation errors or expired entries. Use in CI to catch rot.
 - `--fix-list <path>` — override default `<repo>/.audit-fix-list.{yml,yaml,json}` location. Per-finding fingerprint **tracking** layer (real bugs the team has committed to fixing). Findings are tagged, not suppressed. See `references/fix-list.md`.
 - `--check-only-fix-list` — validate fix-list file, write `<OUT>/inventory/fix-list.json` + `<OUT>/00-fix-list.md`, then exit. Non-zero on validation errors or any `open`/`in-progress` entry past its `target_date`. Use in CI to gate the backlog.
+- `--no-server-actions` — skip `docs/server_actions/*.py` loose-Python sweep (default: include).
+- `--no-scripts` — skip `scripts/*.py` loose-Python sweep (default: include).
+- `--no-breadth` — skip Phase 1.7 breadth-sweep dispatch plan emission (default: emit).
+- `--breadth-chunk-size <N>` — files per breadth-sweep subagent chunk (default: 40).
+- `--phase1-min-lines-per-module <N>` — Phase 1 fail-loud threshold: minimum content lines per module in `01-attack-surface.md` (default: 4).
+- `--no-phase1-assert` — disable Phase 1 fail-loud assertion (escape hatch — not recommended).
 
 ## Post-Processing Scripts
 
@@ -362,6 +392,7 @@ The runner emits `findings.json` (after Phase 8). Four companion scripts process
 - `odoo-review-export <.audit-dir>` — direct SARIF 2.1.0 + fingerprints + bounty/F-N.md emit. Called by `finalize`; expose for one-off re-export. Honors `scope.json` accepted_risks as SARIF `suppressions` unless `--no-suppress`.
 - `odoo-review-diff <baseline> <current>` — classifies findings new / fixed / unchanged / changed (severity OR triage delta) by `fingerprint`. Emits `delta.md` + `delta.json`. Called by `finalize` when baseline detected.
 - `odoo-review-rerun <directive>` — directive feedback-loop dispatcher (Qwen or Codex). See "Directive Feedback Loop" above.
+- `odoo-review-coverage <OUT>` — Phase 5.6 coverage diff. Parses `Reviewed:` blocks from hunter outputs, diffs against `inventory/py-files-by-module.json`, emits `coverage/coverage.{json,md}` + `coverage/gaps.md`. Pass `--fail-on-gap` to gate CI when any hunter skipped a module without justification.
 
 ## CI Template
 
@@ -383,6 +414,7 @@ Load only what applies to the engagement:
 - `references/lang-web.md` — TypeScript/Node (only relevant for `static/src` JS)
 - `references/sharp-edges.md` — footgun APIs incl. Odoo section
 - `references/insecure-defaults.md` — config-level defaults incl. Odoo section
+- `references/weekly-workflow.md` — recurring-tool loop: stamped run dirs, master accepted-risks + fix-list, triage flow, `--prune-old-runs`
 
 ## Output
 
