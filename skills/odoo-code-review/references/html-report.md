@@ -156,6 +156,17 @@ Make the report print-friendly:
 - Keyboard-navigable: every collapsible reachable by Tab.
 - `aria-label` on filter input and sortable headers.
 
+## Two-Bucket Triage Loop (Required)
+
+The HTML report is the front door of the iterative review loop. Every finding card carries **two** mutually-exclusive controls:
+
+1. **Mark as accepted risk** → not a bug / accepted with compensating control. Queued for `<repo>/.audit-accepted-risks.yml`. Next run silently drops the finding (Gate 0 SKIP).
+2. **Add to fix-it list** → confirmed bug, team will fix. Queued for `<repo>/.audit-fix-list.yml`. Next run still emits the finding, tags it with `tracked: FIX-NNN`, and reconciles fix status (REGRESSION detection if `status: fixed` but bug returns).
+
+The reviewer's per-finding decision is exactly one of those two buttons. After walking the report, the bottom toolbar exports two YAML snippets — accepted-risks-additions and fix-list-additions — that paste into the respective files at the repo root. Each iteration the report gets shorter and sharper.
+
+Both buttons rely on the per-finding `data-fingerprint` attribute (16-hex, computed by the Phase 5 hunters) so the resulting YAML stanza is byte-stable and Phase 0 of the next run matches it deterministically.
+
 ## Interactive Accept-Risk Loop (Required)
 
 The HTML report is the front door of the iterative review loop. Each finding card carries an **Accept Risk** control. Reviewer clicks → finding gets queued for suppression. Bottom toolbar exports the queue as a `scope.yml` snippet. Reviewer merges the snippet into the project `scope.yml` and re-runs `/odoo-code-review`. Each iteration the report gets shorter and the signal-to-noise ratio climbs.
@@ -328,6 +339,274 @@ The HTML report is the front door of the iterative review loop. Each finding car
 7. `delta.md` shows what got accepted vs new findings introduced. Iteration N+1 is shorter and sharper than N.
 
 The loop is the product. Generator must include this UI; review without iteration is one-shot scanner output, not a harness.
+
+## Add-to-Fix-List Loop (Required)
+
+Symmetric companion to the Accept-Risk loop. Same UI shape, different output schema, different reconciliation behaviour. Each finding card MUST carry both controls; the reviewer picks exactly one per card.
+
+### Per-Finding Control
+
+```html
+<div
+  class="add-to-fix-list"
+  data-finding-id="F-7"
+  data-fingerprint="7c1f4a9b2e5d8a31"
+  data-title="Public events check-in submit allowed for non-conference events"
+  data-file="trustedsec_events/controllers/checkin.py"
+  data-line="175"
+  data-line-end="260"
+  data-severity="HIGH"
+  data-sink-kind="controller_route"
+>
+  <button type="button" class="fl-toggle">+ Add to fix-it list</button>
+  <input
+    type="text"
+    class="fl-owner"
+    placeholder="Owner email (required)…"
+    aria-label="Fix owner"
+  />
+  <select class="fl-status" aria-label="Fix status">
+    <option value="open" selected>open</option>
+    <option value="in-progress">in-progress</option>
+    <option value="fixed">fixed (regression canary)</option>
+    <option value="wontfix">wontfix (documented gap)</option>
+  </select>
+  <input
+    type="date"
+    class="fl-target"
+    aria-label="Target date (open/in-progress only)"
+  />
+  <textarea
+    class="fl-notes"
+    placeholder="Plan-of-attack / sprint / ticket / PR (required for wontfix)…"
+    rows="2"
+  ></textarea>
+</div>
+```
+
+### Sticky Toolbar Additions
+
+```html
+<div class="fl-toolbar">
+  <span id="fl-counter">0 tracked</span>
+  <button id="fl-download">Download fix-list.yml additions</button>
+  <button id="fl-copy">Copy to clipboard</button>
+  <button id="fl-clear">Clear queue</button>
+  <details>
+    <summary>How to apply</summary>
+    <ol>
+      <li>
+        Save downloaded snippet at repo root as
+        <code>.audit-fix-list.yml</code> (or merge into existing).
+      </li>
+      <li>
+        Re-run <code>/odoo-code-review</code>. Phase 0 loads the file, Phase 8
+        reconciles against current findings.
+      </li>
+      <li>
+        Findings that match an <code>open</code>/<code>in-progress</code> entry
+        get a green <em>tracked</em> pill; <code>fixed</code> entries that
+        re-appear get a <strong>red REGRESSION</strong> pill.
+      </li>
+    </ol>
+  </details>
+</div>
+```
+
+The accept-risk and fix-list toolbars sit side by side in the sticky header so the two queues stay visually separated.
+
+### Vanilla JS — fix-list queue + export
+
+```html
+<script>
+  const FL_KEY = "odoo-harness-fix-list-v1";
+  const flLoad = () => JSON.parse(localStorage.getItem(FL_KEY) || "[]");
+  const flSave = (q) => localStorage.setItem(FL_KEY, JSON.stringify(q));
+  const flRefresh = () => {
+    document.getElementById("fl-counter").textContent =
+      `${flLoad().length} tracked`;
+  };
+
+  document.querySelectorAll(".add-to-fix-list").forEach((el) => {
+    const id = el.dataset.findingId;
+    const toggle = el.querySelector(".fl-toggle");
+    const owner = el.querySelector(".fl-owner");
+    const status = el.querySelector(".fl-status");
+    const target = el.querySelector(".fl-target");
+    const notes = el.querySelector(".fl-notes");
+    const prior = flLoad().find((r) => r.finding_id === id);
+    if (prior) {
+      el.classList.add("fl-tracked");
+      owner.value = prior.owner || "";
+      status.value = prior.status || "open";
+      target.value = prior.target_date || "";
+      notes.value = prior.notes || "";
+    }
+    const update = (queued) => {
+      const q = flLoad().filter((r) => r.finding_id !== id);
+      if (queued) {
+        q.push({
+          finding_id: id,
+          fingerprint: el.dataset.fingerprint,
+          title: el.dataset.title,
+          file: el.dataset.file,
+          line: parseInt(el.dataset.line, 10) || null,
+          line_end: parseInt(el.dataset.lineEnd, 10) || null,
+          severity: el.dataset.severity,
+          sink_kind: el.dataset.sinkKind,
+          owner: owner.value.trim(),
+          status: status.value,
+          target_date: target.value || null,
+          notes: notes.value.trim(),
+        });
+      }
+      flSave(q);
+      flRefresh();
+    };
+    toggle.addEventListener("click", () => {
+      const queued = !el.classList.contains("fl-tracked");
+      el.classList.toggle("fl-tracked", queued);
+      toggle.textContent = queued
+        ? "− Remove from fix-it list"
+        : "+ Add to fix-it list";
+      update(queued);
+    });
+    [owner, status, target, notes].forEach((field) =>
+      field.addEventListener(
+        "input",
+        () => el.classList.contains("fl-tracked") && update(true),
+      ),
+    );
+  });
+
+  const flToYaml = (queue) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const lines = [
+      "# Generated by findings.html add-to-fix-list UI",
+      `# date: ${today}`,
+      "version: 1",
+      "fixes:",
+    ];
+    queue.forEach((r, i) => {
+      const fid = `FIX-${String(i + 1).padStart(3, "0")}`;
+      lines.push(`  - id: ${fid}`);
+      if (r.fingerprint) lines.push(`    fingerprint: ${r.fingerprint}`);
+      lines.push(`    title: ${JSON.stringify(r.title || "")}`);
+      if (r.file) lines.push(`    file: ${r.file}`);
+      if (r.line && r.line_end && r.line_end !== r.line) {
+        lines.push(`    lines: [${r.line}, ${r.line_end}]`);
+      } else if (r.line) {
+        lines.push(`    lines: ${r.line}`);
+      }
+      if (r.severity) lines.push(`    severity: ${r.severity}`);
+      if (r.sink_kind) lines.push(`    sink_kind: ${r.sink_kind}`);
+      if (r.owner) lines.push(`    owner: ${r.owner}`);
+      lines.push(`    status: ${r.status || "open"}`);
+      if (
+        r.target_date &&
+        (r.status === "open" || r.status === "in-progress")
+      ) {
+        lines.push(`    target_date: ${r.target_date}`);
+      }
+      if (r.status === "fixed") lines.push(`    fixed_at: ${today}`);
+      if (r.notes) {
+        lines.push("    notes: |");
+        r.notes.split("\n").forEach((line) => lines.push(`      ${line}`));
+      } else if (r.status === "wontfix") {
+        lines.push("    notes: |");
+        lines.push(
+          "      TODO: explain why this gap is acceptable (wontfix requires non-empty notes).",
+        );
+      }
+    });
+    return lines.join("\n") + "\n";
+  };
+
+  document.getElementById("fl-download").addEventListener("click", () => {
+    const yaml = flToYaml(flLoad());
+    const blob = new Blob([yaml], { type: "text/yaml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = ".audit-fix-list.yml";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById("fl-copy").addEventListener("click", async () => {
+    await navigator.clipboard.writeText(flToYaml(flLoad()));
+  });
+
+  document.getElementById("fl-clear").addEventListener("click", () => {
+    if (confirm("Clear the fix-list queue?")) {
+      flSave([]);
+      document.querySelectorAll(".add-to-fix-list").forEach((el) => {
+        el.classList.remove("fl-tracked");
+        el.querySelector(".fl-toggle").textContent = "+ Add to fix-it list";
+        el.querySelector(".fl-owner").value = "";
+        el.querySelector(".fl-status").value = "open";
+        el.querySelector(".fl-target").value = "";
+        el.querySelector(".fl-notes").value = "";
+      });
+      flRefresh();
+    }
+  });
+
+  flRefresh();
+</script>
+```
+
+### Tracking Pill Renderer
+
+When the next run produces `inventory/fix-list.json` with reconciliation results, the Phase 8 generator renders one of three pills at the top of each ACCEPT card:
+
+```html
+<!-- open / in-progress -->
+<span class="fl-pill fl-pill-tracked"
+  >tracked: FIX-001 · target 2026-06-01</span
+>
+
+<!-- fixed but still present (REGRESSION) -->
+<span class="fl-pill fl-pill-regression"
+  >REGRESSION · FIX-003 marked fixed but bug returned</span
+>
+
+<!-- wontfix -->
+<span class="fl-pill fl-pill-wontfix">wontfix per FIX-004</span>
+```
+
+```css
+.fl-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+.fl-pill-tracked {
+  background: #c8e6c9;
+  color: #1b5e20;
+}
+.fl-pill-regression {
+  background: #d32f2f;
+  color: white;
+}
+.fl-pill-wontfix {
+  background: #e0e0e0;
+  color: #424242;
+}
+```
+
+### Loop Semantics
+
+1. Reviewer opens `findings.html`, walks findings.
+2. Real-bug-we-will-fix → clicks "Add to fix-it list", picks status, owner, optional target date, notes.
+3. Bottom toolbar: **Download fix-list.yml additions** (or copy).
+4. Reviewer pastes/merges snippet into `<repo>/.audit-fix-list.yml`.
+5. Reruns `/odoo-code-review`. Phase 0 validates and loads the file. Hunters tag matching findings with the FIX-NNN id. Phase 8 reconciliation produces `00-fix-list.md` REGRESSION/OVERDUE/TRACKED/CONFIRMED-FIXED/LIKELY-FIXED/WONTFIX/DRIFTED buckets.
+6. As fixes ship, owners flip `status: open` → `status: fixed`. The next run's reconciliation reports CONFIRMED-FIXED (✓ archive) or REGRESSION (red — fix didn't hold).
+
+The two-bucket loop (accept-risk OR fix-it) is the product. A finding without a button click stays unresolved on the next run, surfacing the team's actual triage state in the report itself.
 
 ## Generation
 

@@ -29,6 +29,15 @@ ACCEPTED_RISKS_FILES = [
 ]
 ACCEPTED_RISKS_REQUIRED = ("id", "title", "file", "reason", "owner", "accepted", "expires")
 
+FIX_LIST_FILES = [
+    ".audit-fix-list.yml",
+    ".audit-fix-list.yaml",
+    ".audit-fix-list.json",
+]
+FIX_LIST_REQUIRED = ("id", "title", "file", "severity", "owner", "status")
+FIX_LIST_STATUSES = ("open", "in-progress", "fixed", "wontfix")
+FIX_LIST_SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
+
 HUNTERS = [
     ("01-access-control", "Access Control", "ACL CSV, ir.rule, groups, sudo/with_user/with_context misuse, portal/user/admin boundaries."),
     ("02-controller-route", "Controller / Route", "@http.route, auth, csrf, request.params/jsonrequest, IDOR, unsafe response data."),
@@ -73,6 +82,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pr-repo", help="GitHub repo (owner/name) for --pr; defaults to gh-detected origin.")
     parser.add_argument("--accepted-risks", help="Path to per-finding accepted-risks suppression file (YAML or JSON). Defaults to <repo>/.audit-accepted-risks.{yml,yaml,json}.")
     parser.add_argument("--check-only-accepted-risks", action="store_true", help="Validate accepted-risks file, write inventory, then exit. Non-zero on errors or expired entries.")
+    parser.add_argument("--fix-list", help="Path to fix-it list tracking file (YAML or JSON). Defaults to <repo>/.audit-fix-list.{yml,yaml,json}.")
+    parser.add_argument("--check-only-fix-list", action="store_true", help="Validate fix-list file, write inventory, then exit. Non-zero on validation errors or overdue open/in-progress entries.")
     args = parser.parse_args()
     # findings.json is now emitted by default. --json kept as compat no-op; --no-json opts out.
     args.emit_json = not args.no_emit_json
@@ -675,6 +686,206 @@ def load_accepted_risks(args: argparse.Namespace, repo: Path) -> dict:
     return inventory
 
 
+def _load_fix_list_file(path: Path) -> object:
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".json":
+        return json.loads(text)
+    try:
+        import yaml  # noqa: PLC0415
+    except ImportError as exc:
+        raise RuntimeError(
+            f"Cannot read {path.name}: pyyaml is not installed. "
+            "Install pyyaml or convert the file to .json format."
+        ) from exc
+    return yaml.safe_load(text)
+
+
+def _validate_fix_list(data: object, source: Path) -> tuple[list[dict], list[str]]:
+    errors: list[str] = []
+    if not isinstance(data, dict):
+        return [], [f"{source.name}: top-level must be a mapping with `version` and `fixes`."]
+    if data.get("version") != 1:
+        errors.append(f"{source.name}: top-level `version` must equal 1.")
+    fixes = data.get("fixes", [])
+    if not isinstance(fixes, list):
+        errors.append(f"{source.name}: `fixes` must be a list.")
+        return [], errors
+    seen_ids: set[str] = set()
+    cleaned: list[dict] = []
+    for index, entry in enumerate(fixes):
+        prefix = f"{source.name}#{index}"
+        if not isinstance(entry, dict):
+            errors.append(f"{prefix}: entry must be a mapping.")
+            continue
+        for field in FIX_LIST_REQUIRED:
+            value = entry.get(field)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                errors.append(f"{prefix}: `{field}` is required.")
+        entry_id = entry.get("id")
+        if entry_id in seen_ids:
+            errors.append(f"{prefix}: duplicate id `{entry_id}`.")
+        elif entry_id:
+            seen_ids.add(entry_id)
+        status = entry.get("status")
+        if status and status not in FIX_LIST_STATUSES:
+            errors.append(
+                f"{prefix}: `status` must be one of {FIX_LIST_STATUSES}; got `{status}`."
+            )
+        severity = entry.get("severity")
+        if severity and severity not in FIX_LIST_SEVERITIES:
+            errors.append(
+                f"{prefix}: `severity` must be one of {FIX_LIST_SEVERITIES}; got `{severity}`."
+            )
+        target_date = fixed_at = None
+        if entry.get("target_date") is not None:
+            try:
+                target_date = dt.date.fromisoformat(str(entry["target_date"]))
+            except ValueError:
+                errors.append(f"{prefix}: `target_date` must be YYYY-MM-DD.")
+        if entry.get("fixed_at") is not None:
+            try:
+                fixed_at = dt.date.fromisoformat(str(entry["fixed_at"]))
+            except ValueError:
+                errors.append(f"{prefix}: `fixed_at` must be YYYY-MM-DD.")
+        fingerprint = entry.get("fingerprint")
+        if fingerprint and not re.fullmatch(r"[0-9a-f]{16}", str(fingerprint)):
+            errors.append(f"{prefix}: `fingerprint` must match ^[0-9a-f]{{16}}$.")
+        if not fingerprint and not entry.get("file"):
+            errors.append(f"{prefix}: at least one of `fingerprint` or `file` is required.")
+        if status == "wontfix":
+            notes = entry.get("notes")
+            if not notes or (isinstance(notes, str) and not notes.strip()):
+                errors.append(f"{prefix}: `wontfix` entries require non-empty `notes`.")
+        lines = entry.get("lines")
+        lines_ok = (
+            lines is None
+            or isinstance(lines, int)
+            or (
+                isinstance(lines, list)
+                and len(lines) == 2
+                and all(isinstance(coord, int) for coord in lines)
+            )
+        )
+        if not lines_ok:
+            errors.append(f"{prefix}: `lines` must be an int or [start, end] of ints.")
+        cleaned.append(
+            {
+                **entry,
+                "_target_date": target_date,
+                "_fixed_at": fixed_at,
+            }
+        )
+    return cleaned, errors
+
+
+def load_fix_list(args: argparse.Namespace, repo: Path) -> dict:
+    candidates: list[Path] = []
+    if args.fix_list:
+        candidates.append(Path(args.fix_list).expanduser().resolve())
+    else:
+        candidates.extend(repo / name for name in FIX_LIST_FILES)
+    chosen: Path | None = next((path for path in candidates if path.exists()), None)
+    inventory = {
+        "version": 1,
+        "loaded_from": "none" if not chosen else (rel(chosen, repo) if chosen.is_relative_to(repo) else str(chosen)),
+        "loaded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "active": [],
+        "overdue": [],
+        "errors": [],
+    }
+    if not chosen:
+        return inventory
+    try:
+        data = _load_fix_list_file(chosen)
+    except (RuntimeError, json.JSONDecodeError, ValueError) as exc:
+        inventory["errors"].append(f"{chosen.name}: failed to parse: {exc}")
+        return inventory
+    cleaned, errors = _validate_fix_list(data or {}, chosen)
+    inventory["errors"].extend(errors)
+    today = dt.date.today()
+    for entry in cleaned:
+        target_date = entry.get("_target_date")
+        days_to_target = (target_date - today).days if target_date else None
+        record = {
+            "id": entry.get("id"),
+            "fingerprint": entry.get("fingerprint"),
+            "title": entry.get("title"),
+            "file": entry.get("file"),
+            "lines": entry.get("lines"),
+            "severity": entry.get("severity"),
+            "sink_kind": entry.get("sink_kind"),
+            "owner": entry.get("owner"),
+            "status": entry.get("status"),
+            "target_date": str(entry["target_date"]) if entry.get("target_date") else None,
+            "fixed_at": str(entry["fixed_at"]) if entry.get("fixed_at") else None,
+            "notes": entry.get("notes"),
+            "references": entry.get("references"),
+            "days_to_target": days_to_target,
+        }
+        inventory["active"].append(record)
+        if (
+            entry.get("status") in ("open", "in-progress")
+            and target_date
+            and target_date < today
+        ):
+            inventory["overdue"].append(record)
+    return inventory
+
+
+def write_fix_list_artifacts(out: Path, inventory: dict) -> None:
+    inv_dir = out / "inventory"
+    inv_dir.mkdir(parents=True, exist_ok=True)
+    (inv_dir / "fix-list.json").write_text(json.dumps(inventory, indent=2), encoding="utf-8")
+
+    lines = ["# Fix-It List (Phase 0 — pre-reconciliation snapshot)", ""]
+    lines.append(f"Loaded from: `{inventory.get('loaded_from')}`")
+    lines.append(f"Loaded at: `{inventory.get('loaded_at')}`")
+    lines.append("")
+    lines.append(f"- Active entries: **{len(inventory['active'])}**")
+    lines.append(f"- Overdue (open/in-progress past `target_date`): **{len(inventory['overdue'])}**")
+    lines.append("")
+    lines.append(
+        "Phase 8 reconciliation against current-run findings produces the final "
+        "REGRESSION / TRACKED / CONFIRMED-FIXED / WONTFIX / DRIFTED report. "
+        "This Phase 0 snapshot only validates the file and lists overdue entries."
+    )
+    if inventory["errors"]:
+        lines.append("")
+        lines.append("## Errors — run aborted unless fix-list file is fixed")
+        lines.append("")
+        for err in inventory["errors"]:
+            lines.append(f"- {err}")
+    sections = (
+        ("Overdue (open / in-progress past target_date)", inventory["overdue"]),
+        ("Active", inventory["active"]),
+    )
+    for header, bucket in sections:
+        if not bucket:
+            continue
+        lines.append("")
+        lines.append(f"## {header}")
+        lines.append("")
+        lines.append("| ID | Status | Severity | Title | File | Lines | Owner | Target | Days |")
+        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | ---: |")
+        for entry in bucket:
+            lns = entry.get("lines")
+            if isinstance(lns, list):
+                lns_str = f"{lns[0]}-{lns[1]}"
+            elif lns is not None:
+                lns_str = str(lns)
+            else:
+                lns_str = "—"
+            target = entry.get("target_date") or "—"
+            days = entry.get("days_to_target")
+            days_str = "—" if days is None else str(days)
+            lines.append(
+                f"| `{entry.get('id')}` | {entry.get('status')} | {entry.get('severity')} | "
+                f"{entry.get('title')} | `{entry.get('file')}` | {lns_str} | "
+                f"{entry.get('owner')} | {target} | {days_str} |"
+            )
+    (out / "00-fix-list.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def write_accepted_risks_artifacts(out: Path, inventory: dict) -> None:
     inv_dir = out / "inventory"
     inv_dir.mkdir(parents=True, exist_ok=True)
@@ -1087,6 +1298,7 @@ Use these artifacts first:
 - {out / 'inventory' / 'acl-index.json'}
 - {out / 'inventory' / 'sharp-edge-index.json'}
 - {out / 'inventory' / 'accepted-risks.json'}
+- {out / 'inventory' / 'fix-list.json'}
 - {out / 'local-qwen' / 'module-notes.md'} if present
 - scanner outputs under {out / 'scans'} if present
 
@@ -1101,6 +1313,18 @@ Suppression contract (accepted-risks.json):
   "Expired accepted-risk AR-NNN — re-review."
 - Stale entries are not your concern.
 - Never write to the accepted-risks file.
+
+Tracking contract (fix-list.json):
+- Load the `active` array. After computing the fingerprint for an emitted finding,
+  check whether any fix-list entry matches via fingerprint (or file+lines fallback).
+- DO NOT suppress on a fix-list match — fix-list is a tracker, not a filter.
+- If the matched entry has `status` open or in-progress, add a note:
+  "Tracked by FIX-NNN (target YYYY-MM-DD)."
+- If the matched entry has `status` fixed, add a note flagged as REGRESSION:
+  "REGRESSION — fix-list FIX-NNN marked status=fixed but the bug is still present."
+- If the matched entry has `status` wontfix, add a note:
+  "wontfix per FIX-NNN — see notes."
+- Never write to the fix-list file.
 
 Output candidate findings only. For each candidate include:
 - title
@@ -1219,6 +1443,21 @@ def main() -> int:
         print(f"Inventory: {out / 'inventory' / 'accepted-risks.json'}")
         print(f"Report: {out / '00-accepted-risks.md'}")
         return 1 if expired else 0
+
+    fix_list = load_fix_list(args, repo)
+    write_fix_list_artifacts(out, fix_list)
+    if fix_list["errors"]:
+        print("Fix-list file has validation errors:")
+        for err in fix_list["errors"]:
+            print(f"- {err}")
+        print(f"See {out / '00-fix-list.md'}")
+        return 5
+    if args.check_only_fix_list:
+        overdue = len(fix_list["overdue"])
+        print(f"Fix-list: active={len(fix_list['active'])} overdue={overdue}")
+        print(f"Inventory: {out / 'inventory' / 'fix-list.json'}")
+        print(f"Report: {out / '00-fix-list.md'}")
+        return 1 if overdue else 0
 
     allowed_modules = {part.strip() for part in args.modules.split(",") if part.strip()} if args.modules else None
     manifests = find_manifests(repo, allowed_modules)

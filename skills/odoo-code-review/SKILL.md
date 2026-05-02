@@ -151,6 +151,8 @@ Enumerate every addon. Parse every `__manifest__.py` (name, version, depends, da
 
 Phase 0 also loads the optional accepted-risks suppression file (`<repo>/.audit-accepted-risks.yml`, override with `--accepted-risks <path>`). The loader validates schema (per `references/accepted-risks.md`), aborts the run on validation errors, and writes `<OUT>/00-accepted-risks.md` (human-readable summary, EXPIRED + STALE buckets) plus `<OUT>/inventory/accepted-risks.json` (machine-readable). Hunters and Phase 7 Gate 0 read the JSON to suppress already-triaged findings via stable 16-hex `fingerprint` (primary key, sha256 over `f"{file}:{primary_line}:{sink_kind}:{title.strip().lower()}"[:16]`) or legacy `file`/`lines`/`match` heuristic. Each emitted finding in `findings.html` carries a "Mark as accepted risk" button that copies a pre-filled YAML stanza in our exact schema, so adding a new suppression is one click. This is the per-finding fingerprint layer; `--scope <file>` (see Flags) is the broader engagement-scope layer with its own coarser `accepted_risks` block.
 
+Phase 0 also loads the optional fix-it tracking file (`<repo>/.audit-fix-list.yml`, override with `--fix-list <path>`). This is the symmetric companion to accepted-risks: same canonical fingerprint, but a different verdict — _"this IS a real bug, we are tracking the fix"_. The loader validates schema (per `references/fix-list.md`), aborts on errors, and writes `<OUT>/inventory/fix-list.json` plus a Phase-0 snapshot at `<OUT>/00-fix-list.md` listing active and overdue entries. Phase 8 reconciliation then matches every emitted finding against fix-list entries by fingerprint and produces the final `00-fix-list.md` buckets: **TRACKED** (status `open`/`in-progress` + finding present), **LIKELY-FIXED** (status `open`/`in-progress` + finding gone), **REGRESSION** (status `fixed` + finding present, **red banner**), **CONFIRMED-FIXED** (status `fixed` + finding gone), **WONTFIX** (status `wontfix` + finding present, passive tag), **DRIFTED** (status `wontfix` + finding gone). `findings.html` carries a second per-card button — "Add to fix-it list" — that copies a pre-filled YAML stanza with the fingerprint already populated, so the human reader's only triage action per finding is exactly one click: accept-risk OR fix-it. Fix-list entries do **not** suppress findings — they are emitted with a tracking pill (`tracked: FIX-NNN`, `REGRESSION`, or `wontfix`).
+
 ### Phase 1 — Odoo Attack Surface Map
 
 Identify Odoo version + edition + Python + Postgres + Werkzeug. Map HTTP routes (`@http.route` decorators with auth/csrf/type/methods), RPC entry points (`xmlrpc/2/object`, `jsonrpc`), portal routes (`/my/*`), models touched by public/portal routes, ACL CSV rows, `ir.rule` records, server actions, cron, mail templates. Risk-rank modules 1–5. Plan hunter assignments. Writes `<OUT>/01-attack-surface.md`.
@@ -201,7 +203,7 @@ Delegate the 9 technique hunter passes to Codex by default to preserve Claude li
 
 Claude's job in Phase 5 is to prepare compact packets, launch/track Codex tasks, and spot-check returned claims before Phase 5.5. Claude should not spend context doing full hunter sweeps unless Codex is unavailable.
 
-Hunter packets MUST include the path to `<OUT>/inventory/accepted-risks.json`. Each hunter computes the candidate fingerprint before emitting and silently drops any match (Gate 0 short-circuit) so the lead session never sees re-litigated findings. Hunters also stamp every emitted finding with a `Fingerprint:` line and `Sink kind:` line per the contract in `references/agent-prompts.md`, so `findings.html` can wire the per-card "Mark as accepted risk" button without recomputation.
+Hunter packets MUST include the path to `<OUT>/inventory/accepted-risks.json` and `<OUT>/inventory/fix-list.json`. Each hunter computes the candidate fingerprint before emitting and silently drops any accepted-risks match (Gate 0 short-circuit) so the lead session never sees re-litigated findings. Hunters also stamp every emitted finding with a `Fingerprint:` line and `Sink kind:` line per the contract in `references/agent-prompts.md`, so `findings.html` can wire the per-card buttons without recomputation. Hunters do **not** suppress on a fix-list match; instead they tag emitted findings: `Tracked by FIX-NNN (target YYYY-MM-DD)` for `open`/`in-progress`, `REGRESSION — fix-list FIX-NNN marked status=fixed` for `fixed` (a flagged regression), `wontfix per FIX-NNN` for `wontfix`. The full reconciliation buckets are produced in Phase 8 from `inventory/fix-list.json` cross-referenced against the final ACCEPT findings.
 
 The 10 Odoo hunters:
 
@@ -293,6 +295,8 @@ Procedure: `references/requirements-mode.md`.
 
 Have Codex draft `findings.md`, `findings.html`, `findings.json` when requested, and `tooling.md` from the verified Phase 7 records. Claude performs the final edit, removes unsupported claims, checks severity language, and ensures every ACCEPT has evidence and a 6-gate table.
 
+Phase 8 also performs **fix-list reconciliation** against `inventory/fix-list.json`. Every ACCEPT finding fingerprint is matched against the fix-list; matches receive a tracking pill in `findings.html` (green `tracked: FIX-NNN`, red `REGRESSION`, or grey `wontfix`). The runner then emits `<OUT>/00-fix-list.md` with buckets in fixed read-order: REGRESSION → OVERDUE → TRACKED → CONFIRMED-FIXED → LIKELY-FIXED → WONTFIX → DRIFTED. Each finding card in `findings.html` carries two buttons — "Mark as accepted risk" (suppression) and "Add to fix-it list" (tracking) — so the human reader's per-finding triage is one of two clicks. See `references/fix-list.md` for the schema and `references/html-report.md` for the button spec.
+
 ## Workflow Checklist (Track in TaskCreate)
 
 - [ ] Phase 0: create `<OUT>` dir, find every `__manifest__.py`, parse to JSON, build depends graph, tag origins.
@@ -319,6 +323,7 @@ Have Codex draft `findings.md`, `findings.html`, `findings.json` when requested,
 - [ ] Phase 7.7 (unless `--no-codex` and only when CRITICAL/HIGH ACCEPT exists): fresh Codex adversarial check → `<OUT>/codex/second-opinion/`.
 - [ ] Phase 7.8 (only if `--requirements <file>`): extract claims, compile predicates, judges, repair-loop, R-N findings.
 - [ ] Phase 8: Codex draft + Claude final edit for `findings.md` + `findings.html` (unless `--no-html`) + `tooling.md`.
+- [ ] Phase 8: fix-list reconciliation against `inventory/fix-list.json` → `<OUT>/00-fix-list.md` REGRESSION/OVERDUE/TRACKED/CONFIRMED-FIXED/LIKELY-FIXED/WONTFIX/DRIFTED buckets.
 - [ ] Engagement stats: modules, LOC, wall-clock, tokens, findings by severity.
 - [ ] Reproducibility appendix: `<OUT>/tooling.md` with tool versions + commands run.
 
@@ -346,6 +351,8 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 - `--pr-repo <owner/repo>` — override PR-target repo for `--pr`.
 - `--accepted-risks <path>` — override default `<repo>/.audit-accepted-risks.{yml,yaml,json}` location. Per-finding fingerprint suppression layer (distinct from `--scope`'s coarser layer). See `references/accepted-risks.md`.
 - `--check-only-accepted-risks` — validate accepted-risks file, write `<OUT>/inventory/accepted-risks.json` + `<OUT>/00-accepted-risks.md`, then exit. Non-zero on validation errors or expired entries. Use in CI to catch rot.
+- `--fix-list <path>` — override default `<repo>/.audit-fix-list.{yml,yaml,json}` location. Per-finding fingerprint **tracking** layer (real bugs the team has committed to fixing). Findings are tagged, not suppressed. See `references/fix-list.md`.
+- `--check-only-fix-list` — validate fix-list file, write `<OUT>/inventory/fix-list.json` + `<OUT>/00-fix-list.md`, then exit. Non-zero on validation errors or any `open`/`in-progress` entry past its `target_date`. Use in CI to gate the backlog.
 
 ## Post-Processing Scripts
 
@@ -434,6 +441,8 @@ Hunters know Odoo semantics. The two trust boundaries (`auth='public'` and `sudo
 - `references/scope.example.yml` — scope.yml schema (excluded_modules / excluded_paths / accepted_risks — coarse engagement-scope layer)
 - `references/accepted-risks.md` — per-finding fingerprint suppression schema (fine-grained exclusion-bucket layer; fingerprint canonicalisation, legacy match rules, expiry semantics)
 - `references/accepted-risks.example.yml` — copy-paste template for `<repo>/.audit-accepted-risks.yml`
+- `references/fix-list.md` — per-finding fingerprint **tracking** schema (symmetric companion to accepted-risks; status open/in-progress/fixed/wontfix; reconciliation matrix incl. REGRESSION detection)
+- `references/fix-list.example.yml` — copy-paste template for `<repo>/.audit-fix-list.yml`
 - `references/html-report.md` — single-file `findings.html` spec (no CDN, embedded SVG, sortable table, severity colors, print-friendly)
 - `templates/github-action.yml` — drop-in GitHub Action for PR-scoped review + SARIF upload + sticky delta comments
 - `/odoo-code-review` — slash command to kick off the whole pipeline

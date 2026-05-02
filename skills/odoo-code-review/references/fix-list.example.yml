@@ -1,0 +1,161 @@
+# Fix-It list — copy to <repo-root>/.audit-fix-list.yml and edit.
+#
+# Schema reference: ~/.claude/skills/odoo-code-review/references/fix-list.md
+#
+# RULES (loader will fail the run if violated):
+#   - id must be unique within this file (FIX-NNN)
+#   - title, file, severity, owner, status are mandatory
+#   - status ∈ {open, in-progress, fixed, wontfix}
+#   - severity ∈ {CRITICAL, HIGH, MEDIUM, LOW, INFO}
+#   - target_date / fixed_at parse as YYYY-MM-DD
+#   - fingerprint (if present) matches ^[0-9a-f]{16}$
+#   - at least one of fingerprint or file must be present
+#   - notes is required when status is wontfix (force articulating the gap)
+#
+# Reconciliation (Phase 8):
+#   open / in-progress + finding present       → TRACKED  (tag finding with FIX-NNN)
+#   open / in-progress + finding gone          → LIKELY-FIXED (prompt owner to flip)
+#   fixed              + finding present       → REGRESSION  (red banner)
+#   fixed              + finding gone          → CONFIRMED-FIXED (archive after canary)
+#   wontfix            + finding present       → WONTFIX (passive tag)
+#   wontfix            + finding gone          → DRIFTED (recommend remove)
+#
+# Use the "Add to fix-it list" button in findings.html — it copies a YAML
+# block with the fingerprint already filled in, so reconciliation is exact.
+
+version: 1
+
+fixes:
+  # ---------------------------------------------------------------------------
+  # Example 1: open — confirmed bug, fix not yet started
+  # ---------------------------------------------------------------------------
+  - id: FIX-001
+    fingerprint: 7c1f4a9b2e5d8a31
+    title: Public events check-in submit allowed for non-conference events
+    file: trustedsec_events/controllers/checkin.py
+    lines: [175, 260]
+    severity: HIGH
+    sink_kind: controller_route
+    owner: martin.bos@trustedsec.com
+    status: open
+    target_date: 2026-06-01
+    notes: |
+      Sprint 47, ticket TS-1234. Plan: add HMAC verification on
+      registration_id and reject submission when registration.event_id !=
+      route event_id. PR draft at #468; needs review + ACL test coverage
+      before merge.
+    references:
+      - https://github.com/odshweb/trustedsec/issues/512
+      - TS-1234
+
+  # ---------------------------------------------------------------------------
+  # Example 2: in-progress — work is underway
+  # ---------------------------------------------------------------------------
+  - id: FIX-002
+    fingerprint: 9d3a2bf18c44e7a0
+    title: trustedsec_sow domain injection via search_read order parameter
+    file: trustedsec_sow/controllers/sow_portal.py
+    lines: 218
+    severity: HIGH
+    sink_kind: controller_route
+    owner: martin.bos@trustedsec.com
+    status: in-progress
+    target_date: 2026-05-15
+    notes: |
+      ORDER BY clause built from request.params['order']. Switching to a
+      whitelist of {name, date, state} validated server-side. PR #471
+      open, awaiting CI green. Will land before sprint close.
+    references:
+      - https://github.com/odshweb/trustedsec/pull/471
+      - TS-1289
+
+  # ---------------------------------------------------------------------------
+  # Example 3: fixed — regression canary
+  # The fix has shipped. Next /odoo-code-review run MUST NOT find this any more;
+  # if it does, reconciliation flags REGRESSION.
+  # ---------------------------------------------------------------------------
+  - id: FIX-003
+    fingerprint: 4b7e0c3a1f9d6582
+    title: trustedsec_hubspot webhook accepted unsigned POSTs
+    file: trustedsec_hubspot/controllers/webhook.py
+    lines: 64
+    severity: CRITICAL
+    sink_kind: webhook_csrf
+    owner: martin.bos@trustedsec.com
+    status: fixed
+    fixed_at: 2026-04-22
+    notes: |
+      Was accepting requests without X-HubSpot-Signature-v3 when the
+      header was missing entirely (truthy check on .get()). Now requires
+      header present AND hmac.compare_digest passes. Released in 18.0.4.7.
+      Keep this entry for at least 6 months as a regression canary.
+    references:
+      - https://github.com/odshweb/trustedsec/pull/463
+      - TS-1199
+
+  # ---------------------------------------------------------------------------
+  # Example 4: wontfix — documented gap, no compensating control
+  # Differs from accepted-risks: nothing mitigates this, the team simply
+  # decided not to fix until the broader rewrite. Reconciliation keeps
+  # showing it on every run.
+  # ---------------------------------------------------------------------------
+  - id: FIX-004
+    fingerprint: 3a8d6f2c5b1e9047
+    title: project_involvement allows portal user to read all involvement records
+    file: project_involvement/security/ir.model.access.csv
+    lines: 12
+    severity: MEDIUM
+    sink_kind: ir_rule_domain
+    owner: martin.bos@trustedsec.com
+    status: wontfix
+    notes: |
+      project_involvement is being replaced by the new engagements module
+      (FY27Q1). Adding a per-record ir.rule now would conflict with the
+      data migration plan and force two rounds of ACL rework. Documented
+      gap; report consumers should expect this finding to keep appearing
+      until the rewrite ships.
+    references:
+      - https://github.com/odshweb/trustedsec/issues/498
+
+  # ---------------------------------------------------------------------------
+  # Example 5: open + overdue — past target_date
+  # Loader will surface this in 00-fix-list.md OVERDUE bucket so the owner
+  # is forced to ship, slip, or reclassify.
+  # ---------------------------------------------------------------------------
+  - id: FIX-005
+    fingerprint: e2c4710a8d59b3f6
+    title: crm_involvement t-raw renders untrusted message body in admin chatter
+    file: crm_involvement/views/involvement_chatter.xml
+    lines: 88
+    severity: MEDIUM
+    sink_kind: qweb_t_raw
+    owner: martin.bos@trustedsec.com
+    status: open
+    target_date: 2026-03-15
+    notes: |
+      Slipped from sprint 45 because of CO/WO release work. Need to swap
+      t-raw for t-out + Markup() and add a sanitize call in the model.
+      Re-prioritise next sprint.
+    references:
+      - TS-1078
+
+  # ---------------------------------------------------------------------------
+  # Example 6: file/lines fallback — no fingerprint yet
+  # Acceptable when the entry was hand-written before a finding existed
+  # (e.g., team knows about a bug from a manual review). Loader matches
+  # via file + lines + optional title heuristic until a real run produces
+  # a fingerprint that can be backfilled.
+  # ---------------------------------------------------------------------------
+  - id: FIX-006
+    title: trustedsec_tap report endpoint missing rate limit
+    file: trustedsec_tap/controllers/reports.py
+    lines: [44, 72]
+    severity: LOW
+    sink_kind: controller_route
+    owner: martin.bos@trustedsec.com
+    status: open
+    target_date: 2026-07-01
+    notes: |
+      Identified in manual review 2026-04-30. Not yet found by the
+      automated hunters (sink shape doesn't match current rules). Backfill
+      fingerprint after the next run picks it up.
