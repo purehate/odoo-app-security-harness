@@ -21,6 +21,7 @@ Odoo Application Security Harness
 - Runs repeatable scanner setup for Semgrep, Bandit, Ruff, pylint-odoo, CodeQL, dependency tools, and optional Joern.
 - Runs local Qwen advisory notes through Ollama.
 - Launches or prepares Codex hunter tasks.
+- Writes a `goals.md` guide for lead-session `/goals` tracking in Codex-capable review sessions.
 - Produces `.audit/` artifacts for Claude's final 6-gate validation.
 
 The scanner and model outputs are leads, not final findings. The final report still requires Claude's 6-gate validation.
@@ -102,6 +103,7 @@ Important artifacts:
 
 - `00-modules.md`
 - `01-attack-surface.md`
+- `goals.md`
 - `inventory/manifests.json`
 - `inventory/routes.json`
 - `inventory/acl-index.json`

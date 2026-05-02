@@ -75,6 +75,21 @@ The runner handles preflight, output directory creation, manifest inventory, att
 
 Use `--codex-mode prepare` when Codex prompts should be reviewed or launched manually. Use the default `--codex-mode run` for the full one-command three-lane workflow.
 
+## Codex Goals Integration
+
+If the lead review session supports `/goals`, create one lead-session goal after the runner writes `<OUT>/goals.md`. Use the suggested objective in that file and keep the goal open until Phase 8 is complete.
+
+Use goals for the long-running lead/orchestrator thread only. Do not require every `codex exec` hunter subprocess to create its own goal; hunter prompts are bounded by output files and are already tracked by TaskCreate.
+
+Goal checkpoints should mirror the review gates:
+
+- Phase 0/1 inventory and attack-surface map exist.
+- Scanner/advisory leads are captured or skipped in `tooling.md`.
+- Phase 5 hunter drafts exist.
+- Phase 5.5/6 discourse and chaining are resolved.
+- Phase 7 candidate findings have final triage and 6-gate reasoning.
+- Phase 8 final report and reproducibility appendix are written.
+
 ## One-Command Three-Lane Orchestration
 
 When run from Claude Code via `/odoo-code-review`, use all three lanes in one run:
@@ -242,6 +257,7 @@ Have Codex draft `findings.md`, `findings.html`, `findings.json` when requested,
 
 - [ ] Phase 0: create `<OUT>` dir, find every `__manifest__.py`, parse to JSON, build depends graph, tag origins.
 - [ ] Phase 1: identify Odoo version + stack, map HTTP/RPC/portal surface, ACL CSV, `ir.rule`, cron, mail templates, draft hunter assignments.
+- [ ] If available, create/update the lead-session `/goals` objective from `<OUT>/goals.md`; keep TaskCreate for per-phase and per-hunter progress.
 - [ ] Phase 1.5 (unless `--no-local-qwen`): run local Ollama/Qwen advisory module notes and scanner-hint triage → `<OUT>/local-qwen/`.
 - [ ] Phase 2: Semgrep community + custom Odoo rules → `<OUT>/scans/semgrep/`.
 - [ ] Phase 2.5: Bandit → `<OUT>/scans/bandit/`.

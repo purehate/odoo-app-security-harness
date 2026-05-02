@@ -278,6 +278,83 @@ def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[d
     (out / "01-attack-surface.md").write_text("\n".join(surface) + "\n", encoding="utf-8")
 
 
+def write_goals_guide(repo: Path, out: Path, manifests: list[dict], routes: list[dict], args: argparse.Namespace) -> None:
+    modules = len(manifests)
+    route_count = len(routes)
+    scope = f"modules {args.modules}" if args.modules else f"{modules} discovered Odoo module(s)"
+    depth = "quick source review" if args.quick else "full source review"
+    codex_lane = "disabled" if args.no_codex else f"enabled ({args.codex_model}, {args.codex_budget})"
+    qwen_lane = "disabled" if args.no_local_qwen else f"enabled ({args.local_model})"
+    lead_sources = ["inventory", "attack-surface map"]
+    if not args.quick and not args.no_scans:
+        lead_sources.append("scanner leads")
+    if not args.no_codex:
+        lead_sources.append("Codex hunter outputs")
+    if not args.no_local_qwen:
+        lead_sources.append("local Qwen hints")
+
+    objective = (
+        f"Complete an evidence-backed Odoo security review of {repo} covering {scope}, "
+        f"{route_count} mapped route(s), {', '.join(lead_sources)}, 6-gate validation, "
+        "and final client-ready findings."
+    )
+
+    lines = [
+        "# Codex Goals Guide",
+        "",
+        "Use this file when the lead review session supports `/goals` or equivalent goal tracking.",
+        "Goals are best used for the lead/orchestrator session, not for every short hunter subprocess.",
+        "",
+        "## Suggested Goal",
+        "",
+        "```text",
+        objective,
+        "```",
+        "",
+        "## Suggested Budget",
+        "",
+    ]
+    if args.quick:
+        lines.append("- `low` or a short explicit token budget: quick run, no scanner/discourse depth.")
+    elif modules <= 5:
+        lines.append("- `normal`: small repo, full validation still matters more than hunter breadth.")
+    elif modules <= 30:
+        lines.append("- `normal` to `deep`: medium repo; use `deep` when runtime evidence or requirements mode is in scope.")
+    else:
+        lines.append("- `deep`: large repo; consider scoping modules before spending review budget.")
+
+    lines.extend(
+        [
+            "",
+            "## Checkpoints",
+            "",
+            "- Phase 0/1 inventory complete: `00-modules.md`, `01-attack-surface.md`, and `inventory/*` exist.",
+            "- Scanner/advisory leads complete: `scans/*`, `local-qwen/*`, and `tooling.md` record missing tools.",
+            "- Phase 5 hunter drafts complete: `codex/hunters/*.md` or equivalent manual hunter notes exist.",
+            "- Phase 5.5/6 correlation complete: discourse challenges resolved and chained paths drafted.",
+            "- Phase 7 validation complete: every candidate has ACCEPT, DOWNGRADE, REJECT, or NEEDS-MANUAL with 6-gate reasoning.",
+            "- Phase 8 output complete: final report, reproducibility appendix, and requested HTML/JSON sidecars exist.",
+            "",
+            "## Run Context",
+            "",
+            f"- Target: `{repo}`",
+            f"- Output: `{out}`",
+            f"- Review depth: `{depth}`",
+            f"- Modules: `{modules}`",
+            f"- Routes: `{route_count}`",
+            f"- Codex lane: `{codex_lane}`",
+            f"- Local Qwen lane: `{qwen_lane}`",
+            f"- Runtime: `{args.runtime}`",
+            f"- Requirements file: `{args.requirements or 'none'}`",
+            "",
+            "## Completion Rule",
+            "",
+            "Mark the goal complete only after Phase 8 output exists and unsupported hunter/scanner claims have been removed.",
+        ]
+    )
+    (out / "goals.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, list[str]]:
     tools = {name: which(name) for name in ["codex", "ollama", "semgrep", "bandit", "ruff", "pylint", "pre-commit", "codeql", "pyre", "pip-audit", "osv-scanner", "joern-parse", "dot"]}
     lane_errors: list[str] = []
@@ -530,6 +607,7 @@ def main() -> int:
     acl_rows = index_acl(repo, manifests)
     pattern_summary = scan_patterns(repo, manifests)
     write_inventory(repo, out, manifests, routes, acl_rows, pattern_summary, args)
+    write_goals_guide(repo, out, manifests, routes, args)
 
     scanner_records: list[dict] = []
     qwen_record: dict | None = None

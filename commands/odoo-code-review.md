@@ -40,6 +40,8 @@ Before manual review work, run the local harness runner to create the repeatable
 
 Use `--codex-mode prepare` when you want Claude to inspect/launch Codex prompts manually. Use the default `--codex-mode run` for the full one-command three-lane workflow.
 
+If the lead session supports `/goals`, use `<OUT>/goals.md` after the runner completes to set the review objective. Keep that goal open until Phase 8 output exists; continue using TaskCreate for phase and hunter-level tracking.
+
 1. **Phase 0 — Module Inventory + Manifest Map.** Find every `__manifest__.py`, parse to JSON, build depends graph, tag origins (core/enterprise/OCA/custom/third-party). Writes `00-modules.md`, `inventory/`.
 2. **Phase 1 — Odoo Attack Surface Map.** Identify Odoo version + stack. Map HTTP routes (`@http.route` with auth/csrf/type/methods), RPC entry points, portal `/my/*`, models touched by public routes, ACL CSV, `ir.rule`, server actions, cron, mail templates. Risk-rank modules. Writes `01-attack-surface.md`.
 3. **Phase 1.5 — Local Qwen / Ollama Advisory Check.** Runs local-only module notes and scanner-hint triage via Ollama/Qwen unless `--no-local-qwen`. Hints only; no ACCEPT findings.
@@ -65,6 +67,7 @@ Use `--codex-mode prepare` when you want Claude to inspect/launch Codex prompts 
 Written to `<repo>/.audit/` (or `--out <dir>`):
 
 - `00-modules.md`, `01-attack-surface.md` — Phase 0/1 maps
+- `goals.md` — suggested `/goals` objective, budget guidance, and phase checkpoints for the lead review session
 - `local-qwen/` — Phase 1.5 advisory notes: `module-notes.md`, `scanner-triage.md`, `reject-candidates.md`
 - `inventory/` — manifest JSON, depends graph, ACL CSV index, route map
 - `scans/semgrep/`, `scans/bandit/`, `scans/ruff/`, `scans/pylint-odoo/`, `scans/oca-precommit/`, `scans/codeql/`, `scans/joern/`, `scans/pysa/`, `scans/deps/` — raw scan outputs
