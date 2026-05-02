@@ -54,13 +54,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--codex-mode", choices=["run", "prepare"], default="run", help="Run Codex tasks or only write prompts")
     parser.add_argument("--requirements", help="Requirements/spec file for Phase 7.8")
     parser.add_argument("--no-html", action="store_true")
-    parser.add_argument("--json", action="store_true", dest="emit_json")
+    parser.add_argument("--no-json", action="store_true", dest="no_emit_json", help="Skip findings.json sidecar (emitted by default).")
+    parser.add_argument("--json", action="store_true", dest="emit_json", help="(Compat) findings.json is on by default; flag is a no-op kept for legacy invocations.")
+    parser.add_argument("--no-export", action="store_true", help="Skip Phase 8.6 auto-export (SARIF/fingerprints/bounty/diff). Default: on.")
+    parser.add_argument("--baseline", help="Baseline findings.json or .audit/ for Phase 8.6 auto-diff. Default: <target>/.audit-baseline/findings.json if present.")
     parser.add_argument("--preflight-only", action="store_true", help="Write run plan/tooling, then stop")
     parser.add_argument("--no-scans", action="store_true", help="Skip scanners even when not --quick")
     parser.add_argument("--scope", help="Path to scope.yml accepted-risks file (suppresses matching findings).")
     parser.add_argument("--pr", help="GitHub PR number; scope review to files changed in this PR (requires gh CLI).")
     parser.add_argument("--pr-repo", help="GitHub repo (owner/name) for --pr; defaults to gh-detected origin.")
-    return parser.parse_args()
+    args = parser.parse_args()
+    # findings.json is now emitted by default. --json kept as compat no-op; --no-json opts out.
+    args.emit_json = not args.no_emit_json
+    return args
 
 
 def rel(path: Path, root: Path) -> str:
@@ -609,7 +615,8 @@ def write_goals_guide(repo: Path, out: Path, manifests: list[dict], routes: list
             "- Phase 5 hunter drafts complete: `codex/hunters/*.md` or equivalent manual hunter notes exist.",
             "- Phase 5.5/6 correlation complete: discourse challenges resolved and chained paths drafted.",
             "- Phase 7 validation complete: every candidate has ACCEPT, DOWNGRADE, REJECT, or NEEDS-MANUAL with 6-gate reasoning.",
-            "- Phase 8 output complete: final report, reproducibility appendix, and requested HTML/JSON sidecars exist.",
+            "- Phase 8 output complete: final report, reproducibility appendix, and HTML/JSON sidecars exist.",
+            "- Phase 8.6 auto-export complete (default on): `findings.sarif`, `findings-fingerprints.json`, and `bounty/F-N.md` exist; `delta.md` exists when a baseline was found.",
             "",
             "## Run Context",
             "",
@@ -749,6 +756,13 @@ def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, li
         "runtime": args.runtime,
         "zap_target": args.zap_target,
         "requirements": args.requirements,
+        "emit_json": args.emit_json,
+        "emit_html": not args.no_html,
+        "auto_export": not args.no_export,
+        "baseline": args.baseline,
+        "scope": args.scope,
+        "pr": args.pr,
+        "pr_repo": args.pr_repo,
         "tools": tools,
         "lane_errors": lane_errors,
     }

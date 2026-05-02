@@ -1,0 +1,138 @@
+# Odoo Application Security Harness — GitHub Action template
+#
+# Drop into your Odoo addons repo at: .github/workflows/odoo-security.yml
+#
+# What it does:
+#   - Runs odoo-review-run on every PR (scoped to changed files via --pr)
+#   - Runs full review on main + nightly schedule
+#   - Uploads findings.sarif to GitHub Code Scanning (inline PR annotations)
+#   - Comments PR with delta vs main (new / fixed / changed)
+#   - Persists findings.json as artifact for trend tracking
+#
+# Prerequisites:
+#   - Repo secrets: OPENAI_API_KEY (Codex), optional OLLAMA_HOST for remote Qwen
+#   - Reviewer permissions: contents:read, security-events:write, pull-requests:write
+
+name: Odoo Security Review
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: "0 4 * * 1" # weekly Monday 04:00 UTC full sweep
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need history for baseline diff
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install harness
+        run: |
+          git clone https://github.com/purehate/odoo-app-security-harness /tmp/harness
+          cd /tmp/harness && CLAUDE_HOME=$HOME/.claude ./install.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install scanners
+        run: |
+          pipx install semgrep
+          pipx install bandit
+          pipx install ruff
+          pipx install pylint
+          pipx install pylint-odoo
+          pipx install pip-audit
+
+      - name: Install Codex (optional)
+        if: ${{ secrets.OPENAI_API_KEY != '' }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          npm install -g @openai/codex
+          echo "CODEX_INSTALLED=1" >> "$GITHUB_ENV"
+
+      - name: Run review (PR scope)
+        if: github.event_name == 'pull_request'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          odoo-review-run . \
+            --pr ${{ github.event.pull_request.number }} \
+            --no-local-qwen \
+            --allow-missing-lanes \
+            ${{ env.CODEX_INSTALLED == '1' && ' ' || '--no-codex' }} \
+            --json
+
+      - name: Run review (full)
+        if: github.event_name != 'pull_request'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          odoo-review-run . \
+            --no-local-qwen \
+            --allow-missing-lanes \
+            ${{ env.CODEX_INSTALLED == '1' && ' ' || '--no-codex' }} \
+            --json
+
+      - name: Export SARIF + fingerprints + bounty
+        if: ${{ hashFiles('.audit/findings.json') != '' }}
+        run: odoo-review-export .audit
+
+      - name: Upload SARIF to Code Scanning
+        if: ${{ hashFiles('.audit/findings.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: .audit/findings.sarif
+          category: odoo-security-harness
+
+      - name: Download baseline (main branch findings)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: odoo-security.yml
+          branch: main
+          name: odoo-findings
+          path: .baseline
+
+      - name: Diff vs baseline
+        if: ${{ github.event_name == 'pull_request' && hashFiles('.baseline/findings.json') != '' }}
+        run: odoo-review-diff .baseline/findings.json .audit/findings.json
+
+      - name: PR comment (delta summary)
+        if: ${{ github.event_name == 'pull_request' && hashFiles('.audit/delta.md') != '' }}
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: .audit/delta.md
+          header: odoo-security-harness
+
+      - name: Upload findings artifact
+        if: ${{ hashFiles('.audit/findings.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: odoo-findings
+          path: |
+            .audit/findings.json
+            .audit/findings.sarif
+            .audit/findings-fingerprints.json
+            .audit/module-risk.md
+            .audit/bounty/
+            .audit/delta.md
+          retention-days: 90

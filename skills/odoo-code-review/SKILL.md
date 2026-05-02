@@ -19,6 +19,24 @@ allowed-tools:
 
 Structured, technique-organized AI security review of an Odoo source-code repository. Tuned for the two trust boundaries that matter in Odoo: **public-vs-authenticated** (`auth='public'`) and **user-vs-root** (`sudo()`).
 
+## North Star
+
+**Using this tool as an AI-assisted code-review companion makes the developer the best Odoo developer possible.** The harness is a teaching loop, not a one-shot scanner.
+
+Every ACCEPT must teach. Per finding:
+
+- **Why it's wrong in Odoo's model.** Cite the Odoo invariant being violated (e.g., "`@http.route(auth='public')` + `sudo()` crosses the public-vs-authenticated and user-vs-root boundaries simultaneously", or "computed field using `self.sudo()` causes recompute under privileged context for every user that triggers the dependency").
+- **The Odoo-idiomatic fix.** Not "validate input" — `_check_company` + `company_id` filter; not "sanitize HTML" — `fields.Html(sanitize=True)` or `tools.html_sanitize()`; not "don't use sudo" — drop sudo and rely on `ir.model.access` + `ir.rule`, or scope sudo to one specific record with explicit reasoning. Cite Odoo source, docs, or OCA precedent where relevant.
+- **The bug shape, not the bug.** After a finding lands, the developer should recognize the same shape next time without the tool.
+
+Every REJECT must also teach: explain why Odoo's framework already handles the case (e.g., "the ORM parameterizes table identifiers via `psycopg2.sql.Identifier`; the f-string here interpolates a hardcoded constant, not user data"). Rejecting without explanation wastes the iteration.
+
+Phase 7 hunters, fp-check gates, severity decisions, and `accepted_risks` reasons should all read as written by someone who has shipped Odoo to production and debugged it at 3am — not someone running a generic Python scanner. If a finding could be lifted verbatim from `bandit -r .`, it does not belong in a final report.
+
+The iteration loop is the teaching mechanism: each `accepted_risks` reason in `scope.yml` becomes a paragraph of senior-level Odoo reasoning the developer wrote (or co-wrote with the AI) and can reuse.
+
+Operating principle: **deep framework expertise > scanner breadth**. Semgrep + custom Odoo rules + agent validation beats 400 generic warnings every time.
+
 ## When to Use
 
 - User asks for a security review, code review, source-code audit, appsec review, vuln hunt, pentest of source, or "audit this Odoo repo".
@@ -318,6 +336,27 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 - `--json` — emit `findings.json` sidecar in Phase 8.
 - `--modules <list>` — restrict scope to comma-separated module names.
 - `--odoo-version <N>` — override Odoo version detection (e.g., `17.0`).
+- `--scope <file>` — apply a `scope.yml` (`excluded_modules`, `excluded_paths`, `accepted_risks` with id/module/file/rule/cwe/line_range/reason/expires). Exclusions filter Phase 0 manifests; accepted-risks become SARIF `suppressions` at export time. See `references/scope.example.yml`.
+- `--pr <n>` — restrict scope to files changed in PR `<n>` (uses `gh pr view --json files`). Combine with `--pr-repo owner/repo` if not in the same checkout.
+- `--pr-repo <owner/repo>` — override PR-target repo for `--pr`.
+
+## Post-Processing Scripts
+
+The runner emits `findings.json`. Three companion scripts process it:
+
+- `odoo-review-export <.audit-dir>` — emits `findings.sarif` (SARIF 2.1.0 for GitHub Code Scanning), `findings-fingerprints.json` (stable cross-run dedup), and `bounty/F-N.md` (HackerOne/Intigriti drafts per ACCEPT). Honors `scope.json` accepted_risks as SARIF `suppressions` unless `--no-suppress`.
+- `odoo-review-diff <baseline> <current>` — classifies findings new / fixed / unchanged / changed (severity OR triage delta) by `fingerprint`. Emits `delta.md` + `delta.json`.
+- `odoo-review-rerun <directive>` — directive feedback-loop dispatcher (Qwen or Codex). See "Directive Feedback Loop" above.
+
+## CI Template
+
+`templates/github-action.yml` is a drop-in `.github/workflows/odoo-security.yml`:
+
+- PR-scoped review on `pull_request` (auto `--pr <n>`).
+- Full sweep on `push` to main + weekly cron.
+- Uploads `findings.sarif` to GitHub Code Scanning (`security-events: write`).
+- Sticky PR comment with `delta.md` (vs main baseline artifact).
+- 90-day artifact retention for `findings.json`, `delta.md`, `bounty/`.
 
 ## Reference Files
 
@@ -382,4 +421,9 @@ Hunters know Odoo semantics. The two trust boundaries (`auth='public'` and `sudo
 - `references/lang-python.md` — generic Python AppSec
 - `references/lang-web.md` — TypeScript/Node patterns (for `static/src` JS only)
 - `references/triage.md` — rubric, output format, stats template
+- `references/findings-schema.md` — `findings.json` schema (v1.0) consumed by export/diff
+- `references/cwe-map.json` — 19 Odoo bug-shape → CWE/CAPEC/OWASP mappings (auto-copied to `inventory/cwe-map.json`)
+- `references/scope.example.yml` — scope.yml schema (excluded_modules / excluded_paths / accepted_risks)
+- `references/html-report.md` — single-file `findings.html` spec (no CDN, embedded SVG, sortable table, severity colors, print-friendly)
+- `templates/github-action.yml` — drop-in GitHub Action for PR-scoped review + SARIF upload + sticky delta comments
 - `/odoo-code-review` — slash command to kick off the whole pipeline

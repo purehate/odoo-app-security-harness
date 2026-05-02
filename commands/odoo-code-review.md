@@ -26,7 +26,13 @@ Run a technique-organized Odoo security review of source code (Phases 0 → 1 �
 /odoo-code-review <path> --requirements <file>     # Phase 7.8 — judge-verified claims from spec/threat-model/SOC2 doc
 /odoo-code-review <path> --no-html                 # skip findings.html generation in Phase 8
 /odoo-code-review <path> --json                    # emit findings.json sidecar in Phase 8
+/odoo-code-review <path> --scope ./scope.yml       # apply excluded_modules/paths + accepted_risks
+/odoo-code-review <path> --pr 42                   # scope to files changed in PR 42 (gh CLI)
+/odoo-code-review <path> --pr 42 --pr-repo o/r     # PR scope when checkout is not the PR's repo
+/odoo-code-review <path> --no-export               # skip Phase 8.6 auto-export (SARIF/bounty/diff)
 ```
+
+**TL;DR:** run `/odoo-code-review` from repo root. The harness handles inventory → scanners → Qwen → Codex hunters → discourse → chaining → 6-gate validation → final report → SARIF/bounty/diff export end-to-end. No manual follow-up commands.
 
 ## What It Does
 
@@ -60,8 +66,22 @@ If the lead session supports `/goals`, use `<OUT>/goals.md` after the runner com
 16. **Phase 7.6 — Attack Graph DOT/SVG.** Codex/scripts render DOT/SVG for chained findings. Claude checks graph accuracy.
 17. **Phase 7.7 — Fresh Codex Adversarial Check.** Different session = blind-spot diversity. Runs on CRITICAL/HIGH ACCEPT unless `--no-codex`. Reconciliation table covers ACCEPT/REJECT/DOWNGRADE combos + PoC writeability.
 18. **Phase 7.8 — Requirements Verification (only with `--requirements`).** Extract claims, compile predicates, dispatch judges, repair-loop (≤2 rounds). Files R-N findings.
-19. **Phase 8 — Output Assembly.** Codex drafts `findings.md` + `findings.html` + reproducibility appendix. Claude performs final edit and removes unsupported claims. `--json` adds `findings.json` sidecar.
+19. **Phase 8 — Output Assembly.** Codex drafts `findings.md` + `findings.html` + `findings.json` + reproducibility appendix. Claude performs final edit and removes unsupported claims. `findings.json` and `findings.html` are emitted by default; opt out with `--no-json` / `--no-html`.
 20. **Phase 8.5 — Directive Loop (optional, any phase).** When Claude needs a focused rerun mid-review (deeper portal-route + sudo scan, PoC sketch for one finding, narrative on an ACL gap), copy `<OUT>/directives/_template.md` to `D-NNNN-<slug>.md`, fill the YAML + body, then run `odoo-review-rerun <directive>`. Result lands in `directives/results/`. Use sparingly; not a replacement for Phase 5 hunters.
+21. **Phase 8.6 — Auto-Export (default on).** Once `findings.json` exists, Claude runs `odoo-review-export <OUT>` to emit `findings.sarif` (SARIF 2.1.0 for GitHub Code Scanning), `findings-fingerprints.json` (cross-run dedup hashes), and `bounty/F-N.md` (HackerOne/Intigriti drafts per ACCEPT, suppressed entries skipped). If a baseline exists at `<OUT>/../.audit-baseline/findings.json` (or the path passed to `--baseline`), Claude also runs `odoo-review-diff <baseline> <OUT>/findings.json` to emit `delta.md` + `delta.json`. Skip with `--no-export`.
+22. **Phase 8.7 — AI-Driven Iteration Loop (the product).** This harness runs three AI lanes — Claude, Codex, local Ollama/Qwen. Use them. After Phase 8.6 the lead session (Claude):
+    1. Re-reads `findings.json` + `delta.md` + every REJECT/DOWNGRADE 6-gate verdict.
+    2. For each finding where 6-gate clearly fails (gate 1/2/3 FAIL with cited line evidence), drafts an `accepted_risks` entry into `<OUT>/scope-suggestions.yml` with: `id`, `finding_id`, `rule`, `cwe`, `file`, `line_range`, `reason` (citing the failing gate + code evidence), `expires` (default 90d).
+    3. Cross-checks each suggestion with at least one other lane:
+       - **Codex** (default for CRITICAL/HIGH-adjacent suggestions): fresh adversarial prompt, sees only the finding card + source.
+       - **Local Qwen** (default for LOW/MEDIUM bulk suggestions, free + private): hint-only verdict via `odoo-review-rerun` against a directive of `target_lane: qwen`.
+       - At least one cross-check lane must agree before a suggestion lands. Disagreement → keep the finding open and log to `directives/results/`.
+    4. Presents the suggestions diff to the user: "Apply these N suppressions and re-run? [y/N]". On `y`, Claude appends to project `scope.yml` (creates if missing), re-invokes `/odoo-code-review --scope ./scope.yml --baseline <prev OUT>`, and the next run shows `delta.md` with the new suppressions and any newly surfaced findings.
+    5. Repeats until either the user stops, the suggestion list is empty, or 3 iterations have run (cap to prevent runaway).
+
+    Lane choice for the cross-check is governed by lane availability + cost: if `--no-codex`, Qwen handles all cross-checks; if `--no-local-qwen`, Codex handles all; if both available, the harness routes by severity (cheap lane for low-stakes bulk, expensive lane for the few high-stakes suggestions).
+
+    `findings.html` also ships a manual **Accept Risk** button per finding (toggle + reason + expiry → downloadable `accepted-risks.yml` snippet) for cases where the human disagrees with the AI's draft. See `references/html-report.md`. The AI loop is default; the buttons are the override.
 
 ## Output
 
