@@ -1,0 +1,37 @@
+version: "1.0"
+
+# Modules to skip entirely. Manifests in these modules will not be inventoried,
+# scanned, or sent to hunters. Use for vendored third-party addons or legacy
+# code that is out-of-scope for this engagement.
+excluded_modules:
+  - third_party_legacy
+  - vendor_old
+
+# Path globs to skip during scanner runs. Match repo-relative paths.
+# (Phase 7 enforcement is up to Claude — this is advisory for hunters.)
+excluded_paths:
+  - "addons/third_party/**"
+  - "**/tests/**"
+
+# Accepted risks: findings that match these rules are suppressed in final
+# output (still listed under "suppressed" appendix for audit trail). Use
+# sparingly — every entry needs a real reason and an expiry date.
+accepted_risks:
+  - id: AR-001
+    module: portal
+    rule: csrf_state_change_get
+    reason: "Internal portal route — CSRF protection deliberately disabled to support legacy partner integrations. Compensating control: IP allowlist on reverse proxy."
+    expires: "2026-12-31"
+
+  - id: AR-002
+    file: addons/sale/controllers/portal.py
+    line_range: [120, 145]
+    cwe: CWE-639
+    reason: "Customer accepted risk on initial penetration test (TS-2024-Q4); fix planned for Odoo 17 upgrade."
+    expires: "2026-09-30"
+
+  - id: AR-003
+    rule: hardcoded_secret
+    file: addons/sample/data/demo.xml
+    reason: "Demo-only credentials in shipped data file; never deployed to production."
+    expires: "2027-01-01"

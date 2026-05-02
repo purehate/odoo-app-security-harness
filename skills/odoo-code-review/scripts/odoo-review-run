@@ -57,6 +57,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--json", action="store_true", dest="emit_json")
     parser.add_argument("--preflight-only", action="store_true", help="Write run plan/tooling, then stop")
     parser.add_argument("--no-scans", action="store_true", help="Skip scanners even when not --quick")
+    parser.add_argument("--scope", help="Path to scope.yml accepted-risks file (suppresses matching findings).")
+    parser.add_argument("--pr", help="GitHub PR number; scope review to files changed in this PR (requires gh CLI).")
+    parser.add_argument("--pr-repo", help="GitHub repo (owner/name) for --pr; defaults to gh-detected origin.")
     return parser.parse_args()
 
 
@@ -108,6 +111,155 @@ def run(cmd: list[str], cwd: Path, log_path: Path, stdout_path: Path | None = No
         record.update({"returncode": 1, "error": str(exc)})
     record["finished"] = dt.datetime.now(dt.timezone.utc).isoformat()
     return record
+
+
+def parse_scope_yaml(path: Path) -> dict:
+    """Minimal YAML reader for scope.yml — supports `key: value`, lists with `- `, and nested dicts via 2-space indent.
+
+    Schema:
+        version: "1.0"
+        accepted_risks:
+          - id: AR-001
+            module: portal              # optional
+            file: addons/portal/main.py # optional
+            rule: csrf_state_change_get # optional (matches CWE map key)
+            cwe: CWE-352                # optional
+            line_range: [100, 200]      # optional
+            reason: "Customer accepted ..."
+            expires: "2026-12-31"        # optional
+        excluded_modules: [legacy_module]
+        excluded_paths: ["addons/third_party/**"]
+    """
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    return _parse_simple_yaml(text)
+
+
+def _parse_simple_yaml(text: str) -> dict:
+    """Tiny YAML subset: scalars, lists (- ), nested dicts via 2-space indent.
+
+    Not a full YAML parser. Supports the subset needed for scope.yml.
+    """
+    root: dict = {}
+    stack: list[tuple[int, object]] = [(-1, root)]
+    pending_list_key: tuple[int, str] | None = None
+
+    for raw_line in text.splitlines():
+        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            continue
+        stripped = raw_line.rstrip()
+        indent = len(stripped) - len(stripped.lstrip(" "))
+        content = stripped.lstrip(" ")
+
+        while stack and indent <= stack[-1][0] and len(stack) > 1:
+            stack.pop()
+
+        parent = stack[-1][1]
+
+        if content.startswith("- "):
+            item_text = content[2:]
+            if not isinstance(parent, list):
+                if pending_list_key is None:
+                    raise ValueError(f"List item without parent list: {content!r}")
+                outer_indent, list_key = pending_list_key
+                outer = stack[-1][1]
+                if isinstance(outer, dict):
+                    new_list: list = []
+                    outer[list_key] = new_list
+                    stack.append((outer_indent, new_list))
+                    parent = new_list
+                    pending_list_key = None
+                else:
+                    raise ValueError(f"Cannot attach list to non-dict at {content!r}")
+            if ":" in item_text and not item_text.endswith(":"):
+                key, _, val = item_text.partition(":")
+                obj = {key.strip(): _yaml_scalar(val.strip())}
+                parent.append(obj)
+                stack.append((indent, obj))
+            elif item_text.endswith(":"):
+                obj = {}
+                parent.append(obj)
+                stack.append((indent, obj))
+            else:
+                parent.append(_yaml_scalar(item_text))
+            continue
+
+        if content.endswith(":"):
+            key = content[:-1].strip()
+            if isinstance(parent, dict):
+                parent[key] = None
+                pending_list_key = (indent, key)
+            continue
+
+        if ":" in content:
+            key, _, val = content.partition(":")
+            key = key.strip()
+            val = val.strip()
+            if isinstance(parent, dict):
+                parent[key] = _yaml_scalar(val)
+                pending_list_key = None
+    return root
+
+
+def _yaml_scalar(value: str):
+    if value == "":
+        return None
+    if value.startswith("[") and value.endswith("]"):
+        inner = value[1:-1].strip()
+        if not inner:
+            return []
+        return [_yaml_scalar(item.strip()) for item in inner.split(",")]
+    if value.startswith('"') and value.endswith('"'):
+        return value[1:-1]
+    if value.startswith("'") and value.endswith("'"):
+        return value[1:-1]
+    if value.lower() in {"true", "yes"}:
+        return True
+    if value.lower() in {"false", "no"}:
+        return False
+    try:
+        return int(value)
+    except ValueError:
+        try:
+            return float(value)
+        except ValueError:
+            return value
+
+
+def fetch_pr_files(pr_number: str, pr_repo: str | None, repo: Path) -> list[str]:
+    """Return list of repo-relative file paths changed in the PR. Requires gh CLI."""
+    if not which("gh"):
+        return []
+    cmd = ["gh", "pr", "view", pr_number, "--json", "files", "-q", ".files[].path"]
+    if pr_repo:
+        cmd.extend(["-R", pr_repo])
+    try:
+        proc = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=60)
+    except Exception:  # noqa: BLE001
+        return []
+    if proc.returncode != 0:
+        return []
+    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+
+def filter_manifests_by_pr_files(manifests: list[dict], pr_files: list[str]) -> list[dict]:
+    """Keep only modules that own at least one PR file."""
+    if not pr_files:
+        return manifests
+    keep: list[dict] = []
+    for item in manifests:
+        prefix = item["dir"].rstrip("/") + "/"
+        if any(f.startswith(prefix) or f == item["path"] for f in pr_files):
+            keep.append(item)
+    return keep
+
+
+def filter_manifests_by_scope(manifests: list[dict], scope: dict) -> list[dict]:
+    excluded = set(scope.get("excluded_modules") or [])
+    if not excluded:
+        return manifests
+    return [item for item in manifests if item["module"] not in excluded]
 
 
 def parse_manifest(path: Path) -> dict:
@@ -304,6 +456,20 @@ def compute_module_risk(manifests: list[dict], routes: list[dict], acl_rows: lis
         })
     rows.sort(key=lambda r: (-r["score"], r["module"]))
     return rows
+
+
+def write_scope_artifact(out: Path, scope_data: dict, args: argparse.Namespace, pr_files: list[str]) -> None:
+    """Persist scope context for export/diff consumers and Phase 7 suppression."""
+    inv = out / "inventory"
+    inv.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "scope_file": args.scope,
+        "scope_data": scope_data,
+        "pr": args.pr,
+        "pr_repo": args.pr_repo,
+        "pr_files": pr_files,
+    }
+    (inv / "scope.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def copy_cwe_map(out: Path) -> None:
@@ -800,6 +966,29 @@ def main() -> int:
 
     allowed_modules = {part.strip() for part in args.modules.split(",") if part.strip()} if args.modules else None
     manifests = find_manifests(repo, allowed_modules)
+
+    scope_data: dict = {}
+    if args.scope:
+        scope_path = Path(args.scope).expanduser().resolve()
+        if scope_path.exists():
+            try:
+                scope_data = parse_scope_yaml(scope_path)
+                manifests = filter_manifests_by_scope(manifests, scope_data)
+                print(f"Scope file applied: {scope_path}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"WARN: could not parse scope file {scope_path}: {exc}", file=sys.stderr)
+        else:
+            print(f"WARN: --scope file not found: {scope_path}", file=sys.stderr)
+
+    pr_files: list[str] = []
+    if args.pr:
+        pr_files = fetch_pr_files(args.pr, args.pr_repo, repo)
+        if pr_files:
+            manifests = filter_manifests_by_pr_files(manifests, pr_files)
+            print(f"PR scope applied: {args.pr} ({len(pr_files)} files, {len(manifests)} module(s))")
+        else:
+            print(f"WARN: --pr {args.pr} returned no files (gh CLI unavailable or PR has no files)", file=sys.stderr)
+
     routes = extract_routes(repo, manifests)
     acl_rows = index_acl(repo, manifests)
     pattern_summary = scan_patterns(repo, manifests)
@@ -809,6 +998,7 @@ def main() -> int:
     copy_cwe_map(out)
     write_goals_guide(repo, out, manifests, routes, args)
     write_directives_seed(out)
+    write_scope_artifact(out, scope_data, args, pr_files)
 
     scanner_records: list[dict] = []
     qwen_record: dict | None = None
