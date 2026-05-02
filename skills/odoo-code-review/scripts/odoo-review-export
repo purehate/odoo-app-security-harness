@@ -1,0 +1,330 @@
+#!/usr/bin/env python3
+"""Export findings.json → SARIF 2.1.0 / fingerprints / bounty drafts.
+
+Usage:
+    odoo-review-export <path-to-findings.json> [--out <dir>] [--all|--sarif|--fingerprints|--bounty]
+    odoo-review-export <path-to-.audit-dir>     # auto-discovers findings.json + scope.json
+
+Reads findings.json (see skills/odoo-code-review/references/findings-schema.md).
+Optionally consumes scope.json (excluded_modules / accepted_risks suppression).
+Emits machine-readable + human-shareable formats alongside the source.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+
+SCHEMA_VERSION = "1.0"
+SARIF_VERSION = "2.1.0"
+SARIF_SCHEMA_URL = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
+TOOL_NAME = "odoo-app-security-harness"
+TOOL_URI = "https://github.com/purehate/odoo-app-security-harness"
+
+SARIF_LEVEL = {
+    "critical": "error",
+    "high": "error",
+    "medium": "warning",
+    "low": "note",
+    "info": "note",
+}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Export findings.json to SARIF / fingerprints / bounty drafts.")
+    parser.add_argument("source", help="Path to findings.json or to a .audit/ directory.")
+    parser.add_argument("--out", help="Output directory (default: alongside findings.json).")
+    parser.add_argument("--all", action="store_true", help="Emit SARIF + fingerprints + bounty (default if no flag set).")
+    parser.add_argument("--sarif", action="store_true", help="Emit findings.sarif")
+    parser.add_argument("--fingerprints", action="store_true", help="Emit findings-fingerprints.json")
+    parser.add_argument("--bounty", action="store_true", help="Emit bounty/F-N.md drafts")
+    parser.add_argument("--no-suppress", action="store_true", help="Ignore scope.json accepted-risks (export everything).")
+    return parser.parse_args()
+
+
+def resolve_source(source: str) -> tuple[Path, Path | None]:
+    """Return (findings_json_path, scope_json_path_or_none)."""
+    p = Path(source).expanduser().resolve()
+    if p.is_file() and p.name.endswith(".json"):
+        scope = p.parent / "inventory" / "scope.json"
+        return p, scope if scope.exists() else None
+    if p.is_dir():
+        findings = p / "findings.json"
+        if not findings.exists():
+            raise FileNotFoundError(f"No findings.json in {p}")
+        scope = p / "inventory" / "scope.json"
+        return findings, scope if scope.exists() else None
+    raise FileNotFoundError(f"Source not found or not a findings.json/.audit/: {p}")
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def normalize_line(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def compute_fingerprint(finding: dict) -> str:
+    """Stable hash for cross-run dedup. See findings-schema.md."""
+    parts = [
+        (finding.get("rule_id") or finding.get("title") or "")[:80],
+        finding.get("file", ""),
+        str(finding.get("line", "")),
+        normalize_line((finding.get("description") or finding.get("attack_path") or "")[:200]),
+    ]
+    h = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+    return f"sha256:{h}"
+
+
+def is_suppressed(finding: dict, scope_data: dict) -> tuple[bool, str | None]:
+    """Match finding against accepted_risks. Returns (suppressed, reason_id)."""
+    risks = scope_data.get("accepted_risks") or []
+    for risk in risks:
+        if not isinstance(risk, dict):
+            continue
+        if "module" in risk and risk["module"] and risk["module"] != finding.get("module"):
+            continue
+        if "file" in risk and risk["file"] and risk["file"] != finding.get("file"):
+            continue
+        if "rule" in risk and risk["rule"]:
+            if finding.get("rule_id") != risk["rule"] and risk["rule"] not in (finding.get("tags") or []):
+                continue
+        if "cwe" in risk and risk["cwe"]:
+            cwes = finding.get("cwe") or []
+            if risk["cwe"] not in cwes:
+                continue
+        if "line_range" in risk and risk["line_range"]:
+            lo, hi = risk["line_range"][0], risk["line_range"][1]
+            line = finding.get("line")
+            if line is None or not (lo <= line <= hi):
+                continue
+        return True, risk.get("id") or "AR-?"
+    return False, None
+
+
+def to_sarif(findings_doc: dict, scope_data: dict, suppress: bool) -> dict:
+    target = findings_doc.get("target", {}) or {}
+    repo_uri = target.get("repo") or ""
+    rules: dict[str, dict] = {}
+    results: list[dict] = []
+    for f in findings_doc.get("findings", []):
+        rule_id = f.get("rule_id") or _slug(f.get("title", "finding"))
+        if rule_id not in rules:
+            rules[rule_id] = {
+                "id": rule_id,
+                "name": _to_pascal(rule_id),
+                "shortDescription": {"text": f.get("title", rule_id)},
+                "fullDescription": {"text": (f.get("description") or f.get("title") or rule_id)[:1000]},
+                "helpUri": (f.get("references") or [TOOL_URI])[0],
+                "properties": {
+                    "tags": (f.get("cwe") or []) + (f.get("tags") or []),
+                    "security-severity": _cvss_score(f),
+                },
+            }
+        suppressed, ar_id = is_suppressed(f, scope_data) if suppress else (False, None)
+        result: dict = {
+            "ruleId": rule_id,
+            "level": SARIF_LEVEL.get((f.get("severity") or "medium").lower(), "warning"),
+            "message": {"text": f.get("description") or f.get("title", "")},
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": f.get("file", "")},
+                        "region": {"startLine": int(f.get("line") or 1)},
+                    }
+                }
+            ],
+            "fingerprints": {"odoo-harness/v1": f.get("fingerprint") or compute_fingerprint(f)},
+            "properties": {
+                "triage": f.get("triage"),
+                "confidence": f.get("confidence"),
+                "module": f.get("module"),
+                "odoo_surface": f.get("odoo_surface"),
+                "cwe": f.get("cwe") or [],
+                "capec": f.get("capec") or [],
+            },
+        }
+        if suppressed:
+            result["suppressions"] = [{"kind": "external", "justification": f"Accepted risk {ar_id}"}]
+        results.append(result)
+
+    sarif = {
+        "$schema": SARIF_SCHEMA_URL,
+        "version": SARIF_VERSION,
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": TOOL_NAME,
+                        "informationUri": TOOL_URI,
+                        "version": (findings_doc.get("harness") or {}).get("version") or "0.1.0",
+                        "rules": list(rules.values()),
+                    }
+                },
+                "originalUriBaseIds": {"REPO": {"uri": f"file://{repo_uri}/" if repo_uri else ""}},
+                "results": results,
+                "invocations": [
+                    {
+                        "executionSuccessful": True,
+                        "endTimeUtc": findings_doc.get("generated_at") or dt.datetime.now(dt.timezone.utc).isoformat(),
+                    }
+                ],
+            }
+        ],
+    }
+    return sarif
+
+
+def to_fingerprints(findings_doc: dict) -> dict:
+    entries = []
+    for f in findings_doc.get("findings", []):
+        fp = f.get("fingerprint") or compute_fingerprint(f)
+        entries.append({
+            "id": f.get("id"),
+            "fingerprint": fp,
+            "title": f.get("title"),
+            "severity": f.get("severity"),
+            "triage": f.get("triage"),
+            "file": f.get("file"),
+            "line": f.get("line"),
+            "module": f.get("module"),
+        })
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "target": findings_doc.get("target", {}),
+        "fingerprints": entries,
+    }
+
+
+def to_bounty_drafts(findings_doc: dict, scope_data: dict, suppress: bool, out_dir: Path) -> list[Path]:
+    """One Markdown bounty-style draft per ACCEPT finding. Skips suppressed."""
+    drafts: list[Path] = []
+    bounty_dir = out_dir / "bounty"
+    bounty_dir.mkdir(parents=True, exist_ok=True)
+    for stale in bounty_dir.glob("F-*.md"):
+        stale.unlink()
+    for f in findings_doc.get("findings", []):
+        if (f.get("triage") or "").upper() != "ACCEPT":
+            continue
+        if suppress:
+            suppressed, _ = is_suppressed(f, scope_data)
+            if suppressed:
+                continue
+        path = bounty_dir / f"{f.get('id', 'F-N')}.md"
+        cvss = (f.get("cvss") or {})
+        lines = [
+            f"# {f.get('title', '?')}",
+            "",
+            f"**Severity:** {f.get('severity', '?')}  ",
+            f"**CVSS:** {cvss.get('vector', 'n/a')} ({cvss.get('score', '?')})  ",
+            f"**CWE:** {', '.join(f.get('cwe') or []) or 'unmapped'}  ",
+            f"**CAPEC:** {', '.join(f.get('capec') or []) or 'unmapped'}  ",
+            f"**Affected:** `{f.get('file', '?')}:{f.get('line', '?')}` (`{f.get('module', '?')}`)",
+            "",
+            "## Summary",
+            "",
+            f.get("description") or "",
+            "",
+            "## Steps to Reproduce",
+            "",
+            f.get("reproduction") or f.get("poc") or "_See PoC._",
+            "",
+            "## Proof of Concept",
+            "",
+            "```",
+            (f.get("poc") or "(none provided)"),
+            "```",
+            "",
+            "## Impact",
+            "",
+            f.get("impact") or "",
+            "",
+            "## Suggested Fix",
+            "",
+            f.get("fix") or "",
+            "",
+            "## References",
+            "",
+        ]
+        for ref in f.get("references") or []:
+            lines.append(f"- {ref}")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        drafts.append(path)
+    return drafts
+
+
+def _slug(text: str) -> str:
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", text.lower()).strip("-")
+    return s[:60] or "finding"
+
+
+def _to_pascal(slug: str) -> str:
+    return "".join(part.capitalize() for part in slug.split("-")) or "Finding"
+
+
+def _cvss_score(finding: dict) -> str:
+    cvss = finding.get("cvss") or {}
+    score = cvss.get("score")
+    if score is not None:
+        return str(score)
+    return {"critical": "9.0", "high": "7.0", "medium": "5.0", "low": "3.0", "info": "1.0"}.get(
+        (finding.get("severity") or "medium").lower(), "5.0"
+    )
+
+
+def main() -> int:
+    args = parse_args()
+    do_all = args.all or not (args.sarif or args.fingerprints or args.bounty)
+
+    findings_path, scope_path = resolve_source(args.source)
+    findings_doc = load_json(findings_path)
+    scope_doc = load_json(scope_path) if scope_path else {}
+    scope_data = scope_doc.get("scope_data") or {}
+    suppress = not args.no_suppress
+
+    out_dir = Path(args.out).expanduser().resolve() if args.out else findings_path.parent
+
+    written: list[str] = []
+
+    if do_all or args.fingerprints:
+        fingerprints = to_fingerprints(findings_doc)
+        fp_path = out_dir / "findings-fingerprints.json"
+        fp_path.write_text(json.dumps(fingerprints, indent=2), encoding="utf-8")
+        written.append(str(fp_path))
+
+        # Backfill fingerprints into the source findings.json so future runs match.
+        changed = False
+        for f in findings_doc.get("findings", []):
+            if not f.get("fingerprint"):
+                f["fingerprint"] = compute_fingerprint(f)
+                changed = True
+        if changed:
+            findings_path.write_text(json.dumps(findings_doc, indent=2), encoding="utf-8")
+            written.append(f"{findings_path} (fingerprints backfilled)")
+
+    if do_all or args.sarif:
+        sarif = to_sarif(findings_doc, scope_data, suppress)
+        sarif_path = out_dir / "findings.sarif"
+        sarif_path.write_text(json.dumps(sarif, indent=2), encoding="utf-8")
+        written.append(str(sarif_path))
+
+    if do_all or args.bounty:
+        drafts = to_bounty_drafts(findings_doc, scope_data, suppress, out_dir)
+        written.extend(str(p) for p in drafts)
+
+    print("Wrote:")
+    for p in written:
+        print(f"  - {p}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
