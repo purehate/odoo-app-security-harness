@@ -19,6 +19,8 @@ If a finding could be lifted verbatim from `bandit -r .`, it doesn't belong in t
 
 Run `/odoo-code-review -ks` from your Odoo repo root for the max-quality kitchen-sink check. Use `--quick` for fast local iteration and `--pr <n>` for pull requests. The kitchen-sink path handles inventory → scanners → Qwen advisory → Codex hunters → stock-Claude control lane → discourse → chaining → runtime evidence path → 6-gate validation → final report → SARIF/bounty/diff export. After the report, it drafts accepted-risk and fix-list learning artifacts for review. Add `--yes` only when you want non-interactive auto-apply behavior.
 
+Use Claude Code for the full `-ks` workflow. The direct shell runner is useful for setup, scans, Codex prompt execution, and CI-ish stages, but it cannot spawn Claude subagents or make the final Phase 7 security judgment by itself.
+
 ## Architecture
 
 ```text

@@ -50,6 +50,17 @@ HUNTERS = [
     ("09-dependency", "Dependency", "Python package CVEs, Odoo addon dependencies, JS/assets, reachable dependency paths."),
 ]
 
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b[()][A-Za-z0-9]")
+
+
+def clean_output(text: str) -> str:
+    """Strip terminal control noise from CLI/model output before logs/artifacts."""
+    return ANSI_RE.sub("", text).replace("\r", "\n")
+
+
+def progress(message: str) -> None:
+    print(f"[odoo-review-run] {message}", flush=True)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run repeatable setup for the odoo-code-review Odoo audit harness.")
@@ -138,6 +149,8 @@ def which(name: str) -> str | None:
 def run(cmd: list[str], cwd: Path, log_path: Path, stdout_path: Path | None = None, timeout: int = 1800) -> dict:
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     record = {"started": started, "cmd": cmd, "cwd": str(cwd)}
+    label = cmd[0] if cmd else "command"
+    progress(f"start {label}: {' '.join(cmd[:4])}{' ...' if len(cmd) > 4 else ''}")
     with log_path.open("a", encoding="utf-8") as log:
         log.write("$ " + " ".join(cmd) + "\n")
     try:
@@ -149,7 +162,7 @@ def run(cmd: list[str], cwd: Path, log_path: Path, stdout_path: Path | None = No
             stderr=subprocess.STDOUT,
             timeout=timeout,
         )
-        output = completed.stdout or ""
+        output = clean_output(completed.stdout or "")
         if stdout_path:
             stdout_path.parent.mkdir(parents=True, exist_ok=True)
             stdout_path.write_text(output, encoding="utf-8", errors="replace")
@@ -157,14 +170,17 @@ def run(cmd: list[str], cwd: Path, log_path: Path, stdout_path: Path | None = No
             log.write(output[-12000:])
             log.write(f"\n[exit {completed.returncode}]\n\n")
         record.update({"returncode": completed.returncode, "output": str(stdout_path) if stdout_path else output[-2000:]})
+        progress(f"done {label}: exit {completed.returncode}")
     except subprocess.TimeoutExpired as exc:
         with log_path.open("a", encoding="utf-8") as log:
             log.write(f"\n[TIMEOUT after {timeout}s]\n\n")
         record.update({"returncode": 124, "error": f"timeout after {timeout}s"})
+        progress(f"timeout {label}: after {timeout}s")
     except Exception as exc:  # noqa: BLE001
         with log_path.open("a", encoding="utf-8") as log:
             log.write(f"\n[ERROR {exc}]\n\n")
         record.update({"returncode": 1, "error": str(exc)})
+        progress(f"error {label}: {exc}")
     record["finished"] = dt.datetime.now(dt.timezone.utc).isoformat()
     return record
 
@@ -1576,7 +1592,9 @@ def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, li
 
 def run_scanners(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) -> list[dict]:
     if args.quick or args.no_scans:
+        progress("skip scanners (--quick or --no-scans)")
         return [{"phase": "scans", "status": "skipped", "reason": "--quick or --no-scans"}]
+    progress("Phase 2-4.5 scanners starting")
     records = []
     scans = out / "scans"
     for sub in ["semgrep", "bandit", "ruff", "pylint-odoo", "oca-precommit", "codeql", "joern", "pysa", "deps"]:
@@ -1610,6 +1628,7 @@ def run_scanners(args: argparse.Namespace, repo: Path, out: Path, log_path: Path
 
     if which("codeql"):
         db = out / "codeql-dbs" / f"{repo.name or 'repo'}-python-db"
+        db.parent.mkdir(parents=True, exist_ok=True)
         records.append(run(["codeql", "database", "create", str(db), "--language=python", f"--source-root={repo}", "--build-mode=none"], repo, log_path, timeout=3600))
         records.append(run(["codeql", "database", "analyze", str(db), "codeql/python-queries:codeql-suites/python-security-and-quality.qls", "codeql/python-queries:codeql-suites/python-security-experimental.qls", "--format=sarif-latest", f"--output={scans / 'codeql' / 'results.sarif'}", "--download"], repo, log_path, timeout=3600))
     else:
@@ -1630,6 +1649,7 @@ def run_scanners(args: argparse.Namespace, repo: Path, out: Path, log_path: Path
         records.append(run(["osv-scanner", "--recursive", "--format", "json", "--output", str(scans / "deps" / "osv-scanner.json"), str(repo)], repo, log_path, timeout=1800))
     else:
         records.append({"tool": "osv-scanner", "status": "missing"})
+    progress("Phase 2-4.5 scanners complete")
     return records
 
 
@@ -1637,25 +1657,49 @@ def run_qwen(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) ->
     qwen_dir = out / "local-qwen"
     qwen_dir.mkdir(parents=True, exist_ok=True)
     if args.no_local_qwen:
+        progress("skip local Qwen (--no-local-qwen)")
         return {"status": "skipped", "reason": "--no-local-qwen"}
     if not which("ollama"):
+        progress("skip local Qwen (ollama missing)")
         return {"status": "skipped", "reason": "ollama missing"}
-    prompt = f"""You are a local HINT-only reviewer for an Odoo source audit.
-Do not create final findings. Summarize likely risky modules and obvious scanner noise.
+    progress(f"Phase 1.5 local Qwen starting ({args.local_model})")
+    def excerpt(path: Path, limit: int = 12000) -> str:
+        if not path.exists():
+            return f"(missing: {path})"
+        text = clean_output(path.read_text(encoding="utf-8", errors="replace"))
+        return text[:limit]
 
-Read these artifacts conceptually:
-- {out / '00-modules.md'}
-- {out / '01-attack-surface.md'}
-- {out / 'inventory' / 'sharp-edge-index.json'}
+    prompt = f"""You are a local HINT-only reviewer for an Odoo source audit.
+Do not create final findings. Do not speculate about files you did not see.
+Only use the artifact excerpts pasted below. If evidence is insufficient, say so.
 
 Return three short sections:
 1. Module risk notes
 2. Scanner triage hints
 3. Obvious reject candidates
+
+Rules:
+- HINT only: no ACCEPT/REJECT final verdicts.
+- Cite module names or file paths from the excerpts.
+- Do not mention missing validation/encryption unless an excerpt shows it.
+- Keep the response under 80 lines.
+
+## 00-modules.md excerpt
+{excerpt(out / '00-modules.md', 10000)}
+
+## 01-attack-surface.md excerpt
+{excerpt(out / '01-attack-surface.md', 14000)}
+
+## module-risk.md excerpt
+{excerpt(out / 'module-risk.md', 9000)}
+
+## sharp-edge-index.json excerpt
+{excerpt(out / 'inventory' / 'sharp-edge-index.json', 14000)}
 """
     result = run(["ollama", "run", args.local_model, prompt], repo, log_path, qwen_dir / "module-notes.md", timeout=900)
     (qwen_dir / "scanner-triage.md").write_text("See module-notes.md. Scanner-specific triage is advisory only.\n", encoding="utf-8")
     (qwen_dir / "reject-candidates.md").write_text("See module-notes.md. Claude must verify before rejecting anything.\n", encoding="utf-8")
+    progress("Phase 1.5 local Qwen complete")
     return result
 
 
@@ -1743,16 +1787,21 @@ def run_codex(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) -
     prompt_dir.mkdir(parents=True, exist_ok=True)
     records = []
     if args.no_codex:
+        progress("skip Codex hunters (--no-codex)")
         return [{"status": "skipped", "reason": "--no-codex"}]
     if not which("codex"):
+        progress("skip Codex hunters (codex missing)")
         return [{"status": "skipped", "reason": "codex missing"}]
-    for slug, title, focus in HUNTERS:
+    progress(f"Phase 5 Codex hunters starting ({len(HUNTERS)} hunters, mode={args.codex_mode})")
+    for idx, (slug, title, focus) in enumerate(HUNTERS, start=1):
+        progress(f"Codex hunter {idx}/{len(HUNTERS)} start: {title}")
         prompt = codex_prompt(slug, title, focus, repo, out, args)
         prompt_path = prompt_dir / f"{slug}.md"
         output_path = codex_dir / f"{slug}.md"
         prompt_path.write_text(prompt, encoding="utf-8")
         if args.codex_mode == "prepare":
             records.append({"hunter": slug, "status": "prepared", "prompt": str(prompt_path), "output": str(output_path)})
+            progress(f"Codex hunter {idx}/{len(HUNTERS)} prepared: {title}")
             continue
         cmd = [
             "codex",
@@ -1768,7 +1817,11 @@ def run_codex(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) -
             str(output_path),
             prompt,
         ]
-        records.append(run(cmd, repo, log_path, output_path, timeout=3600))
+        record = run(cmd, repo, log_path, output_path, timeout=3600)
+        record["hunter"] = slug
+        records.append(record)
+        progress(f"Codex hunter {idx}/{len(HUNTERS)} done: {title} exit={record.get('returncode')}")
+    progress("Phase 5 Codex hunters complete")
     return records
 
 
@@ -1829,6 +1882,10 @@ def write_baseline_stock_dispatch(out: Path, args: argparse.Namespace, repo: Pat
     """
     if not getattr(args, "baseline_stock_cc", False):
         return
+    if args.preflight_only:
+        orchestration_note = "This preflight-only run only writes the dispatch packet. Run from Claude Code for stock-CC subagent orchestration."
+    else:
+        orchestration_note = "Direct CLI cannot spawn the stock-CC subagent. Run `/odoo-code-review <repo> -ks` from Claude Code or manually execute the prompt in this directory before finalize."
     bs_dir = out / "baseline-stock"
     bs_dir.mkdir(parents=True, exist_ok=True)
     prompt = f"""You are the **stock-Claude-Code control lane** for an Odoo source-code security review. The harness is also reviewing this repo separately. Your job: produce findings the way stock CC naturally would, with NO harness scaffolding, NO Phase 0/1 maps, NO hunter assignments.
@@ -1863,6 +1920,7 @@ The harness must beat stock `/code-review`, not merely look more structured. You
     (bs_dir / "README.md").write_text(
         "# Baseline Stock-CC Lane\n\n"
         "Lead Claude spawns one `general-purpose` Agent with the prompt in `dispatch.md`. The Agent writes `findings.md` here.\n\n"
+        f"Note: {orchestration_note}\n\n"
         "Before final Phase 7/8 validation closes, run `scripts/odoo-review-stock-diff <OUT>` once the harness candidate `findings.json` exists. Treat stock-only entries in `diff.md` as validation leads for the current report, then optionally run `--apply-lessons` to append durable hunter lessons.\n",
         encoding="utf-8",
     )

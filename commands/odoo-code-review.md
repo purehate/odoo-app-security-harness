@@ -39,6 +39,8 @@ Run a technique-organized Odoo security review of source code (Phases 0 → 1 �
 
 **TL;DR:** use three modes: `--quick` for a fast pass, `--pr <n>` for pull requests, and `-ks` for the best possible full review regardless of token/runtime cost. `-ks` handles inventory → scanners → Qwen → Codex hunters → stock-CC control lane → discourse → chaining → runtime evidence path → 6-gate validation → final report → SARIF/bounty/diff export → baseline promotion → accepted-risks/fix-list suggestions. Add `--yes` only when you want non-interactive behavior.
 
+Run `-ks` from Claude Code for the full workflow. Direct CLI can run scanners/Codex/Qwen and write artifacts, but it cannot spawn the stock-CC control Agent or perform Claude's final Phase 7 judgment by itself.
+
 ## Mode Flags Cheat Sheet
 
 | Mode                             | Use                                                                                                                                   |

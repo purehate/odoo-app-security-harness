@@ -58,6 +58,8 @@ Use three primary modes:
 
 Everything else is an escape hatch or advanced override.
 
+Run `-ks` from Claude Code for the full workflow. The direct CLI runner can produce artifacts and execute scanners/Codex/Qwen, but it cannot spawn the stock-CC control Agent or replace Claude's final 6-gate judgment.
+
 ## Token Pressure / Qwen Handoff
 
 Claude token exhaustion is not directly observable by the runner. The harness handles this with a standing handoff packet instead of pretending to detect it:
