@@ -64,7 +64,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--local-model", default=DEFAULT_MODEL, help=f"Ollama model. Default: {DEFAULT_MODEL}")
     parser.add_argument("--allow-missing-lanes", action="store_true", help="Continue if Codex or Qwen is unavailable")
     parser.add_argument("--joern", action="store_true", help="Run Joern if installed")
-    parser.add_argument("--runtime", action="store_true", help="Create runtime evidence directories and plan")
+    parser.add_argument("--runtime", action="store_true", help="Enable Phase 7.5 runtime evidence path; use odoo-review-runtime <OUT> to boot Odoo and replay PoCs.")
     parser.add_argument("--zap-target", help="ZAP target URL; requires --runtime")
     parser.add_argument("--no-codex", action="store_true", help="Skip Codex hunter execution")
     parser.add_argument("--codex-model", default="gpt-5.3-codex", help="Codex model")
@@ -91,9 +91,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--breadth-chunk-size", type=int, default=40, help="Files per breadth-sweep subagent chunk. Default: 40.")
     parser.add_argument("--phase1-min-lines-per-module", type=int, default=4, help="Phase 1 fail-loud threshold: minimum lines of attack-surface content per in-scope module. Default: 4.")
     parser.add_argument("--no-phase1-assert", action="store_true", help="Disable Phase 1 fail-loud assertion (escape hatch; not recommended).")
+    parser.add_argument("--yes", "-y", action="store_true", dest="non_interactive", help="Non-interactive: strip every Claude/orchestration y/N prompt. With --learn, auto-applies Phase 8.7 suggestions up to iteration cap.")
+    parser.add_argument("--learn", action="store_true", help="After final findings exist, generate baseline/fix-list/accepted-risk learning artifacts. Apply accepted-risk suppressions only when --yes is also set.")
+    parser.add_argument("--learn-cap", type=int, default=3, help="Max Phase 8.7 self-improvement iterations under --learn. Default: 3.")
+    parser.add_argument("--baseline-stock-cc", action="store_true", help="Spawn one stock Claude Code control lane reviewing the same repo with no harness; stock-only findings become current-run validation leads and future hunter lessons.")
+    parser.add_argument("-ks", "--ks", "--kitchensink", "--weekly", action="store_true", dest="weekly", help="Kitchen sink: max-quality review path. Enables Joern, runtime evidence path, breadth, JSON, learn, stock-CC gate, and durable state auto-detect. Add --yes separately for zero prompts.")
     args = parser.parse_args()
     # findings.json is now emitted by default. --json kept as compat no-op; --no-json opts out.
     args.emit_json = not args.no_emit_json
+    # -ks/--kitchensink expands to the max-quality config.
+    if args.weekly:
+        args.joern = True
+        args.runtime = True
+        args.learn = True
+        args.baseline_stock_cc = True
+        # default-on lanes stay on; only flip explicit-off flags back on
+        args.no_discourse = False
+        args.no_local_qwen = False
+        args.no_codex = False
+        args.no_breadth = False
+        args.no_export = False
+        args.no_html = False
+        args.no_emit_json = False
+        args.emit_json = True
     return args
 
 
@@ -1296,6 +1316,111 @@ def write_directives_seed(out: Path) -> None:
     (directives_dir / "_template.md").write_text("\n".join(template) + "\n", encoding="utf-8")
 
 
+def write_qwen_handoff(out: Path, args: argparse.Namespace, repo: Path) -> None:
+    """Write a token-pressure handoff packet for local Qwen.
+
+    Claude token exhaustion is not visible to this runner, so the practical
+    design is a standing escape hatch: when the lead context gets tight, dispatch
+    these Qwen directives for hint-only triage and fold results back into Phase
+    6/7 after compaction or a fresh lead session.
+    """
+    handoff = out / "qwen-handoff"
+    handoff.mkdir(parents=True, exist_ok=True)
+    directives = out / "directives"
+    local_model = args.local_model
+    readme = [
+        "# Qwen Handoff",
+        "",
+        "Use this when the lead Claude context is getting tight. Qwen is local and",
+        "hint-only: it can summarize risk, cluster leads, and identify obvious noise,",
+        "but it cannot ACCEPT/REJECT final findings or set severity.",
+        "",
+        "## Dispatch",
+        "",
+        "```bash",
+        f"odoo-review-rerun {directives / 'D-9001-qwen-risk-cluster.md'} --repo {repo}",
+        f"odoo-review-rerun {directives / 'D-9002-qwen-fp-triage.md'} --repo {repo}",
+        f"odoo-review-rerun {directives / 'D-9003-qwen-evidence-gaps.md'} --repo {repo}",
+        "```",
+        "",
+        "Then read `directives/results/D-900*.result.md` and fold useful hints into",
+        "Phase 6/7. If Claude runs out of context, restart from `00-run-mode.md`,",
+        "`qwen-handoff/README.md`, and the directive results.",
+        "",
+        "## Guardrails",
+        "",
+        "- Qwen output is HINT only.",
+        "- Every claim still needs file:line verification by Claude or Codex.",
+        "- Do not suppress or accept findings based on Qwen alone.",
+    ]
+    (handoff / "README.md").write_text("\n".join(readme) + "\n", encoding="utf-8")
+
+    directive_specs = [
+        (
+            "D-9001-qwen-risk-cluster.md",
+            "risk-cluster",
+            "Cluster the highest-risk Odoo modules and candidate leads from inventory and scanner artifacts. Focus on public routes, sudo propagation, raw SQL, unsafe QWeb, portal exposure, and multi-company leakage. Return a concise prioritized list with file:line pointers when available.",
+        ),
+        (
+            "D-9002-qwen-fp-triage.md",
+            "fp-triage",
+            "Review scanner and hunter leads for obvious false-positive patterns under Odoo semantics. Explain why each looks likely-noise, citing the framework invariant. Do not issue final REJECT verdicts.",
+        ),
+        (
+            "D-9003-qwen-evidence-gaps.md",
+            "evidence-gaps",
+            "Review candidate findings and identify missing evidence needed for Phase 7 gates: source match, reachability, attacker control, realistic preconditions, PoC shape, and severity impact. Return a checklist grouped by finding or module.",
+        ),
+    ]
+    for filename, task_type, ask in directive_specs:
+        path = directives / filename
+        if path.exists():
+            continue
+        directive_id = "-".join(filename.split("-", 2)[:2])
+        path.write_text(
+            "\n".join([
+                "---",
+                f"id: {directive_id}",
+                "created_at: AUTO",
+                "from_phase: \"handoff\"",
+                "target_lane: qwen",
+                f"task_type: {task_type}",
+                "status: pending",
+                f"model: {local_model}",
+                "scope:",
+                "deadline_phase: \"7\"",
+                "---",
+                "",
+                "## Context",
+                "",
+                f"Repo: `{repo}`",
+                f"Audit output: `{out}`",
+                "",
+                "Read these artifacts if present:",
+                "",
+                f"- `{out / '00-modules.md'}`",
+                f"- `{out / '01-attack-surface.md'}`",
+                f"- `{out / 'module-risk.md'}`",
+                f"- `{out / 'inventory' / 'sharp-edge-index.json'}`",
+                f"- `{out / 'inventory' / 'breadth' / 'leads.md'}`",
+                f"- `{out / 'scans'}`",
+                f"- `{out / 'codex' / 'hunters'}`",
+                f"- `{out / 'baseline-stock' / 'validation-leads.md'}`",
+                "",
+                "## Ask",
+                "",
+                ask,
+                "",
+                "## Output Rules",
+                "",
+                "- HINT only. Do not produce final ACCEPT/REJECT verdicts.",
+                "- Cite file:line where possible.",
+                "- Keep it concise enough for a lead session to consume after compaction.",
+            ]) + "\n",
+            encoding="utf-8",
+        )
+
+
 def emit_breadth_dispatch(out: Path, manifests: list[dict], routes: list[dict], pattern_summary: dict, args: argparse.Namespace) -> None:
     """Emit Phase 1.7 breadth-sweep dispatch plan.
 
@@ -1675,6 +1800,148 @@ def write_tooling(out: Path, plan: dict, scanner_records: list[dict], qwen_recor
     (out / "tooling.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def autodetect_weekly_paths(args: argparse.Namespace, repo: Path) -> None:
+    """When -ks/--kitchensink is set, auto-detect durable review state in the repo root unless explicitly overridden."""
+    if not args.weekly:
+        return
+    if not args.baseline:
+        candidates = [repo / ".audit-baseline" / "findings.json", repo / ".audit-baseline"]
+        for c in candidates:
+            if c.exists():
+                args.baseline = str(c)
+                break
+    if not args.scope:
+        for name in ("scope.yml", "scope.yaml", ".audit-scope.yml"):
+            p = repo / name
+            if p.exists():
+                args.scope = str(p)
+                break
+    # accepted-risks/fix-list auto-load already lives in load_accepted_risks/load_fix_list — no override needed when user didn't pass --accepted-risks/--fix-list.
+
+
+def write_baseline_stock_dispatch(out: Path, args: argparse.Namespace, repo: Path) -> None:
+    """Emit the dispatch packet for the --baseline-stock-cc lane.
+
+    Lead Claude reads this and spawns one general-purpose Agent that reviews the
+    repo with no harness scaffolding. The control lane exists because a plain
+    Claude Code review sometimes finds bugs specialist lanes miss; stock-only
+    outputs must be reviewed in the current run before final findings close.
+    """
+    if not getattr(args, "baseline_stock_cc", False):
+        return
+    bs_dir = out / "baseline-stock"
+    bs_dir.mkdir(parents=True, exist_ok=True)
+    prompt = f"""You are the **stock-Claude-Code control lane** for an Odoo source-code security review. The harness is also reviewing this repo separately. Your job: produce findings the way stock CC naturally would, with NO harness scaffolding, NO Phase 0/1 maps, NO hunter assignments.
+
+## Repo
+{repo}
+
+## Task
+Review every Python file under {repo}/addons (or `**/__manifest__.py` parents). Find real, exploitable Odoo security bugs. For each finding emit:
+
+- `Title:` short title
+- `File:` `relative/path:line`
+- `Severity:` CRITICAL | HIGH | MEDIUM | LOW
+- `Sink:` the dangerous call/pattern (e.g. `cr.execute(f"...")`, `auth='public' + sudo()`, `t-raw on user data`)
+- `Why:` 1-2 sentences on exploitability
+- `PoC:` 1-3 lines (curl, XML-RPC, or odoo-shell)
+
+Do NOT pad with "missing input validation" nits. Real exploitable bugs only — same bar the harness uses.
+
+Write all findings to `{bs_dir}/findings.md` as a flat list, one block per finding, separated by `---`.
+
+## Why this exists
+The harness must beat stock `/code-review`, not merely look more structured. Your output is the control. The lead session will diff your findings against the harness candidate pool before final validation. Any stock-only issue becomes a current-run validation lead, and missed patterns are also appended to `references/agent-prompts.md` so future hunters learn the pattern.
+
+## Constraints
+- Read-only. Do not edit any source files.
+- Budget: ~30 min wall-clock. If the repo is huge, prioritize controllers + models touched by `@http.route`.
+- One finding per real bug. No duplicates across files.
+- Cite file:line. No hand-wavy "somewhere in this module".
+"""
+    (bs_dir / "dispatch.md").write_text(prompt, encoding="utf-8")
+    (bs_dir / "README.md").write_text(
+        "# Baseline Stock-CC Lane\n\n"
+        "Lead Claude spawns one `general-purpose` Agent with the prompt in `dispatch.md`. The Agent writes `findings.md` here.\n\n"
+        "Before final Phase 7/8 validation closes, run `scripts/odoo-review-stock-diff <OUT>` once the harness candidate `findings.json` exists. Treat stock-only entries in `diff.md` as validation leads for the current report, then optionally run `--apply-lessons` to append durable hunter lessons.\n",
+        encoding="utf-8",
+    )
+
+
+def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
+    """Emit run-mode.json + 00-run-mode.md so the lead Claude session can honor manual/full/non-interactive review flags."""
+    mode = {
+        "non_interactive": bool(getattr(args, "non_interactive", False)),
+        "learn": bool(getattr(args, "learn", False)),
+        "learn_cap": int(getattr(args, "learn_cap", 3)),
+        "weekly": bool(getattr(args, "weekly", False)),
+        "baseline_stock_cc": bool(getattr(args, "baseline_stock_cc", False)),
+        "quick": bool(getattr(args, "quick", False)),
+        "joern": bool(getattr(args, "joern", False)),
+        "runtime": bool(getattr(args, "runtime", False)),
+        "no_codex": bool(getattr(args, "no_codex", False)),
+        "no_local_qwen": bool(getattr(args, "no_local_qwen", False)),
+        "no_breadth": bool(getattr(args, "no_breadth", False)),
+        "no_discourse": bool(getattr(args, "no_discourse", False)),
+        "no_export": bool(getattr(args, "no_export", False)),
+        "no_html": bool(getattr(args, "no_html", False)),
+        "emit_json": bool(getattr(args, "emit_json", True)),
+        "scope": args.scope,
+        "baseline": args.baseline,
+        "accepted_risks_override": getattr(args, "accepted_risks", None),
+        "fix_list_override": getattr(args, "fix_list", None),
+        "pr": args.pr,
+        "pr_repo": args.pr_repo,
+        "modules": args.modules,
+        "odoo_version_override": args.odoo_version,
+        "codex_model": args.codex_model,
+        "codex_budget": args.codex_budget,
+        "codex_mode": args.codex_mode,
+        "local_model": args.local_model,
+        "breadth_chunk_size": args.breadth_chunk_size,
+        "phase1_min_lines_per_module": args.phase1_min_lines_per_module,
+        "no_phase1_assert": bool(getattr(args, "no_phase1_assert", False)),
+        "allow_missing_lanes": bool(getattr(args, "allow_missing_lanes", False)),
+        "preflight_only": bool(getattr(args, "preflight_only", False)),
+        "no_scans": bool(getattr(args, "no_scans", False)),
+        "no_server_actions": bool(getattr(args, "no_server_actions", False)),
+        "no_scripts": bool(getattr(args, "no_scripts", False)),
+        "repo": str(repo),
+        "out": str(out),
+    }
+    (out / "run-mode.json").write_text(json.dumps(mode, indent=2, sort_keys=True), encoding="utf-8")
+
+    md = ["# Run Mode\n"]
+    md.append("Lead Claude session reads this file to decide whether to suppress y/N prompts and run the self-improving learn loop.\n")
+    md.append("## Active flags\n")
+    flag_lines = []
+    if mode["weekly"]:
+        flag_lines.append("- **-ks** — kitchen-sink max-quality mode")
+    if mode["non_interactive"]:
+        flag_lines.append("- **--yes** — strip every y/N prompt; with --learn, Phase 8.7 auto-applies accepted-risk suggestions")
+    if mode["learn"]:
+        flag_lines.append(f"- **--learn** — produce durable learning artifacts (cap: {mode['learn_cap']} iterations)")
+    if mode["baseline_stock_cc"]:
+        flag_lines.append("- **--baseline-stock-cc** — spawn stock-CC control lane, validate stock-only leads, append misses to hunter prompts")
+    if mode["quick"]:
+        flag_lines.append("- **--quick** — scanners + Phase 5.5 skipped")
+    if mode["joern"]:
+        flag_lines.append("- **--joern** — Phase 3.5 CPG graph review")
+    if mode["runtime"]:
+        flag_lines.append("- **--runtime** — Phase 7.5 runtime evidence helper path")
+    if not flag_lines:
+        flag_lines.append("- (default mode — interactive prompts active)")
+    md.extend(flag_lines)
+    md.append("")
+    md.append("## Orchestration contract\n")
+    md.append("Lead Claude MUST honor these flags:\n")
+    md.append("- `non_interactive=true` → never emit `[y/N]` prompts; choose the documented default action and proceed.")
+    md.append("- `learn=true` → after Phase 8.6, run Phase 8.7 learning. Use `--apply` only when `non_interactive=true` or the user approved the suggestions.")
+    md.append("- `baseline_stock_cc=true` → during Phase 1, dispatch one general-purpose Agent with stock-CC review prompt against the same repo; diff before final Phase 7/8 closure and validate stock-only leads in this run.")
+    md.append("")
+    (out / "00-run-mode.md").write_text("\n".join(md), encoding="utf-8")
+
+
 def main() -> int:
     args = parse_args()
     repo = Path(args.target).expanduser().resolve()
@@ -1684,15 +1951,18 @@ def main() -> int:
     if args.zap_target and not args.runtime:
         print("--zap-target requires --runtime", file=sys.stderr)
         return 2
+    autodetect_weekly_paths(args, repo)
     if args.out:
         out = Path(args.out).expanduser().resolve()
     else:
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
         out = repo / f".audit-{stamp}"
     out.mkdir(parents=True, exist_ok=True)
-    for sub in ["inventory", "scans", "agents", "codex", "variants", "runtime", "attack-graphs", "requirements", "directives", "directives/results"]:
+    for sub in ["inventory", "scans", "agents", "codex", "variants", "runtime", "attack-graphs", "requirements", "directives", "directives/results", "baseline-stock", "qwen-handoff"]:
         (out / sub).mkdir(parents=True, exist_ok=True)
     log_path = out / "commands.log"
+    write_run_mode(out, args, repo)
+    write_baseline_stock_dispatch(out, args, repo)
 
     plan, lane_errors = preflight(args, repo, out)
     if lane_errors and not args.allow_missing_lanes:
@@ -1772,6 +2042,7 @@ def main() -> int:
     copy_cwe_map(out)
     write_goals_guide(repo, out, manifests, routes, args)
     write_directives_seed(out)
+    write_qwen_handoff(out, args, repo)
     write_scope_artifact(out, scope_data, args, pr_files)
     emit_breadth_dispatch(out, manifests, routes, pattern_summary, args)
 

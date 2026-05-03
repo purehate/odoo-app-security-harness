@@ -35,8 +35,9 @@ Old runs stay until you prune. Use `--prune-old-runs N` to keep only the most re
 Mon morning
   ~/.claude/skills/odoo-code-review/scripts/odoo-review-run \
     /Users/mbos/DEVELOPMENT/Odoo/trustedsec \
-    --runtime --zap-target http://host.docker.internal:8069 \
-    --joern --prune-old-runs 8
+    -ks \
+    --zap-target http://host.docker.internal:8069 \
+    --prune-old-runs 8
   → produces .audit-YYYYMMDD-HHMM/
 
 Mon-Tue triage
@@ -56,7 +57,7 @@ Tue-Fri
   ship fixes, flip status: open → in-progress → fixed
 
 Next Mon
-  rerun. Compare. Reconciliation auto-tags REGRESSION / CONFIRMED-FIXED.
+  rerun manually. Compare. Reconciliation auto-tags REGRESSION / CONFIRMED-FIXED.
 ```
 
 ## Validation-only modes

@@ -17,7 +17,7 @@ If a finding could be lifted verbatim from `bandit -r .`, it doesn't belong in t
 
 ## TL;DR
 
-Run `/odoo-code-review` from your Odoo repo root. The harness handles inventory → scanners → Qwen advisory → Codex hunters → discourse → chaining → 6-gate validation → final report → SARIF/bounty/diff export end-to-end. After the report, the AI auto-drafts `accepted_risks` for false positives, cross-checks via the other lane, and re-runs with the new scope. Each iteration sharpens signal. The HTML report has manual Accept-Risk buttons as a fallback. No follow-up commands.
+Run `/odoo-code-review -ks` from your Odoo repo root for the max-quality kitchen-sink check. Use `--quick` for fast local iteration and `--pr <n>` for pull requests. The kitchen-sink path handles inventory → scanners → Qwen advisory → Codex hunters → stock-Claude control lane → discourse → chaining → runtime evidence path → 6-gate validation → final report → SARIF/bounty/diff export. After the report, it drafts accepted-risk and fix-list learning artifacts for review. Add `--yes` only when you want non-interactive auto-apply behavior.
 
 ## Architecture
 
@@ -86,6 +86,7 @@ Lane outputs are leads only. Nothing ships until Claude's 6-gate validation conf
 - Runs repeatable scanner setup for Semgrep, Bandit, Ruff, pylint-odoo, CodeQL, dependency tools, and optional Joern.
 - Runs local Qwen advisory notes through Ollama.
 - Launches or prepares Codex hunter tasks.
+- Runs a stock-Claude control lane in weekly mode so plain `/code-review`-style findings become current-run validation leads instead of surprises.
 - Writes a `goals.md` guide for lead-session `/goals` tracking in Codex-capable review sessions.
 - Produces `.audit/` artifacts for Claude's final 6-gate validation.
 - Exports findings.json → SARIF 2.1.0, fingerprints, and HackerOne/Intigriti bounty drafts via `odoo-review-export`.
@@ -109,7 +110,8 @@ The installer copies:
 - convenience symlinks in `~/.local/bin/`:
   - `odoo-review-run` — main pipeline runner
   - `odoo-review-rerun` — directive dispatcher (Qwen/Codex re-task)
-  - `odoo-review-finalize` — Phase 8.6 wrapper: export + diff + CI gate (default for CI / cron / non-Claude paths)
+  - `odoo-review-finalize` — Phase 8.6 wrapper: export + diff + severity/stock gates (default for CI / non-Claude paths and manual re-export)
+  - `odoo-review-runtime` — Phase 7.5 helper: boot Odoo, wait for readiness, run PoC scripts, capture evidence
   - `odoo-review-export` — direct SARIF + fingerprints + bounty drafts (called by finalize)
   - `odoo-review-diff` — direct baseline vs current comparison (called by finalize)
 
@@ -164,6 +166,25 @@ odoo-review-run /path/to/odoo-addons \
   --allow-missing-lanes
 ```
 
+Kitchen-sink full check:
+
+```text
+/odoo-code-review /path/to/odoo-addons -ks
+```
+
+Runtime evidence for an accepted candidate:
+
+```bash
+odoo-review-runtime .audit-YYYYMMDD-HHMM \
+  --odoo-bin /path/to/odoo-bin \
+  --config /path/to/odoo.conf \
+  --database review_db \
+  --addons-path /path/to/odoo/addons,/path/to/custom/addons \
+  --poc .audit-YYYYMMDD-HHMM/runtime/reproductions/poc-F-1.sh
+```
+
+The helper writes `runtime/status.json`, `runtime/odoo.log`, `runtime/odoo-stdout.log`, and PoC output logs under `runtime/reproductions/`.
+
 Scope to a PR's changed files (uses `gh pr view --json files`):
 
 ```bash
@@ -179,13 +200,14 @@ odoo-review-run /path/to/odoo-addons --scope ./scope.yml
 
 ## Post-Processing
 
-`/odoo-code-review` runs Phase 8.6 finalize automatically. For non-Claude paths (CI, cron, codex-only sessions, manual re-export), call the wrapper directly:
+`/odoo-code-review` runs Phase 8.6 finalize automatically. For non-Claude paths (CI, codex-only sessions, manual re-export), call the wrapper directly:
 
 ```bash
-odoo-review-finalize .audit                          # auto-detect baseline + run gate (default --fail-on high)
+odoo-review-finalize .audit                          # auto-detect baseline + run gates (default --fail-on high)
 odoo-review-finalize .audit --baseline .baseline     # explicit baseline path
 odoo-review-finalize .audit --fail-on critical       # only fail on critical ACCEPT
-odoo-review-finalize .audit --fail-on none           # disable CI gate
+odoo-review-finalize .audit --fail-on none           # disable severity gate
+odoo-review-finalize .audit --no-stock-gate          # disable unresolved stock-CC lead gate
 odoo-review-finalize .audit --no-bounty --no-diff    # SARIF + fingerprints only
 ```
 
@@ -197,7 +219,7 @@ Emits:
 - `.audit/delta.md` + `.audit/delta.json` — diff vs baseline (when baseline detected)
 - `.audit/finalize.log` — audit trail of what ran, exit codes, ACCEPT counts
 
-Exit code: `0` pass, `2` ACCEPT exceeds gate, non-zero forwarded from export/diff failures.
+Exit code: `0` pass, `2` ACCEPT exceeds severity gate, `4` unresolved stock-CC leads, non-zero forwarded from export/diff failures.
 
 Baseline auto-detection order: `--baseline <path>` → `$ODOO_REVIEW_BASELINE` → `.audit-baseline/findings.json` → `.audit-baseline.json`.
 
@@ -212,7 +234,7 @@ odoo-review-diff .baseline/findings.json .audit/findings.json   # delta only
 
 Drop-in GitHub Action template at `skills/odoo-code-review/templates/github-action.yml`:
 
-- Runs PR-scoped review on every PR (`--pr <n>`), full sweep on push to main + weekly schedule.
+- Runs PR-scoped review on every PR (`--pr <n>`) and full sweep on push to main. Manual recurring sweeps should use `/odoo-code-review -ks` from Claude Code.
 - Calls `odoo-review-finalize .audit --fail-on high` — single step replaces export + diff + gate. Exit code fails the PR check on ACCEPT critical/high.
 - Uploads `findings.sarif` to GitHub Code Scanning (inline PR annotations + Security tab).
 - Posts a sticky PR comment with delta vs main baseline (`.audit/delta.md`).
@@ -222,10 +244,10 @@ Copy to `.github/workflows/odoo-security.yml` in your addons repo and set `OPENA
 
 ## Output
 
-Default output goes to:
+Default output goes to a stamped run directory:
 
 ```text
-<repo>/.audit/
+<repo>/.audit-YYYYMMDD-HHMM/
 ```
 
 Important artifacts:
@@ -247,6 +269,7 @@ Important artifacts:
 - `codex/hunters/*`
 - `tooling.md`
 - `tooling.json`
+- `qwen-handoff/` — local Qwen fallback packet for token pressure
 
 Post-processing artifacts (after `odoo-review-export` / `odoo-review-diff`):
 

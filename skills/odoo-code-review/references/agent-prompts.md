@@ -515,3 +515,10 @@ In a single message, fire all 9 technique hunters with `Agent` calls plus matchi
 | 8   | Data Exposure        | portal /my, attachments, chatter, reports, xmlrpc enumeration | lang-odoo                                            |
 | 9   | Dependency           | requirements.txt, OCA pins, base image, JS deps               | (Phase 4.5 output)                                   |
 | 10  | Chaining             | cross-hunter correlation                                      | all of the above                                     |
+
+## Lessons learned (auto-appended from stock-CC diff)
+
+<!-- This section is owned by `scripts/odoo-review-stock-diff --apply-lessons`.
+     Each LESSON-<fingerprint> block represents a finding the stock-CC control
+     lane caught that the harness hunters missed in a prior run. New lessons
+     are appended idempotently (keyed by fingerprint). Do not edit by hand. -->

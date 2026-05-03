@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""Phase 8.7 — self-improving learn loop.
+
+Reads <OUT>/findings.json + Phase 7.7 Codex reconciliation, then:
+
+1. Stubs suggested suppressions for REJECT/DOWNGRADE findings into
+   <OUT>/scope-suggestions.yml. With --apply, appends to
+   <repo>/.audit-accepted-risks.yml only when (a) Codex 2nd-opinion agrees
+   REJECT/DOWNGRADE, OR (b) Phase 7 6-gate marked Gate 1/2/3 as FAIL with
+   evidence cited.
+2. Stubs new ACCEPT findings into <OUT>/fix-list-suggestions.yml with
+   status=open, target_date=+30d. With --apply, appends to
+   <repo>/.audit-fix-list.yml (additive only — never overwrites existing
+   entries).
+3. Promotes <OUT>/findings.json -> <repo>/.audit-baseline/findings.json so
+   the next run automatically diffs against it.
+
+This script is the durable companion to the runner's --learn flag. Lead Claude
+calls it (or it runs from CI/cron) after Phase 8.6 finalize.
+
+Usage:
+    odoo-review-learn <OUT> [--apply] [--repo <path>] [--no-promote-baseline]
+
+Exit codes:
+    0  ok
+    1  bad input
+    2  lane preconditions missing (no findings.json yet)
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import re
+import shutil
+import sys
+from pathlib import Path
+
+
+def read_findings(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data.get("findings", [])
+
+
+def read_codex_reconciliation(out: Path) -> dict[str, str]:
+    """Map fingerprint -> codex verdict. Parsed from codex/second-opinion/reconciliation.md."""
+    rec_path = out / "codex" / "second-opinion" / "reconciliation.md"
+    if not rec_path.exists():
+        return {}
+    text = rec_path.read_text(encoding="utf-8")
+    out_map: dict[str, str] = {}
+    for m in re.finditer(r"^[-*]\s*(?:Fingerprint|FP):\s*`?([0-9a-f]{8,})`?.*?(?:Codex|codex)[\s:]+([A-Z\-]+)", text, re.MULTILINE):
+        out_map[m.group(1)] = m.group(2).strip().upper()
+    return out_map
+
+
+def fmt_yaml_str(s: str) -> str:
+    """Single-line YAML string, quoted if needed."""
+    if not s:
+        return '""'
+    if any(c in s for c in [":", "#", "{", "}", "[", "]", ",", "&", "*", "!", "|", ">", "'", '"', "%", "@", "`"]) or s.startswith("-") or s.lstrip() != s:
+        return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return s
+
+
+def build_accepted_risks_stub(finding: dict, codex_verdict: str | None) -> dict:
+    file_path = finding.get("file") or (finding.get("locations") or [{}])[0].get("file", "")
+    line = (finding.get("locations") or [{}])[0].get("line") or finding.get("line") or 0
+    fp = finding.get("fingerprint", "")
+    triage = finding.get("triage", "")
+    severity = finding.get("severity", "")
+    title = finding.get("title", "")
+    rationale = f"Auto-suggested by Phase 8.7 learn loop. Triage={triage}, severity={severity}."
+    if codex_verdict:
+        rationale += f" Codex 2nd-opinion={codex_verdict}."
+    expires = (dt.date.today() + dt.timedelta(days=90)).isoformat()
+    return {
+        "id": f"AR-AUTO-{fp[:8]}",
+        "title": title,
+        "file": file_path,
+        "fingerprint": fp,
+        "rule": finding.get("sink_kind") or finding.get("rule") or "auto",
+        "cwe": finding.get("cwe") or "",
+        "line_range": [line, line],
+        "reason": rationale,
+        "owner": "auto-learn",
+        "accepted": dt.date.today().isoformat(),
+        "expires": expires,
+    }
+
+
+def build_fix_list_stub(finding: dict) -> dict:
+    file_path = finding.get("file") or (finding.get("locations") or [{}])[0].get("file", "")
+    fp = finding.get("fingerprint", "")
+    severity = (finding.get("severity") or "MEDIUM").upper()
+    target = (dt.date.today() + dt.timedelta(days=30)).isoformat()
+    return {
+        "id": f"FIX-AUTO-{fp[:8]}",
+        "title": finding.get("title", ""),
+        "file": file_path,
+        "fingerprint": fp,
+        "severity": severity,
+        "owner": "auto-learn",
+        "status": "open",
+        "target_date": target,
+        "notes": "Auto-stubbed by Phase 8.7 learn loop on first detection. Adjust owner/target_date manually.",
+    }
+
+
+def write_yaml_list(path: Path, header_comment: str, top_level_key: str, entries: list[dict]) -> None:
+    lines = [f"# {header_comment}", "version: \"1.0\"", f"{top_level_key}:"]
+    for e in entries:
+        lines.append(f"  - id: {fmt_yaml_str(e['id'])}")
+        for k, v in e.items():
+            if k == "id":
+                continue
+            if isinstance(v, list):
+                inner = ", ".join(str(x) for x in v)
+                lines.append(f"    {k}: [{inner}]")
+            else:
+                lines.append(f"    {k}: {fmt_yaml_str(str(v))}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def existing_fingerprints(yml_path: Path) -> set[str]:
+    """Cheap parse of an existing accepted-risks/fix-list yml to skip duplicate fingerprints."""
+    if not yml_path.exists():
+        return set()
+    text = yml_path.read_text(encoding="utf-8")
+    return set(re.findall(r"fingerprint:\s*['\"]?([0-9a-f]{8,})['\"]?", text))
+
+
+def append_to_yml(yml_path: Path, top_level_key: str, entries: list[dict], header_comment: str) -> int:
+    """Additive append to a YAML file. Skips entries whose fingerprint is already present."""
+    have = existing_fingerprints(yml_path)
+    new = [e for e in entries if e.get("fingerprint") not in have]
+    if not new:
+        return 0
+    if not yml_path.exists():
+        write_yaml_list(yml_path, header_comment, top_level_key, new)
+        return len(new)
+    text = yml_path.read_text(encoding="utf-8")
+    # Keep it simple: append entries at end of the top_level_key list. Assumes 2-space indent.
+    if f"{top_level_key}:" not in text:
+        text = text.rstrip() + f"\n{top_level_key}:\n"
+    appended = []
+    for e in new:
+        appended.append(f"  - id: {fmt_yaml_str(e['id'])}")
+        for k, v in e.items():
+            if k == "id":
+                continue
+            if isinstance(v, list):
+                inner = ", ".join(str(x) for x in v)
+                appended.append(f"    {k}: [{inner}]")
+            else:
+                appended.append(f"    {k}: {fmt_yaml_str(str(v))}")
+    text = text.rstrip() + "\n" + "\n".join(appended) + "\n"
+    yml_path.write_text(text, encoding="utf-8")
+    return len(new)
+
+
+def promote_baseline(out: Path, repo: Path) -> Path | None:
+    src = out / "findings.json"
+    if not src.exists():
+        return None
+    baseline_dir = repo / ".audit-baseline"
+    # Refuse to promote when the source dir IS the baseline dir (e.g. user
+    # accidentally pointed odoo-review-learn at .audit-baseline/).
+    if out.resolve() == baseline_dir.resolve():
+        print(f"WARN: source out_dir {out} is the baseline dir — skipping promotion", file=sys.stderr)
+        return None
+    baseline_dir.mkdir(parents=True, exist_ok=True)
+    dst = baseline_dir / "findings.json"
+    if dst.exists() and src.resolve() == dst.resolve():
+        return dst
+    shutil.copy2(src, dst)
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
+    history = baseline_dir / "history" / f"findings-{stamp}.json"
+    history.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, history)
+    return dst
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Phase 8.7 self-improving learn loop.")
+    parser.add_argument("out_dir", help="Path to <OUT>/ produced by odoo-review-run")
+    parser.add_argument("--apply", action="store_true", help="Apply suggestions to <repo>/.audit-accepted-risks.yml + <repo>/.audit-fix-list.yml. Without this flag, only suggestions are written.")
+    parser.add_argument("--repo", help="Override repo root (defaults to read from run-mode.json)")
+    parser.add_argument("--no-promote-baseline", action="store_true", help="Skip findings.json -> .audit-baseline/ promotion")
+    args = parser.parse_args()
+
+    out = Path(args.out_dir).expanduser().resolve()
+    if not out.exists():
+        print(f"OUT not found: {out}", file=sys.stderr)
+        return 1
+
+    findings_path = out / "findings.json"
+    if not findings_path.exists():
+        print(f"findings.json missing — run Phase 8 first ({findings_path})", file=sys.stderr)
+        return 2
+
+    run_mode_path = out / "run-mode.json"
+    repo: Path
+    if args.repo:
+        repo = Path(args.repo).expanduser().resolve()
+    elif run_mode_path.exists():
+        repo = Path(json.loads(run_mode_path.read_text(encoding="utf-8")).get("repo", out.parent)).expanduser().resolve()
+    else:
+        repo = out.parent
+
+    findings = read_findings(findings_path)
+    codex_map = read_codex_reconciliation(out)
+
+    accept_stubs: list[dict] = []
+    suppress_stubs: list[dict] = []
+    auto_apply_suppressions: list[dict] = []
+
+    for f in findings:
+        triage = (f.get("triage") or "").upper()
+        if triage == "ACCEPT":
+            accept_stubs.append(build_fix_list_stub(f))
+        elif triage in ("REJECT", "DOWNGRADE"):
+            verdict = codex_map.get(f.get("fingerprint", ""))
+            stub = build_accepted_risks_stub(f, verdict)
+            suppress_stubs.append(stub)
+            # Auto-apply only when Codex agrees (2-of-2) OR a 6-gate evidence flag is set on the finding
+            gate_fail_with_evidence = bool(f.get("gate0_match") or f.get("gate1_fail_with_evidence"))
+            if verdict in ("REJECT", "DOWNGRADE", "REJECT-MATCH") or gate_fail_with_evidence:
+                auto_apply_suppressions.append(stub)
+
+    # Suggestions always written
+    write_yaml_list(
+        out / "scope-suggestions.yml",
+        "Phase 8.7 auto-stubbed accepted-risks suggestions (REJECT/DOWNGRADE findings). Review then `cp` to .audit-accepted-risks.yml or run with --apply.",
+        "accepted_risks",
+        suppress_stubs,
+    )
+    write_yaml_list(
+        out / "fix-list-suggestions.yml",
+        "Phase 8.7 auto-stubbed fix-list entries for new ACCEPTs (status=open, target=+30d).",
+        "fix_list",
+        accept_stubs,
+    )
+
+    applied_supp = 0
+    applied_fix = 0
+    if args.apply:
+        ar_path = repo / ".audit-accepted-risks.yml"
+        fix_path = repo / ".audit-fix-list.yml"
+        applied_supp = append_to_yml(ar_path, "accepted_risks", auto_apply_suppressions, "auto-managed by odoo-review-learn (additive only)")
+        applied_fix = append_to_yml(fix_path, "fix_list", accept_stubs, "auto-managed by odoo-review-learn (additive only)")
+
+    promoted: Path | None = None
+    if not args.no_promote_baseline:
+        promoted = promote_baseline(out, repo)
+
+    print(f"Suggestions: accept-risk={len(suppress_stubs)} fix-list={len(accept_stubs)}")
+    print(f"  scope-suggestions.yml: {out / 'scope-suggestions.yml'}")
+    print(f"  fix-list-suggestions.yml: {out / 'fix-list-suggestions.yml'}")
+    if args.apply:
+        print(f"Applied: accept-risk={applied_supp} (Codex-agreed only) fix-list={applied_fix}")
+    if promoted:
+        print(f"Baseline promoted: {promoted}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

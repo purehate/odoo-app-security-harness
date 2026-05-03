@@ -2,7 +2,7 @@
 """Finalize a completed odoo-code-review run.
 
 Usage:
-    odoo-review-finalize <OUT> [--baseline <path>] [--no-diff] [--no-bounty]
+    odoo-review-finalize <OUT> [--baseline <path>] [--no-diff] [--no-stock-gate] [--no-bounty]
                                 [--fail-on critical|high|medium|low|none]
 
 Wraps Phase 8.6 post-processing into one CI-friendly command:
@@ -11,7 +11,8 @@ Wraps Phase 8.6 post-processing into one CI-friendly command:
     2. Run odoo-review-export <OUT>          → SARIF + fingerprints + bounty drafts.
     3. Auto-detect baseline (or use --baseline) and run odoo-review-diff.
     4. Stamp <OUT>/finalize.log with timestamps + exit codes.
-    5. Exit non-zero when ACCEPT findings exceed the --fail-on threshold (CI gate).
+    5. Exit non-zero when ACCEPT findings exceed the --fail-on threshold or
+       stock-CC control-lane leads remain unresolved.
 
 Baseline auto-detection order:
     a. --baseline <path>
@@ -20,8 +21,8 @@ Baseline auto-detection order:
     d. <OUT>/../.audit-baseline.json
 
 Designed for non-Claude invocation paths: CI (GitHub Actions, GitLab, Drone),
-cron loops, codex-only sessions, or any pure-CLI consumer that needs the full
-output set without orchestrating odoo-review-export + odoo-review-diff manually.
+codex-only sessions, or any pure-CLI consumer that needs the full output set
+without orchestrating export/diff/stock gates manually.
 """
 
 from __future__ import annotations
@@ -39,8 +40,10 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 EXPORT_BIN = SCRIPT_DIR / "odoo-review-export"
 DIFF_BIN = SCRIPT_DIR / "odoo-review-diff"
+STOCK_DIFF_BIN = SCRIPT_DIR / "odoo-review-stock-diff"
 
 SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
+STOCK_RESOLVED_DISPOSITIONS = {"REJECT", "DOWNGRADE", "NEEDS-MANUAL"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,6 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("out", help="Path to .audit/ directory containing findings.json.")
     parser.add_argument("--baseline", help="Baseline findings.json or .audit/ directory for diff. Default: auto-detect.")
     parser.add_argument("--no-diff", action="store_true", help="Skip odoo-review-diff even if a baseline is found.")
+    parser.add_argument("--no-stock-gate", action="store_true", help="Skip unresolved stock-CC control-lane gate.")
     parser.add_argument("--no-bounty", action="store_true", help="Skip bounty/F-N.md drafts (passes --no-bounty to export).")
     parser.add_argument(
         "--fail-on",
@@ -122,6 +126,83 @@ def count_accepts_by_severity(findings_doc: dict) -> dict[str, int]:
     return counts
 
 
+def run_mode(out: Path) -> dict:
+    path = out / "run-mode.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def parse_stock_resolutions(path: Path) -> dict[str, dict]:
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    resolutions: dict[str, dict] = {}
+    current_fp: str | None = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("- fingerprint:"):
+            current_fp = line.split(":", 1)[1].strip().strip("\"'")
+            resolutions[current_fp] = {"fingerprint": current_fp}
+            continue
+        if current_fp and ":" in line:
+            key, _, value = line.partition(":")
+            resolutions[current_fp][key.strip()] = value.strip().strip("\"'")
+    return resolutions
+
+
+def stock_gate(out: Path, log_lines: list[str]) -> tuple[int, str]:
+    mode = run_mode(out)
+    enabled = bool(mode.get("baseline_stock_cc") or mode.get("weekly"))
+    if not enabled:
+        return 0, "stock_gate: skipped (baseline_stock_cc=false)"
+    bs_dir = out / "baseline-stock"
+    stock_findings = bs_dir / "findings.md"
+    if not stock_findings.exists():
+        return 4, f"STOCK GATE FAIL: {stock_findings} missing; --ks requires stock-CC control lane output"
+
+    if STOCK_DIFF_BIN.exists():
+        cmd = [sys.executable, str(STOCK_DIFF_BIN), str(out)]
+    else:
+        cmd = [shutil.which("odoo-review-stock-diff") or "odoo-review-stock-diff", str(out)]
+    rc = shell(cmd, log_lines)
+    if rc != 0:
+        return rc, f"STOCK GATE FAIL: stock diff exited {rc}"
+
+    diff_path = bs_dir / "diff.json"
+    if not diff_path.exists():
+        return 4, f"STOCK GATE FAIL: {diff_path} missing"
+    diff_doc = json.loads(diff_path.read_text(encoding="utf-8"))
+    stock_only = diff_doc.get("stock_only", [])
+    if not stock_only:
+        return 0, "stock_gate: pass (no stock-only leads)"
+
+    resolutions = parse_stock_resolutions(bs_dir / "resolutions.yml")
+    unresolved = []
+    for finding in stock_only:
+        fp = finding.get("fingerprint")
+        resolution = resolutions.get(fp or "", {})
+        disposition = (resolution.get("disposition") or "").upper()
+        evidence = resolution.get("evidence") or ""
+        if disposition in STOCK_RESOLVED_DISPOSITIONS and evidence and evidence != "":
+            continue
+        unresolved.append(finding)
+    if unresolved:
+        leads_path = bs_dir / "validation-leads.md"
+        template_path = bs_dir / "resolutions-template.yml"
+        return 4, (
+            f"STOCK GATE FAIL: {len(unresolved)} stock-only lead(s) unresolved. "
+            f"Add real leads to findings.json and rerun finalize, or fill {bs_dir / 'resolutions.yml'} "
+            f"from {template_path} with REJECT/DOWNGRADE/NEEDS-MANUAL + evidence. See {leads_path}."
+        )
+    return 0, f"stock_gate: pass ({len(stock_only)} stock-only lead(s) resolved)"
+
+
 def evaluate_gate(counts: dict[str, int], fail_on: str) -> tuple[int, str]:
     if fail_on == "none":
         return 0, "gate disabled (--fail-on none)"
@@ -171,6 +252,12 @@ def main() -> int:
     else:
         log_lines.append("baseline: none (skipping diff)")
 
+    stock_rc = 0
+    stock_msg = "stock_gate: skipped"
+    if not args.no_stock_gate:
+        stock_rc, stock_msg = stock_gate(out, log_lines)
+    log_lines.append(stock_msg)
+
     findings_doc = load_findings(findings_path)
     counts = count_accepts_by_severity(findings_doc)
     log_lines.append(f"accepts_by_severity: {counts}")
@@ -178,7 +265,7 @@ def main() -> int:
     log_lines.append(gate_msg)
 
     log_lines.append(f"finished: {dt.datetime.now(dt.timezone.utc).isoformat()}")
-    log_lines.append(f"export_rc={export_rc} diff_rc={diff_rc} gate_rc={gate_rc}")
+    log_lines.append(f"export_rc={export_rc} diff_rc={diff_rc} stock_rc={stock_rc} gate_rc={gate_rc}")
 
     log_path = out / "finalize.log"
     log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
@@ -189,6 +276,8 @@ def main() -> int:
         return export_rc
     if diff_rc != 0:
         return diff_rc
+    if stock_rc != 0:
+        return stock_rc
     return gate_rc
 
 

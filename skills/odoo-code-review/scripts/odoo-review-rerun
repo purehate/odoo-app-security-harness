@@ -69,10 +69,10 @@ def find_repo(directive_path: Path) -> Path:
     """Walk up from directive to find the directory that owns .audit/."""
     p = directive_path.resolve()
     while p != p.parent:
-        if p.name == ".audit":
+        if p.name == ".audit" or (p.name.startswith(".audit-") and p.is_dir()):
             return p.parent
         p = p.parent
-    raise RuntimeError("Could not locate .audit/ ancestor of directive.")
+    raise RuntimeError("Could not locate .audit/.audit-* ancestor of directive.")
 
 
 def collect_scope_files(repo: Path, scope: list[str]) -> list[Path]:
@@ -121,8 +121,6 @@ def build_prompt(meta: dict, body: str, repo: Path, scope_files: list[Path]) -> 
 
 
 def dispatch_qwen(prompt: str, model: str, scope_files: list[Path], dry_run: bool) -> tuple[bool, str]:
-    if not shutil.which("ollama"):
-        return False, "ollama binary not found in PATH"
     file_section = ""
     for f in scope_files:
         try:
@@ -134,6 +132,8 @@ def dispatch_qwen(prompt: str, model: str, scope_files: list[Path], dry_run: boo
     cmd = ["ollama", "run", model]
     if dry_run:
         return True, f"[dry-run] {' '.join(cmd)}\n--- prompt ---\n{full_prompt[:2000]}\n..."
+    if not shutil.which("ollama"):
+        return False, "ollama binary not found in PATH"
     try:
         proc = subprocess.run(cmd, input=full_prompt, text=True, capture_output=True, timeout=900)
     except subprocess.TimeoutExpired:
@@ -144,8 +144,6 @@ def dispatch_qwen(prompt: str, model: str, scope_files: list[Path], dry_run: boo
 
 
 def dispatch_codex(prompt: str, model: str, repo: Path, task_type: str, dry_run: bool) -> tuple[bool, str]:
-    if not shutil.which("codex"):
-        return False, "codex binary not found in PATH"
     sandbox = "workspace-write" if task_type == "build-poc" else "read-only"
     cmd = [
         "codex", "exec",
@@ -157,6 +155,8 @@ def dispatch_codex(prompt: str, model: str, repo: Path, task_type: str, dry_run:
     ]
     if dry_run:
         return True, "[dry-run] " + " ".join(repr(c) if " " in c else c for c in cmd)
+    if not shutil.which("codex"):
+        return False, "codex binary not found in PATH"
     try:
         proc = subprocess.run(cmd, text=True, capture_output=True, timeout=1800)
     except subprocess.TimeoutExpired:
@@ -219,7 +219,8 @@ def main() -> int:
     scope_files = collect_scope_files(repo, scope)
     prompt = build_prompt(meta, body, repo, scope_files)
 
-    update_status(directive_path, "running")
+    if not args.dry_run:
+        update_status(directive_path, "running")
 
     task_type = meta.get("task_type", "")
     if target_lane == "qwen":
@@ -229,13 +230,18 @@ def main() -> int:
         model = meta.get("model") or "gpt-5.3-codex"
         ok, output = dispatch_codex(prompt, model, repo, task_type, args.dry_run)
 
-    result_path = write_result(directive_path, ok, output, meta)
-    update_status(directive_path, "done" if ok else "failed")
+    if args.dry_run:
+        result_path = directive_path.parent / "results" / (directive_path.stem + ".result.md")
+    else:
+        result_path = write_result(directive_path, ok, output, meta)
+        update_status(directive_path, "done" if ok else "failed")
 
     print(f"Directive: {directive_path}")
     print(f"Lane: {target_lane} ({model})")
-    print(f"Status: {'done' if ok else 'failed'}")
+    print(f"Status: {'dry-run' if args.dry_run else ('done' if ok else 'failed')}")
     print(f"Result: {result_path}")
+    if args.dry_run:
+        print(output)
     return 0 if ok else 1
 
 

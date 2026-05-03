@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""Phase 7.5 runtime helper for Odoo evidence capture.
+
+This is intentionally explicit rather than magical. Odoo deployments vary too
+much to guess database/config/addons settings safely, so the helper accepts the
+launch contract as flags or environment variables, boots Odoo, waits for a
+health URL, captures logs/status, and optionally runs a PoC script with
+ODOO_BASE_URL set.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Boot Odoo for Phase 7.5 runtime evidence and optionally replay a PoC.")
+    parser.add_argument("out_dir", help="Path to <OUT>/ produced by odoo-review-run")
+    parser.add_argument("--repo", help="Repo/addons root. Defaults to run-mode.json repo, then out_dir parent.")
+    parser.add_argument("--odoo-bin", default=os.environ.get("ODOO_BIN", "odoo-bin"), help="Path to odoo-bin. Default: $ODOO_BIN or odoo-bin on PATH.")
+    parser.add_argument("--config", default=os.environ.get("ODOO_CONFIG"), help="Odoo config file. Default: $ODOO_CONFIG.")
+    parser.add_argument("--database", "--db", dest="database", default=os.environ.get("ODOO_DB"), help="Database name. Default: $ODOO_DB.")
+    parser.add_argument("--addons-path", default=os.environ.get("ODOO_ADDONS_PATH"), help="Comma-separated addons path. Default: $ODOO_ADDONS_PATH or repo.")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("ODOO_PORT", "8069")), help="HTTP port. Default: $ODOO_PORT or 8069.")
+    parser.add_argument("--host", default=os.environ.get("ODOO_HOST", "127.0.0.1"), help="HTTP host for health checks. Default: 127.0.0.1.")
+    parser.add_argument("--health-path", default="/web/login", help="Path polled until Odoo is ready. Default: /web/login.")
+    parser.add_argument("--timeout", type=int, default=120, help="Seconds to wait for Odoo readiness. Default: 120.")
+    parser.add_argument("--poc", action="append", default=[], help="PoC script to run after boot. Can be passed multiple times.")
+    parser.add_argument("--keep-running", action="store_true", help="Leave Odoo running and write runtime/odoo.pid.")
+    parser.add_argument("--plan-only", action="store_true", help="Only write runtime command/plan artifacts; do not boot.")
+    return parser.parse_args()
+
+
+def repo_from_run_mode(out: Path) -> Path:
+    mode = out / "run-mode.json"
+    if mode.exists():
+        try:
+            data = json.loads(mode.read_text(encoding="utf-8"))
+            repo = data.get("repo")
+            if repo:
+                return Path(repo).expanduser().resolve()
+        except Exception:
+            pass
+    return out.parent.resolve()
+
+
+def build_cmd(args: argparse.Namespace, repo: Path, log_path: Path) -> list[str]:
+    addons_path = args.addons_path or str(repo)
+    cmd = [
+        args.odoo_bin,
+        "--http-interface",
+        args.host,
+        "--http-port",
+        str(args.port),
+        "--addons-path",
+        addons_path,
+        "--logfile",
+        str(log_path),
+    ]
+    if args.config:
+        cmd.extend(["--config", args.config])
+    if args.database:
+        cmd.extend(["--database", args.database])
+    return cmd
+
+
+def write_plan(runtime_dir: Path, args: argparse.Namespace, repo: Path, cmd: list[str], base_url: str) -> None:
+    shell_cmd = " ".join(quote(part) for part in cmd)
+    (runtime_dir / "boot-command.sh").write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + shell_cmd + "\n", encoding="utf-8")
+    lines = [
+        "# Runtime Evidence Plan",
+        "",
+        f"- Repo: `{repo}`",
+        f"- Base URL: `{base_url}`",
+        f"- Health URL: `{base_url}{args.health_path}`",
+        f"- Odoo bin: `{args.odoo_bin}`",
+        f"- Config: `{args.config or '(none)'}`",
+        f"- Database: `{args.database or '(default from config/env)'}`",
+        f"- Addons path: `{args.addons_path or str(repo)}`",
+        f"- Log: `{runtime_dir / 'odoo.log'}`",
+        "",
+        "## PoC Contract",
+        "",
+        "PoC scripts receive:",
+        "",
+        "- `ODOO_BASE_URL`",
+        "- `ODOO_DB` when provided",
+        "- `ODOO_REPO`",
+        "- `ODOO_REVIEW_OUT`",
+        "",
+        "Capture PoC stdout/stderr under `runtime/reproductions/` and cite those files in Phase 7.5 evidence.",
+    ]
+    (runtime_dir / "runtime-plan.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def quote(value: str) -> str:
+    if not value:
+        return "''"
+    if all(c.isalnum() or c in "/._:=,+-@" for c in value):
+        return value
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def wait_ready(url: str, timeout: int) -> tuple[bool, str]:
+    deadline = time.time() + timeout
+    last_error = ""
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                if 200 <= resp.status < 500:
+                    return True, f"HTTP {resp.status}"
+        except urllib.error.HTTPError as exc:
+            if 200 <= exc.code < 500:
+                return True, f"HTTP {exc.code}"
+            last_error = f"HTTP {exc.code}"
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc)
+        time.sleep(2)
+    return False, last_error or "timeout"
+
+
+def run_pocs(args: argparse.Namespace, repo: Path, out: Path, base_url: str, runtime_dir: Path) -> list[dict]:
+    repro_dir = runtime_dir / "reproductions"
+    repro_dir.mkdir(parents=True, exist_ok=True)
+    results: list[dict] = []
+    env = os.environ.copy()
+    env.update({
+        "ODOO_BASE_URL": base_url,
+        "ODOO_REPO": str(repo),
+        "ODOO_REVIEW_OUT": str(out),
+    })
+    if args.database:
+        env["ODOO_DB"] = args.database
+    for idx, poc in enumerate(args.poc, start=1):
+        path = Path(poc).expanduser().resolve()
+        output = repro_dir / f"poc-{idx:02d}-{path.stem}.log"
+        if not path.exists():
+            output.write_text(f"PoC not found: {path}\n", encoding="utf-8")
+            results.append({"poc": str(path), "returncode": 127, "output": str(output)})
+            continue
+        cmd = ["bash", str(path)] if path.suffix in {".sh", ".bash"} else [str(path)]
+        try:
+            completed = subprocess.run(cmd, cwd=str(repo), env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=600)
+            output.write_text(completed.stdout or "", encoding="utf-8", errors="replace")
+            results.append({"poc": str(path), "returncode": completed.returncode, "output": str(output)})
+        except subprocess.TimeoutExpired as exc:
+            output.write_text((exc.stdout or "") + "\n[TIMEOUT after 600s]\n", encoding="utf-8", errors="replace")
+            results.append({"poc": str(path), "returncode": 124, "output": str(output), "error": "timeout after 600s"})
+    return results
+
+
+def terminate(proc: subprocess.Popen, timeout: int = 20) -> None:
+    if proc.poll() is not None:
+        return
+    proc.send_signal(signal.SIGTERM)
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def main() -> int:
+    args = parse_args()
+    out = Path(args.out_dir).expanduser().resolve()
+    if not out.exists():
+        print(f"OUT not found: {out}", file=sys.stderr)
+        return 1
+    repo = Path(args.repo).expanduser().resolve() if args.repo else repo_from_run_mode(out)
+    runtime_dir = out / "runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    log_path = runtime_dir / "odoo.log"
+    base_url = f"http://{args.host}:{args.port}"
+    health_url = base_url + args.health_path
+    cmd = build_cmd(args, repo, log_path)
+    write_plan(runtime_dir, args, repo, cmd, base_url)
+
+    status = {
+        "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "repo": str(repo),
+        "out": str(out),
+        "base_url": base_url,
+        "health_url": health_url,
+        "cmd": cmd,
+        "plan_only": args.plan_only,
+        "ready": False,
+        "pocs": [],
+    }
+    if args.plan_only:
+        (runtime_dir / "status.json").write_text(json.dumps(status, indent=2, sort_keys=True), encoding="utf-8")
+        print(f"Runtime plan written: {runtime_dir / 'runtime-plan.md'}")
+        return 0
+
+    with (runtime_dir / "odoo-stdout.log").open("w", encoding="utf-8") as stdout:
+        try:
+            proc = subprocess.Popen(cmd, cwd=str(repo), stdout=stdout, stderr=subprocess.STDOUT, text=True)
+        except Exception as exc:  # noqa: BLE001
+            status["launch_error"] = str(exc)
+            status["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+            (runtime_dir / "status.json").write_text(json.dumps(status, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"Could not launch Odoo: {exc}", file=sys.stderr)
+            print(f"Runtime plan written: {runtime_dir / 'runtime-plan.md'}", file=sys.stderr)
+            return 1
+        status["pid"] = proc.pid
+        (runtime_dir / "odoo.pid").write_text(str(proc.pid) + "\n", encoding="utf-8")
+        ready, detail = wait_ready(health_url, args.timeout)
+        status["ready"] = ready
+        status["ready_detail"] = detail
+        status["ready_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        status["process_returncode_during_wait"] = proc.poll()
+        if not ready:
+            status["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+            (runtime_dir / "status.json").write_text(json.dumps(status, indent=2, sort_keys=True), encoding="utf-8")
+            terminate(proc)
+            print(f"Odoo did not become ready at {health_url}: {detail}", file=sys.stderr)
+            print(f"Logs: {log_path} and {runtime_dir / 'odoo-stdout.log'}", file=sys.stderr)
+            return 2
+        status["pocs"] = run_pocs(args, repo, out, base_url, runtime_dir)
+        if args.keep_running:
+            status["kept_running"] = True
+            (runtime_dir / "status.json").write_text(json.dumps(status, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"Odoo ready: {health_url}")
+            print(f"PID: {proc.pid} ({runtime_dir / 'odoo.pid'})")
+            return 0
+        terminate(proc)
+        status["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        status["process_returncode"] = proc.poll()
+        (runtime_dir / "status.json").write_text(json.dumps(status, indent=2, sort_keys=True), encoding="utf-8")
+    failed = [p for p in status["pocs"] if p.get("returncode") != 0]
+    print(f"Odoo runtime evidence captured: {runtime_dir}")
+    return 3 if failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

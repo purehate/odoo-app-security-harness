@@ -37,6 +37,36 @@ The iteration loop is the teaching mechanism: each `accepted_risks` reason in `s
 
 Operating principle: **deep framework expertise > scanner breadth**. Semgrep + custom Odoo rules + agent validation beats 400 generic warnings every time.
 
+## Run-Mode Contract (READ FIRST)
+
+The runner writes `<OUT>/run-mode.json` and `<OUT>/00-run-mode.md` at the top of every run. Lead Claude MUST read `00-run-mode.md` before Phase 0/1 work and honor these flags:
+
+- `non_interactive=true` (set only by `--yes`) → **never** emit `[y/N]` prompts. Pick the documented default action and proceed. This kills the Phase 8.7 step-4 prompt and any mid-stream "should I continue?" pauses.
+- `learn=true` (set by `--learn` or `-ks`) → after Phase 8.6, run `scripts/odoo-review-learn <OUT>` to promote `findings.json` → `<repo>/.audit-baseline/findings.json` and write accepted-risk/fix-list suggestions. Use `--apply` only when `non_interactive=true` or the user explicitly approved the suggestions. Iteration cap: `learn_cap` (default 3).
+- `baseline_stock_cc=true` (set by `--baseline-stock-cc` or `-ks`) → during Phase 1, dispatch one `subagent_type: general-purpose` Agent with the prompt at `<OUT>/baseline-stock/dispatch.md`. Before the run is considered complete, run `scripts/odoo-review-stock-diff <OUT>` and validate every stock-only entry in `<OUT>/baseline-stock/validation-leads.md` as a current-run lead. `odoo-review-finalize` fails while these remain unresolved. After disposition, optionally run `scripts/odoo-review-stock-diff <OUT> --apply-lessons` to append stock-only finding patterns to `references/agent-prompts.md`.
+- `weekly=true` (set by `-ks` / `--ks` / `--kitchensink`) → kitchen-sink mode: max-quality full review. Equivalent to `--joern --runtime --breadth --json --learn --baseline-stock-cc` plus auto-detect of `<repo>/.audit-baseline/findings.json`, `<repo>/scope.yml`, `<repo>/.audit-accepted-risks.yml`, `<repo>/.audit-fix-list.yml`. Add `--yes` separately for zero prompts. Do not use `--allow-missing-lanes` for a serious `-ks` review unless you accept weaker coverage.
+
+When `non_interactive=true` and `learn=true` are both set, the lead session runs end-to-end with NO user input from Phase 0 through Phase 8.7 baseline promotion. Otherwise, kitchen-sink mode is manual: full coverage, but the lead still presents suppression suggestions before applying them.
+
+## Mode Simplicity
+
+Use three primary modes:
+
+- `--quick` — fast local pass. Useful while developing or checking an obvious risky area.
+- `--pr <n>` — PR-scoped review through `gh`. Combine with `--quick` for quick PR triage.
+- `-ks` / `--ks` — kitchen sink. The best available review regardless of token/runtime cost: scanners, Codex hunters, local Qwen, breadth sweep, stock-CC control lane, runtime evidence path, learn loop, and unresolved-stock-lead close gate.
+
+Everything else is an escape hatch or advanced override.
+
+## Token Pressure / Qwen Handoff
+
+Claude token exhaustion is not directly observable by the runner. The harness handles this with a standing handoff packet instead of pretending to detect it:
+
+1. Every run writes `<OUT>/qwen-handoff/README.md` plus Qwen directives `D-9001..D-9003`.
+2. When lead Claude context gets tight, run the listed `odoo-review-rerun <OUT>/directives/D-900*.md` commands.
+3. Qwen returns hint-only risk clusters, likely-noise triage, and evidence-gap checklists under `<OUT>/directives/results/`.
+4. After compaction or a fresh lead session, Claude reads those results and continues Phase 6/7. Qwen never makes final ACCEPT/REJECT/severity decisions.
+
 ## When to Use
 
 - User asks for a security review, code review, source-code audit, appsec review, vuln hunt, pentest of source, or "audit this Odoo repo".
@@ -283,7 +313,7 @@ Triage rubric + output format: `references/triage.md`.
 
 Triggered by `--runtime`. Two sub-passes:
 
-- **Sub-pass A — odoo-bin disposable.** Boot disposable Odoo, replay ACCEPT-finding PoCs via real HTTP / `odoo-bin shell` / `odoo-bin --test-enable`. Capture stdout/stderr/HTTP under `<OUT>/runtime/reproductions/`.
+- **Sub-pass A — odoo-bin runtime helper.** Run `scripts/odoo-review-runtime <OUT>` with explicit launch details (`--odoo-bin`, `--config`/`--database`, `--addons-path`) to boot Odoo, wait for `/web/login`, replay ACCEPT-finding PoC scripts with `ODOO_BASE_URL`, and capture logs/status/stdout under `<OUT>/runtime/`.
 - **Sub-pass B — ZAP baseline (only if `--zap-target <url>`).** Run `zap-baseline.py` against the booted Odoo. macOS Docker quirk: mount needs `--user 0` and `chmod 777` on the wrk dir. Output → `<OUT>/runtime/zap/zap-baseline.{html,json}`.
 
 Required when Gate 5 (PoC) demands runtime evidence.
@@ -341,7 +371,7 @@ Phase 8 also performs **fix-list reconciliation** against `inventory/fix-list.js
 - [ ] Phase 7: Codex evidence packs; Claude 6-gate fp-check per finding.
 - [ ] Phase 7: Codex variant-analysis fan-out per ACCEPT; Claude verifies grouped variants.
 - [ ] Phase 7: Codex negative-space draft; Claude confirms reportable gaps.
-- [ ] Phase 7.5 sub-pass A (only if `--runtime`): Codex/scripts boot odoo-bin, replay PoC, capture evidence.
+- [ ] Phase 7.5 sub-pass A (only if `--runtime`): run `odoo-review-runtime <OUT>` with Odoo launch details, replay PoC scripts, capture evidence.
 - [ ] Phase 7.5 sub-pass B (only if `--runtime --zap-target <url>`): Codex/scripts run ZAP baseline → `<OUT>/runtime/zap/`.
 - [ ] Phase 7.6 (auto when 2+ chained findings): Codex/scripts emit DOT + SVG → `<OUT>/attack-graphs/`.
 - [ ] Phase 7.7 (unless `--no-codex` and only when CRITICAL/HIGH ACCEPT exists): fresh Codex adversarial check → `<OUT>/codex/second-opinion/`.
@@ -355,14 +385,14 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 
 ## Flags
 
-- `--out <dir>` — override default `<repo>/.audit/` output dir.
+- `--out <dir>` — override default `<repo>/.audit-YYYYMMDD-HHMM/` output dir.
 - `--with-discourse` / `--no-discourse` — force Phase 5.5 on/off (default: on except `--quick`).
 - `--quick` — skip Phases 2–4.5 + Phase 5.5; hunters only on Phase 0/1 maps.
 - `--no-local-qwen` — skip local Ollama/Qwen advisory triage.
 - `--local-model <name>` — override local Ollama model (default: `qwen3:0.6b`).
 - `--allow-missing-lanes` — continue if the local Qwen or Codex lane is unavailable; record the skip in `tooling.md`.
 - `--joern` — enable Phase 3.5 Joern CPG graph review (skip on SMALL or `--quick`).
-- `--runtime` — enable Phase 7.5 sub-pass A (odoo-bin disposable + PoC replay).
+- `--runtime` — enable Phase 7.5 sub-pass A. Use `odoo-review-runtime <OUT>` with Odoo launch details to boot Odoo and replay PoCs.
 - `--zap-target <url>` — also run Phase 7.5 sub-pass B (ZAP baseline). Requires `--runtime`.
 - `--no-codex` — skip Codex heavy-worker lane and Phase 7.7 adversarial check; Claude performs all review work locally.
 - `--requirements <file>` — enable Phase 7.8 requirements-aware verification.
@@ -388,7 +418,8 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 
 The runner emits `findings.json` (after Phase 8). Four companion scripts process it:
 
-- **`odoo-review-finalize <OUT>`** — canonical Phase 8.6 wrapper. Runs export + diff, auto-detects baseline (`<OUT>/../.audit-baseline/findings.json` or `$ODOO_REVIEW_BASELINE`), stamps `finalize.log`, exits non-zero when ACCEPT severity ≥ `--fail-on` (default `high`). Use this from CI / cron / non-Claude paths. `--fail-on none` disables the gate.
+- **`odoo-review-finalize <OUT>`** — canonical Phase 8.6 wrapper. Runs export + diff, auto-detects baseline (`<OUT>/../.audit-baseline/findings.json` or `$ODOO_REVIEW_BASELINE`), runs the stock-CC unresolved-lead gate when `baseline_stock_cc=true`, stamps `finalize.log`, exits non-zero when ACCEPT severity ≥ `--fail-on` (default `high`) or stock-only leads remain unresolved. Use this from CI / non-Claude paths or manual re-export. `--fail-on none` disables only the severity gate; `--no-stock-gate` disables the stock gate.
+- **`odoo-review-runtime <OUT>`** — Phase 7.5 runtime helper. Boots Odoo from explicit `--odoo-bin`/`--config`/`--database`/`--addons-path` inputs, waits for a health URL, captures logs/status, and runs PoC scripts with `ODOO_BASE_URL`.
 - `odoo-review-export <.audit-dir>` — direct SARIF 2.1.0 + fingerprints + bounty/F-N.md emit. Called by `finalize`; expose for one-off re-export. Honors `scope.json` accepted_risks as SARIF `suppressions` unless `--no-suppress`.
 - `odoo-review-diff <baseline> <current>` — classifies findings new / fixed / unchanged / changed (severity OR triage delta) by `fingerprint`. Emits `delta.md` + `delta.json`. Called by `finalize` when baseline detected.
 - `odoo-review-rerun <directive>` — directive feedback-loop dispatcher (Qwen or Codex). See "Directive Feedback Loop" above.
@@ -399,7 +430,7 @@ The runner emits `findings.json` (after Phase 8). Four companion scripts process
 `templates/github-action.yml` is a drop-in `.github/workflows/odoo-security.yml`:
 
 - PR-scoped review on `pull_request` (auto `--pr <n>`).
-- Full sweep on `push` to main + weekly cron.
+- Full sweep on `push` to main, or run `/odoo-code-review -ks` manually on your chosen cadence.
 - Uploads `findings.sarif` to GitHub Code Scanning (`security-events: write`).
 - Sticky PR comment with `delta.md` (vs main baseline artifact).
 - 90-day artifact retention for `findings.json`, `delta.md`, `bounty/`.
@@ -414,7 +445,8 @@ Load only what applies to the engagement:
 - `references/lang-web.md` — TypeScript/Node (only relevant for `static/src` JS)
 - `references/sharp-edges.md` — footgun APIs incl. Odoo section
 - `references/insecure-defaults.md` — config-level defaults incl. Odoo section
-- `references/weekly-workflow.md` — recurring-tool loop: stamped run dirs, master accepted-risks + fix-list, triage flow, `--prune-old-runs`
+- `references/weekly-workflow.md` — recurring manual-review loop: stamped run dirs, master accepted-risks + fix-list, triage flow, `--prune-old-runs`
+- `<OUT>/qwen-handoff/README.md` — generated token-pressure fallback packet for local Qwen.
 
 ## Output
 
@@ -439,12 +471,12 @@ Stats demonstrate AI speed-up to client/AppSec leadership. Never skip them.
 
 ## Adapt Depth to Repo Size
 
-| Size                                | Approach                                                                                              |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| SMALL (1–5 modules, <20k LOC)       | Single hunter pass per technique, deep read. Skip Phase 5.5.                                          |
-| MEDIUM (5–30 modules, 20k–200k LOC) | All 10 hunters, single pass. ~5–10 min wall-clock.                                                    |
-| LARGE (30–100 modules, 200k–2M LOC) | Hunters with module-scoping (split risk-5 from risk-1). ~10–20 min wall-clock.                        |
-| HUGE (>100 modules, >2M LOC)        | Multi-pass: hunters first run on highest-risk modules only, then expand. Discuss scope cap with user. |
+| Size                                | Approach                                                                                                                                                                                                                       |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| SMALL (1–5 modules, <20k LOC)       | Single hunter pass per technique, deep read. Skip Phase 5.5.                                                                                                                                                                   |
+| MEDIUM (5–30 modules, 20k–200k LOC) | All 10 hunters, single pass. ~5–10 min wall-clock.                                                                                                                                                                             |
+| LARGE (30–100 modules, 200k–2M LOC) | Hunters with module-scoping (split risk-5 from risk-1). ~10–20 min wall-clock.                                                                                                                                                 |
+| HUGE (>100 modules, >2M LOC)        | Multi-pass: hunters first run on highest-risk modules only, then expand. Under `non_interactive=true` (`--yes`) auto-cap to top-30 risk-ranked modules and proceed; under default mode, discuss scope cap with user. |
 
 ## Philosophy
 

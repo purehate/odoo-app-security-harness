@@ -64,7 +64,7 @@ install_dir() {
 install_file "$ROOT/commands/odoo-code-review.md" "$CLAUDE_HOME/commands/odoo-code-review.md"
 install_dir "$ROOT/skills/odoo-code-review" "$CLAUDE_HOME/skills/odoo-code-review"
 
-for script in odoo-review-run odoo-review-rerun odoo-review-export odoo-review-diff odoo-review-finalize; do
+for script in odoo-review-run odoo-review-rerun odoo-review-export odoo-review-diff odoo-review-finalize odoo-review-learn odoo-review-stock-diff odoo-review-runtime; do
   chmod +x "$CLAUDE_HOME/skills/odoo-code-review/scripts/$script"
   ln -sf "$CLAUDE_HOME/skills/odoo-code-review/scripts/$script" "$HOME/.local/bin/$script"
 done
@@ -75,5 +75,7 @@ echo "Rerun:     $HOME/.local/bin/odoo-review-rerun"
 echo "Export:    $HOME/.local/bin/odoo-review-export"
 echo "Diff:      $HOME/.local/bin/odoo-review-diff"
 echo "Finalize:  $HOME/.local/bin/odoo-review-finalize"
+echo "Learn:     $HOME/.local/bin/odoo-review-learn"
+echo "StockDiff: $HOME/.local/bin/odoo-review-stock-diff"
+echo "Runtime:   $HOME/.local/bin/odoo-review-runtime"
 echo "Command:   /odoo-code-review"
-

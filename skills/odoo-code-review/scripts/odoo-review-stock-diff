@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""Phase 8.5b — stock-CC diff.
+
+Reads the stock-CC baseline lane output (`<OUT>/baseline-stock/findings.md`) and
+the harness findings (`<OUT>/findings.json`). Emits a delta report listing
+findings the stock-CC subagent caught that the harness missed, plus a current-run
+validation-leads file and a durable "lessons" snippet for
+`references/agent-prompts.md`.
+
+Usage:
+    odoo-review-stock-diff <OUT> [--apply-lessons]
+
+Outputs:
+    <OUT>/baseline-stock/diff.md          human-readable
+    <OUT>/baseline-stock/diff.json        machine-readable
+    <OUT>/baseline-stock/validation-leads.md
+                                          stock-only findings the lead must
+                                          validate before closing the run
+    <OUT>/baseline-stock/resolutions-template.yml
+                                          fill this only for stock-only leads
+                                          rejected/downgraded with evidence
+    <OUT>/baseline-stock/lessons.md       append-ready snippet for agent-prompts.md
+                                          (idempotent — keyed by sink_kind+title hash)
+
+Exit codes:
+    0  diff produced
+    1  bad input
+    2  no stock-CC output found (lane disabled or subagent never ran)
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+
+FINDING_BLOCK_SEP = re.compile(r"^---\s*$", re.MULTILINE)
+KEY_RE = re.compile(r"^(Title|File|Severity|Sink|Why|PoC):\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
+FILE_LINE_RE = re.compile(r"^([^:\s]+):(\d+)")
+
+
+def parse_stock_findings(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    text = path.read_text(encoding="utf-8")
+    blocks = [b.strip() for b in FINDING_BLOCK_SEP.split(text) if b.strip()]
+    findings = []
+    for raw in blocks:
+        entry: dict = {}
+        for m in KEY_RE.finditer(raw):
+            entry[m.group(1).lower()] = m.group(2).strip()
+        if not entry.get("title") or not entry.get("file"):
+            continue
+        m = FILE_LINE_RE.match(entry["file"])
+        entry["norm_file"] = m.group(1) if m else entry["file"]
+        entry["norm_line"] = int(m.group(2)) if m else 0
+        entry["fingerprint"] = _fingerprint(entry["norm_file"], entry["norm_line"], entry.get("sink", ""), entry["title"])
+        findings.append(entry)
+    return findings
+
+
+def _fingerprint(file_path: str, line: int, sink: str, title: str) -> str:
+    raw = f"{file_path}:{line}:{sink}:{title.strip().lower()}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def parse_harness_findings(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data.get("findings", [])
+
+
+def harness_fingerprints(harness: list[dict]) -> set[str]:
+    out: set[str] = set()
+    for f in harness:
+        if "fingerprint" in f:
+            out.add(f["fingerprint"])
+        else:
+            file_path = f.get("file") or (f.get("locations") or [{}])[0].get("file", "")
+            line = (f.get("locations") or [{}])[0].get("line") or f.get("line") or 0
+            sink = f.get("sink_kind") or f.get("sink") or ""
+            title = f.get("title", "")
+            out.add(_fingerprint(file_path, line, sink, title))
+    return out
+
+
+def harness_file_index(harness: list[dict]) -> dict[str, list[dict]]:
+    idx: dict[str, list[dict]] = {}
+    for f in harness:
+        file_path = f.get("file") or (f.get("locations") or [{}])[0].get("file", "")
+        if not file_path:
+            continue
+        idx.setdefault(file_path, []).append(f)
+    return idx
+
+
+def diff(stock: list[dict], harness: list[dict]) -> dict:
+    h_fps = harness_fingerprints(harness)
+    h_idx = harness_file_index(harness)
+    stock_only: list[dict] = []
+    overlapping: list[dict] = []
+    for s in stock:
+        if s["fingerprint"] in h_fps:
+            overlapping.append(s)
+            continue
+        # near-miss: same file, same sink_kind. Treat as overlap for lesson skip.
+        candidates = h_idx.get(s["norm_file"], [])
+        if any((c.get("sink_kind") or c.get("sink") or "").lower() == s.get("sink", "").lower() for c in candidates):
+            overlapping.append({**s, "near_miss": True})
+            continue
+        stock_only.append(s)
+    return {
+        "stock_only": stock_only,
+        "overlapping": overlapping,
+        "stock_count": len(stock),
+        "harness_count": len(harness),
+    }
+
+
+def write_diff_md(out_dir: Path, result: dict) -> None:
+    lines = ["# Stock-CC vs Harness Diff\n"]
+    lines.append(f"- Stock findings: {result['stock_count']}")
+    lines.append(f"- Harness findings: {result['harness_count']}")
+    lines.append(f"- Stock-only (harness misses): **{len(result['stock_only'])}**")
+    lines.append(f"- Overlapping: {len(result['overlapping'])}\n")
+    if result["stock_only"]:
+        lines.append("## Stock-only findings (current-run validation leads + durable lessons)\n")
+        for f in result["stock_only"]:
+            lines.append(f"### {f['title']}")
+            lines.append(f"- File: `{f['file']}`")
+            lines.append(f"- Severity: {f.get('severity', '?')}")
+            lines.append(f"- Sink: `{f.get('sink', '?')}`")
+            lines.append(f"- Why: {f.get('why', '(no rationale)')}")
+            poc = f.get("poc")
+            if poc:
+                lines.append(f"- PoC: `{poc}`")
+            lines.append(f"- Fingerprint: `{f['fingerprint']}`\n")
+    else:
+        lines.append("## No stock-only findings — harness covered everything stock CC found.\n")
+    (out_dir / "diff.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_validation_leads(out_dir: Path, result: dict) -> None:
+    lines = ["# Stock-CC Current-Run Validation Leads\n"]
+    if not result["stock_only"]:
+        lines.append("No stock-only findings. The harness covered every parsed stock-CC finding.\n")
+    else:
+        lines.append("These are stock-CC findings that did not overlap the harness findings. Lead Claude must validate or reject each one before treating the run as complete.\n")
+        for f in result["stock_only"]:
+            lines.append(f"## {f['title']}")
+            lines.append(f"- File: `{f['file']}`")
+            lines.append(f"- Severity: {f.get('severity', '?')}")
+            lines.append(f"- Sink: `{f.get('sink', '?')}`")
+            lines.append(f"- Why: {f.get('why', '(no rationale)')}")
+            poc = f.get("poc")
+            if poc:
+                lines.append(f"- PoC: `{poc}`")
+            lines.append(f"- Stock fingerprint: `{f['fingerprint']}`")
+            lines.append("- Required disposition: ACCEPT / DOWNGRADE / REJECT with source-line evidence.\n")
+    (out_dir / "validation-leads.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_resolutions_template(out_dir: Path, result: dict) -> None:
+    lines = [
+        "# Stock-CC lead resolutions",
+        "#",
+        "# Finalize fails while stock-only leads remain unresolved.",
+        "# If a stock-only lead is real, add it to findings.json and rerun stock-diff.",
+        "# Use this file only for leads that Claude validated as REJECT, DOWNGRADE,",
+        "# or NEEDS-MANUAL with source-line evidence.",
+        "version: \"1.0\"",
+        "resolutions:",
+    ]
+    for f in result["stock_only"]:
+        lines.extend([
+            f"  - fingerprint: {f['fingerprint']}",
+            f"    title: \"{str(f['title']).replace(chr(34), chr(39))}\"",
+            "    disposition: TODO  # REJECT | DOWNGRADE | NEEDS-MANUAL",
+            "    evidence: \"\"     # cite file:line and why this is not an ACCEPT finding yet",
+            "    reviewer: \"\"",
+        ])
+    if not result["stock_only"]:
+        lines.append("  []")
+    (out_dir / "resolutions-template.yml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_diff_json(out_dir: Path, result: dict) -> None:
+    (out_dir / "diff.json").write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def write_lessons(out_dir: Path, result: dict) -> None:
+    """Append-ready snippet for references/agent-prompts.md lessons section."""
+    if not result["stock_only"]:
+        (out_dir / "lessons.md").write_text("# Lessons from stock-CC diff\n\n(none — harness caught everything stock CC found this run)\n", encoding="utf-8")
+        return
+    lines = ["# Lessons from stock-CC diff\n"]
+    lines.append("Append the following entries to `references/agent-prompts.md` under a `## Lessons learned (auto-appended from stock-CC diff)` heading. Each entry is keyed by fingerprint so re-runs are idempotent.\n")
+    lines.append("```")
+    for f in result["stock_only"]:
+        lines.append(f"### LESSON-{f['fingerprint']}")
+        lines.append(f"- Pattern: {f.get('sink', '?')}")
+        lines.append(f"- Bug shape: {f['title']}")
+        lines.append(f"- Hunter assignment hint: include `{f.get('sink', '?')}` in the relevant hunter's grep packet next run.")
+        lines.append("")
+    lines.append("```")
+    (out_dir / "lessons.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def apply_lessons(out_dir: Path, agent_prompts_path: Path, result: dict) -> int:
+    """Idempotent append: only insert lessons whose fingerprint isn't already present."""
+    if not result["stock_only"]:
+        return 0
+    existing = ""
+    if agent_prompts_path.exists():
+        existing = agent_prompts_path.read_text(encoding="utf-8")
+    new = []
+    for f in result["stock_only"]:
+        marker = f"LESSON-{f['fingerprint']}"
+        if marker in existing:
+            continue
+        new.append(f"\n### {marker}\n- Pattern: {f.get('sink', '?')}\n- Bug shape: {f['title']}\n- Hunter hint: include `{f.get('sink', '?')}` in relevant hunter's grep packet.\n")
+    if not new:
+        return 0
+    if "## Lessons learned (auto-appended from stock-CC diff)" not in existing:
+        existing += "\n\n## Lessons learned (auto-appended from stock-CC diff)\n"
+    existing += "".join(new)
+    agent_prompts_path.write_text(existing, encoding="utf-8")
+    return len(new)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Diff stock-CC baseline lane vs harness findings.")
+    parser.add_argument("out_dir", help="Path to <OUT>/ produced by odoo-review-run")
+    parser.add_argument("--apply-lessons", action="store_true", help="Append non-duplicate lessons to references/agent-prompts.md")
+    parser.add_argument("--agent-prompts", help="Override path to agent-prompts.md")
+    args = parser.parse_args()
+
+    out = Path(args.out_dir).expanduser().resolve()
+    if not out.exists():
+        print(f"OUT dir not found: {out}", file=sys.stderr)
+        return 1
+
+    bs_dir = out / "baseline-stock"
+    stock_path = bs_dir / "findings.md"
+    if not stock_path.exists():
+        print(f"No stock-CC findings at {stock_path}. Lane disabled or subagent never ran.", file=sys.stderr)
+        return 2
+
+    findings_json = out / "findings.json"
+    if not findings_json.exists():
+        print(f"No harness findings.json at {findings_json}. Run Phase 8 first.", file=sys.stderr)
+        return 1
+
+    stock = parse_stock_findings(stock_path)
+    harness = parse_harness_findings(findings_json)
+    result = diff(stock, harness)
+
+    write_diff_md(bs_dir, result)
+    write_diff_json(bs_dir, result)
+    write_validation_leads(bs_dir, result)
+    write_resolutions_template(bs_dir, result)
+    write_lessons(bs_dir, result)
+
+    print(f"Stock: {result['stock_count']}  Harness: {result['harness_count']}")
+    print(f"Stock-only (harness misses): {len(result['stock_only'])}")
+    print(f"Overlapping: {len(result['overlapping'])}")
+    print(f"Diff: {bs_dir / 'diff.md'}")
+    print(f"Validation leads: {bs_dir / 'validation-leads.md'}")
+    if result["stock_only"]:
+        print(f"Resolution template: {bs_dir / 'resolutions-template.yml'}")
+
+    if args.apply_lessons:
+        ap_path = Path(args.agent_prompts).expanduser().resolve() if args.agent_prompts else (Path(__file__).resolve().parents[1] / "references" / "agent-prompts.md")
+        appended = apply_lessons(bs_dir, ap_path, result)
+        print(f"Appended {appended} lesson(s) to {ap_path}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
