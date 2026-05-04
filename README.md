@@ -97,6 +97,76 @@ Lane outputs are leads only. Nothing ships until Claude's 6-gate validation conf
 
 The scanner and model outputs are leads, not final findings. The final report still requires Claude's 6-gate validation.
 
+## Runner Flags
+
+The direct runner is `odoo-review-run [target] [flags]`. The slash command forwards the same review flags.
+
+| Flag | Purpose |
+| ---- | ------- |
+| `--out <dir>` | Override output directory. Default is `<target>/.audit-YYYYMMDD-HHMM/`. |
+| `--prune-old-runs <N>` | After a successful run, keep only the most recent `N` stamped audit dirs. |
+| `--modules <list>` | Restrict scope to comma-separated Odoo module names. |
+| `--odoo-version <N>` | Override Odoo version detection. |
+| `--config <file>` | Load project TOML config. Defaults to `.odoo-review/config.toml` or `.odoo-review.toml` when present. CLI flags override config. |
+| `--model-pack <name>` | Apply model/lane preset: `default`, `cheap-recall`, `balanced`, `frontier-validation`, or `local-private`. |
+| `--quick` | Fast local pass. Skips automated scanners and discourse prep. |
+| `--no-discourse` | Skip Phase 5.5 hunter discourse. |
+| `--no-local-qwen` | Skip local Ollama/Qwen advisory pass. |
+| `--local-model <name>` | Override local Ollama model. Default: `qwen3:0.6b`. |
+| `--allow-missing-lanes` | Continue if Codex or Qwen is unavailable. Records weaker coverage in `tooling.md`. |
+| `--joern` | Enable optional Joern CPG graph review. |
+| `--runtime` | Enable Phase 7.5 runtime path and generate `runtime/probes/` route-probe templates. |
+| `--zap-target <url>` | Run ZAP baseline against a QA target. Requires `--runtime`. |
+| `--no-codex` | Skip Codex hunter execution. |
+| `--codex-model <name>` | Override Codex model. |
+| `--codex-budget low\|normal\|deep` | Set Codex pass budget label. |
+| `--codex-mode run\|prepare` | Run Codex tasks or only write prompt files. |
+| `--ensemble off\|cheap\|balanced` | Run focused recall passes before Phase 7 validation. |
+| `--ensemble-passes <N>` | Limit ensemble pass count. `0` means preset default. |
+| `--requirements <file>` | Enable Phase 7.8 requirements/spec verification. |
+| `--no-html` | Skip `findings.html` generation. |
+| `--no-json` | Skip `findings.json` sidecar. JSON is emitted by default. |
+| `--json` | Compatibility no-op; JSON is already on by default. |
+| `--no-export` | Skip Phase 8.6 export/finalize wrapper. |
+| `--baseline <path>` | Baseline `findings.json` or `.audit/` for diffing. |
+| `--preflight-only` | Write run plan/tooling/inventory artifacts, then stop. |
+| `--no-scans` | Skip scanners even when not `--quick`. |
+| `--scope <file>` | Apply `scope.yml` excluded modules/paths and coarse accepted risks. |
+| `--pr <n>` | Scope review to files changed in GitHub PR `n` using `gh`. |
+| `--pr-repo <owner/repo>` | Override PR repository for `--pr`. |
+| `--accepted-risks <path>` | Override per-finding accepted-risk suppression file. |
+| `--check-only-accepted-risks` | Validate accepted-risks file and exit non-zero on errors/expired entries. |
+| `--fix-list <path>` | Override fix-it tracking file. |
+| `--check-only-fix-list` | Validate fix-list file and exit non-zero on validation errors/overdue entries. |
+| `--no-server-actions` | Skip loose-Python sweep of `docs/server_actions/*.py`. |
+| `--no-scripts` | Skip loose-Python sweep of `scripts/*.py`. |
+| `--no-breadth` | Skip Phase 1.7 breadth-sweep dispatch plan. |
+| `--breadth-chunk-size <N>` | Files per breadth-sweep chunk. Default: `40`. |
+| `--phase1-min-lines-per-module <N>` | Phase 1 fail-loud threshold. Default: `4`. |
+| `--no-phase1-assert` | Disable Phase 1 fail-loud assertion. Escape hatch only. |
+| `--yes`, `-y` | Non-interactive mode. Suppresses y/N prompts and auto-applies learn suggestions only when `--learn` is also set. |
+| `--learn` | Generate durable baseline/fix-list/accepted-risk learning artifacts after final findings exist. |
+| `--learn-cap <N>` | Max Phase 8.7 learning iterations. Default: `3`. |
+| `--baseline-stock-cc` | Spawn stock Claude Code control lane; stock-only misses become validation leads. |
+| `-ks`, `--ks`, `--kitchensink`, `--weekly` | Kitchen sink mode: Joern, runtime, breadth, JSON, learn, stock-CC gate, and durable state auto-detect. Add `--yes` separately for zero prompts. |
+
+Runtime helper:
+
+| Flag | Purpose |
+| ---- | ------- |
+| `odoo-review-runtime <OUT>` | Boot Odoo for Phase 7.5 and capture evidence. |
+| `--odoo-bin <path>` | Odoo binary. Defaults to `$ODOO_BIN` or `odoo-bin`. |
+| `--config <path>` | Odoo config file. Defaults to `$ODOO_CONFIG`. |
+| `--database`, `--db <name>` | Database name. Defaults to `$ODOO_DB`. |
+| `--addons-path <paths>` | Comma-separated addons path. Defaults to `$ODOO_ADDONS_PATH` or repo. |
+| `--host <host>` / `--port <port>` | Bind/check host and port. Defaults to `127.0.0.1:8069`. |
+| `--health-path <path>` | Readiness path. Default: `/web/login`. |
+| `--timeout <seconds>` | Readiness timeout. Default: `120`. |
+| `--poc <script>` | Replay an explicit PoC script after Odoo is ready. Repeatable. |
+| `--run-generated-probes` | Replay auto-safe probes listed in `runtime/probes/safe-pocs.txt`. |
+| `--keep-running` | Leave Odoo running and write `runtime/odoo.pid`. |
+| `--plan-only` | Write runtime command/plan artifacts without booting Odoo. |
+
 ## Install
 
 ```bash
@@ -174,6 +244,29 @@ Kitchen-sink full check:
 /odoo-code-review /path/to/odoo-addons -ks
 ```
 
+Cost-efficient recall ensemble:
+
+```bash
+odoo-review-run /path/to/odoo-addons \
+  --model-pack cheap-recall \
+  --ensemble cheap \
+  --ensemble-passes 6 \
+  --codex-mode prepare \
+  --allow-missing-lanes
+```
+
+This writes focused recall prompts under `ensemble/` for Odoo bug classes such as public route + `sudo()`, portal IDOR, CSRF/method weirdness, multi-company leakage, QWeb/HTML sinks, raw SQL/domain injection, attachment/report exposure, and proxy/external integration context. Ensemble output is lead material only; Phase 7 still performs strict validation.
+
+Shared project config:
+
+```bash
+mkdir -p .odoo-review
+cp <harness>/skills/odoo-code-review/references/config.example.toml .odoo-review/config.toml
+odoo-review-run . --config .odoo-review/config.toml
+```
+
+CLI flags override `.odoo-review/config.toml`. Built-in model packs are `default`, `cheap-recall`, `balanced`, `frontier-validation`, and `local-private`.
+
 Runtime evidence for an accepted candidate:
 
 ```bash
@@ -186,6 +279,19 @@ odoo-review-runtime .audit-YYYYMMDD-HHMM \
 ```
 
 The helper writes `runtime/status.json`, `runtime/odoo.log`, `runtime/odoo-stdout.log`, and PoC output logs under `runtime/reproductions/`.
+
+When the runner is invoked with `--runtime` or `-ks`, it also generates a route-derived probe plan under `runtime/probes/`. Literal public `GET`-only routes are listed in `runtime/probes/safe-pocs.txt` and can be replayed automatically:
+
+```bash
+odoo-review-runtime .audit-YYYYMMDD-HHMM \
+  --run-generated-probes \
+  --odoo-bin /path/to/odoo-bin \
+  --config /path/to/odoo.conf \
+  --database review_db \
+  --addons-path /path/to/odoo/addons,/path/to/custom/addons
+```
+
+Authenticated, parameterized, JSON, mixed-method, or method-unbounded routes are emitted as manual PoC templates and do not send traffic unless explicitly enabled with `ODOO_REVIEW_ALLOW_UNSAFE_PROBES=1`.
 
 Scope to a PR's changed files (uses `gh pr view --json files`):
 

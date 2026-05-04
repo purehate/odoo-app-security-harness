@@ -14,6 +14,9 @@ Run a technique-organized Odoo security review of source code (Phases 0 → 1 �
 /odoo-code-review <path> --out <dir>               # override output dir
 /odoo-code-review <path> --modules <list>          # restrict scope to listed module names
 /odoo-code-review <path> --odoo-version <N>        # override Odoo version detection (e.g., 17.0)
+/odoo-code-review <path> --config .odoo-review/config.toml
+/odoo-code-review <path> --model-pack cheap-recall
+/odoo-code-review <path> --ensemble cheap --ensemble-passes 6
 /odoo-code-review <path> --no-discourse            # skip Phase 5.5 hunter discourse
 /odoo-code-review <path> --quick                   # skip Phases 2–4.5 + Phase 5.5; hunters only on Phase 0/1 maps
 /odoo-code-review <path> --no-local-qwen           # skip local Ollama/Qwen advisory triage
@@ -52,7 +55,11 @@ Run `-ks` from Claude Code for the full workflow. Direct CLI can run scanners/Co
 | `--learn`                        | Promote findings.json → `.audit-baseline/`, write accepted-risk suggestions, and accumulate `.audit-fix-list.yml`.                    |
 | `--baseline-stock-cc`            | Spawn a control lane: stock Claude Code reviewing the same repo. Stock-only misses become current-run validation leads and lessons.   |
 | `--allow-missing-lanes`           | Escape hatch. Continue if Codex/Qwen is unavailable; do not use for a serious `-ks` review unless you accept weaker coverage.          |
-| `--runtime`                      | Enable Phase 7.5 runtime evidence. Use `odoo-review-runtime <OUT>` with Odoo launch details to boot Odoo and replay PoCs.             |
+| `--config <file>`                 | Load project policy from TOML. Defaults to `.odoo-review/config.toml` or `.odoo-review.toml` when present. CLI flags override config. |
+| `--model-pack <name>`             | Apply model/lane preset: `default`, `cheap-recall`, `balanced`, `frontier-validation`, or `local-private`.                            |
+| `--ensemble <mode>`               | Run focused recall passes before Phase 7 validation. Modes: `off`, `cheap`, `balanced`.                                                |
+| `--ensemble-passes <N>`           | Limit ensemble pass count. `0` uses the preset default.                                                                                 |
+| `--runtime`                      | Enable Phase 7.5 runtime evidence and generate `runtime/probes/` route-probe templates. Use `odoo-review-runtime <OUT> --run-generated-probes` with Odoo launch details to boot Odoo and replay auto-safe probes. |
 | `--joern`                        | Add Joern CPG graph review (Phase 3.5).                                                                                               |
 | `--requirements <file>`          | Phase 7.8 requirements-aware verification.                                                                                            |
 | `--no-codex` / `--no-local-qwen` | Drop a lane (e.g. air-gapped).                                                                                                        |
@@ -84,11 +91,12 @@ If the lead session supports `/goals`, use `<OUT>/goals.md` after the runner com
 9. **Phase 4 — Pysa (optional).** Taint analysis if Pyre check passes; otherwise skipped.
 10. **Phase 4.5 — Dependency Scan.** `pip-audit` + `osv-scanner` cross-referenced with manifest external_dependencies.
 11. **Phase 5 — Codex Odoo Specialist Hunting.** Claude prepares compact packets; Codex runs the 9 expensive hunter passes: Access Control, Controller/Route, ORM/SQL/Domain, QWeb/XSS, Business Logic, Secrets/Config, External Integration, Data Exposure, Dependency. Hunter packets MUST include `<OUT>/inventory/py-files-by-module.json` and (if present) `<OUT>/inventory/breadth/leads.md`. Each hunter MUST emit a `Reviewed:` block at the top of its output listing the modules and concrete file:line ranges it inspected.
+    11a. **Phase 5.1 — Ensemble Recall (only with `--ensemble`).** Runs additional focused recall passes under `<OUT>/ensemble/` for public-sudo, portal IDOR, CSRF/method weirdness, multi-company, QWeb/HTML, raw SQL/domain, attachment/report, and external/proxy context. These are noisy leads, not findings; Phase 7 validation remains mandatory.
 12. **Phase 5.5 — Discourse.** Codex drafts AGREE / CHALLENGE / CONNECT / SURFACE discourse. Claude resolves disputed CHALLENGE items.
     12a. **Phase 5.6 — Coverage Diff (eve-cc gap closure).** Run `~/.claude/skills/odoo-code-review/scripts/odoo-review-coverage <OUT>`. Diffs hunter `Reviewed:` blocks against `inventory/py-files-by-module.json`. Re-dispatch any hunter listed in `<OUT>/coverage/gaps.md` with a tight per-module scope before proceeding.
 13. **Phase 6 — Cross-Agent Correlation.** Codex drafts chained paths; Claude finalizes impact and severity.
 14. **Phase 7 — Validation.** Codex prepares evidence packs and variant-analysis drafts. Claude performs final 6-gate fp-check and triage: ACCEPT / DOWNGRADE / REJECT / NEEDS-MANUAL.
-15. **Phase 7.5 — Runtime Testing (only with `--runtime`).** Use `odoo-review-runtime <OUT>` with explicit Odoo launch details (`--odoo-bin`, `--config`/`--database`, `--addons-path`) to boot Odoo, wait for `/web/login`, replay PoC scripts with `ODOO_BASE_URL`, and capture logs/status under `<OUT>/runtime/`. Run ZAP when requested. Claude reviews evidence.
+15. **Phase 7.5 — Runtime Testing (only with `--runtime`).** The runner generates `runtime/probes/probes.json`, `runtime/probes/safe-pocs.txt`, and per-route probe scripts from the Phase 1 route map. Use `odoo-review-runtime <OUT> --run-generated-probes` with explicit Odoo launch details (`--odoo-bin`, `--config`/`--database`, `--addons-path`) to boot Odoo, wait for `/web/login`, replay auto-safe public `GET` probes plus any `--poc` scripts with `ODOO_BASE_URL`, and capture logs/status under `<OUT>/runtime/`. Authenticated, parameterized, JSON, mixed-method, or method-unbounded routes are manual templates unless `ODOO_REVIEW_ALLOW_UNSAFE_PROBES=1` is set. Run ZAP when requested. Claude reviews evidence.
 16. **Phase 7.6 — Attack Graph DOT/SVG.** Codex/scripts render DOT/SVG for chained findings. Claude checks graph accuracy.
 17. **Phase 7.7 — Fresh Codex Adversarial Check.** Different session = blind-spot diversity. Runs on CRITICAL/HIGH ACCEPT unless `--no-codex`. Reconciliation table covers ACCEPT/REJECT/DOWNGRADE combos + PoC writeability.
 18. **Phase 7.8 — Requirements Verification (only with `--requirements`).** Extract claims, compile predicates, dispatch judges, repair-loop (≤2 rounds). Files R-N findings.
@@ -130,10 +138,11 @@ Written to `<repo>/.audit-YYYYMMDD-HHMM/` (or `--out <dir>`):
 - `codeql-dbs/` — extracted CodeQL Python DB
 - `agents/hunter-*.md`, `agents/discourse-*.md`, `agents/chaining.md` — agent outputs
 - `codex/hunters/` — Phase 5 Codex specialist hunter drafts
+- `ensemble/` — optional focused recall passes: `plan.json`, `prompts/`, `pass-*.md`, and `merged-leads.md`
 - `codex/evidence/` — Phase 7 evidence packs, variant drafts, and PoC writeability notes
 - `codex/drafts/` — Phase 8 draft report material
 - `variants/finding-N.md` — per-ACCEPT pattern fan-out
-- `runtime/` — Phase 7.5 (only with `--runtime`): `reproductions/`, `odoo-shell-output/`, `zap/zap-baseline.{html,json}` (with `--zap-target`)
+- `runtime/` — Phase 7.5 (only with `--runtime`): `probes/`, `reproductions/`, `odoo-shell-output/`, `zap/zap-baseline.{html,json}` (with `--zap-target`)
 - `attack-graphs/chain-N.{dot,svg}` — Phase 7.6 (auto when 2+ chained findings)
 - `codex/second-opinion/verdicts/F-N.md`, `codex/second-opinion/reconciliation.md` — Phase 7.7 when CRITICAL/HIGH ACCEPT exists
 - `requirements/` — Phase 7.8 (only with `--requirements`): `claims.json`, `predicates.json`, `scenarios.json`, `verdicts-r{1,2}/`, `final-verdicts.md`

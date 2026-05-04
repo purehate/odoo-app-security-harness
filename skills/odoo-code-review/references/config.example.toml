@@ -1,0 +1,31 @@
+# Example project config for odoo-review-run.
+# Copy to <repo>/.odoo-review/config.toml and commit when the settings are shared team policy.
+
+[models]
+# Built-in packs: default, cheap-recall, balanced, frontier-validation, local-private
+model_pack = "balanced"
+local_model = "qwen3:0.6b"
+
+# Optional explicit overrides. CLI flags still win.
+# codex_model = "gpt-5.3-codex"
+# codex_budget = "normal"
+
+# Run focused recall passes before strict Phase 7 validation.
+# Values: off, cheap, balanced
+ensemble = "off"
+ensemble_passes = 0
+
+[runtime]
+enabled = false
+# zap_target = "https://qa.example.com"
+
+[odoo]
+# version = "17.0"
+proxy_mode = true
+multi_company = true
+
+[review]
+# modules = "sale,website_sale,portal"
+# scope = "./scope.yml"
+quick = false
+no_scans = false

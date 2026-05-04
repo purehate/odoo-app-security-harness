@@ -417,6 +417,23 @@ Cross-reference with Phase 0 manifest external_dependencies. Filter to deps with
   - Hunter scope (specific module list)
 - Codex outputs are drafts/leads. Claude spot-checks claims before discourse and remains final arbiter.
 
+### Phase 5.1 — Ensemble Recall (Optional)
+
+Triggered by `--ensemble cheap` or `--ensemble balanced`. The runner writes `<OUT>/ensemble/plan.json`, prompt files, pass outputs, and `merged-leads.md`. This is the cost-to-recall lane: run several narrow, cheaper passes over the enriched Odoo context, dedupe, then send only plausible candidates to Phase 7.
+
+Default pass classes:
+
+- public route + sudo/root boundary
+- portal IDOR / ownership checks
+- CSRF and HTTP method weirdness
+- multi-company isolation
+- QWeb / HTML sinks
+- raw SQL / domain injection
+- attachments and reports
+- external integration / proxy context
+
+Ensemble passes are not findings. They are intentionally noisy lead material and must go through Phase 7 validation and, where useful, Phase 7.5 runtime evidence.
+
 ### The 10 Hunters
 
 | #   | Hunter               | Owns                                                         |
@@ -537,15 +554,22 @@ Save variant search to `<OUT>/variants/finding-N.md` with exact commands run.
 
 ## Phase 7.5 — Runtime Validation (Optional: odoo-bin + ZAP)
 
-Triggered by `--runtime` (and/or `--zap-target <url>`). Boots a disposable Odoo and/or hits a deployed QA target. Validates ACCEPT findings with real HTTP / `odoo-bin shell` / ZAP. Runs only on ACCEPT findings whose Gate 5 (PoC) demands runtime evidence — race windows, concrete response shapes, attachment-serving behaviour, IDOR confirmation.
+Triggered by `--runtime` (and/or `--zap-target <url>`). The runner first generates a route-derived probe plan under `runtime/probes/`, then `odoo-review-runtime` boots a disposable Odoo and/or hits a deployed QA target. Validates ACCEPT findings with real HTTP / `odoo-bin shell` / ZAP. Runs on ACCEPT findings whose Gate 5 (PoC) demands runtime evidence — race windows, concrete response shapes, attachment-serving behaviour, IDOR confirmation — and can also replay auto-safe public GET route probes for broader dynamic coverage.
 
 Never run against production. QA only.
 
 ### Sub-pass A — odoo-bin (disposable instance)
 
 - Boot disposable Odoo (`odoo-bin -c <conf> --workers=0` against scratch DB).
-- Replay PoC via `curl` / `httpx` for HTTP, `odoo-bin shell` for ORM-level state inspection, `odoo-bin --test-enable --test-tags <module>` for unit-style replays.
+- Replay generated safe route probes with `odoo-review-runtime <OUT> --run-generated-probes`.
+- Replay hand-written PoC via `curl` / `httpx` for HTTP, `odoo-bin shell` for ORM-level state inspection, `odoo-bin --test-enable --test-tags <module>` for unit-style replays.
 - Capture request, response, and ORM state delta in `runtime/reproductions/finding-N.md`.
+
+The generated probe plan is conservative by default:
+
+- `runtime/probes/probes.json` records every route/path candidate from Phase 1.
+- `runtime/probes/safe-pocs.txt` lists only literal public routes with explicit `GET`-only methods.
+- Parameterized, authenticated, JSON, mixed-method, and method-unbounded routes are written as manual templates that exit without sending traffic unless `ODOO_REVIEW_ALLOW_UNSAFE_PROBES=1` is set.
 
 ### Sub-pass B — ZAP (deployed QA target, with `--zap-target <url>`)
 
@@ -564,6 +588,11 @@ Authenticated active scan: feed Odoo session cookie (`session_id`) via header re
 
 ```
 runtime/
+├── probes/
+│   ├── README.md
+│   ├── probes.json
+│   ├── safe-pocs.txt
+│   └── probe-NNNN-MM.sh
 ├── reproductions/finding-N.md   # PoC request + response + state delta
 ├── odoo-shell-output/finding-N.txt  # ORM-level validation
 └── zap/

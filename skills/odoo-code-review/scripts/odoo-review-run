@@ -15,12 +15,39 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
+    tomllib = None
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_RULES = SKILL_DIR / "rules" / "odoo.yml"
 DEFAULT_MODEL = "qwen3:0.6b"
 CWE_MAP_SRC = SKILL_DIR / "references" / "cwe-map.json"
+CONFIG_FILES = [".odoo-review/config.toml", ".odoo-review.toml"]
+
+MODEL_PACKS = {
+    "default": {},
+    "cheap-recall": {
+        "codex_model": "gpt-5.3-codex-spark",
+        "codex_budget": "low",
+        "ensemble": "cheap",
+        "ensemble_passes": 6,
+    },
+    "balanced": {
+        "codex_model": "gpt-5.3-codex",
+        "codex_budget": "normal",
+    },
+    "frontier-validation": {
+        "codex_model": "gpt-5.5",
+        "codex_budget": "deep",
+    },
+    "local-private": {
+        "no_codex": True,
+        "local_model": DEFAULT_MODEL,
+    },
+}
 
 ACCEPTED_RISKS_FILES = [
     ".audit-accepted-risks.yml",
@@ -50,6 +77,17 @@ HUNTERS = [
     ("09-dependency", "Dependency", "Python package CVEs, Odoo addon dependencies, JS/assets, reachable dependency paths."),
 ]
 
+ENSEMBLE_FOCI = [
+    ("public-sudo", "Public Route + sudo Boundary", "Find public/auth=none routes that call sudo(), with_user(admin), raw SQL, or broad search/read paths. Prioritize data disclosure and write-side effects."),
+    ("portal-idor", "Portal IDOR / Ownership", "Find portal and /my/* flows where request-controlled ids reach browse/search/read/write/report/download without ownership, partner, commercial_partner, or company checks."),
+    ("csrf-methods", "CSRF and HTTP Method Weirdness", "Find state-changing GET routes, csrf=False POST routes without HMAC/signature verification, JSON routes with cookie auth, and method-unbounded controllers."),
+    ("multi-company", "Multi-Company Isolation", "Find missing company_id filters, weak ir.rule domain_force, sudo recompute leaks, cross-company reports, and shared attachment/chatter exposure."),
+    ("qweb-html", "QWeb / HTML Sinks", "Find t-raw, Markup(), fields.Html(sanitize=False), unsafe mail template rendering, and portal/website rendering of user-controlled values."),
+    ("raw-sql-domain", "Raw SQL / Domain Injection", "Find cr.execute string construction, request-controlled ORDER BY/WHERE/domain fields, unsafe search([])+sudo, and mass-assignment through request params."),
+    ("attachments-reports", "Attachments and Reports", "Find public ir.attachment exposure, report download IDOR, token confusion, and generated files leaking across portal/company boundaries."),
+    ("external-proxy", "External Integrations and Proxy Context", "Find SSRF-ish requests, webhook auth gaps, trusted X-Forwarded-* assumptions, proxy_mode-sensitive logic, mail/header injection, and callback URL misuse."),
+]
+
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b[()][A-Za-z0-9]")
 
 
@@ -69,6 +107,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prune-old-runs", type=int, metavar="N", help="After successful run, keep only the most recent N stamped <target>/.audit-YYYYMMDD-HHMM/ dirs.")
     parser.add_argument("--modules", help="Comma-separated module names to include")
     parser.add_argument("--odoo-version", help="Override Odoo version in run plan")
+    parser.add_argument("--config", dest="project_config", help="Project config TOML. Defaults to .odoo-review/config.toml or .odoo-review.toml when present.")
+    parser.add_argument("--model-pack", choices=sorted(MODEL_PACKS.keys()), default="default", help="Model/lane preset. Default: default.")
     parser.add_argument("--quick", action="store_true", help="Skip automated scanners and discourse prep")
     parser.add_argument("--no-discourse", action="store_true")
     parser.add_argument("--no-local-qwen", action="store_true", help="Skip Ollama/Qwen advisory pass")
@@ -81,6 +121,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--codex-model", default="gpt-5.3-codex", help="Codex model")
     parser.add_argument("--codex-budget", choices=["low", "normal", "deep"], default="normal")
     parser.add_argument("--codex-mode", choices=["run", "prepare"], default="run", help="Run Codex tasks or only write prompts")
+    parser.add_argument("--ensemble", choices=["off", "cheap", "balanced"], default="off", help="Run additional focused recall passes before Phase 7 validation. Default: off.")
+    parser.add_argument("--ensemble-passes", type=int, default=0, help="Number of ensemble recall passes. 0 means preset default.")
     parser.add_argument("--requirements", help="Requirements/spec file for Phase 7.8")
     parser.add_argument("--no-html", action="store_true")
     parser.add_argument("--no-json", action="store_true", dest="no_emit_json", help="Skip findings.json sidecar (emitted by default).")
@@ -126,6 +168,85 @@ def parse_args() -> argparse.Namespace:
         args.no_emit_json = False
         args.emit_json = True
     return args
+
+
+def cli_flag_present(*flags: str) -> bool:
+    return any(arg == flag or arg.startswith(flag + "=") for arg in sys.argv[1:] for flag in flags)
+
+
+def load_project_config(args: argparse.Namespace, repo: Path) -> tuple[dict, Path | None, list[str]]:
+    warnings: list[str] = []
+    candidates = [Path(args.project_config).expanduser().resolve()] if args.project_config else [repo / p for p in CONFIG_FILES]
+    chosen = next((p for p in candidates if p.exists()), None)
+    if not chosen:
+        return {}, None, warnings
+    if tomllib is None:
+        warnings.append(f"{chosen}: TOML config requires Python 3.11+ tomllib; config ignored.")
+        return {}, chosen, warnings
+    try:
+        with chosen.open("rb") as handle:
+            data = tomllib.load(handle)
+    except Exception as exc:  # noqa: BLE001
+        warnings.append(f"{chosen}: could not parse TOML config: {exc}")
+        return {}, chosen, warnings
+    if not isinstance(data, dict):
+        warnings.append(f"{chosen}: top-level config must be a TOML table.")
+        return {}, chosen, warnings
+    return data, chosen, warnings
+
+
+def apply_value(args: argparse.Namespace, attr: str, value: object, *flags: str) -> None:
+    if value is None or cli_flag_present(*flags):
+        return
+    setattr(args, attr, value)
+
+
+def apply_project_config(args: argparse.Namespace, repo: Path) -> tuple[dict, Path | None, list[str]]:
+    config, path, warnings = load_project_config(args, repo)
+    models = config.get("models", {}) if isinstance(config.get("models"), dict) else {}
+    runtime = config.get("runtime", {}) if isinstance(config.get("runtime"), dict) else {}
+    odoo = config.get("odoo", {}) if isinstance(config.get("odoo"), dict) else {}
+    review = config.get("review", {}) if isinstance(config.get("review"), dict) else {}
+
+    apply_value(args, "model_pack", models.get("model_pack"), "--model-pack")
+    if args.model_pack not in MODEL_PACKS:
+        warnings.append(f"{path}: unknown model_pack {args.model_pack!r}; using default.")
+        args.model_pack = "default"
+    pack = MODEL_PACKS.get(args.model_pack, {})
+    apply_value(args, "codex_model", pack.get("codex_model"), "--codex-model")
+    apply_value(args, "codex_budget", pack.get("codex_budget"), "--codex-budget")
+    apply_value(args, "local_model", pack.get("local_model"), "--local-model")
+    if pack.get("no_codex") and not cli_flag_present("--no-codex"):
+        args.no_codex = True
+    apply_value(args, "ensemble", pack.get("ensemble"), "--ensemble")
+    apply_value(args, "ensemble_passes", pack.get("ensemble_passes"), "--ensemble-passes")
+
+    apply_value(args, "codex_model", models.get("codex_model"), "--codex-model")
+    apply_value(args, "codex_budget", models.get("codex_budget"), "--codex-budget")
+    apply_value(args, "local_model", models.get("local_model"), "--local-model")
+    apply_value(args, "ensemble", models.get("ensemble"), "--ensemble")
+    apply_value(args, "ensemble_passes", models.get("ensemble_passes"), "--ensemble-passes")
+
+    if runtime.get("enabled") is True and not cli_flag_present("--runtime"):
+        args.runtime = True
+    apply_value(args, "zap_target", runtime.get("zap_target"), "--zap-target")
+    apply_value(args, "odoo_version", odoo.get("version"), "--odoo-version")
+    modules_value = review.get("modules")
+    if isinstance(modules_value, list):
+        modules_value = ",".join(str(item) for item in modules_value)
+    apply_value(args, "modules", modules_value, "--modules")
+    apply_value(args, "scope", review.get("scope"), "--scope")
+    if review.get("quick") is True and not cli_flag_present("--quick"):
+        args.quick = True
+    if review.get("no_scans") is True and not cli_flag_present("--no-scans"):
+        args.no_scans = True
+    if args.codex_budget not in {"low", "normal", "deep"}:
+        warnings.append(f"{path}: invalid codex_budget {args.codex_budget!r}; using normal.")
+        args.codex_budget = "normal"
+    if args.ensemble not in {"off", "cheap", "balanced"}:
+        warnings.append(f"{path}: invalid ensemble {args.ensemble!r}; using off.")
+        args.ensemble = "off"
+    return config, path, warnings
 
 
 def rel(path: Path, root: Path) -> str:
@@ -428,6 +549,7 @@ def find_loose_python(repo: Path, args: argparse.Namespace) -> list[dict]:
 
 ROUTE_RE = re.compile(r"@http\.route\((?P<args>.*?)\)", re.DOTALL)
 KW_RE = re.compile(r"(?P<key>auth|csrf|type|methods)\s*=\s*(?P<value>[^,\)]*)")
+HTTP_ROUTE_PARAM_RE = re.compile(r"<[^>]+>")
 
 
 def extract_routes(repo: Path, manifests: list[dict]) -> list[dict]:
@@ -449,6 +571,7 @@ def extract_routes(repo: Path, manifests: list[dict]) -> list[dict]:
                 tail = text[match.end() : match.end() + 500]
                 def_match = re.search(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", tail)
                 kwargs = {m.group("key"): m.group("value").strip() for m in KW_RE.finditer(match.group("args"))}
+                paths = extract_route_paths(match.group("args"))
                 routes.append(
                     {
                         "module": module,
@@ -456,6 +579,7 @@ def extract_routes(repo: Path, manifests: list[dict]) -> list[dict]:
                         "line": line,
                         "function": def_match.group(1) if def_match else None,
                         "route_args": " ".join(match.group("args").split())[:500],
+                        "paths": paths,
                         "auth": kwargs.get("auth", "user(default)"),
                         "csrf": kwargs.get("csrf", "True(default)"),
                         "type": kwargs.get("type", "http(default)"),
@@ -463,6 +587,31 @@ def extract_routes(repo: Path, manifests: list[dict]) -> list[dict]:
                     }
                 )
     return routes
+
+
+def extract_route_paths(args_text: str) -> list[str]:
+    """Best-effort extraction of literal route paths from @http.route(...)."""
+    try:
+        node = ast.parse(f"_route({args_text})", mode="eval")
+    except SyntaxError:
+        return []
+    if not isinstance(node.body, ast.Call):
+        return []
+    values: list[str] = []
+    candidates = []
+    if node.body.args:
+        candidates.append(node.body.args[0])
+    for keyword in node.body.keywords:
+        if keyword.arg == "route":
+            candidates.append(keyword.value)
+    for candidate in candidates:
+        if isinstance(candidate, ast.Constant) and isinstance(candidate.value, str):
+            values.append(candidate.value)
+        elif isinstance(candidate, (ast.List, ast.Tuple)):
+            for item in candidate.elts:
+                if isinstance(item, ast.Constant) and isinstance(item.value, str):
+                    values.append(item.value)
+    return values
 
 
 def index_acl(repo: Path, manifests: list[dict]) -> list[dict]:
@@ -1245,6 +1394,189 @@ def write_goals_guide(repo: Path, out: Path, manifests: list[dict], routes: list
     (out / "goals.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def shell_quote(value: str) -> str:
+    if not value:
+        return "''"
+    if all(c.isalnum() or c in "/._:=,+-@" for c in value):
+        return value
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def shell_expand_path(value: str) -> str:
+    """Quote a generated shell path while preserving ${VAR} expansion."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def route_methods(methods_text: str | None) -> list[str]:
+    if not methods_text:
+        return []
+    try:
+        node = ast.parse(methods_text, mode="eval")
+        if isinstance(node.body, (ast.List, ast.Tuple, ast.Set)):
+            values = [
+                item.value.upper()
+                for item in node.body.elts
+                if isinstance(item, ast.Constant) and isinstance(item.value, str)
+            ]
+            if values:
+                return values
+        if isinstance(node.body, ast.Constant) and isinstance(node.body.value, str):
+            return [node.body.value.upper()]
+    except SyntaxError:
+        pass
+    return [m.upper() for m in re.findall(r"[A-Za-z]+", methods_text) if m.upper() in {"GET", "POST", "PUT", "PATCH", "DELETE"}]
+
+
+def route_is_public(route: dict) -> bool:
+    auth = (route.get("auth") or "").strip("'\"").lower()
+    return "public" in auth or auth == "none"
+
+
+def route_path_has_params(path: str) -> bool:
+    return bool(HTTP_ROUTE_PARAM_RE.search(path))
+
+
+def runtime_probe_bucket(route: dict, path: str) -> str:
+    methods = route_methods(route.get("methods"))
+    route_type = (route.get("type") or "").strip("'\"").lower()
+    if route_type and "json" in route_type:
+        return "manual-json"
+    if not route_is_public(route):
+        return "manual-auth"
+    if route_path_has_params(path):
+        return "manual-params"
+    if methods == ["GET"] or (methods and set(methods) == {"GET"}):
+        return "auto-safe"
+    if "GET" in methods:
+        return "manual-mixed-methods"
+    return "manual-unbounded-methods"
+
+
+def write_runtime_probe_plan(out: Path, routes: list[dict], args: argparse.Namespace) -> None:
+    if not args.runtime:
+        return
+    probe_dir = out / "runtime" / "probes"
+    probe_dir.mkdir(parents=True, exist_ok=True)
+    safe_list = probe_dir / "safe-pocs.txt"
+    probe_records: list[dict] = []
+    safe_scripts: list[Path] = []
+
+    for idx, route in enumerate(routes, start=1):
+        paths = route.get("paths") or []
+        if not paths:
+            probe_records.append({**route, "probe_bucket": "manual-dynamic-route", "probe_script": None})
+            continue
+        for path_idx, route_path in enumerate(paths, start=1):
+            bucket = runtime_probe_bucket(route, route_path)
+            script_name = f"probe-{idx:04d}-{path_idx:02d}.sh"
+            script_path = probe_dir / script_name
+            record = {
+                "id": f"R{idx:04d}.{path_idx}",
+                "module": route.get("module"),
+                "file": route.get("file"),
+                "line": route.get("line"),
+                "function": route.get("function"),
+                "path": route_path,
+                "auth": route.get("auth"),
+                "type": route.get("type"),
+                "methods": route.get("methods"),
+                "probe_bucket": bucket,
+                "probe_script": str(script_path),
+            }
+            probe_records.append(record)
+            body_file = f"${{ODOO_REVIEW_OUT}}/runtime/reproductions/{record['id']}-body.txt"
+            header_file = f"${{ODOO_REVIEW_OUT}}/runtime/reproductions/{record['id']}-headers.txt"
+            md_file = f"${{ODOO_REVIEW_OUT}}/runtime/reproductions/{record['id']}.md"
+            lines = [
+                "#!/usr/bin/env bash",
+                "set -euo pipefail",
+                ': "${ODOO_BASE_URL:?ODOO_BASE_URL is required}"',
+                ': "${ODOO_REVIEW_OUT:?ODOO_REVIEW_OUT is required}"',
+                "mkdir -p \"${ODOO_REVIEW_OUT}/runtime/reproductions\"",
+                f"ROUTE_PATH={shell_quote(route_path)}",
+                f"BUCKET={shell_quote(bucket)}",
+                f"SOURCE={shell_quote(str(route.get('file')) + ':' + str(route.get('line')))}",
+                "",
+            ]
+            if bucket != "auto-safe":
+                lines.extend(
+                    [
+                        'if [[ "${ODOO_REVIEW_ALLOW_UNSAFE_PROBES:-0}" != "1" ]]; then',
+                        f"  cat > {shell_expand_path(md_file)} <<EOF",
+                        f"# Runtime Probe {record['id']}",
+                        "",
+                        f"- Source: \\`{route.get('file')}:{route.get('line')}\\`",
+                        f"- Route: \\`{route_path}\\`",
+                        f"- Bucket: \\`{bucket}\\`",
+                        "",
+                        "Skipped automatically. This route needs a human-reviewed PoC because it is authenticated, parameterized, JSON, mixed-method, or method-unbounded.",
+                        "EOF",
+                        "  exit 0",
+                        "fi",
+                        "",
+                    ]
+                )
+            lines.extend(
+                [
+                    'URL="${ODOO_BASE_URL%/}${ROUTE_PATH}"',
+                    f": > {shell_expand_path(header_file)}",
+                    f": > {shell_expand_path(body_file)}",
+                    f"STATUS=$(curl -ksS -L -X GET -D {shell_expand_path(header_file)} -o {shell_expand_path(body_file)} -w '%{{http_code}}' \"$URL\" || true)",
+                    f"BODY_BYTES=$(wc -c < {shell_expand_path(body_file)} | tr -d ' ')",
+                    f"cat > {shell_expand_path(md_file)} <<EOF",
+                    f"# Runtime Probe {record['id']}",
+                    "",
+                    f"- Source: \\`{route.get('file')}:{route.get('line')}\\`",
+                    f"- Function: \\`{route.get('function') or '?'}\\`",
+                    f"- Route: \\`{route_path}\\`",
+                    f"- Auth: \\`{route.get('auth')}\\`",
+                    f"- Type: \\`{route.get('type')}\\`",
+                    f"- Methods: \\`{route.get('methods') or '(unspecified)'}\\`",
+                    f"- Bucket: \\`{bucket}\\`",
+                    "- URL: \\`${URL}\\`",
+                    "- HTTP status: \\`${STATUS}\\`",
+                    "- Body bytes: \\`${BODY_BYTES}\\`",
+                    f"- Headers: \\`{header_file}\\`",
+                    f"- Body: \\`{body_file}\\`",
+                    "",
+                    "## First 80 Body Lines",
+                    "",
+                    "\\`\\`\\`text",
+                    "EOF",
+                    f"sed -n '1,80p' {shell_expand_path(body_file)} >> {shell_expand_path(md_file)} || true",
+                    f"cat >> {shell_expand_path(md_file)} <<'EOF'",
+                    "```",
+                    "EOF",
+                ]
+            )
+            script_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            script_path.chmod(0o755)
+            if bucket == "auto-safe":
+                safe_scripts.append(script_path)
+
+    safe_list.write_text("\n".join(str(path) for path in safe_scripts) + ("\n" if safe_scripts else ""), encoding="utf-8")
+    (probe_dir / "probes.json").write_text(json.dumps(probe_records, indent=2), encoding="utf-8")
+    readme_lines = [
+        "# Runtime Probe Plan",
+        "",
+        "Generated from `inventory/routes.json` during `--runtime` runs.",
+        "",
+        "Auto-run probes are intentionally narrow: literal public routes with explicit `GET`-only methods. Everything else is emitted as a manual PoC template and exits without traffic unless `ODOO_REVIEW_ALLOW_UNSAFE_PROBES=1` is set.",
+        "",
+        f"- Total route/path probes: {len(probe_records)}",
+        f"- Auto-safe probes: {len(safe_scripts)}",
+        f"- Safe list: `{safe_list}`",
+        f"- Machine plan: `{probe_dir / 'probes.json'}`",
+        "",
+        "Replay the generated safe probes after booting Odoo:",
+        "",
+        "```bash",
+        f"odoo-review-runtime {out} --run-generated-probes --odoo-bin /path/to/odoo-bin --config /path/to/odoo.conf --database review_db --addons-path /path/to/addons",
+        "```",
+    ]
+    (probe_dir / "README.md").write_text("\n".join(readme_lines) + "\n", encoding="utf-8")
+
+
 def write_directives_seed(out: Path) -> None:
     """Seed the directives feedback-loop directory with README + template."""
     directives_dir = out / "directives"
@@ -1567,6 +1899,9 @@ def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, li
         "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "odoo_version": args.odoo_version,
         "modules": args.modules,
+        "project_config": getattr(args, "project_config_loaded", None),
+        "project_config_warnings": getattr(args, "project_config_warnings", []),
+        "model_pack": args.model_pack,
         "quick": args.quick,
         "local_qwen_enabled": not args.no_local_qwen,
         "local_model": args.local_model,
@@ -1574,6 +1909,8 @@ def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, li
         "codex_model": args.codex_model,
         "codex_budget": args.codex_budget,
         "codex_mode": args.codex_mode,
+        "ensemble": args.ensemble,
+        "ensemble_passes": args.ensemble_passes,
         "runtime": args.runtime,
         "zap_target": args.zap_target,
         "requirements": args.requirements,
@@ -1825,12 +2162,145 @@ def run_codex(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) -
     return records
 
 
-def write_tooling(out: Path, plan: dict, scanner_records: list[dict], qwen_record: dict | None, codex_records: list[dict] | None) -> None:
+def ensemble_pass_count(args: argparse.Namespace) -> int:
+    if args.ensemble == "off":
+        return 0
+    if args.ensemble_passes and args.ensemble_passes > 0:
+        return min(args.ensemble_passes, len(ENSEMBLE_FOCI))
+    return 6 if args.ensemble == "cheap" else len(ENSEMBLE_FOCI)
+
+
+def ensemble_prompt(pass_id: str, title: str, focus: str, repo: Path, out: Path, args: argparse.Namespace) -> str:
+    return f"""You are running an Odoo security recall ensemble pass.
+
+Mode: {args.ensemble}
+Pass: {pass_id} — {title}
+Goal: maximize recall for this one bug class. You are allowed to emit noisy candidate leads, but every lead must be grounded in file:line evidence and a concrete Odoo exploit shape.
+
+Focus:
+{focus}
+
+Read these artifacts first:
+- {out / '00-modules.md'}
+- {out / '01-attack-surface.md'}
+- {out / 'module-risk.md'}
+- {out / 'inventory' / 'routes.json'}
+- {out / 'inventory' / 'acl-index.json'}
+- {out / 'inventory' / 'sharp-edge-index.json'}
+- {out / 'inventory' / 'py-files-by-module.json'}
+- {out / 'inventory' / 'accepted-risks.json'}
+- {out / 'inventory' / 'fix-list.json'}
+- {out / 'runtime' / 'probes' / 'probes.json'} if present
+- {out / 'runtime' / 'reproductions'} if present
+- {out / 'inventory' / 'breadth' / 'leads.md'} if present
+- scanner outputs under {out / 'scans'} if present
+
+Output to this file only. Do not edit source.
+
+Output format:
+Reviewed:
+- module_name: file.py:Lstart-Lend or SKIPPED — reason
+
+Candidates:
+1. Title
+   - File: path:line
+   - Attacker role:
+   - Source-to-sink path:
+   - Odoo boundary crossed:
+   - Concrete payload/reproduction sketch:
+   - Runtime probe tie-in, if any:
+   - Why this might be false positive:
+   - Phase 7 validation checklist:
+   - Fingerprint input suggestion: file:line:sink_kind:title
+
+Rules:
+- Do not create final ACCEPT/REJECT findings.
+- Do not report generic style or best-practice issues.
+- Prefer Odoo-specific security shapes over generic Python findings.
+- If you find nothing, explain what files and route/model surfaces you checked.
+"""
+
+
+def run_ensemble(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) -> list[dict]:
+    count = ensemble_pass_count(args)
+    ens_dir = out / "ensemble"
+    prompt_dir = ens_dir / "prompts"
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+    selected = ENSEMBLE_FOCI[:count]
+    plan = {
+        "enabled": args.ensemble != "off",
+        "mode": args.ensemble,
+        "passes": [
+            {"index": idx, "slug": slug, "title": title, "focus": focus}
+            for idx, (slug, title, focus) in enumerate(selected, start=1)
+        ],
+        "model": args.codex_model,
+        "budget": args.codex_budget,
+        "codex_mode": args.codex_mode,
+    }
+    (ens_dir / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
+    readme = [
+        "# Ensemble Recall Passes",
+        "",
+        "These passes are recall-oriented. They intentionally produce candidate leads, not final findings.",
+        "Phase 7 still performs the strict 6-gate validation and runtime evidence review.",
+        "",
+        f"- Mode: `{args.ensemble}`",
+        f"- Passes: `{count}`",
+        f"- Model: `{args.codex_model}`",
+        "",
+        "After passes complete, lead Claude should dedupe candidates into `merged-leads.md` and promote only validated findings into Phase 7.",
+    ]
+    (ens_dir / "README.md").write_text("\n".join(readme) + "\n", encoding="utf-8")
+    merged = ens_dir / "merged-leads.md"
+    if not merged.exists():
+        merged.write_text("# Ensemble Merged Leads\n\n_Lead Claude dedupes pass outputs here before Phase 7 validation._\n", encoding="utf-8")
+    if args.ensemble == "off":
+        return [{"status": "skipped", "reason": "--ensemble off"}]
+    if args.no_codex:
+        return [{"status": "skipped", "reason": "--no-codex", "plan": str(ens_dir / "plan.json")}]
+    if not which("codex"):
+        return [{"status": "skipped", "reason": "codex missing", "plan": str(ens_dir / "plan.json")}]
+
+    records: list[dict] = []
+    progress(f"Ensemble recall starting ({count} passes, mode={args.ensemble}, codex_mode={args.codex_mode})")
+    for idx, (slug, title, focus) in enumerate(selected, start=1):
+        pass_id = f"pass-{idx:02d}-{slug}"
+        prompt = ensemble_prompt(pass_id, title, focus, repo, out, args)
+        prompt_path = prompt_dir / f"{pass_id}.md"
+        output_path = ens_dir / f"{pass_id}.md"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        if args.codex_mode == "prepare" or args.preflight_only:
+            records.append({"pass": pass_id, "status": "prepared", "prompt": str(prompt_path), "output": str(output_path)})
+            continue
+        cmd = [
+            "codex",
+            "exec",
+            "-C",
+            str(repo),
+            "-m",
+            args.codex_model,
+            "-s",
+            "read-only",
+            "--skip-git-repo-check",
+            "-o",
+            str(output_path),
+            prompt,
+        ]
+        record = run(cmd, repo, log_path, output_path, timeout=3600)
+        record["pass"] = pass_id
+        records.append(record)
+    progress("Ensemble recall complete")
+    return records
+
+
+def write_tooling(out: Path, plan: dict, scanner_records: list[dict], qwen_record: dict | None, codex_records: list[dict] | None, ensemble_records: list[dict] | None = None) -> None:
     data = {
         "plan": plan,
         "scanner_records": scanner_records,
         "qwen_record": qwen_record,
         "codex_records": codex_records,
+        "ensemble_records": ensemble_records,
     }
     (out / "tooling.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
     lines = ["# Tooling and Run Plan", ""]
@@ -1838,9 +2308,16 @@ def write_tooling(out: Path, plan: dict, scanner_records: list[dict], qwen_recor
     lines.append(f"Output: `{plan['out']}`")
     lines.append(f"Created: `{plan['created_at']}`")
     lines.append(f"Odoo version override: `{plan.get('odoo_version') or 'not provided'}`")
+    lines.append(f"Project config: `{plan.get('project_config') or 'not loaded'}`")
+    lines.append(f"Model pack: `{plan.get('model_pack')}`")
     lines.append(f"Local Qwen enabled: `{plan['local_qwen_enabled']}` (`{plan['local_model']}`)")
     lines.append(f"Codex enabled: `{plan['codex_enabled']}` (`{plan['codex_model']}`, budget `{plan['codex_budget']}`, mode `{plan['codex_mode']}`)")
+    lines.append(f"Ensemble: `{plan.get('ensemble')}` (passes `{plan.get('ensemble_passes')}`)")
     lines.append(f"Runtime enabled: `{plan['runtime']}`")
+    if plan.get("project_config_warnings"):
+        lines.append("")
+        lines.append("## Project Config Warnings")
+        lines.extend(f"- {warning}" for warning in plan["project_config_warnings"])
     lines.append("")
     lines.append("## Tool Paths")
     lines.append("")
@@ -1934,6 +2411,8 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
         "learn_cap": int(getattr(args, "learn_cap", 3)),
         "weekly": bool(getattr(args, "weekly", False)),
         "baseline_stock_cc": bool(getattr(args, "baseline_stock_cc", False)),
+        "project_config": getattr(args, "project_config_loaded", None),
+        "model_pack": getattr(args, "model_pack", "default"),
         "quick": bool(getattr(args, "quick", False)),
         "joern": bool(getattr(args, "joern", False)),
         "runtime": bool(getattr(args, "runtime", False)),
@@ -1955,6 +2434,8 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
         "codex_model": args.codex_model,
         "codex_budget": args.codex_budget,
         "codex_mode": args.codex_mode,
+        "ensemble": getattr(args, "ensemble", "off"),
+        "ensemble_passes": getattr(args, "ensemble_passes", 0),
         "local_model": args.local_model,
         "breadth_chunk_size": args.breadth_chunk_size,
         "phase1_min_lines_per_module": args.phase1_min_lines_per_module,
@@ -1987,6 +2468,10 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
         flag_lines.append("- **--joern** — Phase 3.5 CPG graph review")
     if mode["runtime"]:
         flag_lines.append("- **--runtime** — Phase 7.5 runtime evidence helper path")
+    if mode["model_pack"] != "default":
+        flag_lines.append(f"- **--model-pack {mode['model_pack']}** — model/lane preset")
+    if mode["ensemble"] != "off":
+        flag_lines.append(f"- **--ensemble {mode['ensemble']}** — focused recall ensemble (passes: {mode['ensemble_passes'] or 'preset'})")
     if not flag_lines:
         flag_lines.append("- (default mode — interactive prompts active)")
     md.extend(flag_lines)
@@ -2006,6 +2491,9 @@ def main() -> int:
     if not repo.exists():
         print(f"Target does not exist: {repo}", file=sys.stderr)
         return 2
+    config_data, config_path, config_warnings = apply_project_config(args, repo)
+    args.project_config_loaded = str(config_path) if config_path else None
+    args.project_config_warnings = config_warnings
     if args.zap_target and not args.runtime:
         print("--zap-target requires --runtime", file=sys.stderr)
         return 2
@@ -2016,7 +2504,7 @@ def main() -> int:
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
         out = repo / f".audit-{stamp}"
     out.mkdir(parents=True, exist_ok=True)
-    for sub in ["inventory", "scans", "agents", "codex", "variants", "runtime", "attack-graphs", "requirements", "directives", "directives/results", "baseline-stock", "qwen-handoff"]:
+    for sub in ["inventory", "scans", "agents", "codex", "ensemble", "variants", "runtime", "attack-graphs", "requirements", "directives", "directives/results", "baseline-stock", "qwen-handoff"]:
         (out / sub).mkdir(parents=True, exist_ok=True)
     log_path = out / "commands.log"
     write_run_mode(out, args, repo)
@@ -2102,6 +2590,7 @@ def main() -> int:
     write_directives_seed(out)
     write_qwen_handoff(out, args, repo)
     write_scope_artifact(out, scope_data, args, pr_files)
+    write_runtime_probe_plan(out, routes, args)
     emit_breadth_dispatch(out, manifests, routes, pattern_summary, args)
 
     phase1_errors = assert_phase1_populated(out, manifests, args)
@@ -2117,11 +2606,15 @@ def main() -> int:
     scanner_records: list[dict] = []
     qwen_record: dict | None = None
     codex_records: list[dict] | None = None
+    ensemble_records: list[dict] | None = None
     if not args.preflight_only:
         scanner_records = run_scanners(args, repo, out, log_path)
         qwen_record = run_qwen(args, repo, out, log_path)
         codex_records = run_codex(args, repo, out, log_path)
-    write_tooling(out, plan, scanner_records, qwen_record, codex_records)
+        ensemble_records = run_ensemble(args, repo, out, log_path)
+    else:
+        ensemble_records = run_ensemble(args, repo, out, log_path)
+    write_tooling(out, plan, scanner_records, qwen_record, codex_records, ensemble_records)
 
     print(f"odoo-review-run complete")
     print(f"Target: {repo}")

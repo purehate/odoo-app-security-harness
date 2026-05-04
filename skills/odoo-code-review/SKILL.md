@@ -56,6 +56,8 @@ Use three primary modes:
 - `--pr <n>` — PR-scoped review through `gh`. Combine with `--quick` for quick PR triage.
 - `-ks` / `--ks` — kitchen sink. The best available review regardless of token/runtime cost: scanners, Codex hunters, local Qwen, breadth sweep, stock-CC control lane, runtime evidence path, learn loop, and unresolved-stock-lead close gate.
 
+Project policy can live in `.odoo-review/config.toml` (see `references/config.example.toml`). CLI flags override config. Use `--model-pack cheap-recall` and `--ensemble cheap` when the goal is Hacktron-style cost-to-recall: many focused candidate-generation passes, then strict Phase 7 validation for precision.
+
 Everything else is an escape hatch or advanced override.
 
 Run `-ks` from Claude Code for the full workflow. The direct CLI runner can produce artifacts and execute scanners/Codex/Qwen, but it cannot spawn the stock-CC control Agent or replace Claude's final 6-gate judgment.
@@ -264,6 +266,10 @@ The 10 Odoo hunters:
 
 Full prompt templates: `references/agent-prompts.md`.
 
+### Phase 5.1 — Ensemble Recall (Optional)
+
+Triggered by `--ensemble cheap` or `--ensemble balanced`. Runs additional focused Codex recall passes under `<OUT>/ensemble/` for public route + sudo, portal IDOR, CSRF/method weirdness, multi-company isolation, QWeb/HTML sinks, raw SQL/domain injection, attachment/report exposure, and external/proxy context. Ensemble passes intentionally optimize recall and produce candidate leads only. Lead Claude dedupes into `ensemble/merged-leads.md`; Phase 7 still performs strict 6-gate validation and runtime evidence review before anything becomes a finding.
+
 ### Phase 5.5 — Discourse / Cross-Hunter FP Reduction
 
 Delegate the first discourse draft to Codex. Hunters review each other's findings using AGREE / CHALLENGE / CONNECT / SURFACE tags. Claude resolves disputed CHALLENGE items and decides what enters Phase 6. Skip only if `--quick` or repo SMALL.
@@ -313,9 +319,9 @@ Triage rubric + output format: `references/triage.md`.
 
 ### Phase 7.5 — Runtime Odoo Testing (Optional)
 
-Triggered by `--runtime`. Two sub-passes:
+Triggered by `--runtime`. The runner also writes `runtime/probes/` from the Phase 1 route map so runtime validation can replay generated probes, not only hand-written PoCs. Two sub-passes:
 
-- **Sub-pass A — odoo-bin runtime helper.** Run `scripts/odoo-review-runtime <OUT>` with explicit launch details (`--odoo-bin`, `--config`/`--database`, `--addons-path`) to boot Odoo, wait for `/web/login`, replay ACCEPT-finding PoC scripts with `ODOO_BASE_URL`, and capture logs/status/stdout under `<OUT>/runtime/`.
+- **Sub-pass A — odoo-bin runtime helper.** Run `scripts/odoo-review-runtime <OUT>` with explicit launch details (`--odoo-bin`, `--config`/`--database`, `--addons-path`) to boot Odoo, wait for `/web/login`, replay ACCEPT-finding PoC scripts with `ODOO_BASE_URL`, and capture logs/status/stdout under `<OUT>/runtime/`. Add `--run-generated-probes` to replay auto-safe route probes from `runtime/probes/safe-pocs.txt`; authenticated, parameterized, JSON, mixed-method, and method-unbounded routes remain manual templates unless `ODOO_REVIEW_ALLOW_UNSAFE_PROBES=1` is set.
 - **Sub-pass B — ZAP baseline (only if `--zap-target <url>`).** Run `zap-baseline.py` against the booted Odoo. macOS Docker quirk: mount needs `--user 0` and `chmod 777` on the wrk dir. Output → `<OUT>/runtime/zap/zap-baseline.{html,json}`.
 
 Required when Gate 5 (PoC) demands runtime evidence.
@@ -394,7 +400,7 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 - `--local-model <name>` — override local Ollama model (default: `qwen3:0.6b`).
 - `--allow-missing-lanes` — continue if the local Qwen or Codex lane is unavailable; record the skip in `tooling.md`.
 - `--joern` — enable Phase 3.5 Joern CPG graph review (skip on SMALL or `--quick`).
-- `--runtime` — enable Phase 7.5 sub-pass A. Use `odoo-review-runtime <OUT>` with Odoo launch details to boot Odoo and replay PoCs.
+- `--runtime` — enable Phase 7.5 sub-pass A and generate `runtime/probes/` route-probe templates. Use `odoo-review-runtime <OUT> --run-generated-probes` with Odoo launch details to boot Odoo and replay auto-safe probes plus hand-written PoCs.
 - `--zap-target <url>` — also run Phase 7.5 sub-pass B (ZAP baseline). Requires `--runtime`.
 - `--no-codex` — skip Codex heavy-worker lane and Phase 7.7 adversarial check; Claude performs all review work locally.
 - `--requirements <file>` — enable Phase 7.8 requirements-aware verification.
@@ -421,7 +427,7 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 The runner emits `findings.json` (after Phase 8). Four companion scripts process it:
 
 - **`odoo-review-finalize <OUT>`** — canonical Phase 8.6 wrapper. Runs export + diff, auto-detects baseline (`<OUT>/../.audit-baseline/findings.json` or `$ODOO_REVIEW_BASELINE`), runs the stock-CC unresolved-lead gate when `baseline_stock_cc=true`, stamps `finalize.log`, exits non-zero when ACCEPT severity ≥ `--fail-on` (default `high`) or stock-only leads remain unresolved. Use this from CI / non-Claude paths or manual re-export. `--fail-on none` disables only the severity gate; `--no-stock-gate` disables the stock gate.
-- **`odoo-review-runtime <OUT>`** — Phase 7.5 runtime helper. Boots Odoo from explicit `--odoo-bin`/`--config`/`--database`/`--addons-path` inputs, waits for a health URL, captures logs/status, and runs PoC scripts with `ODOO_BASE_URL`.
+- **`odoo-review-runtime <OUT>`** — Phase 7.5 runtime helper. Boots Odoo from explicit `--odoo-bin`/`--config`/`--database`/`--addons-path` inputs, waits for a health URL, captures logs/status, and runs PoC scripts with `ODOO_BASE_URL`. `--run-generated-probes` replays runner-generated safe route probes.
 - `odoo-review-export <.audit-dir>` — direct SARIF 2.1.0 + fingerprints + bounty/F-N.md emit. Called by `finalize`; expose for one-off re-export. Honors `scope.json` accepted_risks as SARIF `suppressions` unless `--no-suppress`.
 - `odoo-review-diff <baseline> <current>` — classifies findings new / fixed / unchanged / changed (severity OR triage delta) by `fingerprint`. Emits `delta.md` + `delta.json`. Called by `finalize` when baseline detected.
 - `odoo-review-rerun <directive>` — directive feedback-loop dispatcher (Qwen or Codex). See "Directive Feedback Loop" above.

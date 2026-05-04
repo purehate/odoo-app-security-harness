@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--health-path", default="/web/login", help="Path polled until Odoo is ready. Default: /web/login.")
     parser.add_argument("--timeout", type=int, default=120, help="Seconds to wait for Odoo readiness. Default: 120.")
     parser.add_argument("--poc", action="append", default=[], help="PoC script to run after boot. Can be passed multiple times.")
+    parser.add_argument("--run-generated-probes", action="store_true", help="Replay auto-safe probe scripts generated under runtime/probes/safe-pocs.txt.")
     parser.add_argument("--keep-running", action="store_true", help="Leave Odoo running and write runtime/odoo.pid.")
     parser.add_argument("--plan-only", action="store_true", help="Only write runtime command/plan artifacts; do not boot.")
     return parser.parse_args()
@@ -87,6 +88,7 @@ def write_plan(runtime_dir: Path, args: argparse.Namespace, repo: Path, cmd: lis
         f"- Database: `{args.database or '(default from config/env)'}`",
         f"- Addons path: `{args.addons_path or str(repo)}`",
         f"- Log: `{runtime_dir / 'odoo.log'}`",
+        f"- Generated probes: `{'enabled' if args.run_generated_probes else 'disabled'}`",
         "",
         "## PoC Contract",
         "",
@@ -100,6 +102,18 @@ def write_plan(runtime_dir: Path, args: argparse.Namespace, repo: Path, cmd: lis
         "Capture PoC stdout/stderr under `runtime/reproductions/` and cite those files in Phase 7.5 evidence.",
     ]
     (runtime_dir / "runtime-plan.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def collect_pocs(args: argparse.Namespace, out: Path) -> list[str]:
+    pocs = list(args.poc or [])
+    if args.run_generated_probes:
+        safe_list = out / "runtime" / "probes" / "safe-pocs.txt"
+        if safe_list.exists():
+            for line in safe_list.read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#"):
+                    pocs.append(stripped)
+    return pocs
 
 
 def quote(value: str) -> str:
@@ -184,6 +198,7 @@ def main() -> int:
     cmd = build_cmd(args, repo, log_path)
     write_plan(runtime_dir, args, repo, cmd, base_url)
 
+    pocs = collect_pocs(args, out)
     status = {
         "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "repo": str(repo),
@@ -192,6 +207,8 @@ def main() -> int:
         "health_url": health_url,
         "cmd": cmd,
         "plan_only": args.plan_only,
+        "run_generated_probes": args.run_generated_probes,
+        "poc_count": len(pocs),
         "ready": False,
         "pocs": [],
     }
@@ -224,7 +241,10 @@ def main() -> int:
             print(f"Odoo did not become ready at {health_url}: {detail}", file=sys.stderr)
             print(f"Logs: {log_path} and {runtime_dir / 'odoo-stdout.log'}", file=sys.stderr)
             return 2
+        original_pocs = args.poc
+        args.poc = pocs
         status["pocs"] = run_pocs(args, repo, out, base_url, runtime_dir)
+        args.poc = original_pocs
         if args.keep_running:
             status["kept_running"] = True
             (runtime_dir / "status.json").write_text(json.dumps(status, indent=2, sort_keys=True), encoding="utf-8")
