@@ -17,7 +17,7 @@ If a finding could be lifted verbatim from `bandit -r .`, it doesn't belong in t
 
 ## TL;DR
 
-Run `/odoo-code-review -ks` from your Odoo repo root for the max-quality kitchen-sink check. Use `--quick` for fast local iteration and `--pr <n>` for pull requests. The kitchen-sink path handles inventory → scanners → Qwen advisory → Codex hunters → stock-Claude control lane → discourse → chaining → runtime evidence path → 6-gate validation → final report → SARIF/bounty/diff export. After the report, it drafts accepted-risk and fix-list learning artifacts for review. Add `--yes` only when you want non-interactive auto-apply behavior.
+Run `/odoo-code-review -ks` from your Odoo repo root for the max-quality kitchen-sink check. Use `--quick` for fast local iteration and `--pr <n>` for pull requests. The kitchen-sink path handles inventory → scanners → Qwen advisory → risk-prioritized breadth (`--breadth-budget deep`) → Codex hunters → stock-Claude control lane → discourse → chaining → runtime evidence path → 6-gate validation → final report → SARIF/bounty/diff export. After the report, it drafts accepted-risk and fix-list learning artifacts for review. Add `--yes` only when you want non-interactive auto-apply behavior.
 
 Use Claude Code for the full `-ks` workflow. The direct shell runner is useful for setup, scans, Codex prompt execution, and CI-ish stages, but it cannot spawn Claude subagents or make the final Phase 7 security judgment by itself.
 
@@ -84,6 +84,7 @@ Lane outputs are leads only. Nothing ships until Claude's 6-gate validation conf
 - Inventories Odoo modules and manifests.
 - Maps Odoo attack surface: routes, ACLs, record rules, sharp-edge APIs.
 - Scores per-module risk (`module-risk.md` + `inventory/module-risk.json`) so hunters hit highest-risk modules first.
+- Emits a risk-prioritized Phase 1.7 breadth plan for Claude Agent subagents, capped by `--breadth-budget` / `--breadth-max-chunks`.
 - Seeds hunters with `inventory/cwe-map.json` (19 Odoo bug-shape → CWE/CAPEC/OWASP mappings).
 - Runs repeatable scanner setup for Semgrep, Bandit, Ruff, pylint-odoo, CodeQL, dependency tools, and optional Joern.
 - Runs local Qwen advisory notes through Ollama.
@@ -151,7 +152,7 @@ The direct runner is `odoo-review-run [target] [flags]`. The slash command forwa
 | `--learn` | Generate durable baseline/fix-list/accepted-risk learning artifacts after final findings exist. |
 | `--learn-cap <N>` | Max Phase 8.7 learning iterations. Default: `3`. |
 | `--baseline-stock-cc` | Spawn stock Claude Code control lane; stock-only misses become validation leads. |
-| `-ks`, `--ks`, `--kitchensink`, `--weekly` | Kitchen sink mode: Joern, runtime, breadth, JSON, learn, stock-CC gate, and durable state auto-detect. Add `--yes` separately for zero prompts. |
+| `-ks`, `--ks`, `--kitchensink`, `--weekly` | Kitchen sink mode: Joern, runtime, `--breadth-budget deep`, JSON, learn, stock-CC gate, and durable state auto-detect. Add `--yes` separately for zero prompts. |
 
 Runtime helper:
 
@@ -189,6 +190,8 @@ The installer copies:
   - `odoo-review-runtime` — Phase 7.5 helper: boot Odoo, wait for readiness, run PoC scripts, capture evidence
   - `odoo-review-export` — direct SARIF + fingerprints + bounty drafts (called by finalize)
   - `odoo-review-diff` — direct baseline vs current comparison (called by finalize)
+  - `odoo-review-learn` — Phase 8.7 baseline/fix-list/accepted-risk learning helper
+  - `odoo-review-stock-diff` — stock-Claude control-lane diff and lessons helper
 
 ## Prerequisites
 
@@ -241,10 +244,25 @@ odoo-review-run /path/to/odoo-addons \
   --allow-missing-lanes
 ```
 
+Cap Claude breadth subagents when quota matters:
+
+```bash
+odoo-review-run /path/to/odoo-addons \
+  --breadth-budget low \
+  --breadth-max-chunks 8 \
+  --codex-mode prepare
+```
+
 Kitchen-sink full check:
 
 ```text
 /odoo-code-review /path/to/odoo-addons -ks
+```
+
+`-ks` uses `--breadth-budget deep` unless you explicitly override it, for example:
+
+```text
+/odoo-code-review /path/to/odoo-addons -ks --breadth-budget normal
 ```
 
 Cost-efficient recall ensemble:
@@ -363,11 +381,15 @@ Default output goes to a stamped run directory:
 
 Important artifacts:
 
+- `00-run-mode.md`, `run-mode.json` — orchestration flags Claude must honor (`--yes`, `--learn`, stock-CC, breadth budget, etc.)
 - `00-modules.md`
 - `01-attack-surface.md`
+- `00-accepted-risks.md`, `inventory/accepted-risks.json` — per-finding suppression inventory with active/expired/stale buckets
+- `00-fix-list.md`, `inventory/fix-list.json` — fix-it tracker inventory and reconciliation buckets
 - `module-risk.md` — per-module risk score + band (critical/high/medium/low)
 - `goals.md`
 - `directives/` — feedback-loop scratch space (`README.md`, `_template.md`, `D-NNNN-*.md`, `results/`)
+- `inventory/breadth/dispatch.json`, `inventory/breadth/dispatch.md`, `inventory/breadth/leads.md` — risk-prioritized Phase 1.7 breadth plan and collected Claude Agent leads
 - `inventory/manifests.json`
 - `inventory/routes.json`
 - `inventory/acl-index.json`
@@ -381,6 +403,7 @@ Important artifacts:
 - `tooling.md`
 - `tooling.json`
 - `qwen-handoff/` — local Qwen fallback packet for token pressure
+- `baseline-stock/` — stock-Claude control-lane prompt/output/diff artifacts when `--baseline-stock-cc` or `-ks` is used
 
 Post-processing artifacts (after `odoo-review-export` / `odoo-review-diff`):
 
