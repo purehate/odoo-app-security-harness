@@ -44,7 +44,7 @@ The runner writes `<OUT>/run-mode.json` and `<OUT>/00-run-mode.md` at the top of
 - `non_interactive=true` (set only by `--yes`) → **never** emit `[y/N]` prompts. Pick the documented default action and proceed. This kills the Phase 8.7 step-4 prompt and any mid-stream "should I continue?" pauses.
 - `learn=true` (set by `--learn` or `-ks`) → after Phase 8.6, run `scripts/odoo-review-learn <OUT>` to promote `findings.json` → `<repo>/.audit-baseline/findings.json` and write accepted-risk/fix-list suggestions. Use `--apply` only when `non_interactive=true` or the user explicitly approved the suggestions. Iteration cap: `learn_cap` (default 3).
 - `baseline_stock_cc=true` (set by `--baseline-stock-cc` or `-ks`) → during Phase 1, dispatch one `subagent_type: general-purpose` Agent with the prompt at `<OUT>/baseline-stock/dispatch.md`. Before the run is considered complete, run `scripts/odoo-review-stock-diff <OUT>` and validate every stock-only entry in `<OUT>/baseline-stock/validation-leads.md` as a current-run lead. `odoo-review-finalize` fails while these remain unresolved. After disposition, optionally run `scripts/odoo-review-stock-diff <OUT> --apply-lessons` to append stock-only finding patterns to `references/agent-prompts.md`.
-- `weekly=true` (set by `-ks` / `--ks` / `--kitchensink`) → kitchen-sink mode: max-quality full review. Equivalent to `--joern --runtime --breadth --json --learn --baseline-stock-cc` plus auto-detect of `<repo>/.audit-baseline/findings.json`, `<repo>/scope.yml`, `<repo>/.audit-accepted-risks.yml`, `<repo>/.audit-fix-list.yml`. Add `--yes` separately for zero prompts. Do not use `--allow-missing-lanes` for a serious `-ks` review unless you accept weaker coverage.
+- `weekly=true` (set by `-ks` / `--ks` / `--kitchensink`) → kitchen-sink mode: max-quality full review. Equivalent to `--joern --runtime --breadth-budget deep --json --learn --baseline-stock-cc` plus auto-detect of `<repo>/.audit-baseline/findings.json`, `<repo>/scope.yml`, `<repo>/.audit-accepted-risks.yml`, `<repo>/.audit-fix-list.yml`. Add `--yes` separately for zero prompts. Do not use `--allow-missing-lanes` for a serious `-ks` review unless you accept weaker coverage.
 
 When `non_interactive=true` and `learn=true` are both set, the lead session runs end-to-end with NO user input from Phase 0 through Phase 8.7 baseline promotion. Otherwise, kitchen-sink mode is manual: full coverage, but the lead still presents suppression suggestions before applying them.
 
@@ -199,9 +199,9 @@ See `references/workflow.md` Phase 1 for the full checklist.
 
 ### Phase 1.7 — Breadth Sweep Dispatch (eve-cc style)
 
-Runner emits `<OUT>/inventory/breadth/dispatch.json` listing file chunks (default 40 files / chunk; override via `--breadth-chunk-size`). Lead Claude dispatches one Agent (`subagent_type: general-purpose`) per chunk in parallel batches, eve-cc style. Each subagent enumerates every public route, `sudo()`, `cr.execute`, `eval/exec`, `ir.rule` gap, and authentication boundary in its slice and appends a section to `<OUT>/inventory/breadth/leads.md`.
+Runner emits `<OUT>/inventory/breadth/dispatch.json` listing risk-prioritized file chunks (default 40 files / chunk; override via `--breadth-chunk-size`). Phase 1.7 is Claude-Agent expensive, so `--breadth-budget` controls how many chunks are emitted: `off`, `low` (top 8 high-risk chunks), `normal` (top 24 medium/high-risk chunks), or `deep` (all chunks, used by `-ks`). Lead Claude dispatches only the listed chunks in parallel batches. Each subagent enumerates every public route, `sudo()`, `cr.execute`, `eval/exec`, `ir.rule` gap, and authentication boundary in its slice and appends a section to `<OUT>/inventory/breadth/leads.md`.
 
-The hunters in Phase 5 ingest `leads.md` as additional input. This pairs eve-cc breadth with harness depth: every file gets a fast scan, then specialist hunters pivot into deep analysis on the leads. Disable with `--no-breadth`.
+The hunters in Phase 5 ingest `leads.md` as additional input. This pairs eve-cc breadth with harness depth while front-loading likely-risky modules. Disable with `--no-breadth` / `--breadth-budget off`, or hard-cap with `--breadth-max-chunks N`.
 
 ### Phase 1.5 — Local Qwen / Ollama Advisory Check
 
@@ -363,7 +363,7 @@ Phase 8 also performs **fix-list reconciliation** against `inventory/fix-list.js
 - [ ] Phase 1: identify Odoo version + stack, map HTTP/RPC/portal surface, ACL CSV, `ir.rule`, cron, mail templates, draft hunter assignments. Runner asserts ≥ N content lines per module in `01-attack-surface.md` (fail-loud, exit code 6).
 - [ ] If available, create/update the lead-session `/goals` objective from `<OUT>/goals.md`; keep TaskCreate for per-phase and per-hunter progress.
 - [ ] Phase 1.5 (unless `--no-local-qwen`): run local Ollama/Qwen advisory module notes and scanner-hint triage → `<OUT>/local-qwen/`.
-- [ ] Phase 1.7 (unless `--no-breadth`): read `inventory/breadth/dispatch.json`, dispatch Agent calls in parallel batches (eve-cc breadth pass), collect leads into `inventory/breadth/leads.md`.
+- [ ] Phase 1.7 (unless `--no-breadth` / `--breadth-budget off`): read `inventory/breadth/dispatch.json`, dispatch only the listed risk-prioritized Agent chunks in parallel batches, collect leads into `inventory/breadth/leads.md`.
 - [ ] Phase 2: Semgrep community + custom Odoo rules → `<OUT>/scans/semgrep/`.
 - [ ] Phase 2.5: Bandit → `<OUT>/scans/bandit/`.
 - [ ] Phase 2.6: ruff + pylint-odoo + OCA pre-commit → `<OUT>/scans/ruff/`, `pylint-odoo/`, `oca-precommit/`.
@@ -417,10 +417,13 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 - `--check-only-fix-list` — validate fix-list file, write `<OUT>/inventory/fix-list.json` + `<OUT>/00-fix-list.md`, then exit. Non-zero on validation errors or any `open`/`in-progress` entry past its `target_date`. Use in CI to gate the backlog.
 - `--no-server-actions` — skip `docs/server_actions/*.py` loose-Python sweep (default: include).
 - `--no-scripts` — skip `scripts/*.py` loose-Python sweep (default: include).
-- `--no-breadth` — skip Phase 1.7 breadth-sweep dispatch plan emission (default: emit).
+- `--no-breadth` — skip Phase 1.7 breadth-sweep dispatch plan emission (same as `--breadth-budget off`).
+- `--breadth-budget off|low|normal|deep` — control Claude Agent spend for Phase 1.7. Default: `normal`; `-ks` defaults to `deep`.
+- `--breadth-max-chunks <N>` — hard cap Phase 1.7 chunks after risk prioritization.
 - `--breadth-chunk-size <N>` — files per breadth-sweep subagent chunk (default: 40).
 - `--phase1-min-lines-per-module <N>` — Phase 1 fail-loud threshold: minimum content lines per module in `01-attack-surface.md` (default: 4).
 - `--no-phase1-assert` — disable Phase 1 fail-loud assertion (escape hatch — not recommended).
+- `--allow-empty-scope` — continue when no Odoo modules/pseudo-modules are discovered. Default is to fail before scanner/model lanes to avoid quota waste on the wrong target.
 
 ## Post-Processing Scripts
 

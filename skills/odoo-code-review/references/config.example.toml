@@ -29,3 +29,9 @@ multi_company = true
 # scope = "./scope.yml"
 quick = false
 no_scans = false
+
+# Phase 1.7 breadth uses Claude Agent subagents, so cap it unless you are doing
+# a deliberate deep/kitchen-sink review.
+# Values: off, low, normal, deep
+breadth_budget = "normal"
+breadth_max_chunks = 0

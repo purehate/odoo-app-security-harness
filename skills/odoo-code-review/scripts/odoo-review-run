@@ -140,10 +140,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--check-only-fix-list", action="store_true", help="Validate fix-list file, write inventory, then exit. Non-zero on validation errors or overdue open/in-progress entries.")
     parser.add_argument("--no-server-actions", action="store_true", help="Skip docs/server_actions/*.py loose-Python sweep (default: include).")
     parser.add_argument("--no-scripts", action="store_true", help="Skip scripts/*.py loose-Python sweep (default: include).")
-    parser.add_argument("--no-breadth", action="store_true", help="Skip Phase 1.7 breadth-sweep dispatch plan emission (default: emit).")
+    parser.add_argument("--no-breadth", action="store_true", help="Skip Phase 1.7 breadth-sweep dispatch plan emission (same as --breadth-budget off).")
+    parser.add_argument("--breadth-budget", choices=["off", "low", "normal", "deep"], default="normal", help="Phase 1.7 Claude subagent budget. off=none, low=top 8 risky chunks, normal=top 24 risky chunks, deep=all chunks. Default: normal.")
+    parser.add_argument("--breadth-max-chunks", type=int, default=0, help="Hard cap Phase 1.7 breadth chunks after risk prioritization. 0 uses --breadth-budget default.")
     parser.add_argument("--breadth-chunk-size", type=int, default=40, help="Files per breadth-sweep subagent chunk. Default: 40.")
     parser.add_argument("--phase1-min-lines-per-module", type=int, default=4, help="Phase 1 fail-loud threshold: minimum lines of attack-surface content per in-scope module. Default: 4.")
     parser.add_argument("--no-phase1-assert", action="store_true", help="Disable Phase 1 fail-loud assertion (escape hatch; not recommended).")
+    parser.add_argument("--allow-empty-scope", action="store_true", help="Allow runs with zero discovered Odoo modules/pseudo-modules. By default this fails before scanner/model lanes to avoid quota waste on the wrong target.")
     parser.add_argument("--yes", "-y", action="store_true", dest="non_interactive", help="Non-interactive: strip every Claude/orchestration y/N prompt. With --learn, auto-applies Phase 8.7 suggestions up to iteration cap.")
     parser.add_argument("--learn", action="store_true", help="After final findings exist, generate baseline/fix-list/accepted-risk learning artifacts. Apply accepted-risk suppressions only when --yes is also set.")
     parser.add_argument("--learn-cap", type=int, default=3, help="Max Phase 8.7 self-improvement iterations under --learn. Default: 3.")
@@ -158,15 +161,23 @@ def parse_args() -> argparse.Namespace:
         args.runtime = True
         args.learn = True
         args.baseline_stock_cc = True
-        # default-on lanes stay on; only flip explicit-off flags back on
-        args.no_discourse = False
-        args.no_local_qwen = False
-        args.no_codex = False
-        args.no_breadth = False
-        args.no_export = False
-        args.no_html = False
+        # default-on lanes stay on unless the caller explicitly disabled them.
+        if not cli_flag_present("--no-discourse"):
+            args.no_discourse = False
+        if not cli_flag_present("--no-local-qwen"):
+            args.no_local_qwen = False
+        if not cli_flag_present("--no-codex"):
+            args.no_codex = False
+        if not cli_flag_present("--no-breadth"):
+            args.no_breadth = False
+        if not cli_flag_present("--no-export"):
+            args.no_export = False
+        if not cli_flag_present("--no-html"):
+            args.no_html = False
         args.no_emit_json = False
         args.emit_json = True
+        if not cli_flag_present("--breadth-budget"):
+            args.breadth_budget = "deep"
     return args
 
 
@@ -240,12 +251,17 @@ def apply_project_config(args: argparse.Namespace, repo: Path) -> tuple[dict, Pa
         args.quick = True
     if review.get("no_scans") is True and not cli_flag_present("--no-scans"):
         args.no_scans = True
+    apply_value(args, "breadth_budget", review.get("breadth_budget"), "--breadth-budget")
+    apply_value(args, "breadth_max_chunks", review.get("breadth_max_chunks"), "--breadth-max-chunks")
     if args.codex_budget not in {"low", "normal", "deep"}:
         warnings.append(f"{path}: invalid codex_budget {args.codex_budget!r}; using normal.")
         args.codex_budget = "normal"
     if args.ensemble not in {"off", "cheap", "balanced"}:
         warnings.append(f"{path}: invalid ensemble {args.ensemble!r}; using off.")
         args.ensemble = "off"
+    if args.breadth_budget not in {"off", "low", "normal", "deep"}:
+        warnings.append(f"{path}: invalid breadth_budget {args.breadth_budget!r}; using normal.")
+        args.breadth_budget = "normal"
     return config, path, warnings
 
 
@@ -1769,13 +1785,29 @@ def write_qwen_handoff(out: Path, args: argparse.Namespace, repo: Path) -> None:
         )
 
 
-def emit_breadth_dispatch(out: Path, manifests: list[dict], routes: list[dict], pattern_summary: dict, args: argparse.Namespace) -> None:
+def breadth_budget_defaults(args: argparse.Namespace) -> tuple[int | None, int]:
+    """Return (max_chunks, min_module_score) for Phase 1.7 breadth dispatch."""
+    if args.no_breadth or args.breadth_budget == "off":
+        return 0, 99
+    defaults = {
+        "low": (8, 25),
+        "normal": (24, 10),
+        "deep": (None, 0),
+    }
+    max_chunks, min_score = defaults[args.breadth_budget]
+    if args.breadth_max_chunks and args.breadth_max_chunks > 0:
+        max_chunks = args.breadth_max_chunks
+    return max_chunks, min_score
+
+
+def emit_breadth_dispatch(out: Path, manifests: list[dict], routes: list[dict], pattern_summary: dict, risk_rows: list[dict], args: argparse.Namespace) -> None:
     """Emit Phase 1.7 breadth-sweep dispatch plan.
 
     Lead Claude reads inventory/breadth/dispatch.json and spawns one Agent per
     chunk to do an eve-cc style breadth pass. Outputs go to inventory/breadth/leads.md.
     """
-    if args.no_breadth:
+    max_chunks, min_score = breadth_budget_defaults(args)
+    if max_chunks == 0:
         return
     breadth_dir = out / "inventory" / "breadth"
     breadth_dir.mkdir(parents=True, exist_ok=True)
@@ -1799,12 +1831,23 @@ def emit_breadth_dispatch(out: Path, manifests: list[dict], routes: list[dict], 
                 py_by_module.setdefault(module, []).append(str(path))
 
     sharp = pattern_summary.get("by_module", {})
+    score_by_module = {row.get("module"): int(row.get("score", 0) or 0) for row in risk_rows}
+    route_count_by_module: dict[str, int] = {}
+    for route in routes:
+        module = route.get("module")
+        if module:
+            route_count_by_module[module] = route_count_by_module.get(module, 0) + 1
+
     chunks: list[dict] = []
     chunk_id = 1
     chunk_size = max(1, args.breadth_chunk_size)
     for module in sorted(py_by_module.keys()):
+        module_score = score_by_module.get(module, 0)
+        if module_score < min_score:
+            continue
         files = py_by_module[module]
         module_sharp = sharp.get(module, {})
+        sharp_count = sum(int(v or 0) for v in module_sharp.values() if isinstance(v, int))
         for i in range(0, len(files), chunk_size):
             piece = files[i:i + chunk_size]
             chunks.append({
@@ -1812,6 +1855,9 @@ def emit_breadth_dispatch(out: Path, manifests: list[dict], routes: list[dict], 
                 "module": module,
                 "files": piece,
                 "file_count": len(piece),
+                "module_score": module_score,
+                "route_count": route_count_by_module.get(module, 0),
+                "sharp_edge_count": sharp_count,
                 "sharp_edges_in_module": module_sharp,
                 "agent": "Agent",
                 "subagent_type": "general-purpose",
@@ -1819,21 +1865,45 @@ def emit_breadth_dispatch(out: Path, manifests: list[dict], routes: list[dict], 
             })
             chunk_id += 1
 
+    chunks.sort(
+        key=lambda c: (
+            int(c.get("module_score", 0)),
+            int(c.get("route_count", 0)),
+            int(c.get("sharp_edge_count", 0)),
+            int(c.get("file_count", 0)),
+        ),
+        reverse=True,
+    )
+    total_candidate_chunks = len(chunks)
+    if max_chunks is not None:
+        chunks = chunks[:max_chunks]
+    for idx, chunk in enumerate(chunks, start=1):
+        chunk["chunk_id"] = f"BR-{idx:03d}"
+
     dispatch_path = breadth_dir / "dispatch.json"
-    dispatch_path.write_text(json.dumps({"chunks": chunks}, indent=2), encoding="utf-8")
+    dispatch_path.write_text(json.dumps({
+        "breadth_budget": args.breadth_budget,
+        "breadth_max_chunks": max_chunks,
+        "breadth_min_module_score": min_score,
+        "candidate_chunks_before_cap": total_candidate_chunks,
+        "chunks": chunks,
+    }, indent=2), encoding="utf-8")
 
     md_lines = ["# Phase 1.7 — Breadth Sweep Dispatch", ""]
-    md_lines.append(f"Total chunks: {len(chunks)} (chunk size {chunk_size})")
+    md_lines.append(f"Budget: `{args.breadth_budget}`")
+    md_lines.append(f"Total chunks: {len(chunks)} (chunk size {chunk_size}; candidates before cap {total_candidate_chunks})")
+    md_lines.append(f"Minimum module risk score: `{min_score}`")
     md_lines.append("")
-    md_lines.append("Lead Claude: dispatch each chunk via the Agent tool in parallel batches.")
+    md_lines.append("Lead Claude: dispatch only the chunks listed here via the Agent tool in parallel batches.")
     md_lines.append("Each subagent reviews its file slice for Odoo-specific security issues and")
     md_lines.append("appends its leads to `inventory/breadth/leads.md` (one section per chunk).")
     md_lines.append("Hunters in Phase 5 read leads.md as additional input.")
+    md_lines.append("If limits get tight, stop breadth after the current wave; the prioritized chunks already front-load risk.")
     md_lines.append("")
-    md_lines.append("| Chunk | Module | Files |")
-    md_lines.append("|-------|--------|-------|")
+    md_lines.append("| Chunk | Module | Files | Risk Score | Routes | Sharp Edges |")
+    md_lines.append("|-------|--------|-------|------|--------|-------------|")
     for c in chunks:
-        md_lines.append(f"| {c['chunk_id']} | {c['module']} | {c['file_count']} |")
+        md_lines.append(f"| {c['chunk_id']} | {c['module']} | {c['file_count']} | {c['module_score']} | {c['route_count']} | {c['sharp_edge_count']} |")
     (breadth_dir / "dispatch.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
     leads_path = breadth_dir / "leads.md"
@@ -2437,9 +2507,12 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
         "ensemble": getattr(args, "ensemble", "off"),
         "ensemble_passes": getattr(args, "ensemble_passes", 0),
         "local_model": args.local_model,
+        "breadth_budget": getattr(args, "breadth_budget", "normal"),
+        "breadth_max_chunks": getattr(args, "breadth_max_chunks", 0),
         "breadth_chunk_size": args.breadth_chunk_size,
         "phase1_min_lines_per_module": args.phase1_min_lines_per_module,
         "no_phase1_assert": bool(getattr(args, "no_phase1_assert", False)),
+        "allow_empty_scope": bool(getattr(args, "allow_empty_scope", False)),
         "allow_missing_lanes": bool(getattr(args, "allow_missing_lanes", False)),
         "preflight_only": bool(getattr(args, "preflight_only", False)),
         "no_scans": bool(getattr(args, "no_scans", False)),
@@ -2472,6 +2545,11 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
         flag_lines.append(f"- **--model-pack {mode['model_pack']}** — model/lane preset")
     if mode["ensemble"] != "off":
         flag_lines.append(f"- **--ensemble {mode['ensemble']}** — focused recall ensemble (passes: {mode['ensemble_passes'] or 'preset'})")
+    if mode["no_breadth"] or mode["breadth_budget"] == "off":
+        flag_lines.append("- **--breadth-budget off** — Phase 1.7 Claude breadth subagents disabled")
+    elif mode["breadth_budget"] != "normal" or mode["breadth_max_chunks"]:
+        cap = mode["breadth_max_chunks"] or "preset"
+        flag_lines.append(f"- **--breadth-budget {mode['breadth_budget']}** — Phase 1.7 Claude breadth subagents capped/prioritized (cap: {cap})")
     if not flag_lines:
         flag_lines.append("- (default mode — interactive prompts active)")
     md.extend(flag_lines)
@@ -2481,6 +2559,7 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
     md.append("- `non_interactive=true` → never emit `[y/N]` prompts; choose the documented default action and proceed.")
     md.append("- `learn=true` → after Phase 8.6, run Phase 8.7 learning. Use `--apply` only when `non_interactive=true` or the user approved the suggestions.")
     md.append("- `baseline_stock_cc=true` → during Phase 1, dispatch one general-purpose Agent with stock-CC review prompt against the same repo; diff before final Phase 7/8 closure and validate stock-only leads in this run.")
+    md.append("- `breadth_budget` controls Phase 1.7 Claude Agent spend. Dispatch only chunks listed in `inventory/breadth/dispatch.json`; they are risk-prioritized and may be intentionally capped.")
     md.append("")
     (out / "00-run-mode.md").write_text("\n".join(md), encoding="utf-8")
 
@@ -2579,6 +2658,14 @@ def main() -> int:
         else:
             print(f"WARN: --pr {args.pr} returned no files (gh CLI unavailable or PR has no files)", file=sys.stderr)
 
+    if not manifests and not args.allow_empty_scope:
+        print("No Odoo modules or supported pseudo-modules were discovered in the target scope.")
+        print(f"Target: {repo}")
+        print("Refusing to continue before scanner/model lanes to avoid spending quota on the wrong directory.")
+        print("Pass the Odoo addons path, use --modules/--scope differently, or add --allow-empty-scope to override.")
+        write_tooling(out, plan, [], None, None)
+        return 7
+
     routes = extract_routes(repo, manifests)
     acl_rows = index_acl(repo, manifests)
     pattern_summary = scan_patterns(repo, manifests)
@@ -2591,7 +2678,7 @@ def main() -> int:
     write_qwen_handoff(out, args, repo)
     write_scope_artifact(out, scope_data, args, pr_files)
     write_runtime_probe_plan(out, routes, args)
-    emit_breadth_dispatch(out, manifests, routes, pattern_summary, args)
+    emit_breadth_dispatch(out, manifests, routes, pattern_summary, risk_rows, args)
 
     phase1_errors = assert_phase1_populated(out, manifests, args)
     if phase1_errors:

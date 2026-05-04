@@ -140,10 +140,13 @@ The direct runner is `odoo-review-run [target] [flags]`. The slash command forwa
 | `--check-only-fix-list` | Validate fix-list file and exit non-zero on validation errors/overdue entries. |
 | `--no-server-actions` | Skip loose-Python sweep of `docs/server_actions/*.py`. |
 | `--no-scripts` | Skip loose-Python sweep of `scripts/*.py`. |
-| `--no-breadth` | Skip Phase 1.7 breadth-sweep dispatch plan. |
+| `--no-breadth` | Skip Phase 1.7 breadth-sweep dispatch plan. Equivalent to `--breadth-budget off`. |
+| `--breadth-budget off\|low\|normal\|deep` | Control Claude Agent spend for Phase 1.7. `low` emits top 8 risky chunks, `normal` top 24, `deep` all. Default: `normal`; `-ks` defaults to `deep`. |
+| `--breadth-max-chunks <N>` | Hard-cap Phase 1.7 chunks after risk prioritization. `0` uses the selected budget preset. |
 | `--breadth-chunk-size <N>` | Files per breadth-sweep chunk. Default: `40`. |
 | `--phase1-min-lines-per-module <N>` | Phase 1 fail-loud threshold. Default: `4`. |
 | `--no-phase1-assert` | Disable Phase 1 fail-loud assertion. Escape hatch only. |
+| `--allow-empty-scope` | Continue even when no Odoo modules/pseudo-modules are discovered. Default is fail-before-model-lanes to avoid quota waste on the wrong target. |
 | `--yes`, `-y` | Non-interactive mode. Suppresses y/N prompts and auto-applies learn suggestions only when `--learn` is also set. |
 | `--learn` | Generate durable baseline/fix-list/accepted-risk learning artifacts after final findings exist. |
 | `--learn-cap <N>` | Max Phase 8.7 learning iterations. Default: `3`. |
