@@ -1,6 +1,6 @@
 ---
 name: odoo-code-review
-description: Source-code security review for Odoo using one Claude Code command with three lanes: Claude Code as lead reviewer/orchestrator, local Ollama/Qwen for private advisory triage, and Codex/OpenAI as the heavy worker for Odoo specialist hunters, discourse, chaining drafts, variant analysis, PoC/artifact work, and report drafting. Structured 0–8 phase audit of any Odoo addon repo. Phase 0 inventories modules + manifests. Phase 1 maps Odoo attack surface (routes/ACL/cron/mail). Phase 1.5 runs local Ollama/Qwen advisory triage for private first-pass module summaries and scanner-hint review. Phases 2–4.5 run Semgrep+custom Odoo rules, Bandit, ruff, pylint-odoo, OCA pre-commit, CodeQL Python, Joern (optional), Pysa, pip-audit, osv-scanner. Phase 5 delegates Odoo specialist hunter passes to Codex by default. Phase 5.5 delegates discourse draft to Codex, with Claude resolving disputes. Phase 6 uses Codex for chaining draft, Claude finalizes. Phase 7 uses Codex evidence packs/variant drafts, Claude performs final 6-gate verdicts. Phase 7.5 runtime testing and Phase 7.6 attack graphs are Codex/script heavy. Phase 8 uses Codex report draft, Claude final edits. Use when the user asks for a security review, code review, "audit this Odoo repo", appsec review, vuln hunt, or pentest of Odoo source. Outputs evidence-backed findings only — no scanner noise, no theoretical concerns, no style nits.
+description: Source-code security review for Odoo using one Claude Code command with three lanes: Claude Code as lead reviewer/orchestrator, local Ollama/Qwen for private advisory triage, and Codex/OpenAI as the heavy worker for Odoo specialist hunters, discourse, chaining drafts, variant analysis, PoC/artifact work, and report drafting. Structured 0–8 phase audit of any Odoo addon repo. Phase 0 inventories modules + manifests. Phase 1 maps Odoo attack surface (routes/ACL/cron/mail). Phase 1.5 runs local Ollama/Qwen advisory triage for private first-pass module summaries and scanner-hint review. Phases 2–4.5 run Semgrep+custom Odoo rules, Bandit, ruff, pylint-odoo, OCA pre-commit, CodeQL Python, Joern (optional), Pysa, pip-audit, osv-scanner, and detect-secrets. Phase 5 delegates Odoo specialist hunter passes to Codex by default. Phase 5.5 delegates discourse draft to Codex, with Claude resolving disputes. Phase 6 uses Codex for chaining draft, Claude finalizes. Phase 7 uses Codex evidence packs/variant drafts, Claude performs final 6-gate verdicts. Phase 7.5 runtime testing and Phase 7.6 attack graphs are Codex/script heavy. Phase 8 uses Codex report draft, Claude final edits. Use when the user asks for a security review, code review, "audit this Odoo repo", appsec review, vuln hunt, or pentest of Odoo source. Outputs evidence-backed findings only — no scanner noise, no theoretical concerns, no style nits.
 allowed-tools:
   - Read
   - Grep
@@ -237,7 +237,7 @@ Triggered by `--joern`. CPG-based graph traversal catches multi-hop / `getattr`-
 
 ### Phase 4.5 — Dependency Scan
 
-`pip-audit` + `osv-scanner`. Cross-reference manifest external_dependencies with Phase 1 reachability.
+`pip-audit` + `osv-scanner` + `detect-secrets`. Cross-reference manifest external_dependencies with Phase 1 reachability. Treat secret hits as leads: Odoo module secrets in config/data/demo files need rotation evidence and deployment context before they become final findings.
 
 Full commands: `references/automated-scans.md`. Output is **hints not truth** — feed to hunters, verify in Phase 7.
 
@@ -370,7 +370,7 @@ Phase 8 also performs **fix-list reconciliation** against `inventory/fix-list.js
 - [ ] Phase 3: CodeQL Python DB extract + analyze → `<OUT>/scans/codeql/`.
 - [ ] Phase 3.5 (only if `--joern`): build CPG, run query batch → `<OUT>/scans/joern/`.
 - [ ] Phase 4: Pysa (optional, skip on Pyre failure) → `<OUT>/scans/pysa/`.
-- [ ] Phase 4.5: pip-audit + osv-scanner → `<OUT>/scans/deps/`.
+- [ ] Phase 4.5: pip-audit + osv-scanner → `<OUT>/scans/deps/`; detect-secrets → `<OUT>/scans/secrets/`.
 - [ ] Phase 5: launch Codex hunter tasks #1–#9 with Phase 0/1 packets, Qwen hints, scan paths, and `inventory/breadth/leads.md`. Each hunter MUST emit a `Reviewed:` block.
 - [ ] Phase 5: Claude spot-checks hunter outputs for unsupported claims before discourse.
 - [ ] Phase 5.5: Codex discourse draft; Claude resolves CHALLENGE items (skip if `--quick` or SMALL repo).
@@ -498,7 +498,7 @@ Hunters know Odoo semantics. The two trust boundaries (`auth='public'` and `sudo
 ## See Also
 
 - `references/workflow.md` — exhaustive phase detail (Phases 0–8)
-- `references/automated-scans.md` — Phases 2–4.5 commands (Semgrep + custom Odoo + Bandit + ruff + pylint-odoo + CodeQL + Pysa + pip-audit + osv-scanner)
+- `references/automated-scans.md` — Phases 2–4.5 commands (Semgrep + custom Odoo + Bandit + ruff + pylint-odoo + CodeQL + Pysa + pip-audit + osv-scanner + detect-secrets)
 - `references/agent-prompts.md` — 10 Odoo hunter prompt templates
 - `references/discourse.md` — Phase 5.5 hunter-vs-hunter FP reduction (incl. judge tie-break)
 - `references/requirements-mode.md` — Phase 7.7 requirements-aware verification

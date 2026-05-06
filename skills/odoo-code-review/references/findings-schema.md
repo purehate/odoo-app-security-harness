@@ -52,6 +52,7 @@ This schema is the contract. Codex/Claude must produce it during Phase 8 when `-
   "severity": "high",
   "confidence": "high",
   "triage": "ACCEPT",
+  "false_positive_reason": null,
   "odoo_surface": "portal_route",
   "module": "portal",
   "file": "addons/portal/controllers/main.py",
@@ -76,7 +77,18 @@ This schema is the contract. Codex/Claude must produce it during Phase 8 when `-
     "missing_validation": "yes",
     "actually_exploitable": "yes",
     "real_security_impact": "yes",
-    "demonstrable_with_poc": "yes"
+    "demonstrable_with_poc": "yes",
+    "evidence": [
+      "addons/portal/controllers/main.py:142 route uses sudo before ownership check",
+      "addons/portal/controllers/main.py:151 response serializes sale.order fields"
+    ],
+    "resolution_chain": [
+      "GET /portal/attachment?id=42",
+      "request.params['id']",
+      "env['sale.order'].sudo().browse(id)",
+      "record.read(...)"
+    ],
+    "unresolved_hops": []
   },
   "variants": [
     {
@@ -112,6 +124,24 @@ This schema is the contract. Codex/Claude must produce it during Phase 8 when `-
 ### Confidence values
 
 `high | medium | low`
+
+### False-positive reason
+
+`false_positive_reason` is required when `triage` is `REJECT` or `DOWNGRADE`, and should be `null` or omitted for `ACCEPT`.
+
+Use it to preserve the lesson from rejected leads:
+
+- `"validator at addons/x/controllers/main.py:88 coerces id to int before browse"`
+- `"route is auth='user' and group guard requires base.group_system before sudo path"`
+- `"demo XML only; module data file is not loaded in production manifest"`
+
+### Evidence obligations
+
+`fp_check.evidence`, `fp_check.resolution_chain`, and `fp_check.unresolved_hops` are optional for older reports but recommended for new reports.
+
+- `evidence`: concrete `file:line` citations supporting the verdict.
+- `resolution_chain`: source-to-sink or route-to-model hops verified during triage.
+- `unresolved_hops`: aliases, wrappers, runtime config, or deployment facts that could not be resolved statically. `ACCEPT` findings should have an empty or non-critical unresolved list.
 
 ## Chain
 

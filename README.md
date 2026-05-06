@@ -25,7 +25,7 @@ Use Claude Code for the full `-ks` workflow. The direct shell runner is useful f
 
 ```text
 Odoo Application Security Harness
-├── Detection Engine          — Semgrep, Bandit, Ruff, pylint-odoo, CodeQL, Joern, pip-audit, osv-scanner
+├── Detection Engine          — Semgrep, Bandit, Ruff, pylint-odoo, CodeQL, Joern, pip-audit, osv-scanner, detect-secrets
 ├── Agent Framework           — Claude Code lead + local Ollama/Qwen triage + Codex hunter passes
 ├── Validation Pipeline       — 6-gate fp-check, evidence packs, variant analysis, chaining
 └── Attack Graph Analysis     — Phase 7.6 graph construction and Graphviz render
@@ -207,7 +207,7 @@ Codex CLI must be installed and authenticated separately.
 Optional scanner tools:
 
 ```bash
-pipx install semgrep bandit ruff pylint pylint-odoo pip-audit
+pipx install semgrep bandit ruff pylint pylint-odoo pip-audit detect-secrets
 brew install codeql osv-scanner graphviz
 ```
 

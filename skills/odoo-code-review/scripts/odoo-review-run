@@ -1949,7 +1949,7 @@ def assert_phase1_populated(out: Path, manifests: list[dict], args: argparse.Nam
 
 
 def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, list[str]]:
-    tools = {name: which(name) for name in ["codex", "ollama", "semgrep", "bandit", "ruff", "pylint", "pre-commit", "codeql", "pyre", "pip-audit", "osv-scanner", "joern-parse", "dot"]}
+    tools = {name: which(name) for name in ["codex", "ollama", "semgrep", "bandit", "ruff", "pylint", "pre-commit", "codeql", "pyre", "pip-audit", "osv-scanner", "detect-secrets", "joern-parse", "dot"]}
     lane_errors: list[str] = []
     if not args.no_codex and not tools["codex"]:
         lane_errors.append("Codex CLI not found; use --no-codex or --allow-missing-lanes.")
@@ -2004,7 +2004,7 @@ def run_scanners(args: argparse.Namespace, repo: Path, out: Path, log_path: Path
     progress("Phase 2-4.5 scanners starting")
     records = []
     scans = out / "scans"
-    for sub in ["semgrep", "bandit", "ruff", "pylint-odoo", "oca-precommit", "codeql", "joern", "pysa", "deps"]:
+    for sub in ["semgrep", "bandit", "ruff", "pylint-odoo", "oca-precommit", "codeql", "joern", "pysa", "deps", "secrets"]:
         (scans / sub).mkdir(parents=True, exist_ok=True)
 
     if which("semgrep"):
@@ -2056,6 +2056,11 @@ def run_scanners(args: argparse.Namespace, repo: Path, out: Path, log_path: Path
         records.append(run(["osv-scanner", "--recursive", "--format", "json", "--output", str(scans / "deps" / "osv-scanner.json"), str(repo)], repo, log_path, timeout=1800))
     else:
         records.append({"tool": "osv-scanner", "status": "missing"})
+
+    if which("detect-secrets"):
+        records.append(run(["detect-secrets", "scan", "--all-files", str(repo)], repo, log_path, scans / "secrets" / "detect-secrets.json", timeout=1800))
+    else:
+        records.append({"tool": "detect-secrets", "status": "missing"})
     progress("Phase 2-4.5 scanners complete")
     return records
 

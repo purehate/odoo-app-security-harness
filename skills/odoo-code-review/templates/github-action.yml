@@ -56,6 +56,7 @@ jobs:
           pipx install pylint
           pipx install pylint-odoo
           pipx install pip-audit
+          pipx install detect-secrets
 
       - name: Install Codex (optional)
         if: ${{ secrets.OPENAI_API_KEY != '' }}
@@ -65,8 +66,53 @@ jobs:
           npm install -g @openai/codex
           echo "CODEX_INSTALLED=1" >> "$GITHUB_ENV"
 
-      - name: Run review (PR scope)
+      - name: Check PR review history
+        id: review-history
         if: github.event_name == 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: .odoo-review-marker
+          key: odoo-review-${{ github.repository_id }}-pr-${{ github.event.pull_request.number }}-${{ github.sha }}
+          restore-keys: |
+            odoo-review-${{ github.repository_id }}-pr-${{ github.event.pull_request.number }}-
+
+      - name: Determine PR review enablement
+        id: review-check
+        if: github.event_name == 'pull_request'
+        env:
+          RUN_EVERY_COMMIT: ${{ vars.ODOO_REVIEW_EVERY_COMMIT }}
+        run: |
+          ENABLE_REVIEW="true"
+          if [ "$RUN_EVERY_COMMIT" != "true" ] && [ -f ".odoo-review-marker/marker.json" ]; then
+            echo "Odoo security review already ran for this PR; set repository variable ODOO_REVIEW_EVERY_COMMIT=true to review every commit."
+            ENABLE_REVIEW="false"
+          fi
+          echo "enable_review=$ENABLE_REVIEW" >> "$GITHUB_OUTPUT"
+
+      - name: Reserve PR review slot
+        if: github.event_name == 'pull_request' && steps.review-check.outputs.enable_review == 'true'
+        run: |
+          mkdir -p .odoo-review-marker
+          cat > .odoo-review-marker/marker.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "repository_id": "${{ github.repository_id }}",
+            "repository": "${{ github.repository }}",
+            "pr_number": ${{ github.event.pull_request.number }},
+            "sha": "${{ github.sha }}",
+            "run_id": "${{ github.run_id }}"
+          }
+          EOF
+
+      - name: Save PR review reservation
+        if: github.event_name == 'pull_request' && steps.review-check.outputs.enable_review == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .odoo-review-marker
+          key: odoo-review-${{ github.repository_id }}-pr-${{ github.event.pull_request.number }}-${{ github.sha }}
+
+      - name: Run review (PR scope)
+        if: github.event_name == 'pull_request' && steps.review-check.outputs.enable_review == 'true'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

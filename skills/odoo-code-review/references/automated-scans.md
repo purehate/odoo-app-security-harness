@@ -14,6 +14,7 @@ Scans run **after** the attack-surface map (Phase 1) and **before** the parallel
 | 3     | CodeQL Python                  | Dataflow / taint analysis                           | Yes       |
 | 4     | Pysa                           | Targeted taint with Odoo-specific models            | Optional  |
 | 4.5   | pip-audit + osv-scanner        | Dependency CVEs (Python + JS assets)                | Yes       |
+| 4.6   | detect-secrets                 | High-entropy secrets and credential patterns        | Yes       |
 
 **Why this stack vs generic AppSec:** Odoo bugs are framework misuse — `auth='public'` + `sudo()`, weak record rules, `t-raw` on user input. Custom Semgrep rules + Bandit + pylint-odoo catch the bulk. CodeQL/Pysa are the heavy artillery for tainted-flow that crosses many call sites. Generic Python AppSec misses the ACL/QWeb/portal class of bugs.
 
@@ -34,9 +35,11 @@ All scan artifacts go under `<OUT>/scans/`. Default `<OUT>` is `<repo>/.audit/` 
 ├── oca-precommit/results.txt
 ├── codeql/results.sarif
 ├── pysa/results.json          # optional
-└── deps/
+├── deps/
     ├── pip-audit.json
     └── osv-scanner.json
+└── secrets/
+    └── detect-secrets.json
 ```
 
 ## Phase 2 — Semgrep
@@ -282,6 +285,24 @@ osv-scanner scan source --recursive \
 
 Output feeds the **#9 Dependency Hunter** as starting evidence — hunter still has to prove reachability through app code.
 
+## Phase 4.6 — Secret Detection
+
+Run `detect-secrets` as a deterministic lead generator:
+
+```bash
+detect-secrets scan --all-files <repo> \
+  > <OUT>/scans/secrets/detect-secrets.json
+```
+
+Secret hits are not final findings by themselves. The hunter/lead reviewer still needs to decide:
+
+- Is the value real, active-looking, and not test/demo data?
+- Is it committed in a module that ships to production?
+- Does it grant access to Odoo admin, database, mail gateway, payment, webhook, API, or cloud resources?
+- Is rotation required, and can the finding cite the affected config/model/data file?
+
+Known-safe placeholders should be moved into project-specific baselines or accepted risks. Do not normalize real secrets into accepted-risk suppressions unless rotation and compensating controls are documented.
+
 ## Feeding scans into hunters (Phase 5)
 
 In Phase 5 dispatch, every hunter prompt includes:
@@ -297,13 +318,14 @@ Pre-computed scan output is available. Use it as a hint, not as truth:
   Pysa JSON (optional): <OUT>/scans/pysa/results.json
   pip-audit JSON:       <OUT>/scans/deps/pip-audit.json
   osv-scanner JSON:     <OUT>/scans/deps/osv-scanner.json
+  detect-secrets JSON:  <OUT>/scans/secrets/detect-secrets.json
 
 Read findings relevant to your technique class. For every scan finding
 you incorporate, you must:
   1. Verify the file:line still matches the live source.
   2. Trace the data flow yourself end-to-end.
   3. Cite the originating rule ID (CodeQL ql, Semgrep rule path, Bandit
-     test ID, ruff code) in your finding's "Notes" field.
+     test ID, ruff code, detect-secrets plugin) in your finding's "Notes" field.
 
 You may also report bugs the scanners missed. The scans are a floor,
 not a ceiling.
@@ -315,5 +337,6 @@ not a ceiling.
 - Reporting CodeQL hits without reading the source.
 - Failing the audit because CodeQL extraction failed — Python is interpreted, `--build-mode=none` always works. If it doesn't, the source tree is broken.
 - Letting `pip-audit` / `osv-scanner` output dominate the report — every CVE needs reachability before it counts.
+- Reporting `detect-secrets` placeholders or generated test credentials without production relevance.
 - Treating ruff / pylint-odoo output as security findings wholesale — most is style, mine for the security-adjacent subset.
 - Running Pysa **and** CodeQL on a 1-day engagement. Pick one. Pysa pays off on bigger repos with custom models.
