@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""Wrapper for odoo-review-validate-config command."""
+from odoo_security_harness.scripts.validate_config import main
+import sys
+
+if __name__ == "__main__":
+    sys.exit(main())

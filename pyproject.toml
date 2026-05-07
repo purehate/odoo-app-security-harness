@@ -1,0 +1,147 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "odoo-app-security-harness"
+version = "1.0.0"
+description = "Claude Code harness for repeatable Odoo source-code security reviews"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "TrustedSec"}
+]
+keywords = ["odoo", "security", "audit", "code-review", "appsec"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Security",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5",
+    "pre-commit>=3.0",
+]
+scanners = [
+    "semgrep>=1.0",
+    "bandit>=1.7",
+    "ruff>=0.1.0",
+    "pylint>=3.0",
+    "pylint-odoo>=8.0",
+    "pip-audit>=2.0",
+]
+
+[project.scripts]
+odoo-review-run = "odoo_security_harness.scripts.odoo_review_run:main"
+odoo-review-export = "odoo_security_harness.scripts.odoo_review_export:main"
+odoo-review-diff = "odoo_security_harness.scripts.odoo_review_diff:main"
+odoo-review-finalize = "odoo_security_harness.scripts.odoo_review_finalize:main"
+odoo-review-runtime = "odoo_security_harness.scripts.odoo_review_runtime:main"
+odoo-review-coverage = "odoo_security_harness.scripts.odoo_review_coverage:main"
+
+[project.urls]
+Homepage = "https://github.com/purehate/odoo-app-security-harness"
+Issues = "https://github.com/purehate/odoo-app-security-harness/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["odoo_security_harness"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--cov=odoo_security_harness",
+    "--cov-report=term-missing",
+    "--cov-report=html:htmlcov",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+]
+
+[tool.black]
+line-length = 120
+target-version = ['py39']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "S",   # bandit
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "S603",  # subprocess-without-shell-equals-true
+    "S607",  # start-process-with-partial-path
+]
+
+[tool.ruff.per-file-ignores]
+"tests/*" = ["S101"]  # assert allowed in tests
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.coverage.run]
+source = ["odoo_security_harness"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
