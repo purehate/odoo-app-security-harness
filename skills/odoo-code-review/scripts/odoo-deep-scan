@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""Wrapper for odoo-deep-scan command."""
+from odoo_security_harness.scripts.odoo_deep_scan import main
+import sys
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,4 +1,6 @@
 rules:
+  # === Authentication & Authorization ===
+
   - id: odoo-public-route-with-sudo
     patterns:
       - pattern: |
@@ -15,7 +17,134 @@ rules:
     languages: [python]
     metadata:
       cwe: "CWE-269"
+      owasp: "A01:2021-Broken Access Control"
       odoo: true
+      hunter: access-control
+
+  - id: odoo-auth-none-route
+    patterns:
+      - pattern: |
+          @http.route(..., auth='none', ...)
+          def $F(...):
+            ...
+      - pattern-not: |
+          @http.route(..., auth='none', ...)
+          def $F(...):
+            ...
+            request.env['res.users'].sudo().check(...)
+            ...
+    message: auth='none' route with no authentication check; verify this is a properly signed webhook or public read-only endpoint.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-287"
+      odoo: true
+      hunter: controller-route
+
+  - id: odoo-with-user-admin-ref
+    pattern-either:
+      - pattern: $ENV.with_user($ENV.ref('base.user_admin'))
+      - pattern: $ENV.with_user($ENV.ref('base.user_root'))
+      - pattern: with_user($ENV.ref('base.user_admin'))
+      - pattern: with_user($ENV.ref('base.user_root'))
+    message: with_user() switches to admin/root context, bypassing record rules. Verify necessity and scope.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-269"
+      odoo: true
+      hunter: access-control
+
+  - id: odoo-sudo-with-user-controlled-domain
+    patterns:
+      - pattern: |
+          $X.sudo().search($DOMAIN)
+      - metavariable-regex:
+          metavariable: $DOMAIN
+          regex: .*\brequest\.(params|jsonrequest)\b.*
+    message: sudo() search with user-controlled domain; cross-tenant data read possible.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-639"
+      odoo: true
+      hunter: orm-sql-domain
+
+  - id: odoo-sudo-on-write-from-route
+    patterns:
+      - pattern-inside: |
+          @http.route(...)
+          def $F(...):
+            ...
+      - pattern-either:
+          - pattern: $X.sudo().write(...)
+          - pattern: $X.sudo().create(...)
+          - pattern: $X.sudo().unlink(...)
+    message: sudo() write/create/unlink reachable from HTTP route; unauthenticated mutation possible.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-269"
+      odoo: true
+      hunter: access-control
+
+  # === CSRF & HTTP Methods ===
+
+  - id: odoo-csrf-disabled-route
+    pattern-either:
+      - pattern: |
+          @http.route(..., csrf=False, ...)
+          def $F(...):
+            ...
+      - pattern: |
+          @http.route(..., csrf=$FALSE, ...)
+          def $F(...):
+            ...
+    message: Odoo route disables CSRF; verify this is a signed webhook or otherwise protected endpoint.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-352"
+      odoo: true
+      hunter: controller-route
+
+  - id: odoo-state-changing-get-route
+    patterns:
+      - pattern: |
+          @http.route(..., methods=['GET'], ...)
+          def $F(...):
+            ...
+            $MODEL.write(...)
+            ...
+    message: GET route performs state-changing write operation; CSRF trivial. Use POST with csrf=True.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-352"
+      odoo: true
+      hunter: controller-route
+
+  - id: odoo-unbounded-methods-route
+    patterns:
+      - pattern: |
+          @http.route(..., type='http', ...)
+          def $F(...):
+            ...
+            $MODEL.write(...)
+            ...
+      - pattern-not: |
+          @http.route(..., methods=[...], ...)
+          def $F(...):
+            ...
+    message: Route accepts any HTTP method and performs writes; verify method restriction.
+    severity: INFO
+    languages: [python]
+    metadata:
+      cwe: "CWE-352"
+      odoo: true
+      hunter: controller-route
+
+  # === SQL Injection ===
 
   - id: odoo-public-route-with-cr-execute
     patterns:
@@ -34,38 +163,7 @@ rules:
     metadata:
       cwe: "CWE-89"
       odoo: true
-
-  - id: odoo-csrf-disabled-route
-    pattern-either:
-      - pattern: |
-          @http.route(..., csrf=False, ...)
-          def $F(...):
-            ...
-      - pattern: |
-          @http.route(..., csrf=$FALSE, ...)
-          def $F(...):
-            ...
-    message: Odoo route disables CSRF; verify this is a signed webhook or otherwise protected endpoint.
-    severity: WARNING
-    languages: [python]
-    metadata:
-      cwe: "CWE-352"
-      odoo: true
-
-  - id: odoo-request-params-to-write
-    pattern-either:
-      - pattern: $MODEL.write(request.params)
-      - pattern: $MODEL.write(request.jsonrequest)
-      - pattern: $MODEL.create(request.params)
-      - pattern: $MODEL.create(request.jsonrequest)
-      - pattern: $MODEL.search(request.params)
-      - pattern: $MODEL.search_read(request.params)
-    message: Request-controlled data flows directly into ORM operation; verify field allowlist and authorization.
-    severity: WARNING
-    languages: [python]
-    metadata:
-      cwe: "CWE-915"
-      odoo: true
+      hunter: orm-sql-domain
 
   - id: odoo-string-built-sql
     pattern-either:
@@ -81,17 +179,87 @@ rules:
     metadata:
       cwe: "CWE-89"
       odoo: true
+      hunter: orm-sql-domain
 
-  - id: odoo-safe-eval
-    pattern-either:
-      - pattern: safe_eval($EXPR, ...)
-      - pattern: tools.safe_eval.safe_eval($EXPR, ...)
-    message: safe_eval is reachable; verify attacker control, globals, and execution context.
+  - id: odoo-cr-execute-user-input
+    patterns:
+      - pattern: |
+          $CR.execute($QUERY, ...)
+      - metavariable-regex:
+          metavariable: $QUERY
+          regex: .*\brequest\.(params|jsonrequest)\b.*
+    message: SQL query contains user input; potential SQL injection.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-89"
+      odoo: true
+      hunter: orm-sql-domain
+
+  - id: odoo-unsafe-order-by
+    patterns:
+      - pattern: |
+          $CR.execute(... $ORDER_BY ..., ...)
+      - metavariable-regex:
+          metavariable: $ORDER_BY
+          regex: .*\b(order|sort)\b.*
+    message: ORDER BY clause may be user-controlled; cannot be parameterized. Verify allowlist.
     severity: WARNING
     languages: [python]
     metadata:
-      cwe: "CWE-94"
+      cwe: "CWE-89"
       odoo: true
+      hunter: orm-sql-domain
+
+  # === Mass Assignment ===
+
+  - id: odoo-request-params-to-write
+    pattern-either:
+      - pattern: $MODEL.write(request.params)
+      - pattern: $MODEL.write(request.jsonrequest)
+      - pattern: $MODEL.create(request.params)
+      - pattern: $MODEL.create(request.jsonrequest)
+      - pattern: $MODEL.search(request.params)
+      - pattern: $MODEL.search_read(request.params)
+    message: Request-controlled data flows directly into ORM operation; verify field allowlist and authorization.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-915"
+      odoo: true
+      hunter: controller-route
+
+  - id: odoo-kwargs-mass-assignment
+    patterns:
+      - pattern: |
+          @http.route(...)
+          def $F(..., **$KW):
+            ...
+            $MODEL.write($KW)
+            ...
+    message: **kwargs passed directly to ORM write/create; mass assignment possible. Use allowlist.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-915"
+      odoo: true
+      hunter: controller-route
+
+  - id: odoo-user-controlled-state-transition
+    patterns:
+      - pattern: |
+          $MODEL.write({'state': request.params['$FIELD']})
+      - pattern: |
+          $MODEL.write({'state': request.jsonrequest['$FIELD']})
+    message: User-controlled state transition; verify workflow authorization.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-840"
+      odoo: true
+      hunter: business-logic
+
+  # === XSS / HTML Injection ===
 
   - id: odoo-html-sanitize-disabled
     pattern: fields.Html(..., sanitize=False, ...)
@@ -101,6 +269,7 @@ rules:
     metadata:
       cwe: "CWE-79"
       odoo: true
+      hunter: qweb-xss
 
   - id: odoo-markup-constructor
     pattern: Markup(...)
@@ -110,6 +279,7 @@ rules:
     metadata:
       cwe: "CWE-79"
       odoo: true
+      hunter: qweb-xss
 
   - id: odoo-qweb-t-raw
     patterns:
@@ -123,3 +293,378 @@ rules:
     metadata:
       cwe: "CWE-79"
       odoo: true
+      hunter: qweb-xss
+
+  - id: odoo-message-post-user-body
+    patterns:
+      - pattern: |
+          $MODEL.message_post(body=request.params['$FIELD'])
+      - pattern: |
+          $MODEL.message_post(body=request.jsonrequest['$FIELD'])
+    message: User-controlled message body posted to chatter; stored XSS via QWeb rendering.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-79"
+      odoo: true
+      hunter: qweb-xss
+
+  - id: odoo-t-att-javascript
+    patterns:
+      - pattern-regex: "t-att-[a-z-]+=\"[^\"]*javascript:"
+    message: QWeb t-att with javascript: URI; XSS sink.
+    severity: ERROR
+    languages: [generic]
+    paths:
+      include:
+        - "*.xml"
+    metadata:
+      cwe: "CWE-79"
+      odoo: true
+      hunter: qweb-xss
+
+  # === safe_eval & Code Execution ===
+
+  - id: odoo-safe-eval
+    pattern-either:
+      - pattern: safe_eval($EXPR, ...)
+      - pattern: tools.safe_eval.safe_eval($EXPR, ...)
+    message: safe_eval is reachable; verify attacker control, globals, and execution context.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-94"
+      odoo: true
+      hunter: business-logic
+
+  - id: odoo-safe-eval-user-input
+    patterns:
+      - pattern: |
+          safe_eval(request.params['$FIELD'], ...)
+      - pattern: |
+          safe_eval(request.jsonrequest['$FIELD'], ...)
+    message: safe_eval with user input; potential code execution.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-94"
+      odoo: true
+      hunter: business-logic
+
+  - id: odoo-literal-eval-user-input
+    patterns:
+      - pattern: |
+          ast.literal_eval(request.params['$FIELD'])
+      - pattern: |
+          ast.literal_eval(request.jsonrequest['$FIELD'])
+    message: literal_eval on user input for domain/field parsing; verify it's actually a literal.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-94"
+      odoo: true
+      hunter: business-logic
+
+  # === Data Exposure ===
+
+  - id: odoo-public-route-wide-search
+    patterns:
+      - pattern: |
+          @http.route(..., auth=$AUTH, ...)
+          def $F(...):
+            ...
+            $X.sudo().search([])
+            ...
+      - metavariable-regex:
+          metavariable: $AUTH
+          regex: ^['"](public|none)['"]$
+    message: Public/none route with sudo().search([]); full table dump possible.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-200"
+      odoo: true
+      hunter: data-exposure
+
+  - id: odoo-public-route-search-read-all
+    patterns:
+      - pattern: |
+          @http.route(..., auth=$AUTH, ...)
+          def $F(...):
+            ...
+            $X.search_read([], ...)
+            ...
+      - metavariable-regex:
+          metavariable: $AUTH
+          regex: ^['"](public|none)['"]$
+    message: Public/none route with search_read([]); explicit field projection may leak sensitive data.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-200"
+      odoo: true
+      hunter: data-exposure
+
+  - id: odoo-attachment-public-true
+    patterns:
+      - pattern: |
+          $ENV['ir.attachment'].create({'public': True, ...})
+      - pattern: |
+          $ENV['ir.attachment'].sudo().create({'public': True, ...})
+    message: Attachment created with public=True; verify the content should be publicly accessible.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-200"
+      odoo: true
+      hunter: data-exposure
+
+  - id: odoo-attachment-user-mimetype
+    patterns:
+      - pattern: |
+          $ENV['ir.attachment'].create({'mimetype': request.params['$FIELD'], ...})
+    message: User-controlled mimetype on attachment; MIME confusion attack possible.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-200"
+      odoo: true
+      hunter: data-exposure
+
+  # === Secrets & Config ===
+
+  - id: odoo-config-param-set-from-route
+    patterns:
+      - pattern: |
+          @http.route(...)
+          def $F(...):
+            ...
+            $ENV['ir.config_parameter'].set_param(...)
+            ...
+    message: Controller writes system configuration parameter; verify authorization.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-15"
+      odoo: true
+      hunter: secrets-config
+
+  - id: odoo-hardcoded-secret
+    pattern-either:
+      - pattern-regex: "(password|secret|token|api_key)\s*=\s*['\"][^'\"]{8,}['\"]"
+      - pattern-regex: "admin_passwd\s*=\s*['\"][^'\"]+['\"]"
+    message: Potential hardcoded secret; verify this is not a production credential.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-798"
+      odoo: true
+      hunter: secrets-config
+
+  # === Multi-Company ===
+
+  - id: odoo-missing-check-company
+    patterns:
+      - pattern: |
+          class $MODEL(models.Model):
+            ...
+            company_id = fields.Many2one('res.company', ...)
+            ...
+      - pattern-not: |
+          class $MODEL(models.Model):
+            ...
+            _check_company_auto = True
+            ...
+      - pattern-not: |
+          class $MODEL(models.Model):
+            ...
+            _check_company = True
+            ...
+    message: Model has company_id but no _check_company_auto=True; cross-company data access possible.
+    severity: INFO
+    languages: [python]
+    metadata:
+      cwe: "CWE-284"
+      odoo: true
+      hunter: access-control
+
+  - id: odoo-with-company-user-input
+    patterns:
+      - pattern: |
+          $X.with_company(request.params['$FIELD'])
+      - pattern: |
+          $X.with_company(request.jsonrequest['$FIELD'])
+    message: User-controlled company context switch; verify user is in company_ids.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-284"
+      odoo: true
+      hunter: access-control
+
+  # === Portal & IDOR ===
+
+  - id: odoo-portal-idor-browse
+    patterns:
+      - pattern: |
+          @http.route('/my/...')
+          def $F(..., $ID, ...):
+            ...
+            $RECORD = $ENV['$MODEL'].browse(int($ID))
+            ...
+      - pattern-not-inside: |
+          @http.route('/my/...')
+          def $F(..., $ID, ...):
+            ...
+            _document_check_access(...)
+            ...
+    message: Portal route browses record by ID without _document_check_access; IDOR possible.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-639"
+      odoo: true
+      hunter: data-exposure
+
+  - id: odoo-access-token-weak
+    pattern-regex: "access_token\s*=\s*(uuid\.uuid4\(\)|str\(random\.|secrets\.token_urlsafe)"
+    message: Weak access token generation; verify sufficient entropy (use secrets.token_urlsafe with 32+ bytes).
+    severity: INFO
+    languages: [python]
+    metadata:
+      cwe: "CWE-330"
+      odoo: true
+      hunter: data-exposure
+
+  # === External Integration ===
+
+  - id: odoo-ssrf-outbound-request
+    patterns:
+      - pattern: |
+          requests.get($URL, ...)
+      - metavariable-regex:
+          metavariable: $URL
+          regex: .*\brequest\.(params|jsonrequest)\b.*
+    message: User-controlled URL in outbound request; SSRF possible. Validate URL scheme and host.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-918"
+      odoo: true
+      hunter: external-integration
+
+  - id: odoo-webhook-no-signature
+    patterns:
+      - pattern: |
+          @http.route(..., auth='none', ...)
+          def $F(...):
+            ...
+            $MODEL.write(...)
+            ...
+      - pattern-not: |
+          @http.route(..., auth='none', ...)
+          def $F(...):
+            ...
+            if not verify_signature(...):
+              ...
+            ...
+    message: Unauthenticated webhook route performs writes without signature verification.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-306"
+      odoo: true
+      hunter: external-integration
+
+  # === Cron & Server Actions ===
+
+  - id: odoo-cron-user-root
+    patterns:
+      - pattern: |
+          <record ... model="ir.cron">
+            ...
+            <field name="user_id" ref="base.user_root"/>
+            ...
+            <field name="state">code</field>
+            ...
+          </record>
+    message: Cron job runs as root user with code state; verify it doesn't process user-controlled data.
+    severity: INFO
+    languages: [xml]
+    metadata:
+      cwe: "CWE-250"
+      odoo: true
+      hunter: business-logic
+
+  - id: odoo-server-action-code-reachable
+    patterns:
+      - pattern: |
+          <record ... model="ir.actions.server">
+            ...
+            <field name="state">code</field>
+            ...
+          </record>
+    message: Server action with code state; verify it's not reachable by low-privilege users.
+    severity: INFO
+    languages: [xml]
+    metadata:
+      cwe: "CWE-94"
+      odoo: true
+      hunter: business-logic
+
+  # === Record Rules ===
+
+  - id: odoo-record-rule-universal-pass
+    patterns:
+      - pattern: |
+          <record ... model="ir.rule">
+            ...
+            <field name="domain_force">[(1, '=', 1)]</field>
+            ...
+          </record>
+    message: Record rule with universal pass domain [(1,'=',1)]; all records accessible to rule's groups.
+    severity: WARNING
+    languages: [xml]
+    metadata:
+      cwe: "CWE-284"
+      odoo: true
+      hunter: access-control
+
+  - id: odoo-record-rule-no-groups
+    patterns:
+      - pattern: |
+          <record ... model="ir.rule">
+            ...
+            <field name="domain_force">...</field>
+            ...
+          </record>
+      - pattern-not: |
+          <record ... model="ir.rule">
+            ...
+            <field name="groups" .../>
+            ...
+          </record>
+    message: Record rule without groups applies to everyone including portal/public users.
+    severity: INFO
+    languages: [xml]
+    metadata:
+      cwe: "CWE-284"
+      odoo: true
+      hunter: access-control
+
+  # === Performance / DoS ===
+
+  - id: odoo-unbounded-search-read-group
+    patterns:
+      - pattern: |
+          $MODEL.read_group($DOMAIN, $FIELDS, $GROUPBY)
+      - metavariable-regex:
+          metavariable: $DOMAIN
+          regex: "^\\[\\]$"
+    message: read_group with empty domain on potentially large table; unbounded result set.
+    severity: INFO
+    languages: [python]
+    metadata:
+      cwe: "CWE-400"
+      odoo: true
+      hunter: business-logic

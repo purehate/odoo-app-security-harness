@@ -9,6 +9,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Import Odoo-specific analyzers
+from odoo_security_harness.access_control import analyze_access_control
+from odoo_security_harness.analyzer import analyze_directory, analyze_file
+from odoo_security_harness.multi_company import check_multi_company_isolation
+from odoo_security_harness.poc_generator import generate_pocs
+from odoo_security_harness.qweb_scanner import scan_qweb_templates
+
+__all__ = [
+    "analyze_access_control",
+    "analyze_directory",
+    "analyze_file",
+    "check_multi_company_isolation",
+    "generate_pocs",
+    "scan_qweb_templates",
+]
+
 # Configure logging
 logger = logging.getLogger("odoo_security_harness")
 
