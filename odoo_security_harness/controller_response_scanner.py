@@ -413,6 +413,17 @@ class ControllerResponseScanner(ast.NodeVisitor):
             )
         if header_name.lower() != "access-control-allow-origin":
             return
+        if self._expr_is_tainted(value):
+            route = self._current_route()
+            self._add(
+                "odoo-controller-cors-reflected-origin",
+                "Controller reflects request origin into CORS header",
+                "high" if route.auth in {"public", "none"} else "medium",
+                line,
+                "Controller reflects a request-derived Origin into Access-Control-Allow-Origin; require an explicit trusted-origin allowlist before enabling cross-origin reads",
+                sink,
+            )
+            return
         if _constant_string(value, self._effective_constants()).strip() != "*":
             return
         route = self._current_route()

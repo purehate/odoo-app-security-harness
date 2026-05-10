@@ -3757,9 +3757,12 @@ _TAXONOMY_SHAPE_HINTS = (
         "controller_cors_wildcard_origin",
         (
             "controller-cors-wildcard-origin",
+            "controller-cors-reflected-origin",
             "controller response allows any cors origin",
+            "controller reflects request origin into cors header",
             "controller allows wildcard cors origin",
             "access-control-allow-origin: *",
+            "request-derived origin into access-control-allow-origin",
             "cross-origin reads are intended",
             "private data cannot be exposed",
         ),

@@ -1451,6 +1451,58 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-controller-cors-wildcard-origin" and f.severity == "high" for f in findings)
 
 
+def test_flags_public_reflected_origin_cors_header(tmp_path: Path) -> None:
+    """Public controllers should not reflect arbitrary request origins into CORS."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/api', auth='public')
+    def export(self):
+        origin = request.httprequest.headers.get('Origin')
+        response = request.make_response('ok')
+        response.headers['Access-Control-Allow-Origin'] = origin
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(f.rule_id == "odoo-controller-cors-reflected-origin" and f.severity == "high" for f in findings)
+
+
+def test_flags_user_reflected_origin_cors_header_from_response_factory(tmp_path: Path) -> None:
+    """Response factory headers should receive reflected-origin CORS review too."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/api', auth='user')
+    def export(self):
+        return request.make_response('ok', headers={'Access-Control-Allow-Origin': request.params.get('origin')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-cors-reflected-origin"
+        and f.severity == "medium"
+        and f.sink == "request.make_response"
+        for f in findings
+    )
+
+
 def test_constant_alias_public_wildcard_cors_header_from_response_factory(tmp_path: Path) -> None:
     """Constant-backed header names and values should not hide wildcard CORS."""
     controllers = tmp_path / "module" / "controllers"

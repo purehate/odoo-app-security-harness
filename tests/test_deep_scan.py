@@ -6554,7 +6554,7 @@ def test_taxonomy_coverage_classifies_controller_open_redirect() -> None:
 
 
 def test_taxonomy_coverage_classifies_controller_cors_wildcard_origin() -> None:
-    """Wildcard CORS response headers should not map through generic access-control hints."""
+    """Permissive CORS response headers should not map through generic access-control hints."""
     coverage = odoo_deep_scan._taxonomy_coverage(
         [
             {
@@ -6562,13 +6562,19 @@ def test_taxonomy_coverage_classifies_controller_cors_wildcard_origin() -> None:
                 "rule_id": "odoo-controller-cors-wildcard-origin",
                 "title": "Controller response allows any CORS origin",
                 "message": "Controller sets Access-Control-Allow-Origin: *; verify cross-origin reads are intended and credentials, tokens, or private data cannot be exposed",
-            }
+            },
+            {
+                "source": "controller-responses",
+                "rule_id": "odoo-controller-cors-reflected-origin",
+                "title": "Controller reflects request origin into CORS header",
+                "message": "Controller reflects a request-derived Origin into Access-Control-Allow-Origin; require an explicit trusted-origin allowlist before enabling cross-origin reads",
+            },
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "controller_cors_wildcard_origin"
-    assert "CWE-942" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"controller_cors_wildcard_origin"}
+    assert all("CWE-942" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_controller_response_header_injection() -> None:
@@ -7814,6 +7820,7 @@ class TestController(http.Controller):
         response = request.make_response({'access_token': kwargs.get('token')})
         response.headers['Cache-Control'] = 'public, max-age=3600'
         response.headers.update({'X-Trace': kwargs.get('trace')})
+        response.headers['Access-Control-Allow-Origin'] = request.httprequest.headers.get('Origin')
         response.headers['X-Accel-Redirect'] = kwargs.get('path')
         response.set_cookie('session_token', kwargs.get('token'))
         return response
@@ -8813,6 +8820,7 @@ msgstr "<a href=\\"javascript:alert(1)\\">Ouvrir %(name)s</a>"
     assert "odoo-mail-alias-public-sensitive-model" in rule_ids
     assert "odoo-mail-alias-broad-contact-policy" in rule_ids
     assert "odoo-controller-open-redirect" in rule_ids
+    assert "odoo-controller-cors-reflected-origin" in rule_ids
     assert "odoo-controller-tainted-file-read" in rule_ids
     assert sum(1 for finding in findings if finding["rule_id"] == "odoo-controller-tainted-file-read") >= 2
     assert "odoo-controller-tainted-file-offload-header" in rule_ids
