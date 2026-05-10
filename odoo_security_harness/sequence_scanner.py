@@ -84,6 +84,7 @@ class SequenceScanner(ast.NodeVisitor):
         self.route_names: set[str] = {"route"}
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_python_file(self) -> list[SequenceFinding]:
         """Scan Python code for sequence use."""
@@ -117,7 +118,7 @@ class SequenceScanner(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
         previous_sequence_vars = set(self.sequence_vars)
-        route = _route_info(node, self.constants, self.route_names) or RouteContext(is_route=False)
+        route = _route_info(node, self._effective_constants(), self.route_names) or RouteContext(is_route=False)
         self.route_stack.append(route)
 
         for arg in [*node.args.args, *node.args.kwonlyargs]:
@@ -135,6 +136,11 @@ class SequenceScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo.http":
@@ -173,16 +179,19 @@ class SequenceScanner(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
         method = sink.rsplit(".", 1)[-1]
+        constants = self._effective_constants()
         if method in {"next_by_code", "next_by_id"} and _is_ir_sequence_expr(
-            node.func, self.sequence_vars, self.constants
+            node.func, self.sequence_vars, constants
         ):
-            self._scan_sequence_call(node, sink, method)
+            self._scan_sequence_call(node, sink, method, constants)
         self.generic_visit(node)
 
-    def _scan_sequence_call(self, node: ast.Call, sink: str, method: str) -> None:
+    def _scan_sequence_call(
+        self, node: ast.Call, sink: str, method: str, constants: dict[str, ast.AST]
+    ) -> None:
         route = self._current_route()
         code_node = node.args[0] if node.args and method == "next_by_code" else _keyword_value(node, "sequence_code")
-        code = _literal_string(code_node, self.constants)
+        code = _literal_string(code_node, constants)
 
         if route.auth in {"public", "none"}:
             self._add(
@@ -338,7 +347,7 @@ class SequenceScanner(ast.NodeVisitor):
                 self._mark_sequence_target(target_element, value_element)
             return
 
-        is_sequence = _is_ir_sequence_expr(value, self.sequence_vars, self.constants)
+        is_sequence = _is_ir_sequence_expr(value, self.sequence_vars, self._effective_constants())
         for name in _target_names(target):
             if is_sequence:
                 self.sequence_vars.add(name)
@@ -362,6 +371,14 @@ class SequenceScanner(ast.NodeVisitor):
 
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _add(
         self,
@@ -469,8 +486,12 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

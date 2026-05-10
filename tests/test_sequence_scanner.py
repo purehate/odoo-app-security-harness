@@ -183,6 +183,99 @@ class Invite(http.Controller):
     assert any(f.rule_id == "odoo-sequence-sensitive-code-use" for f in findings)
 
 
+def test_class_constant_backed_public_route_sensitive_sequence_use(tmp_path: Path) -> None:
+    """Class-scoped route constants should not hide public sequence issuance."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "invite.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Invite(http.Controller):
+    INVITE_ROUTE = '/invite/code'
+    INVITE_AUTH = 'public'
+
+    @http.route(INVITE_ROUTE, auth=INVITE_AUTH)
+    def code(self):
+        return request.env['ir.sequence'].next_by_code('access.token.sequence')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-sequence-public-route-next"
+        and f.severity == "high"
+        and f.route == "/invite/code"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-sequence-sensitive-code-use" for f in findings)
+
+
+def test_class_constant_static_unpack_public_route_sensitive_sequence_use(tmp_path: Path) -> None:
+    """Class-scoped static **route options should preserve public route context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "invite.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Invite(http.Controller):
+    INVITE_ROUTE = '/invite/code'
+    INVITE_OPTIONS = {'routes': [INVITE_ROUTE], 'auth': 'public'}
+
+    @http.route(**INVITE_OPTIONS)
+    def code(self):
+        return request.env['ir.sequence'].next_by_code('access.token.sequence')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-sequence-public-route-next"
+        and f.severity == "high"
+        and f.route == "/invite/code"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-sequence-sensitive-code-use" for f in findings)
+
+
+def test_class_constant_model_and_code_aliases_sensitive_sequence_use(tmp_path: Path) -> None:
+    """Class-scoped model and code constants should resolve inside sequence calls."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "invite.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Invite(http.Controller):
+    SEQUENCE_MODEL = 'ir.sequence'
+    MODEL_ALIAS = SEQUENCE_MODEL
+    TOKEN_CODE = 'access.token.sequence'
+    CODE_ALIAS = TOKEN_CODE
+
+    @http.route('/invite/code', auth='user')
+    def code(self):
+        sequence = request.env[MODEL_ALIAS]
+        return sequence.next_by_code(CODE_ALIAS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-sequence-sensitive-code-use" and f.code == "access.token.sequence"
+        for f in findings
+    )
+
+
 def test_keyword_constant_backed_none_route_sequence_use_is_critical(tmp_path: Path) -> None:
     """Keyword route constants with auth='none' should keep sequence issuance critical."""
     controllers = tmp_path / "module" / "controllers"
