@@ -268,6 +268,58 @@ class Controller(http.Controller):
     )
 
 
+def test_class_constant_alias_reset_model_token_fields_and_superuser_are_reported(tmp_path: Path) -> None:
+    """Class-scoped model names, token fields, route metadata, and superusers should resolve."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+from odoo import SUPERUSER_ID, http
+from odoo.http import request
+
+class Controller(http.Controller):
+    BASE_ROUTE = '/web/reset_password'
+    RESET_ROUTE = BASE_ROUTE
+    RESET_ROUTES = [RESET_ROUTE]
+    PUBLIC_AUTH = 'public'
+    RESET_AUTH = PUBLIC_AUTH
+    PARTNER_BASE = 'res.partner'
+    PARTNER_MODEL = PARTNER_BASE
+    USER_BASE = 'res.users'
+    USER_MODEL = USER_BASE
+    TOKEN_BASE = 'signup_token'
+    TOKEN_FIELD = TOKEN_BASE
+    PASSWORD_BASE = 'password'
+    PASSWORD_FIELD = PASSWORD_BASE
+    ROOT = SUPERUSER_ID
+
+    @http.route(RESET_ROUTES, auth=RESET_AUTH, csrf=False)
+    def reset_password(self, **kwargs):
+        Partners = request.env[PARTNER_MODEL].with_user(ROOT)
+        Users = request.env[USER_MODEL].sudo()
+        token = kwargs.get('token')
+        Partners.search([(TOKEN_FIELD, '=', token)], limit=1)
+        return Users.write({TOKEN_FIELD: token, PASSWORD_FIELD: kwargs.get('password')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-signup-public-token-route" in rule_ids
+    assert "odoo-signup-tainted-token-lookup" in rule_ids
+    assert "odoo-signup-token-lookup-without-expiry" in rule_ids
+    assert "odoo-signup-tainted-identity-token-write" in rule_ids
+    assert "odoo-signup-public-sudo-identity-flow" in rule_ids
+    assert any(
+        f.rule_id == "odoo-signup-tainted-token-lookup"
+        and f.severity == "critical"
+        and f.route == "/web/reset_password"
+        for f in findings
+    )
+
+
 def test_keyword_constant_backed_none_reset_token_write_is_critical(tmp_path: Path) -> None:
     """Keyword route constants with auth='none' should keep reset token writes critical."""
     controllers = tmp_path / "module" / "controllers"

@@ -84,6 +84,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         self.token_mutation_names: set[str] = set()
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.route_decorator_names: set[str] = {"route"}
 
     def scan_file(self) -> list[SignupTokenFinding]:
@@ -109,13 +110,20 @@ class SignupTokenScanner(ast.NodeVisitor):
                     self.route_decorator_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
         previous_identity_model_names = set(self.identity_model_names)
         previous_identity_record_names = set(self.identity_record_names)
         previous_elevated_identity_names = set(self.elevated_identity_names)
         previous_token_mutation_names = set(self.token_mutation_names)
-        route = _route_info(node, self.path, self.constants, self.route_decorator_names) or RouteContext(is_route=False)
+        route = _route_info(node, self.path, self._effective_constants(), self.route_decorator_names) or RouteContext(
+            is_route=False
+        )
         self.route_stack.append(route)
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in TAINTED_ARG_NAMES or (route.is_route and _looks_route_id_arg(arg.arg)):
@@ -248,7 +256,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         if _is_token_lookup(
             node,
             self.identity_model_names,
-            self.constants,
+            self._effective_constants(),
         ) and _call_has_tainted_input(node, self._expr_is_tainted):
             self._add(
                 "odoo-signup-tainted-token-lookup",
@@ -263,7 +271,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         if _is_signup_token_lookup_without_expiry(
             node,
             self.identity_model_names,
-            self.constants,
+            self._effective_constants(),
         ) and _call_has_tainted_input(
             node,
             self._expr_is_tainted,
@@ -279,7 +287,7 @@ class SignupTokenScanner(ast.NodeVisitor):
             )
 
         if _is_identity_token_mutation(
-            node, self.identity_model_names, self.token_mutation_names, self.constants
+            node, self.identity_model_names, self.token_mutation_names, self._effective_constants()
         ) and _call_has_tainted_input(node, self._expr_is_tainted):
             self._add(
                 "odoo-signup-tainted-identity-token-write",
@@ -297,7 +305,7 @@ class SignupTokenScanner(ast.NodeVisitor):
                 node,
                 self.identity_model_names,
                 self.elevated_identity_names,
-                self.constants,
+                self._effective_constants(),
             )
             and (_is_signup_context(node) or _is_signup_route(route, ""))
         ):
@@ -315,7 +323,9 @@ class SignupTokenScanner(ast.NodeVisitor):
 
     def visit_Return(self, node: ast.Return) -> Any:
         route = self._current_route()
-        if route.is_public and node.value is not None and _expr_mentions_token_field(node.value, self.constants):
+        if route.is_public and node.value is not None and _expr_mentions_token_field(
+            node.value, self._effective_constants()
+        ):
             self._add(
                 "odoo-signup-token-exposed",
                 "Signup/reset token exposed from public route",
@@ -423,7 +433,7 @@ class SignupTokenScanner(ast.NodeVisitor):
             self._mark_identity_model_target(target.value, value, identity_model_names)
             return
 
-        if _is_identity_model_expr(value, identity_model_names, self.constants):
+        if _is_identity_model_expr(value, identity_model_names, self._effective_constants()):
             self._mark_name_target(target, self.identity_model_names)
         else:
             self._discard_name_target(target, self.identity_model_names)
@@ -454,7 +464,9 @@ class SignupTokenScanner(ast.NodeVisitor):
             )
             return
 
-        if _is_identity_record_expr(value, identity_model_names, identity_record_names, self.constants):
+        if _is_identity_record_expr(
+            value, identity_model_names, identity_record_names, self._effective_constants()
+        ):
             self._mark_name_target(target, self.identity_record_names)
         else:
             self._discard_name_target(target, self.identity_record_names)
@@ -480,7 +492,9 @@ class SignupTokenScanner(ast.NodeVisitor):
             self._mark_elevated_identity_target(target.value, value, identity_model_names, elevated_identity_names)
             return
 
-        if _is_elevated_identity_expr(value, identity_model_names, elevated_identity_names, self.constants):
+        if _is_elevated_identity_expr(
+            value, identity_model_names, elevated_identity_names, self._effective_constants()
+        ):
             self._mark_name_target(target, self.elevated_identity_names)
         else:
             self._discard_name_target(target, self.elevated_identity_names)
@@ -500,7 +514,7 @@ class SignupTokenScanner(ast.NodeVisitor):
             self._mark_token_mutation_target(target.value, value, token_mutation_names)
             return
 
-        if _expr_mentions_token_mutation(value, token_mutation_names, self.constants):
+        if _expr_mentions_token_mutation(value, token_mutation_names, self._effective_constants()):
             self._mark_name_target(target, self.token_mutation_names)
         else:
             self._discard_name_target(target, self.token_mutation_names)
@@ -530,7 +544,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         if not _is_identity_token_assignment(
             target,
             self.identity_record_names,
-            self.constants,
+            self._effective_constants(),
         ) or not self._expr_is_tainted(value):
             return
         route = self._current_route()
@@ -545,7 +559,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         )
 
     def _track_token_dict_subscript_assignment(self, target: ast.AST, value: ast.AST) -> None:
-        if not _is_token_dict_subscript(target, self.constants):
+        if not _is_token_dict_subscript(target, self._effective_constants()):
             return
         root_name = _call_root_name(target)
         if not root_name:
@@ -570,6 +584,14 @@ class SignupTokenScanner(ast.NodeVisitor):
 
     def _is_request_derived(self, node: ast.AST) -> bool:
         return _is_request_derived(node, self.request_names)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 @dataclass
@@ -670,8 +692,12 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
