@@ -151,6 +151,9 @@ class QWebScanner:
         if tag.lower() == "link":
             self._check_external_stylesheet_integrity(element, tag)
 
+        if tag.lower() == "meta":
+            self._check_meta_refresh_redirect(element, tag)
+
         if tag.lower() == "iframe":
             self._check_iframe_sandbox(element, tag)
 
@@ -507,6 +510,20 @@ class QWebScanner:
         """Return True for URL literals that execute script/HTML or expose local files."""
         return bool(self.DANGEROUS_URL_SCHEME_RE.search(value) or self.DANGEROUS_URL_SCHEME_LITERAL_RE.search(value))
 
+    def _has_dangerous_meta_refresh_url(self, value: str) -> bool:
+        """Return True when a meta refresh URL uses an executable/local scheme."""
+        return bool(
+            re.search(
+                r"\burl\s*=\s*(?:javascript:|vbscript:|file:|data:(?:text/html|application/(?:javascript|xhtml\+xml)))",
+                value,
+                re.IGNORECASE,
+            )
+        )
+
+    def _looks_dynamic_meta_refresh(self, value: str) -> bool:
+        """Return True when meta refresh content redirects to a dynamic target."""
+        return bool(re.search(r"\burl\s*=", value, re.IGNORECASE) and self.URL_DYNAMIC_MARKER_RE.search(value))
+
     def _check_sensitive_url_token(self, tag: str, attr: str, value: str) -> None:
         """Check URL-bearing QWeb attributes for token/secret-like parameters."""
         if not self._looks_sensitive_url_token(value):
@@ -667,6 +684,28 @@ class QWebScanner:
             message="QWeb template loads an external stylesheet without an integrity attribute; pin third-party CSS with SRI or serve reviewed styles from trusted bundles",
         )
 
+    def _check_meta_refresh_redirect(self, element: ElementTree.Element, tag: str) -> None:
+        """Check meta refresh redirects for dynamic or executable URL targets."""
+        if _xml_attr(element, "http-equiv").strip().lower() != "refresh":
+            return
+        for attr in ("content", "t-att-content", "t-attf-content"):
+            value = _xml_attr(element, attr)
+            if not value:
+                continue
+            dangerous = self._has_dangerous_meta_refresh_url(value)
+            if not dangerous and not self._looks_dynamic_meta_refresh(value):
+                continue
+            self._add_finding(
+                rule_id="odoo-qweb-meta-refresh-redirect",
+                title="QWeb meta refresh uses dynamic redirect target",
+                severity="high" if dangerous else "medium",
+                element=tag,
+                attribute=attr,
+                message=f"{attr}='{value}' creates a client-side redirect with a dynamic target; restrict meta refresh redirects to local paths or reviewed allowlists",
+            )
+            self._check_sensitive_url_token(tag, attr, value)
+            return
+
     def _regex_scan(self, content: str) -> list[QWebFinding]:
         """Fallback regex-based scanning for malformed XML."""
         findings: list[QWebFinding] = []
@@ -751,6 +790,45 @@ class QWebScanner:
                     message="QWeb link uses target='_blank' without rel='noopener' or rel='noreferrer'",
                 )
             )
+
+        # Find meta refresh redirects with dynamic or executable targets.
+        for match in re.finditer(r"<meta\b(?P<attrs>[^>]*)>", content, re.IGNORECASE):
+            attrs = match.group("attrs")
+            if not re.search(r"\bhttp-equiv\s*=\s*['\"]refresh['\"]", attrs, re.IGNORECASE):
+                continue
+            content_match = re.search(r"\b(?P<attr>t-attf?-content|content)\s*=\s*([\"'])(?P<value>.*?)\2", attrs)
+            if not content_match:
+                continue
+            value = content_match.group("value")
+            dangerous = self._has_dangerous_meta_refresh_url(value)
+            if not dangerous and not self._looks_dynamic_meta_refresh(value):
+                continue
+            line = content[: match.start()].count("\n") + 1
+            findings.append(
+                QWebFinding(
+                    rule_id="odoo-qweb-meta-refresh-redirect",
+                    title="QWeb meta refresh uses dynamic redirect target",
+                    severity="high" if dangerous else "medium",
+                    file=self.file_path,
+                    line=line,
+                    element="meta",
+                    attribute=content_match.group("attr"),
+                    message=f"{content_match.group('attr')} creates a client-side redirect with a dynamic target; restrict meta refresh redirects to local paths or reviewed allowlists",
+                )
+            )
+            if self._looks_sensitive_url_token(value):
+                findings.append(
+                    QWebFinding(
+                        rule_id="odoo-qweb-sensitive-url-token",
+                        title="QWeb URL exposes sensitive-looking parameter",
+                        severity="medium",
+                        file=self.file_path,
+                        line=line,
+                        element="meta",
+                        attribute=content_match.group("attr"),
+                        message=f"{content_match.group('attr')} places token, secret, password, or API-key-like data in a URL; verify it cannot leak through logs, referrers, browser history, or shared links",
+                    )
+                )
 
         # Find iframes without sandbox containment.
         for match in re.finditer(r"<iframe\b(?P<attrs>[^>]*)>", content, re.IGNORECASE):

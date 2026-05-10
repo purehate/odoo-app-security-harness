@@ -206,6 +206,46 @@ def test_target_blank_with_noopener_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-qweb-target-blank-no-noopener" for f in findings)
 
 
+def test_detects_dynamic_meta_refresh_redirect(tmp_path: Path) -> None:
+    """Meta refresh redirects can become client-side open redirects."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><meta http-equiv="refresh" t-attf-content="0; url=#{request.params.get('next')}"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-meta-refresh-redirect" and f.severity == "medium" for f in findings)
+
+
+def test_detects_sensitive_meta_refresh_url(tmp_path: Path) -> None:
+    """Token-bearing meta refresh URLs should get the sensitive URL finding too."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><meta http-equiv="refresh" t-attf-content="0; url=/portal?access_token=#{record.access_token}"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-meta-refresh-redirect" for f in findings)
+    assert any(f.rule_id == "odoo-qweb-sensitive-url-token" and f.attribute == "t-attf-content" for f in findings)
+
+
+def test_static_local_meta_refresh_ignored(tmp_path: Path) -> None:
+    """Static local meta refresh targets are reviewed template source."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><meta http-equiv="refresh" content="0; url=/web"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-meta-refresh-redirect" for f in findings)
+
+
 def test_detects_iframe_missing_sandbox(tmp_path: Path) -> None:
     """Embedded frames should be sandboxed unless fully trusted."""
     template = tmp_path / "template.xml"

@@ -1167,6 +1167,24 @@ def test_taxonomy_coverage_classifies_web_client_side_redirect() -> None:
     assert "CWE-601" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_qweb_meta_refresh_redirect() -> None:
+    """QWeb meta refresh redirects should map to open redirect taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-qweb-meta-refresh-redirect",
+                "source": "qweb",
+                "title": "QWeb meta refresh uses dynamic redirect target",
+                "message": "content creates a client-side redirect with a dynamic target",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "open_redirect_portal"
+    assert "CWE-601" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_frontend_prototype_pollution() -> None:
     """Prototype pollution frontend leads should carry explicit taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(
