@@ -422,6 +422,17 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 f"Controller sets a Content-Security-Policy with {weak_csp_reason}; tighten script/style sources before relying on CSP to limit XSS impact",
                 sink,
             )
+        weak_frame_options = _weak_x_frame_options_value(lowered_header, value, self._effective_constants())
+        if weak_frame_options:
+            route = self._current_route()
+            self._add(
+                "odoo-controller-weak-frame-options",
+                "Controller sets weak X-Frame-Options",
+                "medium" if route.auth in {"public", "none"} else "low",
+                line,
+                f"Controller sets X-Frame-Options to {weak_frame_options!r}; use DENY/SAMEORIGIN or CSP frame-ancestors to reduce clickjacking exposure",
+                sink,
+            )
         if lowered_header == "access-control-allow-credentials" and _truthy_header_value(
             value, self._effective_constants()
         ):
@@ -1006,6 +1017,17 @@ def _weak_csp_reason(header_name: str, value: ast.AST, constants: dict[str, ast.
         if token in csp
     ]
     return " and ".join(weaknesses)
+
+
+def _weak_x_frame_options_value(header_name: str, value: ast.AST, constants: dict[str, ast.AST]) -> str:
+    if header_name != "x-frame-options":
+        return ""
+    frame_options = _constant_string(value, constants).strip()
+    if not frame_options:
+        return ""
+    if frame_options.lower() in {"deny", "sameorigin"}:
+        return ""
+    return frame_options
 
 
 def _cookie_name_node(node: ast.Call) -> ast.AST | None:

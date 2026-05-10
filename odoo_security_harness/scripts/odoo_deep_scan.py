@@ -3800,6 +3800,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "controller_weak_frame_options",
+        (
+            "odoo-controller-weak-frame-options",
+            "controller sets weak x-frame-options",
+            "use deny/sameorigin or csp frame-ancestors",
+            "clickjacking exposure",
+        ),
+    ),
+    (
         "controller_tainted_html_response",
         (
             "controller-tainted-html-response",

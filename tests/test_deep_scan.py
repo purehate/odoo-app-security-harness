@@ -6631,6 +6631,24 @@ def test_taxonomy_coverage_classifies_controller_weak_csp_header() -> None:
     assert "CWE-693" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_controller_weak_frame_options() -> None:
+    """Weak frame options should map to clickjacking taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "source": "controller-responses",
+                "rule_id": "odoo-controller-weak-frame-options",
+                "title": "Controller sets weak X-Frame-Options",
+                "message": "Controller sets X-Frame-Options to 'ALLOW-FROM https://partner.example'; use DENY/SAMEORIGIN or CSP frame-ancestors to reduce clickjacking exposure",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "controller_weak_frame_options"
+    assert "CWE-1021" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_controller_tainted_html_response() -> None:
     """Request-derived HTML responses should map to XSS taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(
@@ -7859,6 +7877,7 @@ class TestController(http.Controller):
         response.headers['Access-Control-Allow-Origin'] = request.httprequest.headers.get('Origin')
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'unsafe-inline'"
+        response.headers['X-Frame-Options'] = 'ALLOW-FROM https://partner.example'
         response.headers['X-Accel-Redirect'] = kwargs.get('path')
         response.set_cookie('session_token', kwargs.get('token'))
         return response
@@ -8861,6 +8880,7 @@ msgstr "<a href=\\"javascript:alert(1)\\">Ouvrir %(name)s</a>"
     assert "odoo-controller-cors-reflected-origin" in rule_ids
     assert "odoo-controller-cors-credentials-enabled" in rule_ids
     assert "odoo-controller-weak-csp-header" in rule_ids
+    assert "odoo-controller-weak-frame-options" in rule_ids
     assert "odoo-controller-tainted-file-read" in rule_ids
     assert sum(1 for finding in findings if finding["rule_id"] == "odoo-controller-tainted-file-read") >= 2
     assert "odoo-controller-tainted-file-offload-header" in rule_ids
