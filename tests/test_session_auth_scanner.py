@@ -126,6 +126,67 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-session-public-authenticate" for f in findings)
 
 
+def test_class_constant_backed_public_authenticate_is_reported(tmp_path: Path) -> None:
+    """Class-scoped public auth constants should still expose authentication routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "auth.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    LOGIN_ROUTES = ['/login/token', '/login/token/alt']
+    LOGIN_AUTH = 'public'
+    LOGIN_CSRF = False
+
+    @http.route(LOGIN_ROUTES, auth=LOGIN_AUTH, csrf=LOGIN_CSRF)
+    def login(self, **kwargs):
+        return request.session.authenticate(request.db, kwargs.get('login'), kwargs.get('password'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-public-authenticate" for f in findings)
+
+
+def test_class_constant_static_unpack_route_options_logout_is_reported(tmp_path: Path) -> None:
+    """Class-scoped static ** route options should preserve weak logout posture."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "logout.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    AUTH_BASE = 'public'
+    AUTH = AUTH_BASE
+    CSRF_DISABLED = False
+    METHODS_BASE = ['GET']
+    METHODS = METHODS_BASE
+    LOGOUT_OPTIONS = {
+        'auth': AUTH,
+        'csrf': CSRF_DISABLED,
+        'methods': METHODS,
+    }
+    OPTIONS_ALIAS = LOGOUT_OPTIONS
+
+    @http.route('/bye', **OPTIONS_ALIAS)
+    def bye(self):
+        request.session.logout()
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-logout-weak-route" for f in findings)
+
+
 def test_recursive_static_unpack_route_options_logout_is_reported(tmp_path: Path) -> None:
     """Recursive constant aliases inside ** route options should preserve weak logout posture."""
     controllers = tmp_path / "module" / "controllers"
@@ -643,6 +704,58 @@ class Controller(http.Controller):
     assert "odoo-session-sensitive-cookie-weak-flags" not in rule_ids
 
 
+def test_flags_class_constant_alias_session_auth_boundaries(tmp_path: Path) -> None:
+    """Class constants should resolve for route, session, token, root, and cookie checks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "switch.py").write_text(
+        """
+from odoo import SUPERUSER_ID, http
+from odoo.http import request
+
+class Controller(http.Controller):
+    BASE_AUTH = 'public'
+    AUTH = BASE_AUTH
+    BASE_CSRF = False
+    CSRF = BASE_CSRF
+    ROOT = SUPERUSER_ID
+    UID_KEY = 'uid'
+    COOKIE_BASE = 'session_token'
+    COOKIE_NAME = COOKIE_BASE
+    SECURE_FLAG = True
+    HTTPONLY_FLAG = True
+    SAMESITE_BASE = 'Lax'
+    SAMESITE = SAMESITE_BASE
+    TOKEN_KEY_BASE = 'csrf_token'
+    TOKEN_KEY = TOKEN_KEY_BASE
+
+    @http.route('/public/switch', auth=AUTH, csrf=CSRF)
+    def switch(self):
+        request.update_env(user=ROOT)
+        request.session.update({UID_KEY: ROOT})
+        response = request.make_response({TOKEN_KEY: request.session.sid})
+        response.set_cookie(
+            key=COOKIE_NAME,
+            value=request.session.sid,
+            secure=SECURE_FLAG,
+            httponly=HTTPONLY_FLAG,
+            samesite=SAMESITE,
+        )
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-session-update-env-superuser" in rule_ids
+    assert "odoo-session-public-update-env" in rule_ids
+    assert "odoo-session-direct-uid-assignment" in rule_ids
+    assert "odoo-session-token-exposed" in rule_ids
+    assert "odoo-session-sensitive-cookie-weak-flags" not in rule_ids
+
+
 def test_flags_get_json_data_update_env_user(tmp_path: Path) -> None:
     """Modern JSON routes should treat request.get_json_data() as tainted identity input."""
     controllers = tmp_path / "module" / "controllers"
@@ -1054,6 +1167,36 @@ class IrHttp(models.AbstractModel):
     @classmethod
     def _auth_method_public(cls):
         request.uid = SUPERUSER_ID
+        return True
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-session-ir-http-auth-override" in rule_ids
+    assert "odoo-session-ir-http-superuser-auth" in rule_ids
+    assert "odoo-session-ir-http-bypass" in rule_ids
+
+
+def test_class_constant_ir_http_auth_override_and_superuser_assignment(tmp_path: Path) -> None:
+    """Class constants should resolve ir.http inheritance and superuser aliases."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "ir_http.py").write_text(
+        """
+from odoo import models, SUPERUSER_ID
+from odoo.http import request
+
+class IrHttp(models.AbstractModel):
+    IR_HTTP_MODEL = 'ir.http'
+    ROOT = SUPERUSER_ID
+    _inherit = IR_HTTP_MODEL
+
+    @classmethod
+    def _auth_method_public(cls):
+        request.uid = ROOT
         return True
 """,
         encoding="utf-8",

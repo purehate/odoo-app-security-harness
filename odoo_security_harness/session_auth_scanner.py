@@ -60,6 +60,7 @@ class SessionAuthScanner(ast.NodeVisitor):
         self.route_stack: list[RouteContext] = []
         self.class_stack: list[ClassContext] = []
         self.route_decorator_names: set[str] = {"route"}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[SessionAuthFinding]:
         """Scan the file."""
@@ -85,17 +86,21 @@ class SessionAuthScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        class_constants = _static_constants_from_body(node.body)
+        constants = self._effective_constants(class_constants)
         context = ClassContext(
-            model=_extract_model_name(node, self.constants),
-            is_ir_http=_is_ir_http_class(node, self.constants),
+            model=_extract_model_name(node, constants),
+            is_ir_http=_is_ir_http_class(node, constants),
         )
+        self.class_constants_stack.append(class_constants)
         self.class_stack.append(context)
         self.generic_visit(node)
         self.class_stack.pop()
+        self.class_constants_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
-        route = _route_info(node, self.constants, self.route_decorator_names)
+        route = _route_info(node, self._effective_constants(), self.route_decorator_names)
         self.route_stack.append(route or RouteContext(is_route=False))
         if self._current_class().is_ir_http and node.name in IR_HTTP_AUTH_METHODS:
             self._scan_ir_http_auth_method(node)
@@ -173,7 +178,7 @@ class SessionAuthScanner(ast.NodeVisitor):
                     sink,
                 )
         elif sink.endswith(".set_cookie") or sink == "set_cookie":
-            if _sets_sensitive_cookie_without_flags(node, self.constants):
+            if _sets_sensitive_cookie_without_flags(node, self._effective_constants()):
                 severity = "high" if route.auth in {"public", "none"} else "medium"
                 self._add(
                     "odoo-session-sensitive-cookie-weak-flags",
@@ -197,7 +202,7 @@ class SessionAuthScanner(ast.NodeVisitor):
                 sink,
             )
 
-        if _returns_token_like_value(node, self.constants):
+        if _returns_token_like_value(node, self._effective_constants()):
             severity = "high" if route.auth in {"public", "none"} else "medium"
             self._add(
                 "odoo-session-token-exposed",
@@ -212,12 +217,13 @@ class SessionAuthScanner(ast.NodeVisitor):
 
     def _scan_update_env(self, node: ast.Call, sink: str) -> None:
         route = self._current_route()
+        constants = self._effective_constants()
         user_values = [
             keyword.value for keyword in node.keywords if keyword.arg in {"user", "uid"} and keyword.value is not None
         ]
         if not user_values:
             return
-        if any(_expr_mentions_superuser(value, self.constants) for value in user_values):
+        if any(_expr_mentions_superuser(value, constants) for value in user_values):
             self._add(
                 "odoo-session-update-env-superuser",
                 "Controller switches request environment to superuser",
@@ -250,7 +256,7 @@ class SessionAuthScanner(ast.NodeVisitor):
             return
         route = self._current_route()
         uid_arg = node.args[1]
-        if _expr_mentions_superuser(uid_arg, self.constants):
+        if _expr_mentions_superuser(uid_arg, self._effective_constants()):
             self._add(
                 "odoo-session-environment-superuser",
                 "Manual Environment uses superuser",
@@ -270,9 +276,10 @@ class SessionAuthScanner(ast.NodeVisitor):
             )
 
     def _scan_session_update(self, node: ast.Call, sink: str) -> None:
-        for value in _dict_values_for_keys(node, {"uid", "user_id"}, self.constants):
+        constants = self._effective_constants()
+        for value in _dict_values_for_keys(node, {"uid", "user_id"}, constants):
             severity = (
-                "high" if self._expr_is_tainted(value) or _expr_mentions_superuser(value, self.constants) else "medium"
+                "high" if self._expr_is_tainted(value) or _expr_mentions_superuser(value, constants) else "medium"
             )
             self._add(
                 "odoo-session-direct-uid-assignment",
@@ -299,7 +306,7 @@ class SessionAuthScanner(ast.NodeVisitor):
             route = self._current_route()
             severity = (
                 "critical"
-                if route.auth in {"public", "none"} or _expr_mentions_superuser(value, self.constants)
+                if route.auth in {"public", "none"} or _expr_mentions_superuser(value, self._effective_constants())
                 else "high"
             )
             self._add(
@@ -312,7 +319,7 @@ class SessionAuthScanner(ast.NodeVisitor):
             )
 
     def visit_Return(self, node: ast.Return) -> Any:
-        if node.value is not None and _expr_mentions_token(node.value, self.constants):
+        if node.value is not None and _expr_mentions_token(node.value, self._effective_constants()):
             route = self._current_route()
             severity = "high" if route.auth in {"public", "none"} else "medium"
             self._add(
@@ -431,6 +438,16 @@ class SessionAuthScanner(ast.NodeVisitor):
     def _current_class(self) -> ClassContext:
         return self.class_stack[-1] if self.class_stack else ClassContext()
 
+    def _effective_constants(self, current_class: dict[str, ast.AST] | None = None) -> dict[str, ast.AST]:
+        if not self.class_constants_stack and not current_class:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        if current_class:
+            constants.update(current_class)
+        return constants
+
     def _is_request_derived(self, node: ast.AST) -> bool:
         return _is_request_derived(node, self.request_names)
 
@@ -455,7 +472,7 @@ class SessionAuthScanner(ast.NodeVisitor):
             f"ir.http method '{node.name}' participates in global request authentication; verify it preserves Odoo's session, API-key, public-user, and database-selection guarantees",
             node.name,
         )
-        if _auth_method_grants_superuser(node, self.constants):
+        if _auth_method_grants_superuser(node, self._effective_constants()):
             self._add(
                 "odoo-session-ir-http-superuser-auth",
                 "ir.http authentication override grants elevated user",
@@ -641,8 +658,12 @@ def _apply_route_keyword(
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
