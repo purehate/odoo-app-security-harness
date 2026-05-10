@@ -115,6 +115,7 @@ class ActionWindowScanner(ast.NodeVisitor):
         self.route_names: set[str] = {"route"}
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[ActionWindowFinding]:
         """Scan the file."""
@@ -157,7 +158,9 @@ class ActionWindowScanner(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
         previous_action_window_names = set(self.action_window_names)
-        self.route_stack.append(_route_info(node, self.constants, self.route_names) or RouteContext(is_route=False))
+        self.route_stack.append(
+            _route_info(node, self._effective_constants(), self.route_names) or RouteContext(is_route=False)
+        )
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in TAINTED_ARG_NAMES:
                 self.tainted_names.add(arg.arg)
@@ -173,6 +176,11 @@ class ActionWindowScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
@@ -210,17 +218,18 @@ class ActionWindowScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Dict(self, node: ast.Dict) -> Any:
-        fields = _dict_literal_fields(node, self.constants)
+        fields = _dict_literal_fields(node, self._effective_constants())
         if fields.get("type") == "ir.actions.act_window":
             self._scan_action_window(node, fields)
         self.generic_visit(node)
 
     def _scan_action_window(self, node: ast.Dict, fields: dict[str, str]) -> None:
+        constants = self._effective_constants()
         route = self._current_route()
         model = _model_value(fields.get("res_model", ""))
-        model_node = _dict_value(node, "res_model", self.constants)
-        domain_node = _dict_value(node, "domain", self.constants)
-        context_node = _dict_value(node, "context", self.constants)
+        model_node = _dict_value(node, "res_model", constants)
+        domain_node = _dict_value(node, "domain", constants)
+        context_node = _dict_value(node, "context", constants)
         groups = fields.get("groups_id", "") or fields.get("groups", "")
 
         if model_node is not None and self._expr_is_tainted(model_node):
@@ -262,9 +271,7 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "context",
             )
 
-        if model in SENSITIVE_MODELS and not _has_group_restriction(groups) and _is_broad_domain(
-            domain_node, self.constants
-        ):
+        if model in SENSITIVE_MODELS and not _has_group_restriction(groups) and _is_broad_domain(domain_node, constants):
             self._add(
                 "odoo-act-window-sensitive-broad-domain",
                 "Sensitive action window uses broad domain",
@@ -281,7 +288,7 @@ class ActionWindowScanner(ast.NodeVisitor):
             self._add(
                 "odoo-act-window-public-sensitive-model",
                 "Public route returns sensitive action window",
-                "critical" if _is_broad_domain(domain_node, self.constants) else "high",
+                "critical" if _is_broad_domain(domain_node, constants) else "high",
                 node.lineno,
                 (
                     f"Public route returns an ir.actions.act_window for sensitive model '{model}'; verify "
@@ -293,7 +300,7 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "res_model",
             )
 
-        for flag in sorted(_privileged_context_defaults(context_node, self.constants)):
+        for flag in sorted(_privileged_context_defaults(context_node, constants)):
             self._add(
                 "odoo-act-window-privileged-default-context",
                 "Action window seeds privilege-bearing default",
@@ -306,7 +313,7 @@ class ActionWindowScanner(ast.NodeVisitor):
                 flag,
             )
 
-        if context_node is not None and _context_disables_active_test(context_node, self.constants):
+        if context_node is not None and _context_disables_active_test(context_node, constants):
             self._add(
                 "odoo-act-window-active-test-disabled",
                 "Action window disables active_test",
@@ -319,7 +326,7 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "active_test",
             )
 
-        for flag in sorted(_company_scope_context_keys(context_node, self.constants)):
+        for flag in sorted(_company_scope_context_keys(context_node, constants)):
             self._add(
                 "odoo-act-window-company-scope-context",
                 "Action window changes company scope",
@@ -401,7 +408,7 @@ class ActionWindowScanner(ast.NodeVisitor):
     def _scan_action_window_subscript_assignment(self, target: ast.AST, value: ast.AST, line: int) -> None:
         if not isinstance(target, ast.Subscript) or not self._expr_is_action_window(target.value):
             return
-        key = _subscript_constant_key(target, self.constants)
+        key = _subscript_constant_key(target, self._effective_constants())
         if key in {"res_model", "domain", "context"}:
             self._scan_mutated_action_window_field(key, value, line, "python-dict-mutation")
 
@@ -414,8 +421,9 @@ class ActionWindowScanner(ast.NodeVisitor):
         for arg in node.args:
             if not isinstance(arg, ast.Dict):
                 continue
+            constants = self._effective_constants()
             for key in ("res_model", "domain", "context"):
-                value = _dict_value(arg, key, self.constants)
+                value = _dict_value(arg, key, constants)
                 if value is not None:
                     self._scan_mutated_action_window_field(key, value, node.lineno, "python-dict-update")
         for keyword in node.keywords:
@@ -423,8 +431,9 @@ class ActionWindowScanner(ast.NodeVisitor):
                 self._scan_mutated_action_window_field(keyword.arg, keyword.value, node.lineno, "python-dict-update")
 
     def _scan_mutated_action_window_field(self, key: str, value: ast.AST, line: int, sink: str) -> None:
+        constants = self._effective_constants()
         route = self._current_route()
-        model = _model_value(_literal_string(value, self.constants)) if key == "res_model" else ""
+        model = _model_value(_literal_string(value, constants)) if key == "res_model" else ""
 
         if key == "res_model" and self._expr_is_tainted(value):
             self._add(
@@ -480,7 +489,7 @@ class ActionWindowScanner(ast.NodeVisitor):
             )
 
         if key == "context":
-            for flag in sorted(_privileged_context_defaults(value, self.constants)):
+            for flag in sorted(_privileged_context_defaults(value, constants)):
                 self._add(
                     "odoo-act-window-privileged-default-context",
                     "Action window seeds privilege-bearing default",
@@ -492,7 +501,7 @@ class ActionWindowScanner(ast.NodeVisitor):
                     sink,
                     flag,
                 )
-            if _context_disables_active_test(value, self.constants):
+            if _context_disables_active_test(value, constants):
                 self._add(
                     "odoo-act-window-active-test-disabled",
                     "Action window disables active_test",
@@ -504,7 +513,7 @@ class ActionWindowScanner(ast.NodeVisitor):
                     sink,
                     "active_test",
                 )
-            for flag in sorted(_company_scope_context_keys(value, self.constants)):
+            for flag in sorted(_company_scope_context_keys(value, constants)):
                 self._add(
                     "odoo-act-window-company-scope-context",
                     "Action window changes company scope",
@@ -591,7 +600,7 @@ class ActionWindowScanner(ast.NodeVisitor):
     def _expr_creates_action_window(self, node: ast.AST) -> bool:
         return (
             isinstance(node, ast.Dict)
-            and _dict_literal_fields(node, self.constants).get("type") == "ir.actions.act_window"
+            and _dict_literal_fields(node, self._effective_constants()).get("type") == "ir.actions.act_window"
             or self._expr_is_action_window(node)
             or isinstance(node, ast.List | ast.Tuple | ast.Set)
             and any(self._expr_creates_action_window(element) for element in node.elts)
@@ -664,6 +673,14 @@ class ActionWindowScanner(ast.NodeVisitor):
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
 
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
+
     def _add(
         self,
         rule_id: str,
@@ -730,8 +747,12 @@ def _route_info(
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

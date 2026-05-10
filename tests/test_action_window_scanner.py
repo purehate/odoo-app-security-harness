@@ -158,6 +158,84 @@ class Window(http.Controller):
     assert any(f.rule_id == "odoo-act-window-tainted-context" for f in findings)
 
 
+def test_class_constant_public_sensitive_action_window_is_reported(tmp_path: Path) -> None:
+    """Class-scoped route and action constants should not hide public sensitive windows."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "window.py").write_text(
+        """
+from odoo import http
+
+class Window(http.Controller):
+    ACTION_TYPE_VALUE = 'ir.actions.act_window'
+    ACTION_TYPE = ACTION_TYPE_VALUE
+    TARGET_MODEL_VALUE = 'res.partner'
+    TARGET_MODEL = TARGET_MODEL_VALUE
+    EMPTY_DOMAIN_VALUE = []
+    BROAD_DOMAIN = EMPTY_DOMAIN_VALUE
+    PUBLIC_AUTH = 'public'
+    ACTION_AUTH = PUBLIC_AUTH
+    ROUTE_MAIN = '/window/partners'
+    ROUTE_ALIAS = ROUTE_MAIN
+    WINDOW_ROUTES = [ROUTE_MAIN, ROUTE_ALIAS]
+
+    @http.route(WINDOW_ROUTES, auth=ACTION_AUTH)
+    def partners(self):
+        return {
+            'type': ACTION_TYPE,
+            'res_model': TARGET_MODEL,
+            'domain': BROAD_DOMAIN,
+        }
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-window-sensitive-broad-domain" in rule_ids
+    assert any(
+        f.rule_id == "odoo-act-window-public-sensitive-model"
+        and f.severity == "critical"
+        and f.route == "/window/partners,/window/partners"
+        for f in findings
+    )
+
+
+def test_class_constant_static_route_options_tainted_domain_is_critical(tmp_path: Path) -> None:
+    """Class-scoped **route options should preserve public action-window severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "window.py").write_text(
+        """
+from odoo import http
+
+class Window(http.Controller):
+    WINDOW_ROUTE = '/window/orders'
+    PUBLIC_AUTH = 'public'
+    ROUTE_OPTIONS = {'route': WINDOW_ROUTE, 'auth': PUBLIC_AUTH}
+
+    @http.route(**ROUTE_OPTIONS)
+    def orders(self, **kwargs):
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'sale.order',
+            'domain': kwargs.get('domain'),
+        }
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-act-window-tainted-domain"
+        and f.severity == "critical"
+        and f.route == "/window/orders"
+        for f in findings
+    )
+
+
 def test_flags_public_tainted_domain_and_context_from_unpacking(tmp_path: Path) -> None:
     """Unpacked request data should remain tainted in action window fields."""
     controllers = tmp_path / "module" / "controllers"
@@ -894,6 +972,40 @@ class Window(http.Controller):
     assert "odoo-act-window-tainted-res-model" in rule_ids
     assert "odoo-act-window-tainted-domain" in rule_ids
     assert "odoo-act-window-tainted-context" in rule_ids
+
+
+def test_class_constant_mutated_action_window_context_key_is_reported(tmp_path: Path) -> None:
+    """Class-scoped action and subscript-key constants should not hide context flags."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "users.py").write_text(
+        """
+class Users:
+    ACTION_TYPE = 'ir.actions.act_window'
+    CONTEXT_KEY_VALUE = 'context'
+    CONTEXT_KEY = CONTEXT_KEY_VALUE
+    ACTION_CONTEXT = {
+        'default_groups_id': [(4, 1)],
+        'active_test': False,
+        'allowed_company_ids': [1],
+    }
+
+    def action_invite_admin(self):
+        action = {'type': ACTION_TYPE, 'res_model': 'res.users'}
+        action[CONTEXT_KEY] = ACTION_CONTEXT
+        return action
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+    flags = {finding.flag for finding in findings}
+
+    assert "odoo-act-window-privileged-default-context" in rule_ids
+    assert "odoo-act-window-company-scope-context" in rule_ids
+    assert "odoo-act-window-active-test-disabled" in rule_ids
+    assert {"default_groups_id", "allowed_company_ids", "active_test"} <= flags
 
 
 def test_request_alias_mutated_tainted_action_window_fields(tmp_path: Path) -> None:
