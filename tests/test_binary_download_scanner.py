@@ -83,6 +83,69 @@ class Download(http.Controller):
     )
 
 
+def test_aliased_http_module_public_attachment_datas_response(tmp_path: Path) -> None:
+    """Aliased Odoo http module imports should preserve public binary severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Download(odoo_http.Controller):
+    @odoo_http.route('/public/download', auth='public')
+    def download(self, **kwargs):
+        attachment = request.env['ir.attachment'].sudo().browse(int(kwargs.get('id')))
+        return request.make_response(attachment.datas)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_non_odoo_route_decorator_attachment_datas_response_is_not_public(tmp_path: Path) -> None:
+    """Local route-like decorators should not create public Odoo route context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Download:
+    @router.route('/public/download', auth='public')
+    def download(self, **kwargs):
+        attachment = request.env['ir.attachment'].sudo().browse(int(kwargs.get('id')))
+        return request.make_response(attachment.datas)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert not any(
+        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high"
+        for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "medium"
+        for f in findings
+    )
+
+
 def test_constant_backed_public_attachment_datas_response(tmp_path: Path) -> None:
     """Constant-backed public route auth should keep binary response severity high."""
     controllers = tmp_path / "module" / "controllers"
