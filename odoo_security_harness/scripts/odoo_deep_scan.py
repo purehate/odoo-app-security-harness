@@ -8564,24 +8564,56 @@ def _route_inventory(repo: Path, python_files: list[Path]) -> list[dict[str, str
             tree = ast.parse(_read_text(path))
         except SyntaxError:
             continue
-        constants = _module_constants(tree)
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                continue
-            for decorator in node.decorator_list:
-                route = _route_from_decorator(decorator, constants)
-                if route is None:
-                    continue
-                routes.append(
-                    {
-                        "file": str(path.relative_to(repo)),
-                        "line": getattr(decorator, "lineno", node.lineno),
-                        "end_line": getattr(node, "end_lineno", node.lineno),
-                        "route": route["route"],
-                        "auth": route["auth"],
-                    }
-                )
+        visitor = _RouteInventoryVisitor(repo, path, _module_constants(tree))
+        visitor.visit(tree)
+        routes.extend(visitor.routes)
     return routes
+
+
+class _RouteInventoryVisitor(ast.NodeVisitor):
+    def __init__(self, repo: Path, path: Path, module_constants: dict[str, ast.AST]) -> None:
+        self.repo = repo
+        self.path = path
+        self.module_constants = module_constants
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.routes: list[dict[str, str | int]] = []
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node)
+        self.generic_visit(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
+        self.generic_visit(node)
+
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        constants = self._effective_constants()
+        for decorator in node.decorator_list:
+            route = _route_from_decorator(decorator, constants)
+            if route is None:
+                continue
+            self.routes.append(
+                {
+                    "file": str(self.path.relative_to(self.repo)),
+                    "line": getattr(decorator, "lineno", node.lineno),
+                    "end_line": getattr(node, "end_lineno", node.lineno),
+                    "route": route["route"],
+                    "auth": route["auth"],
+                }
+            )
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.module_constants
+        constants = dict(self.module_constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 def _route_from_decorator(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> dict[str, str] | None:
@@ -8627,8 +8659,12 @@ def _route_text(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> s
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
@@ -8643,9 +8679,16 @@ def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
     return constants
 
 
-def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
+def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.AST:
+    seen = seen or set()
     if isinstance(node, ast.Name):
-        return constants.get(node.id, node)
+        if node.id in seen:
+            return node
+        value = constants.get(node.id)
+        if value is None:
+            return node
+        seen.add(node.id)
+        return _resolve_constant(value, constants, seen)
     return node
 
 
@@ -8653,7 +8696,9 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
         return isinstance(node.value, str | bool | int | float | type(None))
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return all(isinstance(element, ast.Constant) for element in node.elts)
+        return all(isinstance(element, ast.Constant | ast.Name) for element in node.elts)
+    if isinstance(node, ast.Name):
+        return True
     return False
 
 

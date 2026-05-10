@@ -7392,6 +7392,40 @@ class TestController(http.Controller):
     ]
 
 
+def test_route_inventory_resolves_class_constant_route_metadata(tmp_path: Path) -> None:
+    """Route inventory should preserve class-scoped route path and auth metadata."""
+    controllers = tmp_path / "test_module" / "controllers"
+    controllers.mkdir(parents=True)
+    controller = controllers / "main.py"
+    controller.write_text(
+        """
+from odoo import http
+
+class TestController(http.Controller):
+    AUTH_BASE = 'public'
+    PUBLIC_AUTH = AUTH_BASE
+    ROUTE_BASE = '/public/class'
+    PUBLIC_ROUTE = ROUTE_BASE
+    ROUTES = [PUBLIC_ROUTE, '/public/class-b']
+
+    @http.route(PUBLIC_ROUTE, auth=PUBLIC_AUTH)
+    def first(self):
+        return {}
+
+    @http.route(routes=ROUTES, auth=PUBLIC_AUTH)
+    async def second(self):
+        return {}
+""",
+        encoding="utf-8",
+    )
+
+    routes = odoo_deep_scan._route_inventory(tmp_path, [controller])
+    route_metadata = {(route["route"], route["auth"]) for route in routes}
+
+    assert ("/public/class", "public") in route_metadata
+    assert ("/public/class,/public/class-b", "public") in route_metadata
+
+
 def test_deep_scan_writes_findings_report_and_pocs(tmp_path: Path, monkeypatch) -> None:
     """Deep scan should aggregate analyzers and write report/PoC artifacts."""
     repo = tmp_path / "repo"
