@@ -589,6 +589,76 @@ class WebsiteForm(http.Controller):
     assert any(f.rule_id == "odoo-website-form-route-csrf-disabled" for f in findings)
 
 
+def test_flags_imported_route_website_form_csrf_disabled(tmp_path: Path) -> None:
+    """Imported route decorators should not hide website form CSRF disablement."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import route
+
+class WebsiteForm(http.Controller):
+    @route('/website/form/crm.lead', type='http', auth='public', methods=['POST'], csrf=False)
+    def website_form(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-route-csrf-disabled" for f in findings)
+
+
+def test_flags_aliased_http_module_website_form_csrf_disabled(tmp_path: Path) -> None:
+    """Aliased odoo.http module route decorators should remain recognized."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http as odoo_http
+
+class WebsiteForm(odoo_http.Controller):
+    @odoo_http.route('/website/form/crm.lead', type='http', auth='public', methods=['POST'], csrf=False)
+    def website_form(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-route-csrf-disabled" for f in findings)
+
+
+def test_non_odoo_route_website_form_csrf_disabled_is_ignored(tmp_path: Path) -> None:
+    """Local route decorators should not be treated as Odoo website form routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class WebsiteForm(http.Controller):
+    @router.route('/website/form/crm.lead', type='http', auth='public', methods=['POST'], csrf=False)
+    def website_form(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_website_forms(tmp_path) == []
+
+
 def test_flags_constant_backed_website_form_route_with_csrf_disabled(tmp_path: Path) -> None:
     """Route and csrf constants should not hide website_form CSRF disablement."""
     controllers = tmp_path / "module" / "controllers"

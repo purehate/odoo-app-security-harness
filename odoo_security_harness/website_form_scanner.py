@@ -382,6 +382,8 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
+        self.http_module_names: set[str] = {"http"}
+        self.route_names: set[str] = set()
 
     def scan_file(self) -> list[WebsiteFormFinding]:
         """Scan Python controller declarations."""
@@ -402,8 +404,24 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
         self.generic_visit(node)
         self.class_constants_stack.pop()
 
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.http_module_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.http":
+            for alias in node.names:
+                if alias.name == "route":
+                    self.route_names.add(alias.asname or alias.name)
+        self.generic_visit(node)
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
-        route = _website_form_route_with_csrf_disabled(node, self._effective_constants())
+        route = _website_form_route_with_csrf_disabled(
+            node,
+            self._effective_constants(),
+            self.route_names,
+            self.http_module_names,
+        )
         if route:
             self.findings.append(
                 WebsiteFormFinding(
@@ -598,18 +616,26 @@ def _field_call_type(node: ast.AST) -> str:
 
 
 def _website_form_route_with_csrf_disabled(
-    node: ast.FunctionDef | ast.AsyncFunctionDef, constants: dict[str, ast.AST] | None = None
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    constants: dict[str, ast.AST] | None = None,
+    route_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
 ) -> str:
     for decorator in node.decorator_list:
-        route = _http_route_path(decorator, constants)
+        route = _http_route_path(decorator, constants, route_names, http_module_names)
         if route and "/website/form" in route and _route_csrf_disabled(decorator, constants):
             return route
     return ""
 
 
-def _http_route_path(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:
+def _http_route_path(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    route_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
+) -> str:
     if isinstance(node, ast.Call):
-        if not _is_http_route(node.func):
+        if not _is_http_route(node.func, route_names, http_module_names):
             return ""
         if node.args:
             return _route_path_from_arg(node.args[0], constants)
@@ -617,7 +643,7 @@ def _http_route_path(node: ast.AST, constants: dict[str, ast.AST] | None = None)
             if keyword.arg == "route":
                 return _route_path_from_arg(keyword.value, constants)
         return ""
-    if _is_http_route(node):
+    if _is_http_route(node, route_names, http_module_names):
         return ""
     return ""
 
@@ -647,11 +673,17 @@ def _call_disables_sanitize_form(node: ast.Call, constants: dict[str, ast.AST] |
     return False
 
 
-def _is_http_route(node: ast.AST) -> bool:
+def _is_http_route(
+    node: ast.AST,
+    route_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
+) -> bool:
+    route_names = route_names or set()
+    http_module_names = http_module_names or {"http"}
     if isinstance(node, ast.Attribute):
-        return node.attr == "route"
+        return node.attr == "route" and isinstance(node.value, ast.Name) and node.value.id in http_module_names
     if isinstance(node, ast.Name):
-        return node.id == "route"
+        return node.id in route_names
     return False
 
 
