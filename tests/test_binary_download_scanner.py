@@ -204,6 +204,70 @@ class Download(http.Controller):
     )
 
 
+def test_class_constant_alias_public_auth_and_attachment_model_response(tmp_path: Path) -> None:
+    """Class-scoped constants should expose public attachment model downloads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Download(http.Controller):
+    ATTACHMENT_MODEL = 'ir.attachment'
+    DOWNLOAD_MODEL = ATTACHMENT_MODEL
+    PUBLIC_AUTH = 'public'
+    DOWNLOAD_AUTH = PUBLIC_AUTH
+
+    @http.route('/public/download', auth=DOWNLOAD_AUTH)
+    def download(self, **kwargs):
+        attachment = request.env[DOWNLOAD_MODEL].sudo().browse(int(kwargs.get('id')))
+        return request.make_response(attachment.datas)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-attachment-data-response"
+        and f.severity == "high"
+        and f.sink == "request.make_response"
+        for f in findings
+    )
+
+
+def test_class_constant_static_unpack_public_attachment_datas_response(tmp_path: Path) -> None:
+    """Class-scoped static **route options should preserve public binary response severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Download(http.Controller):
+    ROUTE_OPTIONS = {'auth': 'public', 'type': 'http'}
+    ATTACHMENT_MODEL = 'ir.attachment'
+
+    @http.route('/public/download', **ROUTE_OPTIONS)
+    def download(self, **kwargs):
+        attachment = request.env[ATTACHMENT_MODEL].sudo().browse(int(kwargs.get('id')))
+        return request.make_response(attachment.datas)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-attachment-data-response"
+        and f.severity == "high"
+        and f.sink == "request.make_response"
+        for f in findings
+    )
+
+
 def test_local_constant_alias_attachment_model_response(tmp_path: Path) -> None:
     """Function-local model constants should expose attachment downloads."""
     controllers = tmp_path / "module" / "controllers"
