@@ -94,6 +94,7 @@ class ControllerResponseScanner(ast.NodeVisitor):
         self.function_aliases: dict[str, str] = {}
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
         self.response_object_names: set[str] = set()
 
@@ -130,12 +131,17 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     self.function_aliases[alias.asname or alias.name] = "werkzeug.utils.redirect"
         self.generic_visit(node)
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
         previous_response_objects = set(self.response_object_names)
         previous_local_constants = dict(self.local_constants)
         self.local_constants = {}
-        route = _route_info(node, self.constants, self.route_names)
+        route = _route_info(node, self._effective_constants(), self.route_names)
         route_context = route or RouteContext(is_route=False)
         self.route_stack.append(route_context)
         for arg in [*node.args.args, *node.args.kwonlyargs]:
@@ -581,7 +587,11 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     self._mark_local_constant_target(element, value)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        return {**self.constants, **self.local_constants}
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        constants.update(self.local_constants)
+        return constants
 
     def _discard_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
@@ -680,8 +690,12 @@ def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[tu
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
