@@ -264,6 +264,66 @@ class Users(http.Controller):
     assert "odoo-identity-privilege-field-write" in rule_ids
 
 
+def test_aliased_http_module_route_public_identity_mutation_is_reported(tmp_path: Path) -> None:
+    """Aliased odoo.http module route decorators should remain recognized."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "users.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Users(odoo_http.Controller):
+    @odoo_http.route('/signup/promote', auth='public', type='http')
+    def promote(self, user_id, **kwargs):
+        user = request.env['res.users'].sudo().browse(int(user_id))
+        return user.write({'groups_id': [(4, request.env.ref('base.group_system').id)]})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_identity_mutations(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-identity-public-route-mutation" in rule_ids
+    assert "odoo-identity-elevated-mutation" in rule_ids
+    assert "odoo-identity-privilege-field-write" in rule_ids
+
+
+def test_non_odoo_route_decorator_identity_mutation_is_not_public(tmp_path: Path) -> None:
+    """Local route decorators should not make identity mutations public routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "users.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Users(http.Controller):
+    @router.route('/signup/promote', auth='public', type='http')
+    def promote(self, user_id, **kwargs):
+        user = request.env['res.users'].sudo().browse(int(user_id))
+        return user.write({'groups_id': [(4, request.env.ref('base.group_system').id)]})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_identity_mutations(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-identity-public-route-mutation" not in rule_ids
+    assert "odoo-identity-elevated-mutation" in rule_ids
+    assert "odoo-identity-privilege-field-write" in rule_ids
+
+
 def test_static_unpack_public_route_identity_mutation_is_reported(tmp_path: Path) -> None:
     """Static **route options should not hide public identity mutations."""
     controllers = tmp_path / "module" / "controllers"
