@@ -302,6 +302,38 @@ def test_request_derived_insert_rule_detected(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-web-dynamic-css-injection" and f.severity == "medium" for f in findings)
 
 
+def test_dom_style_text_injection_detected(tmp_path: Path) -> None:
+    """DOM-created style tags populated from RPC data can restyle privileged UI."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """const style = document.createElement('style');
+style.textContent = response.css;
+document.head.appendChild(style);
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-dynamic-css-injection" and f.sink == "style.text" for f in findings)
+
+
+def test_dom_style_static_literal_ignored(tmp_path: Path) -> None:
+    """Static DOM-created style blocks are reviewed source literals."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """const style = document.createElement('style');
+style.textContent = '.o_form_button_save { display: block; }';
+document.head.appendChild(style);
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-dynamic-css-injection" and f.sink == "style.text" for f in findings)
+
+
 def test_static_literal_stylesheet_replace_ignored(tmp_path: Path) -> None:
     """Static reviewed CSS literals should not be reported."""
     path = tmp_path / "widget.js"

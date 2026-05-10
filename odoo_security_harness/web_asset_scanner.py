@@ -238,6 +238,10 @@ DOM_SCRIPT_CREATE_RE = re.compile(
     r"\b(?:const|let|var)?\s*(?P<name>[A-Za-z_$][\w$]*)\s*=\s*document\.createElement\s*\(\s*['\"]script['\"]\s*\)",
     re.IGNORECASE,
 )
+DOM_STYLE_CREATE_RE = re.compile(
+    r"\b(?:const|let|var)?\s*(?P<name>[A-Za-z_$][\w$]*)\s*=\s*document\.createElement\s*\(\s*['\"]style['\"]\s*\)",
+    re.IGNORECASE,
+)
 DOM_LINK_CREATE_RE = re.compile(
     r"\b(?:const|let|var)?\s*(?P<name>[A-Za-z_$][\w$]*)\s*=\s*document\.createElement\s*\(\s*['\"]link['\"]\s*\)",
     re.IGNORECASE,
@@ -822,6 +826,7 @@ class WebAssetScanner:
         self._scan_dom_target_blank(lines)
         self._scan_dom_iframe_missing_sandbox(lines)
         self._scan_dom_external_script_missing_sri(lines)
+        self._scan_dom_style_text_injection(lines)
         self._scan_dom_external_stylesheet_missing_sri(lines)
         return self.findings
 
@@ -978,6 +983,28 @@ class WebAssetScanner:
                 index + 1,
                 "Frontend code creates and loads an external script without a visible integrity assignment; pin third-party assets with SRI or serve reviewed code from trusted bundles",
                 "script",
+            )
+
+    def _scan_dom_style_text_injection(self, lines: list[str]) -> None:
+        """Find DOM-created style blocks populated with request-derived CSS."""
+        for index, line in enumerate(lines):
+            match = DOM_STYLE_CREATE_RE.search(line)
+            if not match:
+                continue
+            style_name = match.group("name")
+            context = "\n".join(lines[index : index + 12])
+            css_text = _dom_style_dynamic_text(context, style_name)
+            if not css_text or not _looks_risky_css_text(css_text):
+                continue
+            if not _dom_script_is_used(context, style_name):
+                continue
+            self._add(
+                "odoo-web-dynamic-css-injection",
+                "DOM-created style block uses request-derived CSS text",
+                "medium",
+                index + 1,
+                "Frontend code writes dynamic or request-derived CSS into a DOM-created style block; sanitize style text and avoid letting untrusted data hide, overlay, or restyle privileged UI",
+                "style.text",
             )
 
     def _scan_dom_external_stylesheet_missing_sri(self, lines: list[str]) -> None:
@@ -1442,6 +1469,20 @@ def _dom_script_external_src(context: str, script_name: str) -> bool:
 def _dom_script_is_used(context: str, script_name: str) -> bool:
     name = re.escape(script_name)
     return bool(re.search(rf"\.(?:append|appendChild)\s*\(\s*{name}\s*\)", context))
+
+
+def _dom_style_dynamic_text(context: str, style_name: str) -> str:
+    name = re.escape(style_name)
+    text_match = re.search(
+        rf"\b{name}\.(?:textContent|innerText)\s*=\s*(?P<css>['\"`][^\n]*?['\"`]|[^;\n]+)",
+        context,
+        re.IGNORECASE,
+    )
+    append_match = re.search(rf"\b{name}\.append\s*\(\s*(?P<css>[^)\n]+)", context, re.IGNORECASE)
+    match = text_match or append_match
+    if not match:
+        return ""
+    return match.group("css")
 
 
 def _dom_link_is_stylesheet(context: str, link_name: str) -> bool:
