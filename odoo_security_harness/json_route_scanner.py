@@ -51,6 +51,7 @@ class JsonRouteScanner(ast.NodeVisitor):
         self.sudo_names: set[str] = set()
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
         self.route_decorator_names: set[str] = {"route"}
 
@@ -77,12 +78,19 @@ class JsonRouteScanner(ast.NodeVisitor):
                     self.route_decorator_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
         previous_sudo = set(self.sudo_names)
         previous_local_constants = self.local_constants
         self.local_constants = {}
-        route = _route_info(node, self.constants, self.route_decorator_names) or RouteContext(is_route=False)
+        route = _route_info(node, self._effective_constants(), self.route_decorator_names) or RouteContext(
+            is_route=False
+        )
         self.route_stack.append(route)
 
         if route.is_json and route.auth in {"public", "none"}:
@@ -385,9 +393,13 @@ class JsonRouteScanner(ast.NodeVisitor):
                 self._discard_local_constant_target(element)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.local_constants:
+        if not self.local_constants and not self.class_constants_stack:
             return self.constants
-        return {**self.constants, **self.local_constants}
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        constants.update(self.local_constants)
+        return constants
 
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
@@ -528,8 +540,12 @@ def _apply_route_keyword(
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
