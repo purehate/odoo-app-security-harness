@@ -62,6 +62,7 @@ class ModelStructureScanner(ast.NodeVisitor):
         self.file_path = file_path
         self.findings: list[ModelFinding] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[ModelFinding]:
         """Scan a Python file for model-structure findings."""
@@ -82,6 +83,7 @@ class ModelStructureScanner(ast.NodeVisitor):
             self.generic_visit(node)
             return
 
+        self.class_constants_stack.append(self._static_constants_from_body(node.body))
         model_name = self._extract_model_name(node)
         fields = self._extract_fields(node)
         constraints = self._extract_sql_constraints(node)
@@ -227,6 +229,7 @@ class ModelStructureScanner(ast.NodeVisitor):
                     )
 
         self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def _is_odoo_model(self, node: ast.ClassDef) -> bool:
         return any(
@@ -394,8 +397,11 @@ class ModelStructureScanner(ast.NodeVisitor):
         return isinstance(value, ast.Constant) and value.value == expected
 
     def _module_constants(self, tree: ast.Module) -> dict[str, ast.AST]:
+        return self._static_constants_from_body(tree.body)
+
+    def _static_constants_from_body(self, statements: list[ast.stmt]) -> dict[str, ast.AST]:
         constants: dict[str, ast.AST] = {}
-        for statement in tree.body:
+        for statement in statements:
             if isinstance(statement, ast.Assign):
                 for target in statement.targets:
                     if isinstance(target, ast.Name) and self._is_static_literal(statement.value):
@@ -412,11 +418,20 @@ class ModelStructureScanner(ast.NodeVisitor):
     def _resolve_constant(self, node: ast.AST | None, seen: set[str] | None = None) -> ast.AST | None:
         if isinstance(node, ast.Name):
             seen = seen or set()
-            if node.id in seen or node.id not in self.constants:
+            constants = self._effective_constants()
+            if node.id in seen or node.id not in constants:
                 return node
             seen.add(node.id)
-            return self._resolve_constant(self.constants[node.id], seen)
+            return self._resolve_constant(constants[node.id], seen)
         return node
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _is_static_literal(self, node: ast.AST) -> bool:
         if isinstance(node, ast.Constant):

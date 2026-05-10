@@ -235,6 +235,33 @@ class SalesReport(models.Model):
     assert any(f.rule_id == "odoo-model-auto-false-manual-sql" for f in findings)
 
 
+def test_class_constant_backed_auto_false_manual_sql_model_is_reported(tmp_path: Path) -> None:
+    """Class-scoped _auto=False aliases should not hide manual SQL-backed models."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+class SalesReport(models.Model):
+    MODEL_NAME = 'x.sales.report'
+    MANAGED_BY_SQL = False
+    MANAGED_BY_ORM = MANAGED_BY_SQL
+    _name = MODEL_NAME
+    _auto = MANAGED_BY_ORM
+
+    amount_total = fields.Monetary(currency_field='currency_id')
+    currency_id = fields.Many2one('res.currency')
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-model-auto-false-manual-sql" and f.model == "x.sales.report"
+        for f in findings
+    )
+
+
 def test_constant_backed_log_access_disabled_is_reported(tmp_path: Path) -> None:
     """Simple constants should not hide disabled Odoo audit metadata."""
     model = _write_model(
@@ -363,6 +390,34 @@ class ApiCredential(models.Model):
     findings = ModelStructureScanner(str(model)).scan_file()
 
     assert any(f.rule_id == "odoo-model-rec-name-sensitive" for f in findings)
+
+
+def test_class_constant_backed_sensitive_rec_name_and_copy_false(tmp_path: Path) -> None:
+    """Class-scoped aliases should drive display-name and copy checks."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+class ApiCredential(models.Model):
+    MODEL_NAME = 'x.api.credential'
+    SECRET_DISPLAY = 'api_key'
+    REC_NAME = SECRET_DISPLAY
+    NO_COPY = False
+    _name = MODEL_NAME
+    _rec_name = REC_NAME
+
+    api_key = fields.Char(copy=NO_COPY, groups='base.group_system')
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-model-rec-name-sensitive" and f.model == "x.api.credential"
+        for f in findings
+    )
+    assert not any(f.rule_id == "odoo-model-secret-copyable" for f in findings)
 
 
 def test_required_identifier_without_unique_constraint(tmp_path: Path) -> None:
@@ -511,6 +566,34 @@ class PartnerWrapper(models.Model):
 
     assert "odoo-model-delegated-sensitive-inherits" in rule_ids
     assert "odoo-model-delegated-link-not-required" in rule_ids
+
+
+def test_class_constant_delegated_inheritance_to_sensitive_model(tmp_path: Path) -> None:
+    """Class-scoped _inherits aliases should still reveal sensitive delegation."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+class PartnerWrapper(models.Model):
+    MODEL_NAME = 'x.partner.wrapper'
+    PARTNER_MODEL = 'res.partner'
+    DELEGATED_MODEL = PARTNER_MODEL
+    PARTNER_FIELD = 'partner_id'
+    INHERITS = {DELEGATED_MODEL: PARTNER_FIELD}
+    _name = MODEL_NAME
+    _inherits = INHERITS
+
+    partner_id = fields.Many2one(PARTNER_MODEL, ondelete='set null')
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-model-delegated-sensitive-inherits" in rule_ids
+    assert "odoo-model-delegated-link-not-required" in rule_ids
+    assert any(f.model == "x.partner.wrapper" for f in findings)
 
 
 def test_delegate_true_to_sensitive_model(tmp_path: Path) -> None:
