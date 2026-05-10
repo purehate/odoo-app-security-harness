@@ -2246,6 +2246,12 @@
       "capec": ["CAPEC-34"],
       "owasp": "A03:2021 Injection"
     },
+    "controller_weak_csp_header": {
+      "label": "Controller sets a weak Content-Security-Policy header",
+      "cwe": ["CWE-693", "CWE-79", "CWE-1021"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
     "controller_tainted_html_response": {
       "label": "Controller returns request-derived data as an HTML response",
       "cwe": ["CWE-79", "CWE-116"],

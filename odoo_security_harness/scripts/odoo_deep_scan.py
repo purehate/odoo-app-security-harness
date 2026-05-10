@@ -3780,6 +3780,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "controller_weak_csp_header",
+        (
+            "odoo-controller-weak-csp-header",
+            "controller sets weak content-security-policy",
+            "content-security-policy with 'unsafe-inline'",
+            "content-security-policy with 'unsafe-eval'",
+            "tighten script/style sources",
+        ),
+    ),
+    (
         "controller_tainted_html_response",
         (
             "controller-tainted-html-response",

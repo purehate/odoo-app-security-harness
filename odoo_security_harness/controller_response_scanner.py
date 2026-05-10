@@ -411,6 +411,17 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller sets X-Accel-Redirect/X-Sendfile from request input; validate internal location mapping, traversal, attachment ownership, and storage root",
                 sink,
             )
+        weak_csp_reason = _weak_csp_reason(lowered_header, value, self._effective_constants())
+        if weak_csp_reason:
+            route = self._current_route()
+            self._add(
+                "odoo-controller-weak-csp-header",
+                "Controller sets weak Content-Security-Policy",
+                "medium" if route.auth in {"public", "none"} else "low",
+                line,
+                f"Controller sets a Content-Security-Policy with {weak_csp_reason}; tighten script/style sources before relying on CSP to limit XSS impact",
+                sink,
+            )
         if header_name.lower() != "access-control-allow-origin":
             return
         if self._expr_is_tainted(value):
@@ -959,6 +970,20 @@ def _headers_include_html_content_type(node: ast.AST, constants: dict[str, ast.A
 
 def _is_html_content_type(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
     return "text/html" in _constant_string(node, constants).lower()
+
+
+def _weak_csp_reason(header_name: str, value: ast.AST, constants: dict[str, ast.AST]) -> str:
+    if header_name != "content-security-policy":
+        return ""
+    csp = _constant_string(value, constants).lower()
+    if not csp:
+        return ""
+    weaknesses = [
+        token
+        for token in ("'unsafe-inline'", "'unsafe-eval'")
+        if token in csp
+    ]
+    return " and ".join(weaknesses)
 
 
 def _cookie_name_node(node: ast.Call) -> ast.AST | None:
