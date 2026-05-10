@@ -74,7 +74,8 @@ class AttachmentScanner(ast.NodeVisitor):
         self.sudo_attachment_vars: set[str] = set()
         self.attachment_value_names: dict[str, ast.Dict] = {}
         self.request_names: set[str] = {"request"}
-        self.route_names: set[str] = {"route"}
+        self.http_module_names: set[str] = {"http"}
+        self.route_names: set[str] = set()
         self.tainted_names: set[str] = set()
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
@@ -95,7 +96,11 @@ class AttachmentScanner(ast.NodeVisitor):
         return self.findings
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        if node.module == "odoo.http":
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.http_module_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
                     self.request_names.add(alias.asname or alias.name)
@@ -108,7 +113,12 @@ class AttachmentScanner(ast.NodeVisitor):
         previous_sudo_attachment_vars = set(self.sudo_attachment_vars)
         previous_attachment_values = dict(self.attachment_value_names)
         previous_tainted = set(self.tainted_names)
-        route = _route_info(node, self._effective_constants(), self.route_names) or RouteContext(is_route=False)
+        route = _route_info(
+            node,
+            self._effective_constants(),
+            self.route_names,
+            self.http_module_names,
+        ) or RouteContext(is_route=False)
         self.route_stack.append(route)
 
         for arg in [*node.args.args, *node.args.kwonlyargs]:
@@ -514,10 +524,11 @@ def _route_info(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     constants: dict[str, ast.AST] | None = None,
     route_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
 ) -> RouteContext | None:
-    route_names = route_names or {"route"}
+    route_names = route_names or set()
     for decorator in node.decorator_list:
-        if not _is_http_route(decorator, route_names):
+        if not _is_http_route(decorator, route_names, http_module_names):
             continue
         auth = "user"
         paths: list[str] = []
@@ -551,13 +562,23 @@ def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[tu
     return keywords
 
 
-def _is_http_route(node: ast.AST, route_names: set[str] | None = None) -> bool:
-    route_names = route_names or {"route"}
+def _is_http_route(
+    node: ast.AST,
+    route_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
+) -> bool:
+    route_names = route_names or set()
+    http_module_names = http_module_names or {"http"}
     if isinstance(node, ast.Call):
-        return _is_http_route(node.func, route_names)
+        return _is_http_route(node.func, route_names, http_module_names)
     if isinstance(node, ast.Name):
         return node.id in route_names
-    return isinstance(node, ast.Attribute) and node.attr == "route"
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "route"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in http_module_names
+    )
 
 
 def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> list[str]:

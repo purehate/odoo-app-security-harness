@@ -134,6 +134,74 @@ class Controller(http.Controller):
     assert "odoo-attachment-tainted-res-id" in rule_ids
 
 
+def test_aliased_http_module_public_attachment_create_is_reported(tmp_path: Path) -> None:
+    """Aliased Odoo http module imports should expose public attachment mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "attachments.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/public/attach', auth='public', csrf=False)
+    def attach(self, **kwargs):
+        return request.env['ir.attachment'].sudo().create({
+            'name': kwargs.get('name'),
+            'datas': kwargs.get('payload'),
+            'res_model': kwargs.get('model'),
+            'res_id': kwargs.get('id'),
+            'public': True,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-attachment-public-route-mutation" in rule_ids
+    assert "odoo-attachment-sudo-mutation" in rule_ids
+    assert "odoo-attachment-tainted-res-model" in rule_ids
+    assert "odoo-attachment-tainted-res-id" in rule_ids
+
+
+def test_non_odoo_route_decorator_public_attachment_create_is_ignored(tmp_path: Path) -> None:
+    """Local route-like decorators should not create Odoo route context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "attachments.py").write_text(
+        """
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Controller:
+    @router.route('/public/attach', auth='public', csrf=False)
+    def attach(self, **kwargs):
+        return request.env['ir.attachment'].sudo().create({
+            'name': kwargs.get('name'),
+            'datas': kwargs.get('payload'),
+            'res_model': kwargs.get('model'),
+            'res_id': kwargs.get('id'),
+            'public': True,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert not any(f.rule_id == "odoo-attachment-public-route-mutation" for f in findings)
+    assert any(f.rule_id == "odoo-attachment-sudo-mutation" for f in findings)
+
+
 def test_constant_backed_public_attachment_create_is_reported(tmp_path: Path) -> None:
     """Constant-backed public route metadata should not hide attachment mutations."""
     controllers = tmp_path / "module" / "controllers"
