@@ -150,6 +150,7 @@ class QWebScanner:
 
         if tag.lower() == "link":
             self._check_external_stylesheet_integrity(element, tag)
+            self._check_dynamic_stylesheet_href(element, tag)
 
         if tag.lower() == "meta":
             self._check_meta_refresh_redirect(element, tag)
@@ -160,6 +161,7 @@ class QWebScanner:
         if tag.lower() == "script":
             self._check_script_qweb_expression(element, tag)
             self._check_external_script_integrity(element, tag)
+            self._check_dynamic_script_src(element, tag)
 
         self._check_t_set_markup_value(element, tag)
 
@@ -553,6 +555,15 @@ class QWebScanner:
         """Return True for dynamic class attributes that can alter visible UI state."""
         return bool(self.CLASS_DYNAMIC_MARKER_RE.search(value))
 
+    def _looks_dynamic_asset_target(self, value: str) -> bool:
+        """Return True for asset URLs that are expression-backed rather than static literals."""
+        stripped = value.strip()
+        if not stripped:
+            return False
+        if re.fullmatch(r"""['"][^'"]*['"]""", stripped):
+            return False
+        return bool(self.URL_DYNAMIC_MARKER_RE.search(stripped) or re.search(r"\b(?:get|get_param|getlist|getattr)\s*\(", stripped))
+
     def _check_srcdoc_html_sink(self, tag: str, attr: str, value: str) -> None:
         """Check iframe srcdoc attributes that receive dynamic HTML."""
         self._add_finding(
@@ -650,6 +661,23 @@ class QWebScanner:
             message="QWeb template loads an external script without an integrity attribute; pin third-party assets with SRI or serve reviewed code from trusted bundles",
         )
 
+    def _check_dynamic_script_src(self, element: ElementTree.Element, tag: str) -> None:
+        """Check script tags that import JavaScript from dynamic template expressions."""
+        for attr in ("t-att-src", "t-attf-src"):
+            value = _xml_attr(element, attr)
+            if not value or not self._looks_dynamic_asset_target(value):
+                continue
+            self._add_finding(
+                rule_id="odoo-qweb-dynamic-script-src",
+                title="QWeb script source uses dynamic target",
+                severity="high",
+                element=tag,
+                attribute=attr,
+                message=f"{attr}='{value}' imports JavaScript at runtime from an external or dynamic target; restrict script URLs to reviewed bundles or strict allowlists",
+            )
+            self._check_sensitive_url_token(tag, attr, value)
+            return
+
     def _check_script_qweb_expression(self, element: ElementTree.Element, tag: str) -> None:
         """Check QWeb output expressions rendered inside JavaScript blocks."""
         for node in element.iter():
@@ -683,6 +711,26 @@ class QWebScanner:
             attribute="href",
             message="QWeb template loads an external stylesheet without an integrity attribute; pin third-party CSS with SRI or serve reviewed styles from trusted bundles",
         )
+
+    def _check_dynamic_stylesheet_href(self, element: ElementTree.Element, tag: str) -> None:
+        """Check stylesheet links that load CSS from dynamic template expressions."""
+        rel_tokens = set(_xml_attr(element, "rel").lower().split())
+        if "stylesheet" not in rel_tokens:
+            return
+        for attr in ("t-att-href", "t-attf-href"):
+            value = _xml_attr(element, attr)
+            if not value or not self._looks_dynamic_asset_target(value):
+                continue
+            self._add_finding(
+                rule_id="odoo-qweb-dynamic-stylesheet-href",
+                title="QWeb stylesheet href uses dynamic target",
+                severity="medium",
+                element=tag,
+                attribute=attr,
+                message=f"{attr}='{value}' loads CSS from an external or dynamic target; verify untrusted data cannot choose stylesheets that hide, overlay, or restyle privileged UI",
+            )
+            self._check_sensitive_url_token(tag, attr, value)
+            return
 
     def _check_meta_refresh_redirect(self, element: ElementTree.Element, tag: str) -> None:
         """Check meta refresh redirects for dynamic or executable URL targets."""
@@ -867,6 +915,21 @@ class QWebScanner:
         # Find external scripts without SRI.
         for match in re.finditer(r"<script\b(?P<attrs>[^>]*)>", content, re.IGNORECASE):
             attrs = match.group("attrs")
+            dynamic_src_match = re.search(r"\b(?P<attr>t-attf?-src)\s*=\s*([\"'])(?P<src>.*?)\2", attrs, re.IGNORECASE | re.DOTALL)
+            if dynamic_src_match and self._looks_dynamic_asset_target(dynamic_src_match.group("src")):
+                line = content[: match.start()].count("\n") + 1
+                findings.append(
+                    QWebFinding(
+                        rule_id="odoo-qweb-dynamic-script-src",
+                        title="QWeb script source uses dynamic target",
+                        severity="high",
+                        file=self.file_path,
+                        line=line,
+                        element="script",
+                        attribute=dynamic_src_match.group("attr"),
+                        message="QWeb script imports JavaScript at runtime from an external or dynamic target; restrict script URLs to reviewed bundles or strict allowlists",
+                    )
+                )
             src_match = re.search(r"\bsrc\s*=\s*([\"'])(?P<src>.*?)\1", attrs, re.IGNORECASE | re.DOTALL)
             if not src_match or not _is_external_url(src_match.group("src")):
                 continue
@@ -890,6 +953,22 @@ class QWebScanner:
         for match in re.finditer(r"<link\b(?P<attrs>[^>]*)>", content, re.IGNORECASE):
             attrs = match.group("attrs")
             rel_match = re.search(r"\brel\s*=\s*([\"'])(?P<rel>.*?)\1", attrs, re.IGNORECASE | re.DOTALL)
+            dynamic_href_match = re.search(r"\b(?P<attr>t-attf?-href)\s*=\s*([\"'])(?P<href>.*?)\2", attrs, re.IGNORECASE | re.DOTALL)
+            if rel_match and "stylesheet" in rel_match.group("rel").lower().split():
+                if dynamic_href_match and self._looks_dynamic_asset_target(dynamic_href_match.group("href")):
+                    line = content[: match.start()].count("\n") + 1
+                    findings.append(
+                        QWebFinding(
+                            rule_id="odoo-qweb-dynamic-stylesheet-href",
+                            title="QWeb stylesheet href uses dynamic target",
+                            severity="medium",
+                            file=self.file_path,
+                            line=line,
+                            element="link",
+                            attribute=dynamic_href_match.group("attr"),
+                            message="QWeb stylesheet href loads CSS from an external or dynamic target; verify untrusted data cannot choose stylesheets that hide, overlay, or restyle privileged UI",
+                        )
+                    )
             href_match = re.search(r"\bhref\s*=\s*([\"'])(?P<href>.*?)\1", attrs, re.IGNORECASE | re.DOTALL)
             if not rel_match or "stylesheet" not in rel_match.group("rel").lower().split():
                 continue

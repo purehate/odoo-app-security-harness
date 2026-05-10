@@ -3196,7 +3196,9 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "frontend_dynamic_code_import",
         (
+            "qweb-dynamic-script-src",
             "web-dynamic-code-import",
+            "qweb script source uses dynamic target",
             "dynamic javascript import uses external or request-derived target",
             "imports javascript at runtime",
             "runtime code loading",
@@ -3253,6 +3255,9 @@ _TAXONOMY_SHAPE_HINTS = (
             "qweb dynamic class attribute",
             "writes dynamic css classes",
             "alter privileged ui affordances",
+            "qweb-dynamic-stylesheet-href",
+            "qweb stylesheet href uses dynamic target",
+            "loads css from an external or dynamic target",
             "web-dynamic-css-injection",
             "stylesheet injection uses request-derived css text",
             "writes dynamic or request-derived css into a stylesheet",

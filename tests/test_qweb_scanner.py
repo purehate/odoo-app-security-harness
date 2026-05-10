@@ -311,6 +311,37 @@ def test_external_script_with_sri_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-qweb-external-script-missing-sri" for f in findings)
 
 
+def test_dynamic_script_src_detected(tmp_path: Path) -> None:
+    """Script src should not be selected from request-controlled template data."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><script t-att-src="request.params.get('script_url')"></script></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-qweb-dynamic-script-src"
+        and f.attribute == "t-att-src"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_static_dynamic_script_src_literal_ignored(tmp_path: Path) -> None:
+    """A QWeb expression returning a static local script path is reviewable source."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><script t-att-src="'/web/assets/debug/web.assets_frontend.js'"></script></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-dynamic-script-src" for f in findings)
+
+
 def test_detects_qweb_expression_inside_script_context(tmp_path: Path) -> None:
     """QWeb output inside <script> needs JavaScript-context serialization review."""
     template = tmp_path / "template.xml"
@@ -384,6 +415,37 @@ def test_external_stylesheet_with_sri_ignored(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert not any(f.rule_id == "odoo-qweb-external-stylesheet-missing-sri" for f in findings)
+
+
+def test_dynamic_stylesheet_href_detected(tmp_path: Path) -> None:
+    """Stylesheet href should not be selected from request-controlled template data."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><link rel="stylesheet" t-attf-href="/theme/#{request.params.get('css')}.css"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-qweb-dynamic-stylesheet-href"
+        and f.attribute == "t-attf-href"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_static_dynamic_stylesheet_href_literal_ignored(tmp_path: Path) -> None:
+    """A QWeb expression returning a static local stylesheet path is reviewable source."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><link rel="stylesheet" t-att-href="'/web/assets/debug/web.assets_frontend.css'"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-dynamic-stylesheet-href" for f in findings)
 
 
 def test_local_stylesheet_sri_ignored(tmp_path: Path) -> None:

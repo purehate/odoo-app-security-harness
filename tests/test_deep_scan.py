@@ -2342,6 +2342,24 @@ def test_taxonomy_coverage_classifies_web_dynamic_code_import() -> None:
     assert "CWE-829" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_qweb_dynamic_script_src() -> None:
+    """QWeb dynamic script URLs should map to dynamic code import taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-qweb-dynamic-script-src",
+                "source": "qweb",
+                "title": "QWeb script source uses dynamic target",
+                "message": "QWeb script imports JavaScript at runtime from an external or dynamic target",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "frontend_dynamic_code_import"
+    assert "CWE-829" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_web_dynamic_worker_script() -> None:
     """Dynamic Worker script leads should map to runtime code loading taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(
@@ -2441,6 +2459,24 @@ def test_taxonomy_coverage_classifies_qweb_dynamic_style_attribute() -> None:
                 "source": "qweb",
                 "title": "QWeb dynamic style attribute",
                 "message": "QWeb t-att-style writes dynamic CSS into a style attribute",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "frontend_dynamic_css_injection"
+    assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
+
+
+def test_taxonomy_coverage_classifies_qweb_dynamic_stylesheet_href() -> None:
+    """QWeb dynamic stylesheet URLs should reuse frontend CSS injection taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-qweb-dynamic-stylesheet-href",
+                "source": "qweb",
+                "title": "QWeb stylesheet href uses dynamic target",
+                "message": "QWeb stylesheet href loads CSS from an external or dynamic target",
             }
         ]
     )
