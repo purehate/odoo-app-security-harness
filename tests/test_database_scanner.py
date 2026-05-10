@@ -229,6 +229,83 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-database-tainted-management-input" for f in findings)
 
 
+def test_class_constant_backed_public_database_manager_route_is_reported(tmp_path: Path) -> None:
+    """Class-scoped route metadata should not hide public database manager exposure."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "db.py").write_text(
+        """
+from odoo import http, service
+from odoo.http import request
+
+class Controller(http.Controller):
+    DB_ROUTES = ['/db/drop', '/db/drop/alt']
+    DB_AUTH = 'none'
+
+    @http.route(DB_ROUTES, auth=DB_AUTH, csrf=False)
+    def drop(self, **kwargs):
+        request.session.db = kwargs.get('db')
+        service.db.list_dbs()
+        return service.db.exp_drop(kwargs.get('password'), kwargs.get('db'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_database_operations(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-database-management-call"
+        and f.severity == "critical"
+        and f.route == "/db/drop,/db/drop/alt"
+        for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-database-listing-route"
+        and f.severity == "high"
+        and f.route == "/db/drop,/db/drop/alt"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-database-session-db-assignment" and f.severity == "critical" for f in findings)
+
+
+def test_class_constant_static_unpack_public_database_manager_route_is_reported(tmp_path: Path) -> None:
+    """Class-scoped static route option dictionaries should preserve DB manager metadata."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "db.py").write_text(
+        """
+from odoo import http, service
+
+class Controller(http.Controller):
+    ROUTE_BASE = '/db/drop'
+    DB_ROUTE = ROUTE_BASE
+    AUTH_BASE = 'none'
+    DB_AUTH = AUTH_BASE
+    DB_OPTIONS = {
+        'route': DB_ROUTE,
+        'auth': DB_AUTH,
+        'csrf': False,
+    }
+    OPTIONS_ALIAS = DB_OPTIONS
+
+    @http.route(**OPTIONS_ALIAS)
+    def drop(self, **kwargs):
+        return service.db.exp_drop(kwargs.get('password'), kwargs.get('db'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_database_operations(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-database-management-call"
+        and f.severity == "critical"
+        and f.route == "/db/drop"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-database-tainted-management-input" for f in findings)
+
+
 def test_keyword_constant_backed_public_database_selection_route_is_reported(tmp_path: Path) -> None:
     """Keyword route constants should preserve route evidence for DB selection."""
     controllers = tmp_path / "module" / "controllers"
