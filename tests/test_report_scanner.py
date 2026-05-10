@@ -313,6 +313,61 @@ class Controller(http.Controller):
     assert "odoo-report-tainted-render-records" in rule_ids
 
 
+def test_class_constant_backed_public_report_render_is_reported(tmp_path: Path) -> None:
+    """Class-scoped public route constants should still expose report rendering."""
+    controller = tmp_path / "module" / "controllers" / "report.py"
+    controller.parent.mkdir(parents=True)
+    controller.write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    PUBLIC_AUTH = 'public'
+    REPORT_AUTH = PUBLIC_AUTH
+
+    @http.route('/public/invoice', auth=REPORT_AUTH)
+    def invoice(self, **kwargs):
+        report = request.env.ref('account.account_invoices')
+        return report._render_qweb_pdf([int(kwargs.get('id'))])
+""",
+        encoding="utf-8",
+    )
+
+    findings = ReportPythonScanner(controller).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-report-public-render-route" in rule_ids
+    assert "odoo-report-tainted-render-records" in rule_ids
+
+
+def test_class_constant_static_unpack_public_report_render_is_reported(tmp_path: Path) -> None:
+    """Class-scoped static **route options should not hide public report rendering."""
+    controller = tmp_path / "module" / "controllers" / "report.py"
+    controller.parent.mkdir(parents=True)
+    controller.write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    ROUTE_OPTIONS = {'auth': 'public', 'type': 'http'}
+
+    @http.route('/public/invoice', **ROUTE_OPTIONS)
+    def invoice(self, **kwargs):
+        report = request.env.ref('account.account_invoices')
+        return report._render_qweb_pdf([int(kwargs.get('id'))])
+""",
+        encoding="utf-8",
+    )
+
+    findings = ReportPythonScanner(controller).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-report-public-render-route" in rule_ids
+    assert "odoo-report-tainted-render-records" in rule_ids
+
+
 def test_keyword_constant_backed_none_report_render_is_reported(tmp_path: Path) -> None:
     """Keyword route constants with auth='none' should keep report exposure visible."""
     controller = tmp_path / "module" / "controllers" / "report.py"
@@ -549,6 +604,32 @@ ROOT_UID = 1
 ADMIN_UID = ROOT_UID
 
 class Controller(http.Controller):
+    @http.route('/invoice/<int:order_id>', auth='user')
+    def invoice(self, order_id):
+        order = request.env['sale.order'].with_user(ADMIN_UID).browse(order_id)
+        return request.env.ref('sale.action_report_saleorder').with_user(ADMIN_UID).report_action(order)
+""",
+        encoding="utf-8",
+    )
+
+    findings = ReportPythonScanner(controller).scan_file()
+
+    assert any(f.rule_id == "odoo-report-sudo-render-call" for f in findings)
+
+
+def test_class_constant_backed_superuser_report_action_is_reported(tmp_path: Path) -> None:
+    """Class-scoped superuser aliases should still flag elevated report rendering."""
+    controller = tmp_path / "module" / "controllers" / "report.py"
+    controller.parent.mkdir(parents=True)
+    controller.write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+
     @http.route('/invoice/<int:order_id>', auth='user')
     def invoice(self, order_id):
         order = request.env['sale.order'].with_user(ADMIN_UID).browse(order_id)
