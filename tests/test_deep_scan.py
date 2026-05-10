@@ -1086,13 +1086,19 @@ def test_taxonomy_coverage_classifies_qweb_raw_output_mode() -> None:
                 "source": "qweb",
                 "title": "QWeb raw output mode disables escaping",
                 "message": "t-out-mode='raw' disables normal t-out escaping",
+            },
+            {
+                "rule_id": "odoo-web-owl-raw-output-mode",
+                "source": "web-asset",
+                "title": "OWL inline template disables QWeb escaping",
+                "message": "OWL xml template uses t-out-mode='raw' and disables normal escaping",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "qweb_raw_output_mode"
-    assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"qweb_raw_output_mode"}
+    assert all("CWE-79" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_frontend_message_origin_validation() -> None:

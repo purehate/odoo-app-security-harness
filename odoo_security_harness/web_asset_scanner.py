@@ -297,6 +297,9 @@ MESSAGE_ORIGIN_VALIDATION_RE = re.compile(
     r"(?:===|!==|==|!=|includes\s*\(|indexOf\s*\(|startsWith\s*\(|endsWith\s*\(|\.test\s*\(|\.match\s*\().*\.origin\b",
     re.IGNORECASE,
 )
+OWL_XML_TEMPLATE_RE = re.compile(r"\bxml\s*`(?P<body>(?:\\`|[^`])*)`", re.IGNORECASE | re.DOTALL)
+OWL_TEMPLATE_T_RAW_RE = re.compile(r"\bt-raw\s*=", re.IGNORECASE)
+OWL_TEMPLATE_RAW_OUTPUT_MODE_RE = re.compile(r"\bt-out-mode\s*=\s*['\"]raw['\"]", re.IGNORECASE)
 
 
 def scan_web_assets(repo_path: Path) -> list[WebAssetFinding]:
@@ -850,6 +853,7 @@ class WebAssetScanner:
         self._scan_dom_external_script_missing_sri(lines)
         self._scan_dom_style_text_injection(lines)
         self._scan_dom_external_stylesheet_missing_sri(lines)
+        self._scan_owl_inline_templates(lines)
         return self.findings
 
     def _scan_message_listeners(self, lines: list[str]) -> None:
@@ -1051,6 +1055,31 @@ class WebAssetScanner:
                 "Frontend code creates and loads an external stylesheet without a visible integrity assignment; pin third-party CSS with SRI or serve reviewed styles from trusted bundles",
                 "stylesheet",
             )
+
+    def _scan_owl_inline_templates(self, lines: list[str]) -> None:
+        """Find raw-output QWeb directives embedded in OWL xml template literals."""
+        content = "\n".join(lines)
+        for match in OWL_XML_TEMPLATE_RE.finditer(content):
+            body = match.group("body")
+            line = content[: match.start()].count("\n") + 1
+            if OWL_TEMPLATE_T_RAW_RE.search(body):
+                self._add(
+                    "odoo-web-owl-qweb-t-raw",
+                    "OWL inline template uses QWeb t-raw",
+                    "medium",
+                    line,
+                    "OWL xml template contains t-raw and renders unsafe HTML; verify the expression is trusted or sanitized",
+                    "owl-template",
+                )
+            if OWL_TEMPLATE_RAW_OUTPUT_MODE_RE.search(body):
+                self._add(
+                    "odoo-web-owl-raw-output-mode",
+                    "OWL inline template disables QWeb escaping",
+                    "high",
+                    line,
+                    "OWL xml template uses t-out-mode='raw' and disables normal escaping; verify rendered data is sanitized and trusted",
+                    "owl-template",
+                )
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, sink: str) -> None:
         self.findings.append(

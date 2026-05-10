@@ -1229,6 +1229,60 @@ def test_static_owl_markup_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-web-owl-unsafe-markup" for f in findings)
 
 
+def test_owl_inline_template_t_raw_detected(tmp_path: Path) -> None:
+    """OWL xml template literals can carry QWeb raw-output directives."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """import { xml } from '@odoo/owl';
+export const template = xml`<div><span t-raw="props.html"/></div>`;
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-t-raw"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_raw_output_mode_detected(tmp_path: Path) -> None:
+    """OWL inline templates should not disable QWeb escaping."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """import { xml } from '@odoo/owl';
+export const template = xml`
+    <div>
+        <t t-out="props.html" t-out-mode="raw"/>
+    </div>
+`;
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-raw-output-mode"
+        and f.sink == "owl-template"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_escaped_output_ignored(tmp_path: Path) -> None:
+    """Escaped OWL inline template output should not create raw-output leads."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<span t-out=\"props.name\"/>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id in {"odoo-web-owl-qweb-t-raw", "odoo-web-owl-raw-output-mode"} for f in findings)
+
+
 def test_message_handler_missing_origin_check_detected(tmp_path: Path) -> None:
     """Inbound postMessage handlers should validate event.origin before using data."""
     path = tmp_path / "widget.js"

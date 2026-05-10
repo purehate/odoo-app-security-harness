@@ -483,7 +483,7 @@ _TAXONOMY_SHAPE_HINTS = (
         "json_route_tainted_domain",
         ("odoo-json-route-tainted-domain",),
     ),
-    ("qweb_xss_t_raw", ("qweb-t-raw", "t-raw", "html-field", "unsafe html")),
+    ("qweb_xss_t_raw", ("web-owl-qweb-t-raw", "qweb-t-raw", "t-raw", "html-field", "unsafe html")),
     (
         "qweb_dangerous_tag",
         (
@@ -573,7 +573,9 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "qweb_raw_output_mode",
         (
+            "web-owl-raw-output-mode",
             "qweb-raw-output-mode",
+            "owl inline template disables qweb escaping",
             "raw output mode",
             "t-out-mode='raw'",
             "disables normal t-out escaping",
