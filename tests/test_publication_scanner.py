@@ -380,6 +380,67 @@ class Publish(http.Controller):
     assert "odoo-publication-tainted-runtime-published" in rule_ids
 
 
+def test_aliased_http_module_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
+    """Aliased odoo.http module route decorators should remain recognized."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "publish.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Publish(odoo_http.Controller):
+    @odoo_http.route('/public/orders/<int:order_id>/publish/<int:is_published>', auth='public', csrf=False)
+    def publish_order(self, order_id, is_published):
+        return request.env['sale.order'].sudo().browse(order_id).write({
+            'website_published': is_published,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-publication-public-route-mutation" in rule_ids
+    assert "odoo-publication-sensitive-runtime-published" in rule_ids
+    assert "odoo-publication-tainted-runtime-published" in rule_ids
+
+
+def test_non_odoo_route_decorator_runtime_publication_write_is_not_public(tmp_path: Path) -> None:
+    """Local route decorators should not make publication writes public routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "publish.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Publish(http.Controller):
+    @router.route('/public/orders/<int:order_id>/publish/<int:is_published>', auth='public', csrf=False)
+    def publish_order(self, order_id, is_published):
+        return request.env['sale.order'].sudo().browse(order_id).write({
+            'website_published': is_published,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-publication-public-route-mutation" not in rule_ids
+    assert "odoo-publication-sensitive-runtime-published" in rule_ids
+
+
 def test_constant_backed_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
     """Constant-backed public auth should still flag public publication writes."""
     controllers = tmp_path / "module" / "controllers"
