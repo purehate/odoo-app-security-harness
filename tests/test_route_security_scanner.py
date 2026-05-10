@@ -78,6 +78,34 @@ class Api(http.Controller):
     assert "odoo-route-public-all-methods" in rule_ids
 
 
+def test_flags_class_constant_public_route_options(tmp_path: Path) -> None:
+    """Class-body route option constants should be resolved for method decorators."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "cors.py").write_text(
+        """
+from odoo import http
+
+class Api(http.Controller):
+    ROUTE = '/public/profile'
+    AUTH = 'public'
+    CORS = '*'
+
+    @http.route(ROUTE, auth=AUTH, cors=CORS)
+    def profile(self):
+        return '{}'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_route_security(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-route-cors-wildcard" in rule_ids
+    assert "odoo-route-public-all-methods" in rule_ids
+    assert any(f.route == "/public/profile" for f in findings)
+
+
 def test_flags_constant_alias_public_route_options(tmp_path: Path) -> None:
     """Alias chains inside route option lists should not hide risky public routes."""
     controllers = tmp_path / "module" / "controllers"
@@ -223,6 +251,34 @@ WEBSITE = True
 SITEMAP = False
 
 class Upload(http.Controller):
+    @http.route('/public/upload', auth='public', methods=METHODS, csrf=CSRF, website=WEBSITE, sitemap=SITEMAP)
+    def upload(self, **kwargs):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_route_security(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-route-unsafe-csrf-disabled" in rule_ids
+    assert "odoo-route-public-sitemap-indexed" not in rule_ids
+
+
+def test_flags_class_constant_csrf_and_methods(tmp_path: Path) -> None:
+    """Class-body methods/csrf constants should preserve route posture checks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "upload.py").write_text(
+        """
+from odoo import http
+
+class Upload(http.Controller):
+    METHODS = ['POST']
+    CSRF = False
+    WEBSITE = True
+    SITEMAP = False
+
     @http.route('/public/upload', auth='public', methods=METHODS, csrf=CSRF, website=WEBSITE, sitemap=SITEMAP)
     def upload(self, **kwargs):
         return 'ok'

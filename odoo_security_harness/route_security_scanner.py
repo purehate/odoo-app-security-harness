@@ -63,6 +63,7 @@ class RouteSecurityScanner(ast.NodeVisitor):
         self.path = path
         self.findings: list[RouteSecurityFinding] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.route_names: set[str] = {"route"}
 
     def scan_file(self) -> list[RouteSecurityFinding]:
@@ -86,8 +87,13 @@ class RouteSecurityScanner(ast.NodeVisitor):
                     self.route_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
-        for route in _route_infos(node, self.constants, self.route_names):
+        for route in _route_infos(node, self._effective_constants(), self.route_names):
             self._scan_route(node, route)
         self.generic_visit(node)
 
@@ -199,6 +205,14 @@ class RouteSecurityScanner(ast.NodeVisitor):
             )
         )
 
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
+
 
 @dataclass
 class RouteInfo:
@@ -298,8 +312,12 @@ def _is_http_route(node: ast.AST, route_names: set[str] | None = None) -> bool:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
