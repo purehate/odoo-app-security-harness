@@ -72,6 +72,7 @@ class OrmDomainScanner(ast.NodeVisitor):
         self.route_names: set[str] = {"route"}
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[OrmDomainFinding]:
         """Scan the file."""
@@ -90,7 +91,9 @@ class OrmDomainScanner(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
         previous_elevated = set(self.elevated_names)
-        self.route_stack.append(_route_info(node, self.constants, self.route_names) or RouteContext(is_route=False))
+        self.route_stack.append(
+            _route_info(node, self._effective_constants(), self.route_names) or RouteContext(is_route=False)
+        )
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in DOMAIN_ARG_NAMES:
                 self.tainted_names.add(arg.arg)
@@ -104,6 +107,11 @@ class OrmDomainScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo.http":
@@ -171,7 +179,9 @@ class OrmDomainScanner(ast.NodeVisitor):
 
     def _add_domain_search(self, node: ast.Call, sink: str) -> None:
         route = self._current_route()
-        sudo = _is_elevated_expr(node.func, self.constants) or _uses_name(_call_receiver(node.func), self.elevated_names)
+        sudo = _is_elevated_expr(node.func, self._effective_constants()) or _uses_name(
+            _call_receiver(node.func), self.elevated_names
+        )
         if sudo:
             rule_id = "odoo-orm-domain-tainted-sudo-search"
             title = "Request/context-controlled domain is searched through an elevated environment"
@@ -279,7 +289,7 @@ class OrmDomainScanner(ast.NodeVisitor):
             return
         if not isinstance(target, ast.Name):
             return
-        if _is_elevated_expr(value, self.constants) or _uses_name(value, self.elevated_names):
+        if _is_elevated_expr(value, self._effective_constants()) or _uses_name(value, self.elevated_names):
             self.elevated_names.add(target.id)
         else:
             self.elevated_names.discard(target.id)
@@ -292,6 +302,14 @@ class OrmDomainScanner(ast.NodeVisitor):
 
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, sink: str) -> None:
         self.findings.append(
@@ -361,8 +379,12 @@ def _is_http_route(node: ast.AST, route_names: set[str] | None = None) -> bool:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

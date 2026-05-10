@@ -240,6 +240,33 @@ class Search(http.Controller):
     )
 
 
+def test_class_constant_static_unpack_public_route_options_tainted_search_is_high(tmp_path: Path) -> None:
+    """Class-scoped **route options should preserve public ORM-domain severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Search(http.Controller):
+    SEARCH_ROUTE = '/public/search'
+    PUBLIC_AUTH = 'public'
+    ROUTE_OPTIONS = {'route': SEARCH_ROUTE, 'auth': PUBLIC_AUTH}
+
+    @http.route(**ROUTE_OPTIONS)
+    def search(self, **kwargs):
+        domain = kwargs.get('domain')
+        return request.env['res.partner'].search(domain)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_domains(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-domain-tainted-search" and f.severity == "high" for f in findings)
+
+
 def test_request_alias_public_tainted_sudo_search_domain(tmp_path: Path) -> None:
     """Aliased request imports should still taint sudo search domains."""
     controllers = tmp_path / "module" / "controllers"
@@ -337,6 +364,37 @@ class Search(http.Controller):
     assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" for f in findings)
 
 
+def test_class_constant_public_route_tainted_superuser_search_domain_is_critical(tmp_path: Path) -> None:
+    """Class-scoped route and superuser constants should preserve elevated severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Search(http.Controller):
+    SEARCH_ROUTE = '/public/search'
+    PUBLIC_AUTH = 'public'
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+
+    @http.route(SEARCH_ROUTE, auth=PUBLIC_AUTH)
+    def search(self, **kwargs):
+        domain = kwargs.get('domain')
+        return request.env['res.partner'].with_user(ADMIN_UID).search(domain)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_domains(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical"
+        for f in findings
+    )
+
+
 def test_flags_aliased_superuser_tainted_search_domain(tmp_path: Path) -> None:
     """Superuser model aliases should still classify tainted domains as privileged."""
     controllers = tmp_path / "module" / "controllers"
@@ -377,6 +435,33 @@ class Search(http.Controller):
     def search(self, **kwargs):
         domain = kwargs.get('domain')
         Partners = request.env['res.partner'].with_user(ROOT_UID)
+        return Partners.search(domain)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_domains(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" for f in findings)
+
+
+def test_class_constant_aliased_superuser_tainted_search_domain_is_reported(tmp_path: Path) -> None:
+    """Class-scoped with_user constants should preserve elevated alias tracking."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Search(http.Controller):
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+
+    @http.route('/public/search', auth='public')
+    def search(self, **kwargs):
+        domain = kwargs.get('domain')
+        Partners = request.env['res.partner'].with_user(ADMIN_UID)
         return Partners.search(domain)
 """,
         encoding="utf-8",
