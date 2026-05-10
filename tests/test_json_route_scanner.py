@@ -78,6 +78,52 @@ class Api(http.Controller):
     assert "odoo-json-route-csrf-disabled" in rule_ids
 
 
+def test_flags_aliased_http_module_public_json_route(tmp_path: Path) -> None:
+    """Aliased Odoo http modules should still mark JSON endpoints as routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "api.py").write_text(
+        """
+from odoo import http as odoo_http
+
+class Api(odoo_http.Controller):
+    @odoo_http.route('/api/public', auth='public', type='json', csrf=False)
+    def public(self, **kwargs):
+        return {'ok': True}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_json_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-json-route-public-auth" in rule_ids
+    assert "odoo-json-route-csrf-disabled" in rule_ids
+
+
+def test_ignores_non_odoo_route_attribute(tmp_path: Path) -> None:
+    """Arbitrary .route decorators should not be treated as Odoo JSON routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "api.py").write_text(
+        """
+class Bus:
+    def route(self, path, **kwargs):
+        return lambda func: func
+
+bus = Bus()
+
+class Api:
+    @bus.route('/api/public', auth='public', type='json', csrf=False)
+    def public(self, **kwargs):
+        return {'ok': True}
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_json_routes(tmp_path) == []
+
+
 def test_flags_public_jsonrpc_route_with_csrf_disabled(tmp_path: Path) -> None:
     """Odoo's documented jsonrpc route type should be treated as JSON."""
     controllers = tmp_path / "module" / "controllers"
