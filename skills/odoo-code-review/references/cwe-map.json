@@ -2270,6 +2270,12 @@
       "capec": ["CAPEC-118"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "controller_weak_permissions_policy": {
+      "label": "Controller sets a weak Permissions-Policy or Feature-Policy header",
+      "cwe": ["CWE-693", "CWE-200", "CWE-284"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
     "controller_tainted_html_response": {
       "label": "Controller returns request-derived data as an HTML response",
       "cwe": ["CWE-79", "CWE-116"],

@@ -1835,6 +1835,84 @@ class Controller(http.Controller):
     assert scan_controller_responses(tmp_path) == []
 
 
+def test_flags_weak_permissions_policy_header(tmp_path: Path) -> None:
+    """Permissions-Policy should not grant sensitive APIs to arbitrary origins."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/page', auth='public')
+    def page(self):
+        return request.make_response('ok', headers={'Permissions-Policy': 'geolocation=*; camera=(self *)'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-weak-permissions-policy"
+        and f.severity == "medium"
+        and "geolocation" in f.message
+        for f in findings
+    )
+
+
+def test_flags_weak_legacy_feature_policy_header(tmp_path: Path) -> None:
+    """Legacy Feature-Policy should not grant sensitive APIs to arbitrary origins."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/account/page', auth='user')
+    def page(self):
+        response = request.make_response('ok')
+        response.headers['Feature-Policy'] = 'microphone *'
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-weak-permissions-policy"
+        and f.severity == "low"
+        and "microphone" in f.message
+        for f in findings
+    )
+
+
+def test_strict_permissions_policy_header_is_ignored(tmp_path: Path) -> None:
+    """Restricted Permissions-Policy directives should avoid posture noise."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/page', auth='public')
+    def page(self):
+        response = request.make_response('ok')
+        response.headers['Permissions-Policy'] = 'geolocation=(), camera=(self)'
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_controller_responses(tmp_path) == []
+
+
 def test_sensitive_cookie_with_security_flags_is_ignored(tmp_path: Path) -> None:
     """Explicit HttpOnly/Secure/SameSite flags suppress the cookie posture warning."""
     controllers = tmp_path / "module" / "controllers"

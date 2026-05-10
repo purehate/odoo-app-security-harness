@@ -70,6 +70,15 @@ SENSITIVE_RESPONSE_MARKERS = (
     "token",
 )
 FILE_OFFLOAD_HEADERS = {"x-accel-redirect", "x-sendfile"}
+SENSITIVE_BROWSER_POLICY_FEATURES = (
+    "camera",
+    "microphone",
+    "geolocation",
+    "payment",
+    "usb",
+    "serial",
+    "clipboard-read",
+)
 
 
 def scan_controller_responses(repo_path: Path) -> list[ControllerResponseFinding]:
@@ -442,6 +451,19 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "medium" if route.auth in {"public", "none"} else "low",
                 line,
                 f"Controller sets Referrer-Policy to {weak_referrer_policy!r}; use no-referrer or strict-origin-when-cross-origin to reduce tokenized URL leakage",
+                sink,
+            )
+        weak_permissions_policy = _weak_permissions_policy_reason(
+            lowered_header, value, self._effective_constants()
+        )
+        if weak_permissions_policy:
+            route = self._current_route()
+            self._add(
+                "odoo-controller-weak-permissions-policy",
+                "Controller sets weak browser permissions policy",
+                "medium" if route.auth in {"public", "none"} else "low",
+                line,
+                f"Controller allows sensitive browser feature {weak_permissions_policy} in {header_name}; restrict camera, microphone, geolocation, payment, USB, serial, and clipboard access to trusted origins only",
                 sink,
             )
         if lowered_header == "access-control-allow-credentials" and _truthy_header_value(
@@ -1049,6 +1071,21 @@ def _weak_referrer_policy_value(header_name: str, value: ast.AST, constants: dic
     policy = _constant_string(value, constants).strip()
     if policy.lower() in {"unsafe-url", "no-referrer-when-downgrade"}:
         return policy
+    return ""
+
+
+def _weak_permissions_policy_reason(header_name: str, value: ast.AST, constants: dict[str, ast.AST]) -> str:
+    if header_name not in {"permissions-policy", "feature-policy"}:
+        return ""
+    policy = _constant_string(value, constants).lower()
+    if not policy:
+        return ""
+    for feature in SENSITIVE_BROWSER_POLICY_FEATURES:
+        feature_pattern = re.escape(feature)
+        if re.search(rf"(?:^|[,;])\s*{feature_pattern}\s*=\s*(?:\*|\([^)]*\*[^)]*\))", policy):
+            return f"{feature}=*"
+        if re.search(rf"(?:^|;)\s*{feature_pattern}\s+\*", policy):
+            return f"{feature} *"
     return ""
 
 

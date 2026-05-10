@@ -3820,6 +3820,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "controller_weak_permissions_policy",
+        (
+            "odoo-controller-weak-permissions-policy",
+            "controller sets weak browser permissions policy",
+            "allows sensitive browser feature",
+            "restrict camera, microphone, geolocation",
+        ),
+    ),
+    (
         "controller_tainted_html_response",
         (
             "controller-tainted-html-response",
