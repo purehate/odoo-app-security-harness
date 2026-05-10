@@ -214,6 +214,37 @@ class Sale(models.Model):
     )
 
 
+def test_flags_class_constant_alias_with_user_onchange_mutation_and_model_name(tmp_path: Path) -> None:
+    """Class-scoped model names and superuser IDs should not hide sudo mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import api, models
+
+class Sale(models.Model):
+    BASE_MODEL = 'x.sale'
+    SALE_MODEL = BASE_MODEL
+    ADMIN_UID = 1
+    ROOT_UID = ADMIN_UID
+    _name = SALE_MODEL
+
+    @api.onchange('partner_id')
+    def _onchange_partner_id(self):
+        orders = self.env['sale.order'].with_user(ROOT_UID)
+        orders.write({'note': 'x'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-model-method-onchange-sudo-mutation" and f.model == "x.sale"
+        for f in findings
+    )
+
+
 def test_flags_env_ref_admin_onchange_mutation(tmp_path: Path) -> None:
     """with_user(base.user_admin) mutations inside onchange methods are elevated."""
     models = tmp_path / "module" / "models"
@@ -609,6 +640,37 @@ class SideEffects(models.Model):
     findings = scan_model_methods(tmp_path)
 
     assert any(f.rule_id == "odoo-model-method-onchange-sensitive-model-mutation" for f in findings)
+
+
+def test_flags_class_constant_alias_lifecycle_sensitive_model_mutation(tmp_path: Path) -> None:
+    """Class-scoped env model aliases should still flag lifecycle mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "side_effects.py").write_text(
+        """
+from odoo import api, models
+
+class SideEffects(models.Model):
+    BASE_MODEL = 'x.side.effects'
+    EFFECTS_MODEL = BASE_MODEL
+    IDENTITY_MODEL = 'res.users'
+    USERS_MODEL = IDENTITY_MODEL
+    _name = EFFECTS_MODEL
+
+    @api.onchange('partner_id')
+    def _onchange_partner_id(self):
+        self.env[USERS_MODEL].write({'active': False})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-model-method-onchange-sensitive-model-mutation"
+        and f.model == "x.side.effects"
+        for f in findings
+    )
 
 
 def test_flags_constraint_sudo_mutation_by_name(tmp_path: Path) -> None:

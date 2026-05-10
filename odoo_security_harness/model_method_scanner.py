@@ -80,6 +80,7 @@ class ModelMethodScanner(ast.NodeVisitor):
         self.http_modules = {"requests", "httpx"}
         self.http_functions: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[ModelMethodFinding]:
         """Scan the file."""
@@ -114,9 +115,11 @@ class ModelMethodScanner(ast.NodeVisitor):
         if not _is_odoo_model(node):
             self.generic_visit(node)
             return
-        self.model_stack.append(_extract_model_name(node, self.constants))
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.model_stack.append(_extract_model_name(node, self._effective_constants()))
         self.generic_visit(node)
         self.model_stack.pop()
+        self.class_constants_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         if not self.model_stack:
@@ -138,7 +141,7 @@ class ModelMethodScanner(ast.NodeVisitor):
                     target,
                     node.value,
                     context.sudo_vars,
-                    lambda value: _is_sudo_expr(value, context.sudo_vars, self.constants),
+                    lambda value: _is_sudo_expr(value, context.sudo_vars, self._effective_constants()),
                 )
                 self._track_alias(
                     target,
@@ -155,7 +158,7 @@ class ModelMethodScanner(ast.NodeVisitor):
                 node.target,
                 node.value,
                 context.sudo_vars,
-                lambda value: _is_sudo_expr(value, context.sudo_vars, self.constants),
+                lambda value: _is_sudo_expr(value, context.sudo_vars, self._effective_constants()),
             )
             self._track_alias(
                 node.target,
@@ -172,7 +175,7 @@ class ModelMethodScanner(ast.NodeVisitor):
                 node.target,
                 node.value,
                 context.sudo_vars,
-                lambda value: _is_sudo_expr(value, context.sudo_vars, self.constants),
+                lambda value: _is_sudo_expr(value, context.sudo_vars, self._effective_constants()),
             )
             self._track_alias(
                 node.target,
@@ -227,7 +230,7 @@ class ModelMethodScanner(ast.NodeVisitor):
                 f"{context.kind} model method calls eval/exec/safe_eval; verify no record field or context value can control evaluated code",
                 context.name,
             )
-        sensitive_model = _call_receiver_sensitive_model(node.func, self.constants)
+        sensitive_model = _call_receiver_sensitive_model(node.func, self._effective_constants())
         if sensitive_model and sink.rsplit(".", 1)[-1] in SENSITIVE_MODEL_MUTATION_METHODS:
             self._add(
                 SENSITIVE_MODEL_MUTATION_RULES[context.kind],
@@ -237,7 +240,7 @@ class ModelMethodScanner(ast.NodeVisitor):
                 f"{context.kind} model method mutates sensitive model '{sensitive_model}'; verify lifecycle side effects, caller access, and audit trail",
                 context.name,
             )
-        elif _is_privileged_mutation(node.func, context.sudo_vars, self.constants):
+        elif _is_privileged_mutation(node.func, context.sudo_vars, self._effective_constants()):
             self._add(
                 SUDO_MUTATION_RULES[context.kind],
                 "Odoo model method performs elevated mutation",
@@ -274,6 +277,14 @@ class ModelMethodScanner(ast.NodeVisitor):
                 method=method,
             )
         )
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 @dataclass
@@ -542,8 +553,12 @@ def _unpack_target_value_pairs(
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
