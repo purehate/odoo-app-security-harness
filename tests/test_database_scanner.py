@@ -122,6 +122,35 @@ class Controller(http.Controller):
     assert "odoo-database-tainted-management-input" in rule_ids
 
 
+def test_aliased_http_module_public_database_manager_route_is_reported(tmp_path: Path) -> None:
+    """Aliased Odoo http modules should still expose public database manager behavior."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "db.py").write_text(
+        """
+from odoo import http as odoo_http, service
+from odoo.http import request
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/db/drop', auth='none', csrf=False)
+    def drop(self, **kwargs):
+        request.session.db = kwargs.get('db')
+        service.db.list_dbs()
+        return service.db.exp_drop(kwargs.get('password'), kwargs.get('db'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_database_operations(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-database-session-db-assignment" in rule_ids
+    assert "odoo-database-tainted-selection" in rule_ids
+    assert "odoo-database-listing-route" in rule_ids
+    assert "odoo-database-management-call" in rule_ids
+    assert "odoo-database-tainted-management-input" in rule_ids
+
+
 def test_constant_backed_public_database_manager_route_is_reported(tmp_path: Path) -> None:
     """Constant-backed route metadata should not hide public database manager exposure."""
     controllers = tmp_path / "module" / "controllers"
@@ -383,6 +412,33 @@ class Controller(http.Controller):
     assert "odoo-database-tainted-selection" in rule_ids
     assert "odoo-database-management-call" in rule_ids
     assert "odoo-database-tainted-management-input" in rule_ids
+
+
+def test_ignores_non_odoo_route_path_database_name_taint(tmp_path: Path) -> None:
+    """Arbitrary .route decorators should not taint database-name parameters as Odoo routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "db.py").write_text(
+        """
+from odoo.service.db import db_filter
+
+class Bus:
+    def route(self, path, **kwargs):
+        return lambda func: func
+
+bus = Bus()
+
+class Controller:
+    @bus.route('/db/select/<string:database_name>', auth='public')
+    def select(self, database_name):
+        return db_filter(database_name)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_database_operations(tmp_path)
+
+    assert not any(f.rule_id == "odoo-database-tainted-selection" for f in findings)
 
 
 def test_unpacked_database_management_input_is_reported(tmp_path: Path) -> None:
