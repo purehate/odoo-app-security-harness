@@ -55,6 +55,7 @@ class OAuthScanner(ast.NodeVisitor):
         self.oauth_identity_payload_names: set[str] = set()
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
         self.route_decorator_names: set[str] = {"route"}
 
@@ -81,13 +82,20 @@ class OAuthScanner(ast.NodeVisitor):
                     self.route_decorator_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
         previous_user_model_names = set(self.user_model_names)
         previous_oauth_identity_payload_names = set(self.oauth_identity_payload_names)
         previous_local_constants = self.local_constants
         self.local_constants = {}
-        route = _route_info(node, self.constants, self.route_decorator_names) or RouteContext(is_route=False)
+        route = _route_info(node, self._effective_constants(), self.route_decorator_names) or RouteContext(
+            is_route=False
+        )
         self.route_stack.append(route)
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in TAINTED_ARG_NAMES or (route.is_route and arg.arg not in {"self", "cls"}):
@@ -238,6 +246,7 @@ class OAuthScanner(ast.NodeVisitor):
             node,
             self.user_model_names,
             self.oauth_identity_payload_names,
+            constants,
         ) and _call_has_tainted_input(node, self._expr_is_tainted):
             self._add(
                 "odoo-oauth-tainted-identity-write",
@@ -354,7 +363,7 @@ class OAuthScanner(ast.NodeVisitor):
             self._mark_user_model_target(target.value, value)
             return
 
-        if _is_user_model_expr(value, self.user_model_names):
+        if _is_user_model_expr(value, self.user_model_names, self._effective_constants()):
             self._mark_name_target(target, self.user_model_names)
         else:
             self._discard_name_target(target, self.user_model_names)
@@ -402,9 +411,13 @@ class OAuthScanner(ast.NodeVisitor):
                 self._discard_local_constant_target(element)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.local_constants:
+        if not self.local_constants and not self.class_constants_stack:
             return self.constants
-        return {**self.constants, **self.local_constants}
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        constants.update(self.local_constants)
+        return constants
 
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
@@ -540,8 +553,12 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
@@ -728,17 +745,26 @@ def _is_http_client_call(node: ast.Call) -> bool:
     return method in HTTP_METHODS and sink.startswith(("requests.", "httpx."))
 
 
-def _is_user_model_expr(node: ast.AST, user_model_names: set[str] | None = None) -> bool:
+def _is_user_model_expr(
+    node: ast.AST,
+    user_model_names: set[str] | None = None,
+    constants: dict[str, ast.AST] | None = None,
+) -> bool:
+    constants = constants or {}
+    node = _resolve_constant(node, constants)
     if isinstance(node, ast.Name) and user_model_names and node.id in user_model_names:
         return True
     if "res.users" in _safe_unparse(node).lower():
         return True
     if isinstance(node, ast.Attribute):
-        return _is_user_model_expr(node.value, user_model_names)
+        return _is_user_model_expr(node.value, user_model_names, constants)
     if isinstance(node, ast.Call):
-        return _is_user_model_expr(node.func, user_model_names)
+        return _is_user_model_expr(node.func, user_model_names, constants)
     if isinstance(node, ast.Subscript):
-        return _is_user_model_expr(node.value, user_model_names)
+        model = _resolve_constant(node.slice, constants)
+        if isinstance(model, ast.Constant) and model.value == "res.users":
+            return True
+        return _is_user_model_expr(node.value, user_model_names, constants)
     return False
 
 
@@ -788,6 +814,7 @@ def _is_identity_write(
     node: ast.Call,
     user_model_names: set[str] | None = None,
     oauth_identity_payload_names: set[str] | None = None,
+    constants: dict[str, ast.AST] | None = None,
 ) -> bool:
     sink = _call_name(node.func)
     method = sink.rsplit(".", 1)[-1]
@@ -795,7 +822,11 @@ def _is_identity_write(
     oauth_identity_payload_names = oauth_identity_payload_names or set()
     return (
         method in {"create", "write"}
-        and ("res.users" in _safe_unparse(node.func) or sink.split(".", 1)[0] in user_model_names)
+        and (
+            "res.users" in _safe_unparse(node.func)
+            or sink.split(".", 1)[0] in user_model_names
+            or _is_user_model_expr(node.func, user_model_names, constants)
+        )
         and _call_mentions_oauth_identity_payload(node, oauth_identity_payload_names)
     )
 

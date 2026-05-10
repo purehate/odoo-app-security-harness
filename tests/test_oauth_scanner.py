@@ -273,6 +273,105 @@ class Controller(http.Controller):
     assert any(f.route == "/auth/oauth/callback,/auth/oidc/callback" for f in findings)
 
 
+def test_class_constant_backed_public_oauth_callback_risks_are_reported(tmp_path: Path) -> None:
+    """Class-scoped public callback constants should still expose OAuth risks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+import jwt
+import requests
+
+class Controller(http.Controller):
+    CALLBACK_ROUTES = ['/auth/oauth/class-callback']
+    CALLBACK_AUTH = 'public'
+    TLS_VERIFY = False
+    JWT_OPTIONS = {'verify_signature': False}
+
+    @http.route(CALLBACK_ROUTES, auth=CALLBACK_AUTH, csrf=False)
+    def callback(self, **kwargs):
+        token = kwargs.get('id_token')
+        claims = jwt.decode(token, options=JWT_OPTIONS)
+        response = requests.get(kwargs.get('userinfo_url'), timeout=10, verify=TLS_VERIFY)
+        return request.session.authenticate(request.db, kwargs.get('login'), kwargs.get('access_token'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-oauth-public-callback-route" in rule_ids
+    assert "odoo-oauth-jwt-verification-disabled" in rule_ids
+    assert "odoo-oauth-http-verify-disabled" in rule_ids
+    assert "odoo-oauth-session-authenticate" in rule_ids
+    assert any(f.rule_id == "odoo-oauth-public-callback-route" and f.route == "/auth/oauth/class-callback" for f in findings)
+
+
+def test_class_constant_static_unpack_route_options_identity_write_is_critical(tmp_path: Path) -> None:
+    """Class-scoped ** route options should preserve auth='none' severity for identity writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    CALLBACK_OPTIONS = {
+        'routes': ['/auth/oauth/class-options'],
+        'auth': 'none',
+    }
+    USER_MODEL = 'res.users'
+
+    @http.route(**CALLBACK_OPTIONS)
+    def callback(self, **kwargs):
+        return request.env[USER_MODEL].sudo().write({'oauth_uid': kwargs.get('sub')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-oauth-tainted-identity-write"
+        and f.severity == "critical"
+        and f.route == "/auth/oauth/class-options"
+        for f in findings
+    )
+
+
+def test_local_constant_user_model_oauth_identity_write_is_reported(tmp_path: Path) -> None:
+    """Function-local user model aliases should not hide OAuth identity writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/local-model', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        user_model = 'res.users'
+        users = request.env[user_model].sudo()
+        return users.write({'oauth_uid': kwargs.get('sub')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-oauth-tainted-identity-write"
+        and f.severity == "critical"
+        and f.route == "/auth/oauth/local-model"
+        for f in findings
+    )
+
+
 def test_recursive_static_unpack_route_options_identity_write_is_critical(tmp_path: Path) -> None:
     """Recursive constant aliases inside ** route options should preserve public severity."""
     controllers = tmp_path / "module" / "controllers"
