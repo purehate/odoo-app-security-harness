@@ -112,6 +112,29 @@ class TestController(http.Controller):
         assert "odoo-deep-public-sudo" in rule_ids
         assert "odoo-deep-public-sudo-search" in rule_ids
 
+    def test_local_route_decorator_with_sudo_is_not_public_route(self) -> None:
+        """Local route decorators should not create Odoo public route context."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+def route(*args, **kwargs):
+    def decorate(func):
+        return func
+    return decorate
+
+class TestController(http.Controller):
+    @route('/test/public', auth='public')
+    def test_public(self):
+        return request.env['res.users'].sudo().search([])
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-public-sudo" not in rule_ids
+        assert "odoo-deep-public-sudo-search" not in rule_ids
+
     def test_constant_backed_auth_none_request_env(self) -> None:
         """Constant-backed auth='none' should still flag request.env usage."""
         source = """

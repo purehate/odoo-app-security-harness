@@ -75,7 +75,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.unsafe_sql_vars: set[str] = set()
         self.request_names: set[str] = {"request"}
         self.http_module_names: set[str] = {"http"}
-        self.route_decorator_names: set[str] = {"route"}
+        self.route_decorator_names: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
 
