@@ -219,6 +219,32 @@ def test_detects_iframe_missing_sandbox(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-qweb-iframe-missing-sandbox" and f.severity == "medium" for f in findings)
 
 
+def test_detects_dynamic_iframe_srcdoc_html(tmp_path: Path) -> None:
+    """iframe srcdoc receives an HTML document and should not be request-derived."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><iframe sandbox="" t-att-srcdoc="record.preview_html"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-srcdoc-html" and f.attribute == "t-att-srcdoc" for f in findings)
+
+
+def test_static_iframe_srcdoc_ignored(tmp_path: Path) -> None:
+    """Static srcdoc literals are reviewed template source."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><iframe sandbox="" srcdoc="&lt;p&gt;Help&lt;/p&gt;"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-srcdoc-html" for f in findings)
+
+
 def test_external_script_missing_sri_detected(tmp_path: Path) -> None:
     """Third-party scripts should be pinned with Subresource Integrity."""
     template = tmp_path / "template.xml"

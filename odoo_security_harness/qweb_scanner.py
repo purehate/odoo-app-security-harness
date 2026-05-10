@@ -70,6 +70,10 @@ class QWebScanner:
         r"(#\{|\{\{|%\(|%s|\+|\b(?:record|object|request|params|values|ctx|context|payload|response|style|css)\b)",
         re.IGNORECASE,
     )
+    HTML_DYNAMIC_MARKER_RE = re.compile(
+        r"(#\{|\{\{|%\(|%s|\+|\b(?:record|object|request|params|values|ctx|context|payload|response|html|markup|body)\b)",
+        re.IGNORECASE,
+    )
     CLASS_DYNAMIC_MARKER_RE = re.compile(
         r"(#\{|\{\{|%\(|%s|\+|\b(?:record|object|request|params|values|ctx|context|payload|response|state|status|group|role|class)\b)",
         re.IGNORECASE,
@@ -213,6 +217,9 @@ class QWebScanner:
             if attr_name in ("href", "src", "action"):
                 self._check_url_attr(tag, attr_name, value)
 
+            if attr_name == "srcdoc" and self._looks_dynamic_html_value(value):
+                self._check_srcdoc_html_sink(tag, attr_name, value)
+
             # Inline event handlers
             if attr_name.startswith("on"):
                 self._add_finding(
@@ -261,6 +268,9 @@ class QWebScanner:
                 attribute=attr,
                 message=f"{attr}='{value}' writes dynamic CSS classes; verify untrusted data cannot hide controls, spoof status, or alter privileged UI affordances",
             )
+            return
+        if base_attr == "srcdoc" and self._looks_dynamic_html_value(value):
+            self._check_srcdoc_html_sink(tag, attr, value)
             return
         if self._looks_sensitive_attribute_render(base_attr, value):
             self._check_sensitive_render(tag, attr, value)
@@ -350,6 +360,9 @@ class QWebScanner:
                 attribute=attr,
                 message=f"{attr}='{value}' formats dynamic CSS classes; verify untrusted data cannot hide controls, spoof status, or alter privileged UI affordances",
             )
+            return
+        if base_attr == "srcdoc" and self._looks_dynamic_html_value(value):
+            self._check_srcdoc_html_sink(tag, attr, value)
             return
         if self._looks_sensitive_attribute_render(base_attr, value):
             self._check_sensitive_render(tag, attr, value)
@@ -515,9 +528,24 @@ class QWebScanner:
         """Return True for dynamic style attributes that can restyle privileged UI."""
         return bool(self.STYLE_DYNAMIC_MARKER_RE.search(value) or self.CSS_URL_RE.search(value))
 
+    def _looks_dynamic_html_value(self, value: str) -> bool:
+        """Return True for template expressions that write dynamic HTML."""
+        return bool(self.HTML_DYNAMIC_MARKER_RE.search(value))
+
     def _looks_dynamic_class_value(self, value: str) -> bool:
         """Return True for dynamic class attributes that can alter visible UI state."""
         return bool(self.CLASS_DYNAMIC_MARKER_RE.search(value))
+
+    def _check_srcdoc_html_sink(self, tag: str, attr: str, value: str) -> None:
+        """Check iframe srcdoc attributes that receive dynamic HTML."""
+        self._add_finding(
+            rule_id="odoo-qweb-srcdoc-html",
+            title="QWeb iframe srcdoc receives dynamic HTML",
+            severity="high",
+            element=tag,
+            attribute=attr,
+            message=f"{attr}='{value}' writes dynamic HTML into iframe srcdoc; sanitize HTML and sandbox the frame before rendering untrusted template data",
+        )
 
     def _mapped_attribute_value(self, mapping: str, key: str) -> str | None:
         """Return a best-effort value expression from a QWeb t-att mapping."""
@@ -903,6 +931,25 @@ class QWebScanner:
                     element="",
                     attribute=match.group(1),
                     message=f"{match.group(1)} writes dynamic CSS into a style attribute; verify untrusted data cannot hide, overlay, or restyle privileged UI",
+                )
+            )
+
+        # Find iframe srcdoc attributes that receive dynamic HTML.
+        for match in re.finditer(r'((?:t-attf?-)?srcdoc)\s*=\s*(["\'])(.*?)\2', content, re.IGNORECASE):
+            value = match.group(3)
+            if not self._looks_dynamic_html_value(value):
+                continue
+            line = content[: match.start()].count("\n") + 1
+            findings.append(
+                QWebFinding(
+                    rule_id="odoo-qweb-srcdoc-html",
+                    title="QWeb iframe srcdoc receives dynamic HTML",
+                    severity="high",
+                    file=self.file_path,
+                    line=line,
+                    element="",
+                    attribute=match.group(1),
+                    message=f"{match.group(1)} writes dynamic HTML into iframe srcdoc; sanitize HTML and sandbox the frame before rendering untrusted template data",
                 )
             )
 

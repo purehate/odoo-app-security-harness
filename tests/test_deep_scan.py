@@ -1131,6 +1131,24 @@ def test_taxonomy_coverage_classifies_frontend_dom_xss() -> None:
     assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_qweb_srcdoc_dom_xss() -> None:
+    """QWeb iframe srcdoc HTML sinks should carry DOM XSS taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-qweb-srcdoc-html",
+                "source": "qweb",
+                "title": "QWeb iframe srcdoc receives dynamic HTML",
+                "message": "t-att-srcdoc writes dynamic HTML into iframe srcdoc",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "frontend_dom_xss"
+    assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_web_client_side_redirect() -> None:
     """Dynamic frontend navigation should map to open redirect taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(
