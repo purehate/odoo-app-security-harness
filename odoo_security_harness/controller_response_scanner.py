@@ -422,6 +422,18 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 f"Controller sets a Content-Security-Policy with {weak_csp_reason}; tighten script/style sources before relying on CSP to limit XSS impact",
                 sink,
             )
+        if lowered_header == "access-control-allow-credentials" and _truthy_header_value(
+            value, self._effective_constants()
+        ):
+            route = self._current_route()
+            self._add(
+                "odoo-controller-cors-credentials-enabled",
+                "Controller enables credentialed CORS",
+                "medium" if route.auth in {"public", "none"} else "low",
+                line,
+                "Controller sets Access-Control-Allow-Credentials: true; verify allowed origins are fixed, trusted, and never wildcarded or reflected from request headers",
+                sink,
+            )
         if header_name.lower() != "access-control-allow-origin":
             return
         if self._expr_is_tainted(value):
@@ -970,6 +982,16 @@ def _headers_include_html_content_type(node: ast.AST, constants: dict[str, ast.A
 
 def _is_html_content_type(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
     return "text/html" in _constant_string(node, constants).lower()
+
+
+def _truthy_header_value(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    node = _resolve_constant(node, constants)
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, bool):
+            return node.value is True
+        if isinstance(node.value, str):
+            return node.value.strip().lower() in {"true", "1", "yes"}
+    return False
 
 
 def _weak_csp_reason(header_name: str, value: ast.AST, constants: dict[str, ast.AST]) -> str:

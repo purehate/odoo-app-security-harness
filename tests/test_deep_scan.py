@@ -6577,6 +6577,24 @@ def test_taxonomy_coverage_classifies_controller_cors_wildcard_origin() -> None:
     assert all("CWE-942" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
+def test_taxonomy_coverage_classifies_controller_cors_credentials() -> None:
+    """Credentialed CORS headers should map to CORS misconfiguration taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "source": "controller-responses",
+                "rule_id": "odoo-controller-cors-credentials-enabled",
+                "title": "Controller enables credentialed CORS",
+                "message": "Controller sets Access-Control-Allow-Credentials: true; verify allowed origins are fixed, trusted, and never wildcarded or reflected from request headers",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "controller_cors_credentials"
+    assert "CWE-942" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_controller_response_header_injection() -> None:
     """Request-controlled headers should map to response-splitting/header injection taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(
@@ -7839,6 +7857,7 @@ class TestController(http.Controller):
         response.headers['Cache-Control'] = 'public, max-age=3600'
         response.headers.update({'X-Trace': kwargs.get('trace')})
         response.headers['Access-Control-Allow-Origin'] = request.httprequest.headers.get('Origin')
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'unsafe-inline'"
         response.headers['X-Accel-Redirect'] = kwargs.get('path')
         response.set_cookie('session_token', kwargs.get('token'))
@@ -8840,6 +8859,7 @@ msgstr "<a href=\\"javascript:alert(1)\\">Ouvrir %(name)s</a>"
     assert "odoo-mail-alias-broad-contact-policy" in rule_ids
     assert "odoo-controller-open-redirect" in rule_ids
     assert "odoo-controller-cors-reflected-origin" in rule_ids
+    assert "odoo-controller-cors-credentials-enabled" in rule_ids
     assert "odoo-controller-weak-csp-header" in rule_ids
     assert "odoo-controller-tainted-file-read" in rule_ids
     assert sum(1 for finding in findings if finding["rule_id"] == "odoo-controller-tainted-file-read") >= 2

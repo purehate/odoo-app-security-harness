@@ -3768,6 +3768,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "controller_cors_credentials",
+        (
+            "odoo-controller-cors-credentials-enabled",
+            "controller enables credentialed cors",
+            "access-control-allow-credentials: true",
+            "allowed origins are fixed, trusted",
+            "never wildcarded or reflected",
+        ),
+    ),
+    (
         "controller_response_header_injection",
         (
             "controller-response-header-injection",

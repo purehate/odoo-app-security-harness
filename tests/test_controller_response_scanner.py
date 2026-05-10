@@ -1503,6 +1503,57 @@ class Controller(http.Controller):
     )
 
 
+def test_flags_public_credentialed_cors_header(tmp_path: Path) -> None:
+    """Credentialed CORS needs fixed trusted origins on session-backed routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/api', auth='public')
+    def export(self):
+        response = request.make_response('ok')
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(f.rule_id == "odoo-controller-cors-credentials-enabled" and f.severity == "medium" for f in findings)
+
+
+def test_flags_user_credentialed_cors_header_from_response_factory(tmp_path: Path) -> None:
+    """Response factory headers should preserve credentialed CORS posture."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/api', auth='user')
+    def export(self):
+        return request.make_response('ok', headers={'Access-Control-Allow-Credentials': True})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-cors-credentials-enabled"
+        and f.severity == "low"
+        and f.sink == "request.make_response"
+        for f in findings
+    )
+
+
 def test_constant_alias_public_wildcard_cors_header_from_response_factory(tmp_path: Path) -> None:
     """Constant-backed header names and values should not hide wildcard CORS."""
     controllers = tmp_path / "module" / "controllers"

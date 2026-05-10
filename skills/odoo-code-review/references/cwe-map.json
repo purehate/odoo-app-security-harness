@@ -2240,6 +2240,12 @@
       "capec": ["CAPEC-115", "CAPEC-118"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "controller_cors_credentials": {
+      "label": "Controller response enables credentialed CORS",
+      "cwe": ["CWE-346", "CWE-942", "CWE-200"],
+      "capec": ["CAPEC-115", "CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
     "controller_response_header_injection": {
       "label": "Controller response headers include request-controlled data",
       "cwe": ["CWE-113", "CWE-20", "CWE-93"],
