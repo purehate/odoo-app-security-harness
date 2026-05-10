@@ -98,6 +98,7 @@ class PropertyFieldScanner(ast.NodeVisitor):
         self.route_names: set[str] = {"route"}
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_python_file(self) -> list[PropertyFieldFinding]:
         """Scan Python model field declarations."""
@@ -132,7 +133,7 @@ class PropertyFieldScanner(ast.NodeVisitor):
         previous_property_vars = set(self.property_vars)
         previous_elevated_property_vars = set(self.elevated_property_vars)
         previous_tainted_names = set(self.tainted_names)
-        route = _route_info(node, self.constants, self.route_names) or RouteContext(is_route=False)
+        route = _route_info(node, self._effective_constants(), self.route_names) or RouteContext(is_route=False)
         self.route_stack.append(route)
 
         for arg in [*node.args.args, *node.args.kwonlyargs]:
@@ -190,28 +191,35 @@ class PropertyFieldScanner(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
+        constants = self._effective_constants()
         if sink.rsplit(".", 1)[-1] in PROPERTY_MUTATION_METHODS and _is_ir_property_expr(
-            node.func, self.property_vars, self.constants
+            node.func, self.property_vars, constants
         ):
             self._scan_property_mutation(node, sink)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        constants = self._effective_constants()
         if not _is_odoo_model(node):
             self.generic_visit(node)
+            self.class_constants_stack.pop()
             return
 
-        model = _extract_model_name(node, self.constants)
+        model = _extract_model_name(node, constants)
         fields = _extract_fields(node)
         field_names = {field.name for field in fields}
         for field in fields:
-            if not _kw_is_true(field, "company_dependent", self.constants):
+            if not _kw_is_true(field, "company_dependent", constants):
                 continue
-            self._scan_company_dependent_field(model, field, field_names)
+            self._scan_company_dependent_field(model, field, field_names, constants)
 
         self.generic_visit(node)
+        self.class_constants_stack.pop()
 
-    def _scan_company_dependent_field(self, model: str, field: FieldDef, field_names: set[str]) -> None:
+    def _scan_company_dependent_field(
+        self, model: str, field: FieldDef, field_names: set[str], constants: dict[str, ast.AST]
+    ) -> None:
         if "company_id" not in field_names and field.field_type not in {"Boolean", "Selection"}:
             self._add(
                 "odoo-property-field-no-company-field",
@@ -223,7 +231,7 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 field.name,
             )
 
-        if _is_sensitive_field(field.name) and not _string_keyword(field, "groups", self.constants):
+        if _is_sensitive_field(field.name) and not _string_keyword(field, "groups", constants):
             self._add(
                 "odoo-property-sensitive-field-no-groups",
                 "Sensitive company-dependent field lacks groups",
@@ -292,11 +300,10 @@ class PropertyFieldScanner(ast.NodeVisitor):
             )
 
     def _scan_property_mutation(self, node: ast.Call, sink: str) -> None:
-        values = _mutation_values(node, self.constants)
+        constants = self._effective_constants()
+        values = _mutation_values(node, constants)
         route = self._current_route()
-        field_ref = _literal_string(values.get("fields_id"), self.constants) or _literal_string(
-            values.get("name"), self.constants
-        )
+        field_ref = _literal_string(values.get("fields_id"), constants) or _literal_string(values.get("name"), constants)
 
         if route.auth in {"public", "none"}:
             self._add(
@@ -311,7 +318,7 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 sink,
             )
 
-        if _is_elevated_expr(node.func, self.constants) or _uses_elevated_property_var(
+        if _is_elevated_expr(node.func, constants) or _uses_elevated_property_var(
             node.func, self.elevated_property_vars
         ):
             self._add(
@@ -448,9 +455,10 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 self._mark_property_target(target_element, value_element)
             return
 
-        is_property = _is_ir_property_expr(value, self.property_vars, self.constants)
+        constants = self._effective_constants()
+        is_property = _is_ir_property_expr(value, self.property_vars, constants)
         is_elevated_property = is_property and (
-            _is_elevated_expr(value, self.constants)
+            _is_elevated_expr(value, constants)
             or _uses_elevated_property_var(value, self.elevated_property_vars)
         )
         for name in _target_names(target):
@@ -487,6 +495,14 @@ class PropertyFieldScanner(ast.NodeVisitor):
 
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _add(
         self,
@@ -625,8 +641,12 @@ def _is_http_route(node: ast.AST, route_names: set[str] | None = None) -> bool:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
