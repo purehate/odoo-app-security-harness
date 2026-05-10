@@ -70,6 +70,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
         self.route_decorator_names: set[str] = {"route"}
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[IdentityMutationFinding]:
         """Scan the file."""
@@ -99,7 +100,9 @@ class IdentityMutationScanner(ast.NodeVisitor):
         previous_elevated_identity_vars = set(self.elevated_identity_vars)
         previous_tainted = set(self.tainted_names)
         previous_dict_fields = dict(self.dict_fields_by_var)
-        route = _route_info(node, self.constants, self.route_decorator_names) or RouteContext(is_route=False)
+        route = _route_info(node, self._effective_constants(), self.route_decorator_names) or RouteContext(
+            is_route=False
+        )
         self.route_stack.append(route)
 
         for arg in [*node.args.args, *node.args.kwonlyargs]:
@@ -119,6 +122,11 @@ class IdentityMutationScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         previous_identity_vars = dict(self.identity_vars)
@@ -171,7 +179,8 @@ class IdentityMutationScanner(ast.NodeVisitor):
             self.generic_visit(node)
             return
 
-        model = _identity_model_in_expr(node.func, self.identity_vars, self.constants)
+        constants = self._effective_constants()
+        model = _identity_model_in_expr(node.func, self.identity_vars, constants)
         if not model:
             self.generic_visit(node)
             return
@@ -189,7 +198,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
                 sink,
             )
 
-        if _is_elevated_call(node.func, self.constants) or _uses_elevated_identity_var(
+        if _is_elevated_call(node.func, constants) or _uses_elevated_identity_var(
             node.func, self.elevated_identity_vars
         ):
             self._add(
@@ -215,7 +224,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
                 sink,
             )
 
-        privilege_fields = _privilege_fields_from_call(node, self.dict_fields_by_var, self.constants)
+        privilege_fields = _privilege_fields_from_call(node, self.dict_fields_by_var, constants)
         if privilege_fields:
             fields = ", ".join(sorted(privilege_fields))
             self._add(
@@ -311,6 +320,14 @@ class IdentityMutationScanner(ast.NodeVisitor):
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
 
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
+
     def _mark_identity_target(
         self,
         target: ast.AST,
@@ -330,14 +347,15 @@ class IdentityMutationScanner(ast.NodeVisitor):
         if not names:
             return
 
-        model = _identity_model_in_expr(value, identity_vars, self.constants)
+        constants = self._effective_constants()
+        model = _identity_model_in_expr(value, identity_vars, constants)
         if not model:
             for name in names:
                 self.identity_vars.pop(name, None)
                 self.elevated_identity_vars.discard(name)
             return
 
-        is_elevated = _is_elevated_call(value, self.constants) or _uses_elevated_identity_var(
+        is_elevated = _is_elevated_call(value, constants) or _uses_elevated_identity_var(
             value, elevated_identity_vars
         )
         for name in names:
@@ -358,7 +376,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
                 self._mark_dict_fields_target(target_element, value_element, dict_fields_by_var)
             return
         if isinstance(target, ast.Starred):
-            fields = _collection_dict_keys(value, self.constants)
+            fields = _collection_dict_keys(value, self._effective_constants())
             names = _target_names(target.value)
             for name in names:
                 if fields:
@@ -370,7 +388,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
             self._mark_dict_fields_target(target.value, value, dict_fields_by_var)
             return
 
-        fields = _dict_keys(value, self.constants)
+        fields = _dict_keys(value, self._effective_constants())
         if isinstance(value, ast.Name):
             fields = dict_fields_by_var.get(value.id, fields)
         elif isinstance(value, ast.Subscript):
@@ -468,8 +486,12 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST]) -> list[str]:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

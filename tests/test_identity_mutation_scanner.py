@@ -297,6 +297,79 @@ class Users(http.Controller):
     assert any(finding.rule_id == "odoo-identity-privilege-field-write" for finding in findings)
 
 
+def test_class_constant_route_model_and_privilege_key_are_reported(tmp_path: Path) -> None:
+    """Class-scoped constants should not hide public identity writes or privilege keys."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "users.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Users(http.Controller):
+    ROUTE_ONE = '/signup/promote'
+    ROUTE_TWO = '/public/promote'
+    PROMOTE_ROUTES = [ROUTE_ONE, ROUTE_TWO]
+    AUTH_PUBLIC = 'public'
+    PROMOTE_AUTH = AUTH_PUBLIC
+    USER_MODEL = 'res.users'
+    TARGET_MODEL = USER_MODEL
+    GROUP_FIELD = 'groups_id'
+    PRIV_FIELD = GROUP_FIELD
+
+    @http.route(PROMOTE_ROUTES, auth=PROMOTE_AUTH, type='http')
+    def promote(self, user_id, **kwargs):
+        user = request.env[TARGET_MODEL].sudo().browse(int(user_id))
+        return user.write({PRIV_FIELD: kwargs.get('groups_id')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_identity_mutations(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-identity-public-route-mutation"
+        and finding.route == "/signup/promote,/public/promote"
+        for finding in findings
+    )
+    assert any(finding.rule_id == "odoo-identity-elevated-mutation" for finding in findings)
+    assert any(finding.rule_id == "odoo-identity-request-derived-mutation" for finding in findings)
+    assert any(finding.rule_id == "odoo-identity-privilege-field-write" for finding in findings)
+
+
+def test_class_constant_static_unpack_public_route_identity_mutation_is_reported(tmp_path: Path) -> None:
+    """Class-scoped **route options should not hide public identity mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "users.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Users(http.Controller):
+    PROMOTE_AUTH = 'public'
+    ROUTE_OPTIONS = {'route': '/signup/promote', 'auth': PROMOTE_AUTH, 'type': 'http'}
+
+    @http.route(**ROUTE_OPTIONS)
+    def promote(self, user_id, **kwargs):
+        user = request.env['res.users'].sudo().browse(int(user_id))
+        return user.write({'groups_id': [(4, request.env.ref('base.group_system').id)]})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_identity_mutations(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-identity-public-route-mutation"
+        and finding.severity == "critical"
+        and finding.route == "/signup/promote"
+        for finding in findings
+    )
+    assert any(finding.rule_id == "odoo-identity-elevated-mutation" and finding.severity == "critical" for finding in findings)
+    assert any(finding.rule_id == "odoo-identity-privilege-field-write" for finding in findings)
+
+
 def test_flags_request_payload_reaching_identity_create(tmp_path: Path) -> None:
     """Request payloads should not flow directly into res.users create."""
     controllers = tmp_path / "module" / "controllers"
@@ -637,6 +710,29 @@ VALUES = {'implied_ids': []}
 
 class GroupSync(models.Model):
     _name = 'x.group.sync'
+
+    def sync(self):
+        return self.env['res.groups'].write(VALUES)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_identity_mutations(tmp_path)
+
+    assert any(finding.rule_id == "odoo-identity-privilege-field-write" for finding in findings)
+
+
+def test_class_constant_privilege_values_direct_write_is_reported(tmp_path: Path) -> None:
+    """Class-scoped value dictionaries should still expose privilege fields."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "group_sync.py").write_text(
+        """
+from odoo import models
+
+class GroupSync(models.Model):
+    _name = 'x.group.sync'
+    VALUES = {'implied_ids': []}
 
     def sync(self):
         return self.env['res.groups'].write(VALUES)
