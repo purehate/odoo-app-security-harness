@@ -1338,6 +1338,59 @@ def test_owl_inline_template_owl_event_binding_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-web-owl-qweb-dynamic-event-handler" for f in findings)
 
 
+def test_owl_inline_template_dynamic_stylesheet_href_detected(tmp_path: Path) -> None:
+    """OWL inline stylesheet links should not load runtime-selected CSS."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "export const template = xml`<link rel=\"stylesheet\" t-att-href=\"props.theme_url\"/>`;\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-dynamic-stylesheet-href"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_sensitive_field_render_detected(tmp_path: Path) -> None:
+    """OWL inline templates should not expose credential-shaped values."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<span t-out=\"props.accessToken\"/>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-sensitive-field-render"
+        and f.sink == "owl-template"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_sensitive_data_attribute_detected(tmp_path: Path) -> None:
+    """Credential-shaped dynamic data attributes are still exposed to browser scripts."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<input t-att-data-token=\"props.csrf_token\"/>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-owl-qweb-sensitive-field-render" for f in findings)
+
+
+def test_owl_inline_template_non_sensitive_field_render_ignored(tmp_path: Path) -> None:
+    """Routine escaped field output should not create credential exposure leads."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<span t-out=\"props.display_name\"/>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-sensitive-field-render" for f in findings)
+
+
 def test_message_handler_missing_origin_check_detected(tmp_path: Path) -> None:
     """Inbound postMessage handlers should validate event.origin before using data."""
     path = tmp_path / "widget.js"

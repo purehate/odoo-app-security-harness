@@ -513,8 +513,10 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "qweb_sensitive_field_render",
         (
+            "web-owl-qweb-sensitive-field-render",
             "odoo-qweb-sensitive-field-render",
             "qweb renders sensitive field",
+            "owl inline template renders sensitive-looking field",
             "sensitive field render",
             "password, token, secret, api key, or bank field",
         ),
@@ -3269,7 +3271,9 @@ _TAXONOMY_SHAPE_HINTS = (
             "writes dynamic css classes",
             "alter privileged ui affordances",
             "qweb-dynamic-stylesheet-href",
+            "web-owl-qweb-dynamic-stylesheet-href",
             "qweb stylesheet href uses dynamic target",
+            "owl inline template stylesheet href uses dynamic target",
             "loads css from an external or dynamic target",
             "web-dynamic-css-injection",
             "stylesheet injection uses request-derived css text",

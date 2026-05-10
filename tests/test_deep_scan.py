@@ -2513,13 +2513,19 @@ def test_taxonomy_coverage_classifies_qweb_dynamic_stylesheet_href() -> None:
                 "source": "qweb",
                 "title": "QWeb stylesheet href uses dynamic target",
                 "message": "QWeb stylesheet href loads CSS from an external or dynamic target",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-dynamic-stylesheet-href",
+                "source": "web-asset",
+                "title": "OWL inline template stylesheet href uses dynamic target",
+                "message": "OWL xml template loads CSS from an external or dynamic target",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_dynamic_css_injection"
-    assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_dynamic_css_injection"}
+    assert all("CWE-79" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_web_dynamic_live_connection() -> None:
@@ -7222,6 +7228,12 @@ def test_taxonomy_coverage_classifies_remaining_qweb_surface_rules() -> None:
                 "message": "Template renders password, token, secret, API key, or bank field",
             },
             {
+                "source": "web-asset",
+                "rule_id": "odoo-web-owl-qweb-sensitive-field-render",
+                "title": "OWL inline template renders sensitive-looking field",
+                "message": "OWL xml template renders token, secret, password, or API-key-like data",
+            },
+            {
                 "source": "qweb",
                 "rule_id": "odoo-qweb-t-att-url",
                 "title": "QWeb binds dynamic URL attribute",
@@ -7237,6 +7249,7 @@ def test_taxonomy_coverage_classifies_remaining_qweb_surface_rules() -> None:
         "odoo-qweb-html-widget": "qweb_html_widget_render",
         "odoo-qweb-inline-event": "qweb_inline_event_handler",
         "odoo-qweb-sensitive-field-render": "qweb_sensitive_field_render",
+        "odoo-web-owl-qweb-sensitive-field-render": "qweb_sensitive_field_render",
         "odoo-qweb-t-att-url": "qweb_dynamic_url_attribute",
     }
     assert any("CWE-601" in entry["cwe"] for entry in coverage["mapped_entries"])

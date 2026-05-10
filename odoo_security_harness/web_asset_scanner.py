@@ -306,6 +306,16 @@ OWL_TEMPLATE_DYNAMIC_SCRIPT_SRC_RE = re.compile(
     r"<script\b[^>]*\bt-attf?-src\s*=",
     re.IGNORECASE,
 )
+OWL_TEMPLATE_DYNAMIC_STYLESHEET_RE = re.compile(
+    r"<link\b(?=[^>]*\brel\s*=\s*['\"][^'\"]*\bstylesheet\b)(?=[^>]*\bt-attf?-href\s*=)",
+    re.IGNORECASE,
+)
+OWL_TEMPLATE_SENSITIVE_RENDER_RE = re.compile(
+    r"\b(?:t-(?:out|esc|field)|t-att-(?:value|content|data-[\w-]*))\s*=\s*['\"][^'\"]*"
+    r"(?:access[_-]?token|accessToken|api[_-]?key|apiKey|client[_-]?secret|clientSecret|"
+    r"csrf|password|secret|session|token)",
+    re.IGNORECASE,
+)
 
 
 def scan_web_assets(repo_path: Path) -> list[WebAssetFinding]:
@@ -1111,6 +1121,24 @@ class WebAssetScanner:
                     "high",
                     line,
                     "OWL xml template imports JavaScript at runtime from an external or dynamic target; restrict script URLs to reviewed bundles or strict allowlists",
+                    "owl-template",
+                )
+            if OWL_TEMPLATE_DYNAMIC_STYLESHEET_RE.search(body):
+                self._add(
+                    "odoo-web-owl-qweb-dynamic-stylesheet-href",
+                    "OWL inline template stylesheet href uses dynamic target",
+                    "medium",
+                    line,
+                    "OWL xml template loads CSS from an external or dynamic target; verify untrusted data cannot choose stylesheets that hide, overlay, or restyle privileged UI",
+                    "owl-template",
+                )
+            if OWL_TEMPLATE_SENSITIVE_RENDER_RE.search(body):
+                self._add(
+                    "odoo-web-owl-qweb-sensitive-field-render",
+                    "OWL inline template renders sensitive-looking field",
+                    "high",
+                    line,
+                    "OWL xml template renders token, secret, password, or API-key-like data; verify templates cannot expose credentials",
                     "owl-template",
                 )
 
