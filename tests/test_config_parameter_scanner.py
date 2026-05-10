@@ -110,6 +110,37 @@ class Config(http.Controller):
     assert any(f.rule_id == "odoo-config-param-sudo-sensitive-read" for f in findings)
 
 
+def test_class_constant_backed_public_sensitive_config_read(tmp_path: Path) -> None:
+    """Class-scoped public auth should still expose sensitive config reads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "config.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Config(http.Controller):
+    AUTH_BASE = 'public'
+    CONFIG_AUTH = AUTH_BASE
+
+    @http.route('/public/config', auth=CONFIG_AUTH)
+    def config(self):
+        return request.env['ir.config_parameter'].sudo().get_param('payment.provider.secret')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-config-param-public-sensitive-read"
+        and f.severity == "critical"
+        and f.key == "payment.provider.secret"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-config-param-sudo-sensitive-read" for f in findings)
+
+
 def test_static_unpack_route_options_public_sensitive_config_read(tmp_path: Path) -> None:
     """Static route option dictionaries should preserve public config read posture."""
     controllers = tmp_path / "module" / "controllers"
@@ -122,6 +153,36 @@ from odoo.http import request
 CONFIG_OPTIONS = {'auth': 'public'}
 
 class Config(http.Controller):
+    @http.route('/public/config', **CONFIG_OPTIONS)
+    def config(self):
+        return request.env['ir.config_parameter'].sudo().get_param('payment.provider.secret')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-config-param-public-sensitive-read"
+        and f.severity == "critical"
+        and f.key == "payment.provider.secret"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-config-param-sudo-sensitive-read" for f in findings)
+
+
+def test_class_constant_static_unpack_route_options_public_sensitive_config_read(tmp_path: Path) -> None:
+    """Class-scoped route option dictionaries should preserve public config read posture."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "config.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Config(http.Controller):
+    CONFIG_OPTIONS = {'auth': 'public'}
+
     @http.route('/public/config', **CONFIG_OPTIONS)
     def config(self):
         return request.env['ir.config_parameter'].sudo().get_param('payment.provider.secret')
