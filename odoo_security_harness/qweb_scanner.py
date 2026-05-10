@@ -206,7 +206,7 @@ class QWebScanner:
 
             # t-att mappings can dynamically set arbitrary attributes.
             if attr_name == "t-att":
-                self._check_t_att_mapping(tag, attr_name, value)
+                self._check_t_att_mapping(element, tag, attr_name, value)
 
             # t-attf formats attributes with string interpolation.
             if attr_name.startswith("t-attf-"):
@@ -290,7 +290,7 @@ class QWebScanner:
             )
             self._check_sensitive_url_token(tag, attr, value)
 
-    def _check_t_att_mapping(self, tag: str, attr: str, value: str) -> None:
+    def _check_t_att_mapping(self, element: ElementTree.Element, tag: str, attr: str, value: str) -> None:
         """Check t-att mapping expressions for risky dynamic attributes."""
         style_value = self._mapped_attribute_value(value, "style")
         if style_value is not None and self._looks_dynamic_style_value(style_value):
@@ -319,6 +319,36 @@ class QWebScanner:
             if sensitive_value is not None and self._looks_sensitive_attribute_render(sensitive_attr, sensitive_value):
                 self._check_sensitive_render(tag, attr, sensitive_value)
                 break
+
+        src_value = self._mapped_attribute_value(value, "src")
+        if tag.lower() == "script" and src_value is not None and self._looks_dynamic_asset_target(src_value):
+            self._add_finding(
+                rule_id="odoo-qweb-dynamic-script-src",
+                title="QWeb script source uses dynamic target",
+                severity="high",
+                element=tag,
+                attribute=attr,
+                message=f"{attr}='{value}' maps script src to JavaScript imported at runtime from an external or dynamic target; restrict script URLs to reviewed bundles or strict allowlists",
+            )
+
+        href_value = self._mapped_attribute_value(value, "href")
+        rel_tokens = set(_xml_attr(element, "rel").lower().split())
+        mapped_rel_value = self._mapped_attribute_value(value, "rel")
+        mapped_rel_tokens = set(mapped_rel_value.lower().strip("'\"").split()) if mapped_rel_value else set()
+        if (
+            tag.lower() == "link"
+            and href_value is not None
+            and self._looks_dynamic_asset_target(href_value)
+            and "stylesheet" in rel_tokens | mapped_rel_tokens
+        ):
+            self._add_finding(
+                rule_id="odoo-qweb-dynamic-stylesheet-href",
+                title="QWeb stylesheet href uses dynamic target",
+                severity="medium",
+                element=tag,
+                attribute=attr,
+                message=f"{attr}='{value}' maps stylesheet href to CSS loaded from an external or dynamic target; verify untrusted data cannot choose stylesheets that hide, overlay, or restyle privileged UI",
+            )
 
         if not re.search(r"['\"](?:href|src|action)['\"]", value):
             return
@@ -1191,6 +1221,60 @@ class QWebScanner:
             )
 
         # Find generic t-att mappings that can set risky attributes.
+        for match in re.finditer(r"<script\b(?P<attrs>[^>]*)>", content, re.IGNORECASE | re.DOTALL):
+            attrs = match.group("attrs")
+            mapping_match = re.search(r'\bt-att\s*=\s*(["\'])(?P<value>.*?)\1', attrs, re.IGNORECASE | re.DOTALL)
+            if not mapping_match:
+                continue
+            value = mapping_match.group("value")
+            src_value = self._mapped_attribute_value(value, "src")
+            if src_value is None or not self._looks_dynamic_asset_target(src_value):
+                continue
+            line = content[: match.start()].count("\n") + 1
+            findings.append(
+                QWebFinding(
+                    rule_id="odoo-qweb-dynamic-script-src",
+                    title="QWeb script source uses dynamic target",
+                    severity="high",
+                    file=self.file_path,
+                    line=line,
+                    element="script",
+                    attribute="t-att",
+                    message="t-att maps script src to JavaScript imported at runtime from an external or dynamic target; restrict script URLs to reviewed bundles or strict allowlists",
+                )
+            )
+
+        for match in re.finditer(r"<link\b(?P<attrs>[^>]*)>", content, re.IGNORECASE | re.DOTALL):
+            attrs = match.group("attrs")
+            mapping_match = re.search(r'\bt-att\s*=\s*(["\'])(?P<value>.*?)\1', attrs, re.IGNORECASE | re.DOTALL)
+            if not mapping_match:
+                continue
+            value = mapping_match.group("value")
+            href_value = self._mapped_attribute_value(value, "href")
+            rel_match = re.search(r"\brel\s*=\s*([\"'])(?P<rel>.*?)\1", attrs, re.IGNORECASE | re.DOTALL)
+            rel_tokens = set(rel_match.group("rel").lower().split()) if rel_match else set()
+            mapped_rel_value = self._mapped_attribute_value(value, "rel")
+            mapped_rel_tokens = set(mapped_rel_value.lower().strip("'\"").split()) if mapped_rel_value else set()
+            if (
+                href_value is None
+                or not self._looks_dynamic_asset_target(href_value)
+                or "stylesheet" not in rel_tokens | mapped_rel_tokens
+            ):
+                continue
+            line = content[: match.start()].count("\n") + 1
+            findings.append(
+                QWebFinding(
+                    rule_id="odoo-qweb-dynamic-stylesheet-href",
+                    title="QWeb stylesheet href uses dynamic target",
+                    severity="medium",
+                    file=self.file_path,
+                    line=line,
+                    element="link",
+                    attribute="t-att",
+                    message="t-att maps stylesheet href to CSS loaded from an external or dynamic target; verify untrusted data cannot choose stylesheets that hide, overlay, or restyle privileged UI",
+                )
+            )
+
         for match in re.finditer(r't-att\s*=\s*(["\'])(.*?)\1', content, re.IGNORECASE):
             value = match.group(2)
             line = content[: match.start()].count("\n") + 1

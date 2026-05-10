@@ -342,6 +342,37 @@ def test_static_dynamic_script_src_literal_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-qweb-dynamic-script-src" for f in findings)
 
 
+def test_dynamic_script_src_mapping_detected(tmp_path: Path) -> None:
+    """Generic t-att mappings on script tags should be treated as runtime code loading."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><script t-att="{'src': request.params.get('script_url')}"></script></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-qweb-dynamic-script-src"
+        and f.attribute == "t-att"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_regex_fallback_detects_dynamic_script_src_mapping(tmp_path: Path) -> None:
+    """Malformed XML should still expose script src t-att mappings."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><script t-att="{'src': request.params.get('script_url')}">if (x < 1) {}</script></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-dynamic-script-src" and f.attribute == "t-att" for f in findings)
+
+
 def test_detects_qweb_expression_inside_script_context(tmp_path: Path) -> None:
     """QWeb output inside <script> needs JavaScript-context serialization review."""
     template = tmp_path / "template.xml"
@@ -446,6 +477,37 @@ def test_static_dynamic_stylesheet_href_literal_ignored(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert not any(f.rule_id == "odoo-qweb-dynamic-stylesheet-href" for f in findings)
+
+
+def test_dynamic_stylesheet_href_mapping_detected(tmp_path: Path) -> None:
+    """Generic t-att mappings on stylesheet links should be treated as dynamic CSS loading."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><link rel="stylesheet" t-att="{'href': request.params.get('theme_url')}"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-qweb-dynamic-stylesheet-href"
+        and f.attribute == "t-att"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_regex_fallback_detects_dynamic_stylesheet_href_mapping(tmp_path: Path) -> None:
+    """Malformed XML should still expose stylesheet href t-att mappings."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><link rel="stylesheet" t-att="{'href': request.params.get('theme_url')}"></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-dynamic-stylesheet-href" and f.attribute == "t-att" for f in findings)
 
 
 def test_local_stylesheet_sri_ignored(tmp_path: Path) -> None:
