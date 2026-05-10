@@ -107,6 +107,7 @@ class MailChatterScanner(ast.NodeVisitor):
         self.route_decorator_names: set[str] = {"route"}
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[MailChatterFinding]:
         """Scan the file."""
@@ -126,7 +127,9 @@ class MailChatterScanner(ast.NodeVisitor):
         previous_tainted = set(self.tainted_names)
         previous_sudo = set(self.sudo_names)
         previous_models = dict(self.model_names)
-        route = _route_info(node, self.constants, self.route_decorator_names) or RouteContext(is_route=False)
+        route = _route_info(node, self._effective_constants(), self.route_decorator_names) or RouteContext(
+            is_route=False
+        )
         self.route_stack.append(route)
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in TAINTED_ARG_NAMES or (route.is_route and _looks_route_id_arg(arg.arg)):
@@ -144,6 +147,11 @@ class MailChatterScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo.http":
@@ -205,7 +213,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Public/unauthenticated route posts chatter or mail notifications; verify authorization, anti-spam controls, and recipient scoping",
                 sink,
             )
-        if _is_sudo_expr(node.func, self.sudo_names, self.constants):
+        constants = self._effective_constants()
+        if _is_sudo_expr(node.func, self.sudo_names, constants):
             self._add(
                 "odoo-mail-chatter-sudo-post",
                 "Chatter post is performed through elevated environment",
@@ -229,7 +238,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Public/unauthenticated route sends email; verify authentication, CSRF, rate limiting, and recipient restrictions",
                 sink,
             )
-        if _is_sudo_expr(node.func, self.sudo_names, self.constants):
+        constants = self._effective_constants()
+        if _is_sudo_expr(node.func, self.sudo_names, constants):
             self._add(
                 "odoo-mail-send-sudo",
                 "Email send uses elevated environment",
@@ -238,7 +248,7 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Mail send uses sudo()/with_user(SUPERUSER_ID); verify rendered content and recipients do not bypass record rules",
                 sink,
             )
-        if _keyword_is_true(node, "force_send", self.constants):
+        if _keyword_is_true(node, "force_send", constants):
             self._add(
                 "odoo-mail-force-send",
                 "Email is force-sent synchronously",
@@ -295,7 +305,8 @@ class MailChatterScanner(ast.NodeVisitor):
 
     def _scan_mail_followers_mutation(self, node: ast.Call, sink: str) -> None:
         route = self._current_route()
-        sensitive_model = _mail_followers_res_model(node, self.constants)
+        constants = self._effective_constants()
+        sensitive_model = _mail_followers_res_model(node, constants)
         if sensitive_model:
             self._add(
                 "odoo-mail-followers-sensitive-model-mutation",
@@ -314,7 +325,7 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Public/unauthenticated route creates or changes mail.followers records; verify attackers cannot subscribe recipients to private records",
                 sink,
             )
-        if _is_sudo_expr(node.func, self.sudo_names, self.constants):
+        if _is_sudo_expr(node.func, self.sudo_names, constants):
             self._add(
                 "odoo-mail-followers-sudo-mutation",
                 "mail.followers mutation uses elevated environment",
@@ -323,7 +334,7 @@ class MailChatterScanner(ast.NodeVisitor):
                 "mail.followers mutation uses sudo()/with_user(SUPERUSER_ID); verify follower changes cannot bypass record rules or company boundaries",
                 sink,
             )
-        for value in _field_values(node, FOLLOWER_FIELDS, self.constants):
+        for value in _field_values(node, FOLLOWER_FIELDS, constants):
             if value is not None and self._expr_is_tainted(value):
                 self._add(
                     "odoo-mail-followers-tainted-mutation",
@@ -339,7 +350,8 @@ class MailChatterScanner(ast.NodeVisitor):
         reported_sensitive_body = False
         reported_tainted_body = False
         reported_tainted_recipients = False
-        for value in _field_values(node, BODY_FIELDS, self.constants):
+        constants = self._effective_constants()
+        for value in _field_values(node, BODY_FIELDS, constants):
             if value is not None and _contains_sensitive_hint(value) and not reported_sensitive_body:
                 reported_sensitive_body = True
                 self._add(
@@ -360,7 +372,7 @@ class MailChatterScanner(ast.NodeVisitor):
                     "Chatter/mail body or subject includes request-derived data; verify escaping, spam controls, and recipient authorization",
                     sink,
                 )
-        for value in _field_values(node, RECIPIENT_FIELDS, self.constants):
+        for value in _field_values(node, RECIPIENT_FIELDS, constants):
             if value is not None and self._expr_is_tainted(value) and not reported_tainted_recipients:
                 reported_tainted_recipients = True
                 self._add(
@@ -447,7 +459,7 @@ class MailChatterScanner(ast.NodeVisitor):
 
         model_name = _model_name_in_expr(value, self.model_names)
         for name in _target_names(target):
-            if _is_sudo_expr(value, self.sudo_names, self.constants):
+            if _is_sudo_expr(value, self.sudo_names, self._effective_constants()):
                 self.sudo_names.add(name)
             else:
                 self.sudo_names.discard(name)
@@ -469,6 +481,14 @@ class MailChatterScanner(ast.NodeVisitor):
 
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, sink: str) -> None:
         self.findings.append(
@@ -521,8 +541,12 @@ def _is_http_route(node: ast.AST, route_decorator_names: set[str] | None = None)
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

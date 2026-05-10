@@ -165,6 +165,73 @@ class Controller(http.Controller):
     assert "odoo-mail-tainted-recipients" in rule_ids
 
 
+def test_class_constant_backed_public_route_message_post_is_reported(tmp_path: Path) -> None:
+    """Class-scoped public route auth should not hide chatter endpoints."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    COMMENT_ROUTE = '/ticket/comment'
+    AUTH_BASE = 'public'
+    COMMENT_AUTH = AUTH_BASE
+
+    @http.route(COMMENT_ROUTE, auth=COMMENT_AUTH)
+    def comment(self, **kwargs):
+        ticket = request.env['helpdesk.ticket'].sudo().browse(kwargs.get('id'))
+        return ticket.sudo().message_post(
+            body=kwargs.get('body'),
+            partner_ids=kwargs.get('partner_ids'),
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-chatter-public-route-send" in rule_ids
+    assert "odoo-mail-chatter-sudo-post" in rule_ids
+    assert "odoo-mail-tainted-body" in rule_ids
+    assert "odoo-mail-tainted-recipients" in rule_ids
+
+
+def test_class_constant_static_unpack_public_route_message_post_is_reported(tmp_path: Path) -> None:
+    """Class-scoped **route options should not hide public chatter endpoints."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    COMMENT_AUTH = 'public'
+    ROUTE_OPTIONS = {'route': '/ticket/comment', 'auth': COMMENT_AUTH}
+
+    @http.route(**ROUTE_OPTIONS)
+    def comment(self, **kwargs):
+        ticket = request.env['helpdesk.ticket'].sudo().browse(kwargs.get('id'))
+        return ticket.sudo().message_post(
+            body=kwargs.get('body'),
+            partner_ids=kwargs.get('partner_ids'),
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-chatter-public-route-send" in rule_ids
+    assert "odoo-mail-chatter-sudo-post" in rule_ids
+    assert "odoo-mail-tainted-body" in rule_ids
+    assert "odoo-mail-tainted-recipients" in rule_ids
+
+
 def test_keyword_constant_backed_none_mail_followers_mutation_is_critical(tmp_path: Path) -> None:
     """Keyword route constants with auth='none' should keep follower mutations critical."""
     controllers = tmp_path / "module" / "controllers"
@@ -288,6 +355,27 @@ def test_constant_backed_template_force_send_is_reported(tmp_path: Path) -> None
 FORCE_SEND = True
 
 class Sale:
+    def action_send(self):
+        template = self.env.ref('sale.email_template_edi_sale')
+        template.send_mail(self.id, force_send=FORCE_SEND)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+
+    assert any(f.rule_id == "odoo-mail-force-send" for f in findings)
+
+
+def test_class_constant_backed_template_force_send_is_reported(tmp_path: Path) -> None:
+    """Class-scoped force_send values should not hide synchronous sends."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+class Sale:
+    FORCE_SEND = True
+
     def action_send(self):
         template = self.env.ref('sale.email_template_edi_sale')
         template.send_mail(self.id, force_send=FORCE_SEND)
@@ -1025,6 +1113,31 @@ FOLLOW_VALUES = {
 }
 
 class Followers:
+    def follow_order(self):
+        return self.env['mail.followers'].create(FOLLOW_VALUES)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+
+    assert any(f.rule_id == "odoo-mail-followers-sensitive-model-mutation" for f in findings)
+
+
+def test_class_constant_dict_sensitive_model_mail_followers_mutation(tmp_path: Path) -> None:
+    """Class-scoped follower value dictionaries should expose sensitive res_model values."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "followers.py").write_text(
+        """
+class Followers:
+    FOLLOWED_MODEL = 'sale.order'
+    FOLLOW_VALUES = {
+        'res_model': FOLLOWED_MODEL,
+        'res_id': 1,
+        'partner_id': 2,
+    }
+
     def follow_order(self):
         return self.env['mail.followers'].create(FOLLOW_VALUES)
 """,
