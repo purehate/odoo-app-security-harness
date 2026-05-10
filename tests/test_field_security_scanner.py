@@ -161,6 +161,33 @@ class Token(models.Model):
     assert any(f.rule_id == "odoo-field-sensitive-public-groups" for f in findings)
 
 
+def test_flags_class_constant_alias_sensitive_field_with_public_groups(tmp_path: Path) -> None:
+    """Class-scoped field group aliases should still expose public sensitive fields."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "token.py").write_text(
+        """
+from odoo import fields, models
+
+class Token(models.Model):
+    MODEL_NAME = 'x.token'
+    PORTAL_GROUP = 'base.group_portal'
+    PUBLIC_GROUPS = PORTAL_GROUP
+    _name = MODEL_NAME
+
+    access_token = fields.Char(groups=PUBLIC_GROUPS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-field-sensitive-public-groups" and f.model == "x.token"
+        for f in findings
+    )
+
+
 def test_flags_sensitive_indexed_field(tmp_path: Path) -> None:
     """Indexed credential-like fields deserve explicit DB exposure review."""
     models = tmp_path / "module" / "models"
@@ -303,6 +330,37 @@ class Projection(models.Model):
     assert "odoo-field-related-sensitive-no-admin-groups" in rule_ids
 
 
+def test_flags_class_constant_backed_compute_sudo_and_related_field(tmp_path: Path) -> None:
+    """Class-scoped compute_sudo and related aliases should still be reviewed."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "projection.py").write_text(
+        """
+from odoo import fields, models
+
+class Projection(models.Model):
+    MODEL_NAME = 'x.projection'
+    SUDO_BASE = True
+    SUDO_COMPUTE = SUDO_BASE
+    RELATED_BASE = 'user_id.partner_id.signup_token'
+    RELATED_TOKEN = RELATED_BASE
+    _name = MODEL_NAME
+
+    user_id = fields.Many2one('res.users')
+    secret_count = fields.Integer(compute='_compute_secret_count', compute_sudo=SUDO_COMPUTE)
+    partner_token = fields.Char(related=RELATED_TOKEN)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-field-compute-sudo-sensitive" in rule_ids
+    assert "odoo-field-related-sensitive-no-admin-groups" in rule_ids
+    assert any(f.model == "x.projection" for f in findings)
+
+
 def test_flags_scalar_compute_sudo_without_admin_groups(tmp_path: Path) -> None:
     """Sudo-computed scalar fields can project private data unless admin-only."""
     models = tmp_path / "module" / "models"
@@ -414,6 +472,33 @@ class Page(models.Model):
     findings = scan_field_security(tmp_path)
 
     assert any(f.rule_id == "odoo-field-html-sanitizer-disabled" for f in findings)
+
+
+def test_flags_class_constant_alias_html_field_sanitizer_disabled(tmp_path: Path) -> None:
+    """Class-scoped sanitizer aliases should still expose unsafe HTML fields."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "page.py").write_text(
+        """
+from odoo import fields, models
+
+class Page(models.Model):
+    MODEL_NAME = 'x.page'
+    DISABLED = False
+    SANITIZE = DISABLED
+    _name = MODEL_NAME
+
+    raw_body = fields.Html(sanitize=SANITIZE)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-field-html-sanitizer-disabled" and f.model == "x.page"
+        for f in findings
+    )
 
 
 def test_flags_html_sanitize_override_without_admin_groups(tmp_path: Path) -> None:

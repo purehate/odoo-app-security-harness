@@ -67,6 +67,7 @@ class FieldSecurityScanner(ast.NodeVisitor):
         self.path = path
         self.findings: list[FieldSecurityFinding] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[FieldSecurityFinding]:
         """Scan the file."""
@@ -87,14 +88,17 @@ class FieldSecurityScanner(ast.NodeVisitor):
             self.generic_visit(node)
             return
 
-        model = _extract_model_name(node, self.constants)
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        model = _extract_model_name(node, self._effective_constants())
         for field in _extract_fields(node):
             self._scan_field(model, field)
 
         self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def _scan_field(self, model: str, field: FieldDef) -> None:
-        groups = _string_keyword(field, "groups", self.constants)
+        constants = self._effective_constants()
+        groups = _string_keyword(field, "groups", constants)
         is_sensitive = _is_sensitive_field(field.name)
 
         if is_sensitive and not groups:
@@ -118,7 +122,7 @@ class FieldSecurityScanner(ast.NodeVisitor):
                 field.name,
             )
 
-        if is_sensitive and _kw_is_true(field, "index", self.constants):
+        if is_sensitive and _kw_is_true(field, "index", constants):
             self._add(
                 "odoo-field-sensitive-indexed",
                 "Sensitive field is indexed",
@@ -129,7 +133,7 @@ class FieldSecurityScanner(ast.NodeVisitor):
                 field.name,
             )
 
-        if is_sensitive and _kw_is_tracking_enabled(field, self.constants):
+        if is_sensitive and _kw_is_tracking_enabled(field, constants):
             self._add(
                 "odoo-field-sensitive-tracking",
                 "Sensitive field is tracked in chatter",
@@ -140,7 +144,7 @@ class FieldSecurityScanner(ast.NodeVisitor):
                 field.name,
             )
 
-        if is_sensitive and not _non_copyable_sensitive_field(field, self.constants):
+        if is_sensitive and not _non_copyable_sensitive_field(field, constants):
             self._add(
                 "odoo-field-sensitive-copyable",
                 "Sensitive field can be copied",
@@ -151,7 +155,7 @@ class FieldSecurityScanner(ast.NodeVisitor):
                 field.name,
             )
 
-        if _kw_is_true(field, "compute_sudo", self.constants) and (
+        if _kw_is_true(field, "compute_sudo", constants) and (
             is_sensitive or field.field_type in {"Many2one", "One2many", "Many2many"}
         ):
             self._add(
@@ -165,7 +169,7 @@ class FieldSecurityScanner(ast.NodeVisitor):
             )
 
         if (
-            _kw_is_true(field, "compute_sudo", self.constants)
+            _kw_is_true(field, "compute_sudo", constants)
             and field.field_type in {"Char", "Text", "Html", "Integer", "Float", "Monetary", "Selection"}
             and not _has_admin_only_groups(groups)
         ):
@@ -179,7 +183,7 @@ class FieldSecurityScanner(ast.NodeVisitor):
                 field.name,
             )
 
-        related = _string_keyword(field, "related", self.constants)
+        related = _string_keyword(field, "related", constants)
         if related and _is_sensitive_related(related) and not _has_admin_only_groups(groups):
             self._add(
                 "odoo-field-related-sensitive-no-admin-groups",
@@ -191,7 +195,7 @@ class FieldSecurityScanner(ast.NodeVisitor):
                 field.name,
             )
 
-        if field.field_type == "Binary" and _kw_is_false(field, "attachment", self.constants):
+        if field.field_type == "Binary" and _kw_is_false(field, "attachment", constants):
             self._add(
                 "odoo-field-binary-db-storage",
                 "Binary field disables attachment storage",
@@ -204,7 +208,7 @@ class FieldSecurityScanner(ast.NodeVisitor):
 
         if field.field_type == "Html":
             disabled_sanitizers = [
-                keyword for keyword in HTML_SANITIZER_KEYWORDS if _kw_is_false(field, keyword, self.constants)
+                keyword for keyword in HTML_SANITIZER_KEYWORDS if _kw_is_false(field, keyword, constants)
             ]
             if disabled_sanitizers:
                 self._add(
@@ -217,7 +221,7 @@ class FieldSecurityScanner(ast.NodeVisitor):
                     field.name,
                 )
 
-            if _kw_is_true(field, "sanitize_overridable", self.constants) and not _has_admin_only_groups(groups):
+            if _kw_is_true(field, "sanitize_overridable", constants) and not _has_admin_only_groups(groups):
                 self._add(
                     "odoo-field-html-sanitize-overridable-no-admin-groups",
                     "HTML sanitizer override is not admin-only",
@@ -250,6 +254,14 @@ class FieldSecurityScanner(ast.NodeVisitor):
                 field=field,
             )
         )
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 def _extract_fields(node: ast.ClassDef) -> list[FieldDef]:
@@ -379,8 +391,12 @@ def _non_copyable_sensitive_field(field: FieldDef, constants: dict[str, ast.AST]
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
