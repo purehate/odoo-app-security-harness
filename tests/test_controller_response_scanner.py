@@ -73,6 +73,59 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
 
 
+def test_aliased_http_module_route_public_open_redirect(tmp_path: Path) -> None:
+    """Aliased odoo.http module route decorators should remain recognized."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/go', auth='public')
+    def go(self, **kwargs):
+        return request.redirect(kwargs.get('next'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
+
+
+def test_non_odoo_route_decorator_open_redirect_is_not_public(tmp_path: Path) -> None:
+    """Local route decorators should not make response sinks public routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Controller(http.Controller):
+    @router.route('/go', auth='public')
+    def go(self, **kwargs):
+        return request.redirect(kwargs.get('next'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert not any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
+    assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "medium" for f in findings)
+
+
 def test_constant_backed_public_open_redirect(tmp_path: Path) -> None:
     """Constant-backed public auth should preserve open redirect severity."""
     controllers = tmp_path / "module" / "controllers"
