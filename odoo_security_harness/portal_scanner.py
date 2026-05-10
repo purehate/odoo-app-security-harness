@@ -54,6 +54,7 @@ class PortalScanner(ast.NodeVisitor):
         self.route_stack: list[PortalContext] = []
         self.function_stack: list[FunctionContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[PortalFinding]:
         """Scan the file."""
@@ -70,7 +71,7 @@ class PortalScanner(ast.NodeVisitor):
         return self.findings
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
-        route = _route_info(node, self.constants, self.route_names) or PortalContext(is_route=False)
+        route = _route_info(node, self._effective_constants(), self.route_names) or PortalContext(is_route=False)
         arg_names = {arg.arg for arg in [*node.args.args, *node.args.kwonlyargs]}
         if node.args.vararg:
             arg_names.add(node.args.vararg.arg)
@@ -104,6 +105,11 @@ class PortalScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo.http":
@@ -282,10 +288,15 @@ class PortalScanner(ast.NodeVisitor):
     def _current_context(self) -> FunctionContext | None:
         return self.function_stack[-1] if self.function_stack else None
 
-    def _effective_constants(self, context: FunctionContext) -> dict[str, ast.AST]:
-        if not context.local_constants:
+    def _effective_constants(self, context: FunctionContext | None = None) -> dict[str, ast.AST]:
+        if not self.class_constants_stack and (context is None or not context.local_constants):
             return self.constants
-        return {**self.constants, **context.local_constants}
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        if context is not None:
+            constants.update(context.local_constants)
+        return constants
 
     def _add(
         self,
@@ -437,8 +448,12 @@ def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[tu
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

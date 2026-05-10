@@ -254,6 +254,70 @@ class Portal(http.Controller):
     )
 
 
+def test_class_constant_backed_public_portal_route(tmp_path: Path) -> None:
+    """Class-scoped route constants should not hide public portal exposure."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "portal.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Portal(http.Controller):
+    ORDER_ROUTE = '/my/orders/<int:order_id>'
+    PRINT_ROUTE = '/my/orders/<int:order_id>/print'
+    PORTAL_ROUTES = [ORDER_ROUTE, PRINT_ROUTE]
+    AUTH_PUBLIC = 'public'
+    AUTH_ALIAS = AUTH_PUBLIC
+    WEBSITE_ENABLED = True
+
+    @http.route(PORTAL_ROUTES, auth=AUTH_ALIAS, website=WEBSITE_ENABLED)
+    def portal_order(self, order_id, access_token=None):
+        return request.render('sale.portal_order_page', {'order_id': order_id})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_portal_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-portal-public-route" in rule_ids
+    assert "odoo-portal-access-token-without-helper" in rule_ids
+    assert any(f.route == "/my/orders/<int:order_id>,/my/orders/<int:order_id>/print" for f in findings)
+
+
+def test_class_constant_static_unpack_public_portal_route_options(tmp_path: Path) -> None:
+    """Class-scoped static route option unpacking should preserve public portal context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "portal.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Portal(http.Controller):
+    PORTAL_AUTH = 'public'
+    ROUTE_OPTIONS = {
+        'route': ['/my/orders/<int:order_id>', '/my/orders/<int:order_id>/print'],
+        'auth': PORTAL_AUTH,
+        'website': True,
+    }
+
+    @http.route(**ROUTE_OPTIONS)
+    def portal_order(self, order_id, access_token=None):
+        return request.render('sale.portal_order_page', {'order_id': order_id})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_portal_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-portal-public-route" in rule_ids
+    assert "odoo-portal-access-token-without-helper" in rule_ids
+    assert any(f.route == "/my/orders/<int:order_id>,/my/orders/<int:order_id>/print" for f in findings)
+
+
 def test_flags_access_token_read_from_kwargs_without_access_helper(tmp_path: Path) -> None:
     """Portal routes often pull access_token from kw/kwargs instead of declaring it."""
     controllers = tmp_path / "module" / "controllers"
@@ -462,6 +526,32 @@ class Portal(http.Controller):
     def portal_order(self, order_id):
         root_user = SUPERUSER_ID
         order = request.env['sale.order'].with_user(root_user).browse(order_id)
+        return request.render('sale.portal_order_page', {'order': order})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_portal_routes(tmp_path)
+
+    assert any(f.rule_id == "odoo-portal-sudo-route-id-read" for f in findings)
+
+
+def test_flags_class_constant_superuser_route_id_read(tmp_path: Path) -> None:
+    """Class-scoped superuser aliases should be treated like sudo route-selected reads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "portal.py").write_text(
+        """
+from odoo import SUPERUSER_ID, http
+from odoo.http import request
+
+class Portal(http.Controller):
+    ROOT_UID = SUPERUSER_ID
+    ADMIN_UID = ROOT_UID
+
+    @http.route('/my/orders/<int:order_id>', auth='user', website=True)
+    def portal_order(self, order_id):
+        order = request.env['sale.order'].with_user(ADMIN_UID).browse(order_id)
         return request.render('sale.portal_order_page', {'order': order})
 """,
         encoding="utf-8",
@@ -691,6 +781,38 @@ class Portal(http.Controller):
         order_key = 'order_id'
         token = request.params.get(token_key)
         order_id = request.params[order_key]
+        order = request.env['sale.order'].sudo().browse(order_id)
+        return request.render('sale.portal_order_page', {'order': order, 'token': token})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_portal_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-portal-access-token-without-helper" in rule_ids
+    assert "odoo-portal-sudo-route-id-read" in rule_ids
+
+
+def test_flags_class_constant_request_param_keys(tmp_path: Path) -> None:
+    """Class-scoped request parameter key constants should still mark tokens and route IDs."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "portal.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Portal(http.Controller):
+    TOKEN_KEY = 'access_token'
+    TOKEN_ALIAS = TOKEN_KEY
+    ORDER_KEY = 'order_id'
+    ORDER_ALIAS = ORDER_KEY
+
+    @http.route('/my/orders', auth='public', website=True)
+    def portal_order(self):
+        token = request.params.get(TOKEN_ALIAS)
+        order_id = request.params[ORDER_ALIAS]
         order = request.env['sale.order'].sudo().browse(order_id)
         return request.render('sale.portal_order_page', {'order': order, 'token': token})
 """,
