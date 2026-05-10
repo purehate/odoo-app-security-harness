@@ -76,6 +76,42 @@ class TestController(http.Controller):
         assert "odoo-deep-public-sudo" in rule_ids
         assert "odoo-deep-public-sudo-search" in rule_ids
 
+    def test_aliased_http_route_with_sudo(self) -> None:
+        """Aliased Odoo http imports should still expose public route context."""
+        source = """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class TestController(odoo_http.Controller):
+    @odoo_http.route('/test/public', auth='public')
+    def test_public(self):
+        return request.env['res.users'].sudo().search([])
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-public-sudo" in rule_ids
+        assert "odoo-deep-public-sudo-search" in rule_ids
+
+    def test_aliased_imported_route_with_sudo(self) -> None:
+        """Aliased imported route decorators should still expose public route context."""
+        source = """
+from odoo import http
+from odoo.http import request, route as odoo_route
+
+class TestController(http.Controller):
+    @odoo_route('/test/public', auth='public')
+    def test_public(self):
+        return request.env['res.users'].sudo().search([])
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-public-sudo" in rule_ids
+        assert "odoo-deep-public-sudo-search" in rule_ids
+
     def test_constant_backed_auth_none_request_env(self) -> None:
         """Constant-backed auth='none' should still flag request.env usage."""
         source = """

@@ -74,6 +74,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.tainted_vars: set[str] = set()
         self.unsafe_sql_vars: set[str] = set()
         self.request_names: set[str] = {"request"}
+        self.http_module_names: set[str] = {"http"}
+        self.route_decorator_names: set[str] = {"route"}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
 
@@ -88,11 +90,17 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         return self.findings
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        """Track aliases for the Odoo HTTP request proxy."""
+        """Track aliases for Odoo HTTP helpers."""
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.http_module_names.add(alias.asname or alias.name)
         if node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
                     self.request_names.add(alias.asname or alias.name)
+                elif alias.name == "route":
+                    self.route_decorator_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -304,11 +312,11 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
             if isinstance(decorator.func, ast.Attribute):
                 return (
                     isinstance(decorator.func.value, ast.Name)
-                    and decorator.func.value.id == "http"
+                    and decorator.func.value.id in self.http_module_names
                     and decorator.func.attr == "route"
                 )
             elif isinstance(decorator.func, ast.Name):
-                return decorator.func.id == "route"
+                return decorator.func.id in self.route_decorator_names
         return False
 
     def _extract_route_kwargs(self, decorator: ast.Call) -> tuple[str, bool, list[str], list[str]]:
