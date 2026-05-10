@@ -182,6 +182,58 @@ class Controller(http.Controller):
     assert "odoo-oauth-request-token-decode" in rule_ids
 
 
+def test_aliased_http_module_oauth_callback_risks_are_reported(tmp_path: Path) -> None:
+    """Aliased Odoo http module imports should still expose OAuth callback risks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http as odoo_http
+import jwt
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        token = kwargs.get('id_token')
+        return jwt.decode(token, options={'verify_signature': False})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-oauth-public-callback-route" in rule_ids
+    assert "odoo-oauth-jwt-verification-disabled" in rule_ids
+
+
+def test_non_odoo_route_decorator_oauth_callback_is_ignored(tmp_path: Path) -> None:
+    """Local route-like decorators should not create Odoo route context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Controller:
+    @router.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        return kwargs.get('id_token')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert not any(f.rule_id == "odoo-oauth-public-callback-route" for f in findings)
+
+
 def test_constant_backed_public_oauth_callback_risks_are_reported(tmp_path: Path) -> None:
     """Constant-backed public callback routes should still expose OAuth risks."""
     controllers = tmp_path / "module" / "controllers"
