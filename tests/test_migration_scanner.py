@@ -95,6 +95,26 @@ def migrate(cr, version):
     assert any(f.rule_id == "odoo-migration-destructive-sql" and f.severity == "critical" for f in findings)
 
 
+def test_class_constant_destructive_migration_sql_is_reported(tmp_path: Path) -> None:
+    """Class-level SQL constants should still be inspected when executed."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+class PartnerMigration:
+    BASE_QUERY = "DELETE FROM account_move"
+    QUERY_ALIAS = BASE_QUERY
+
+    def migrate(self, cr, version):
+        cr.execute(QUERY_ALIAS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(f.rule_id == "odoo-migration-destructive-sql" and f.severity == "critical" for f in findings)
+
+
 def test_sudo_mutation_and_manual_transaction_are_reported(tmp_path: Path) -> None:
     """Migration hooks often run privileged; sudo writes and commits need review."""
     py = tmp_path / "post-migrate.py"
@@ -179,6 +199,27 @@ ADMIN_UID = ROOT_UID
 def migrate(env):
     partners = env['res.partner'].with_user(ADMIN_UID).search([])
     partners.write({'active': False})
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(f.rule_id == "odoo-migration-sudo-mutation" for f in findings)
+
+
+def test_class_constant_with_user_mutation_is_reported(tmp_path: Path) -> None:
+    """Class-level superuser constants in migrations should trigger mutation review."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+class PartnerMigration:
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+
+    def migrate(self, env):
+        partners = env['res.partner'].with_user(ADMIN_UID).search([])
+        partners.write({'active': False})
 """,
         encoding="utf-8",
     )

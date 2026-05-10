@@ -63,6 +63,7 @@ class MigrationScanner(ast.NodeVisitor):
         self.process_function_aliases: set[str] = set()
         self.function_stack: list[str] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[MigrationFinding]:
         """Scan the file."""
@@ -77,6 +78,11 @@ class MigrationScanner(ast.NodeVisitor):
         self.constants = _module_constants(tree)
         self.visit(tree)
         return self.findings
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_Import(self, node: ast.Import) -> Any:
         for alias in node.names:
@@ -130,7 +136,7 @@ class MigrationScanner(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> Any:
         if _is_cr_execute(node):
             self._scan_sql_execute(node)
-        elif _is_sudo_mutation(node.func, self.sudo_vars, self.constants):
+        elif _is_sudo_mutation(node.func, self.sudo_vars, self._effective_constants()):
             self._add(
                 "odoo-migration-sudo-mutation",
                 "Migration/hook performs elevated mutation",
@@ -174,7 +180,11 @@ class MigrationScanner(ast.NodeVisitor):
         sql_value = self._resolve_sql_value(value)
         if _looks_sql_expr(sql_value):
             self._record_sql_target(target, sql_value)
-        self._track_sudo_alias(target, value, lambda node: _is_sudo_expr(node, self.sudo_vars, self.constants))
+        self._track_sudo_alias(
+            target,
+            value,
+            lambda node: _is_sudo_expr(node, self.sudo_vars, self._effective_constants()),
+        )
 
     def _track_sudo_alias(
         self,
@@ -237,7 +247,7 @@ class MigrationScanner(ast.NodeVisitor):
         if isinstance(value, ast.Name):
             if value.id in self.sql_vars:
                 return self.sql_vars[value.id]
-            resolved = _resolve_constant(value, self.constants)
+            resolved = _resolve_constant(value, self._effective_constants())
             return resolved if isinstance(resolved, ast.expr) else value
         if isinstance(value, ast.Subscript):
             root = _call_root_name(value)
@@ -260,6 +270,14 @@ class MigrationScanner(ast.NodeVisitor):
                 context=context,
             )
         )
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 def _scan_hook_functions(module_path: Path, hook_names: set[str], manifest: Path) -> list[MigrationFinding]:
@@ -419,8 +437,12 @@ def _literal_string(node: ast.expr) -> str:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
