@@ -78,6 +78,60 @@ class Redirect(http.Controller):
     assert "odoo-act-url-public-route" in rule_ids
 
 
+def test_aliased_http_module_route_public_tainted_act_url(tmp_path: Path) -> None:
+    """Aliased odoo.http module route decorators should remain recognized."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "redirect.py").write_text(
+        """
+from odoo import http as odoo_http
+
+class Redirect(odoo_http.Controller):
+    @odoo_http.route('/go/action', auth='public')
+    def go(self, **kwargs):
+        return {'type': 'ir.actions.act_url', 'url': kwargs.get('next'), 'target': 'self'}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-url-tainted-url" in rule_ids
+    assert "odoo-act-url-public-route" in rule_ids
+
+
+def test_non_odoo_route_decorator_tainted_act_url_is_not_public(tmp_path: Path) -> None:
+    """Local route decorators should not make act_url redirects public routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "redirect.py").write_text(
+        """
+from odoo import http
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Redirect(http.Controller):
+    @router.route('/go/action', auth='public')
+    def go(self, **kwargs):
+        return {'type': 'ir.actions.act_url', 'url': kwargs.get('next'), 'target': 'self'}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-url-tainted-url" in rule_ids
+    assert "odoo-act-url-public-route" not in rule_ids
+
+
 def test_static_unpack_public_route_options_tainted_act_url(tmp_path: Path) -> None:
     """Static route option unpacking should preserve public act_url context."""
     controllers = tmp_path / "module" / "controllers"
