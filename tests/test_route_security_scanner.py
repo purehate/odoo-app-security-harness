@@ -216,6 +216,52 @@ class Api(http.Controller):
     assert "odoo-route-public-all-methods" in rule_ids
 
 
+def test_flags_aliased_http_module_route_options(tmp_path: Path) -> None:
+    """Aliased Odoo http modules should still expose route posture."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "cors.py").write_text(
+        """
+from odoo import http as odoo_http
+
+class Api(odoo_http.Controller):
+    @odoo_http.route('/public/profile', auth='public', cors='*')
+    def profile(self):
+        return '{}'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_route_security(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-route-cors-wildcard" in rule_ids
+    assert "odoo-route-public-all-methods" in rule_ids
+
+
+def test_ignores_non_odoo_route_attribute(tmp_path: Path) -> None:
+    """Arbitrary .route decorators should not be treated as Odoo controllers."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "bus.py").write_text(
+        """
+class Bus:
+    def route(self, path, **kwargs):
+        return lambda func: func
+
+bus = Bus()
+
+class Api:
+    @bus.route('/public/profile', auth='public', cors='*')
+    def profile(self):
+        return '{}'
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_route_security(tmp_path) == []
+
+
 def test_flags_csrf_disabled_on_mutating_route(tmp_path: Path) -> None:
     """Unsafe methods and mutating route names should not disable CSRF casually."""
     controllers = tmp_path / "module" / "controllers"
