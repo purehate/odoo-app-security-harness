@@ -66,6 +66,28 @@ def upload(**kwargs):
     assert any(f.rule_id == "odoo-file-upload-tainted-path-write" for f in findings)
 
 
+def test_tainted_open_class_constant_write_mode_is_reported(tmp_path: Path) -> None:
+    """Class-scoped write-mode constants should not hide request-controlled path writes."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+class UploadController:
+    BASE_WRITE_MODE = 'wb'
+    WRITE_MODE = BASE_WRITE_MODE
+
+    def upload(self, **kwargs):
+        filename = kwargs.get('filename')
+        with open(filename, WRITE_MODE) as handle:
+            handle.write(b'data')
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-tainted-path-write" for f in findings)
+
+
 def test_tainted_open_local_constant_write_mode_is_reported(tmp_path: Path) -> None:
     """Function-local write-mode constants should not hide request-controlled path writes."""
     py = tmp_path / "controller.py"
@@ -378,6 +400,31 @@ def upload(self, **kwargs):
     assert any(f.rule_id == "odoo-file-upload-public-attachment-create" for f in findings)
 
 
+def test_public_attachment_create_class_constant_is_reported(tmp_path: Path) -> None:
+    """Class-scoped public=True constants should not hide public attachment creation."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+class UploadController:
+    PUBLIC_VALUE = True
+    PUBLIC_ATTACHMENT = PUBLIC_VALUE
+
+    def upload(self, **kwargs):
+        payload = kwargs.get('payload')
+        return self.env['ir.attachment'].create({
+            'name': 'x.bin',
+            'datas': payload,
+            'public': PUBLIC_ATTACHMENT,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-public-attachment-create" for f in findings)
+
+
 def test_public_attachment_create_local_constant_is_reported(tmp_path: Path) -> None:
     """Function-local public=True constants should not hide public attachment creation."""
     py = tmp_path / "controller.py"
@@ -405,6 +452,27 @@ def upload(self, **kwargs):
     attachment_model = 'ir.attachment'
     payload = kwargs.get('payload')
     return self.env[attachment_model].create({'name': 'x.bin', 'datas': payload})
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-attachment-from-request" for f in findings)
+
+
+def test_attachment_create_class_constant_model_is_reported(tmp_path: Path) -> None:
+    """Class-scoped model constants should not hide attachment creates."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+class UploadController:
+    ATTACHMENT_MODEL_BASE = 'ir.attachment'
+    ATTACHMENT_MODEL = ATTACHMENT_MODEL_BASE
+
+    def upload(self, **kwargs):
+        payload = kwargs.get('payload')
+        return self.env[ATTACHMENT_MODEL].create({'name': 'x.bin', 'datas': payload})
 """,
         encoding="utf-8",
     )
