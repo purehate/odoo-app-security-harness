@@ -140,6 +140,64 @@ class Defaults(http.Controller):
     assert "odoo-default-request-derived-set" in rule_ids
 
 
+def test_class_constant_backed_public_sudo_default_set_from_request(tmp_path: Path) -> None:
+    """Class-scoped public auth constants should still expose ir.default writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "defaults.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Defaults(http.Controller):
+    DEFAULT_ROUTES = ['/defaults/group', '/defaults/group/alt']
+    DEFAULT_AUTH = 'public'
+
+    @http.route(DEFAULT_ROUTES, auth=DEFAULT_AUTH)
+    def set_group(self, **kwargs):
+        return request.env['ir.default'].sudo().set('res.users', 'groups_id', kwargs.get('groups_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-default-public-route-set" in rule_ids
+    assert "odoo-default-sudo-set" in rule_ids
+    assert "odoo-default-request-derived-set" in rule_ids
+    assert "odoo-default-sensitive-field-set" in rule_ids
+
+
+def test_class_constant_static_unpack_public_sudo_default_set_from_request(tmp_path: Path) -> None:
+    """Class-scoped static route option dictionaries should expose public ir.default writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "defaults.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Defaults(http.Controller):
+    AUTH_BASE = 'public'
+    DEFAULT_AUTH = AUTH_BASE
+    DEFAULT_OPTIONS = {'auth': DEFAULT_AUTH}
+    OPTIONS_ALIAS = DEFAULT_OPTIONS
+
+    @http.route('/defaults/group', **OPTIONS_ALIAS)
+    def set_group(self, **kwargs):
+        return request.env['ir.default'].sudo().set('res.users', 'groups_id', kwargs.get('groups_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-default-public-route-set" in rule_ids
+    assert "odoo-default-request-derived-set" in rule_ids
+
+
 def test_keyword_constant_backed_none_default_value_is_critical(tmp_path: Path) -> None:
     """Constant-backed auth='none' should keep request-derived default writes critical."""
     controllers = tmp_path / "module" / "controllers"
@@ -471,6 +529,65 @@ class Defaults(models.Model):
         and f.field == "groups_id"
         for f in findings
     )
+
+
+def test_class_constant_model_field_and_default_model_are_labeled(tmp_path: Path) -> None:
+    """Class-scoped model, field, and ir.default aliases should preserve labels."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "defaults.py").write_text(
+        """
+from odoo import models
+
+class Defaults(models.Model):
+    _name = 'x.defaults'
+    IR_DEFAULT_BASE = 'ir.default'
+    IR_DEFAULT = IR_DEFAULT_BASE
+    DEFAULT_MODEL_BASE = 'res.users'
+    DEFAULT_MODEL = DEFAULT_MODEL_BASE
+    DEFAULT_FIELD_BASE = 'groups_id'
+    DEFAULT_FIELD = DEFAULT_FIELD_BASE
+
+    def set_group_default(self):
+        defaults = self.env[IR_DEFAULT].sudo()
+        return defaults.set(DEFAULT_MODEL, DEFAULT_FIELD, [self.env.ref('base.group_user').id])
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-default-sensitive-field-set"
+        and f.model == "res.users"
+        and f.field == "groups_id"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-default-sensitive-model-set" and f.model == "res.users" for f in findings)
+
+
+def test_class_constant_superuser_with_user_default_set_is_elevated(tmp_path: Path) -> None:
+    """Class-scoped superuser aliases should still mark elevated default writes."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "defaults.py").write_text(
+        """
+from odoo import SUPERUSER_ID, models
+
+class Defaults(models.Model):
+    _name = 'x.defaults'
+    ROOT_UID = SUPERUSER_ID
+    ADMIN_UID = ROOT_UID
+
+    def set_company_default(self):
+        return self.env['ir.default'].with_user(user=ADMIN_UID).set('sale.order', 'company_id', self.env.company.id)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+
+    assert any(finding.rule_id == "odoo-default-sudo-set" for finding in findings)
 
 
 def test_flags_request_value_through_local_alias(tmp_path: Path) -> None:

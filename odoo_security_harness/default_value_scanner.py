@@ -97,6 +97,7 @@ class DefaultValueScanner(ast.NodeVisitor):
         self.route_decorator_names: set[str] = {"route"}
         self.constants: dict[str, ast.AST] = {}
         self.route_stack: list[RouteContext] = []
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_python_file(self) -> list[DefaultValueFinding]:
         """Scan Python code for ir.default writes."""
@@ -131,7 +132,9 @@ class DefaultValueScanner(ast.NodeVisitor):
         previous_tainted = set(self.tainted_names)
         previous_default_vars = set(self.default_vars)
         previous_elevated_default_vars = set(self.elevated_default_vars)
-        route = _route_info(node, self.constants, self.route_decorator_names) or RouteContext(is_route=False)
+        route = _route_info(node, self._effective_constants(), self.route_decorator_names) or RouteContext(
+            is_route=False
+        )
         self.route_stack.append(route)
 
         for arg in [*node.args.args, *node.args.kwonlyargs]:
@@ -150,6 +153,11 @@ class DefaultValueScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo.http":
@@ -199,7 +207,9 @@ class DefaultValueScanner(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
-        if sink.rsplit(".", 1)[-1] == "set" and _is_ir_default_expr(node.func, self.default_vars):
+        if sink.rsplit(".", 1)[-1] == "set" and _is_ir_default_expr(
+            node.func, self.default_vars, self._effective_constants()
+        ):
             self._scan_default_set(node, sink)
         self.generic_visit(node)
 
@@ -207,8 +217,9 @@ class DefaultValueScanner(ast.NodeVisitor):
         model_node = node.args[0] if node.args else _keyword_value(node, "model")
         field_node = node.args[1] if len(node.args) >= 2 else _keyword_value(node, "field_name")
         value_node = node.args[2] if len(node.args) >= 3 else _keyword_value(node, "value")
-        model = _literal_string(model_node, self.constants)
-        field = _literal_string(field_node, self.constants)
+        constants = self._effective_constants()
+        model = _literal_string(model_node, constants)
+        field = _literal_string(field_node, constants)
         route = self._current_route()
 
         if route.auth in {"public", "none"}:
@@ -223,7 +234,9 @@ class DefaultValueScanner(ast.NodeVisitor):
                 sink,
             )
 
-        if _is_elevated_expr(node.func) or _uses_elevated_default_var(node.func, self.elevated_default_vars):
+        if _is_elevated_expr(node.func, constants) or _uses_elevated_default_var(
+            node.func, self.elevated_default_vars
+        ):
             self._add(
                 "odoo-default-sudo-set",
                 "ir.default is written through privileged context",
@@ -395,9 +408,10 @@ class DefaultValueScanner(ast.NodeVisitor):
                 self._mark_default_target(target_element, value_element, default_vars, elevated_default_vars)
             return
 
-        is_default = _is_ir_default_expr(value, default_vars)
+        constants = self._effective_constants()
+        is_default = _is_ir_default_expr(value, default_vars, constants)
         is_elevated_default = is_default and (
-            _is_elevated_expr(value) or _uses_elevated_default_var(value, elevated_default_vars)
+            _is_elevated_expr(value, constants) or _uses_elevated_default_var(value, elevated_default_vars)
         )
         for name in _target_names(target):
             if is_default:
@@ -424,6 +438,14 @@ class DefaultValueScanner(ast.NodeVisitor):
 
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _add(
         self,
@@ -504,8 +526,12 @@ def _route_auth_from_options(options: ast.Dict, auth: str, constants: dict[str, 
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
@@ -559,42 +585,51 @@ def _is_http_route(node: ast.AST, route_decorator_names: set[str] | None = None)
     return isinstance(node, ast.Attribute) and node.attr == "route"
 
 
-def _is_ir_default_expr(node: ast.AST, default_vars: set[str]) -> bool:
+def _is_ir_default_expr(
+    node: ast.AST,
+    default_vars: set[str],
+    constants: dict[str, ast.AST] | None = None,
+) -> bool:
+    constants = constants or {}
     if isinstance(node, ast.Name) and node.id in default_vars:
         return True
     for child in ast.walk(node):
         if isinstance(child, ast.Name) and child.id in default_vars:
             return True
-        if isinstance(child, ast.Subscript) and _env_model_name(child) == "ir.default":
+        if isinstance(child, ast.Subscript) and _env_model_name(child, constants) == "ir.default":
             return True
     return False
 
 
-def _is_elevated_expr(node: ast.AST) -> bool:
+def _is_elevated_expr(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
     return (
         _call_chain_has_attr(node, "sudo")
-        or _call_chain_has_superuser_with_user(node)
-        or "SUPERUSER_ID" in _safe_unparse(node)
+        or _call_chain_has_superuser_with_user(node, constants)
+        or "SUPERUSER_ID" in _safe_unparse(_resolve_constant(node, constants))
     )
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST) -> bool:
+def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
     for child in ast.walk(node):
         if not isinstance(child, ast.Call):
             continue
         if not (isinstance(child.func, ast.Attribute) and child.func.attr == "with_user"):
             continue
-        if any(_is_admin_user_arg(arg) for arg in child.args):
+        if any(_is_admin_user_arg(arg, constants) for arg in child.args):
             return True
         if any(
-            keyword.arg in {"user", "uid"} and keyword.value is not None and _is_admin_user_arg(keyword.value)
+            keyword.arg in {"user", "uid"}
+            and keyword.value is not None
+            and _is_admin_user_arg(keyword.value, constants)
             for keyword in child.keywords
         ):
             return True
     return False
 
 
-def _is_admin_user_arg(node: ast.AST) -> bool:
+def _is_admin_user_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+    node = _resolve_constant(node, constants or {})
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
@@ -610,11 +645,12 @@ def _uses_elevated_default_var(node: ast.AST, elevated_default_vars: set[str]) -
     return any(isinstance(child, ast.Name) and child.id in elevated_default_vars for child in ast.walk(node))
 
 
-def _env_model_name(node: ast.Subscript) -> str:
+def _env_model_name(node: ast.Subscript, constants: dict[str, ast.AST] | None = None) -> str:
     if not _call_name(node.value).endswith("env"):
         return ""
-    if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
-        return node.slice.value
+    value = _resolve_constant(node.slice, constants or {})
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        return value.value
     return ""
 
 
