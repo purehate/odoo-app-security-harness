@@ -6697,6 +6697,12 @@ def test_taxonomy_coverage_classifies_route_decorator_posture() -> None:
             },
             {
                 "source": "route-security",
+                "rule_id": "odoo-route-public-get-mutation",
+                "title": "Public route exposes mutating action over GET",
+                "message": "Public route /shop/order/confirm exposes a mutating-looking action over GET; keep GET idempotent and move state changes to POST with CSRF or a non-browser token",
+            },
+            {
+                "source": "route-security",
                 "rule_id": "odoo-route-public-all-methods",
                 "title": "Public route does not restrict HTTP methods",
                 "message": "Public route /public/thing does not set methods=; constrain allowed verbs to reduce unexpected GET/POST exposure",
@@ -6710,7 +6716,7 @@ def test_taxonomy_coverage_classifies_route_decorator_posture() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 7
+    assert coverage["mapped_rules"] == 8
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-route-auth-none": "route_auth_none",
@@ -6718,6 +6724,7 @@ def test_taxonomy_coverage_classifies_route_decorator_posture() -> None:
         "odoo-route-bearer-save-session": "route_bearer_save_session",
         "odoo-route-csrf-disabled-all-methods": "route_csrf_disabled_all_methods",
         "odoo-route-unsafe-csrf-disabled": "route_unsafe_csrf_disabled",
+        "odoo-route-public-get-mutation": "csrf_state_change_get",
         "odoo-route-public-all-methods": "route_public_all_methods",
         "odoo-route-public-sitemap-indexed": "route_public_sitemap_indexed",
     }
@@ -7707,6 +7714,10 @@ class TestController(http.Controller):
 
     @http.route('/public/form-submit', auth='public', methods=['POST'], csrf=False)
     def form_submit(self, **kwargs):
+        return 'ok'
+
+    @http.route('/shop/order/confirm', auth='public', methods=['GET'])
+    def confirm_order(self):
         return 'ok'
 
     @http.route('/my/private-offer', auth='public', website=True)
@@ -9050,6 +9061,7 @@ msgstr "<a href=\\"javascript:alert(1)\\">Ouvrir %(name)s</a>"
     assert "odoo-route-cors-wildcard" in rule_ids
     assert "odoo-route-csrf-disabled-all-methods" in rule_ids
     assert "odoo-route-unsafe-csrf-disabled" in rule_ids
+    assert "odoo-route-public-get-mutation" in rule_ids
     assert "odoo-route-public-all-methods" in rule_ids
     assert "odoo-route-public-sitemap-indexed" in rule_ids
     assert "odoo-json-route-public-auth" in rule_ids

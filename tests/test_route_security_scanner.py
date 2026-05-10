@@ -426,6 +426,49 @@ class Webhook(http.Controller):
     assert any(f.rule_id == "odoo-route-csrf-disabled-all-methods" for f in findings)
 
 
+def test_flags_public_get_mutation_route(tmp_path: Path) -> None:
+    """Public GET routes should not expose state-changing controller actions."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "confirm.py").write_text(
+        """
+from odoo import http
+
+class Checkout(http.Controller):
+    @http.route('/shop/order/confirm', auth='public', methods=['GET'])
+    def confirm_order(self):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_route_security(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-route-public-get-mutation" and f.severity == "high" and f.attribute == "methods"
+        for f in findings
+    )
+
+
+def test_ignores_safe_public_get_route(tmp_path: Path) -> None:
+    """Read-only-looking public GET routes should avoid mutation-route noise."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "profile.py").write_text(
+        """
+from odoo import http
+
+class Profile(http.Controller):
+    @http.route('/public/profile', auth='public', methods=['GET'])
+    def profile(self):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_route_security(tmp_path) == []
+
+
 def test_flags_public_website_sitemap_indexing(tmp_path: Path) -> None:
     """Public website routes should opt out of sitemap when not intended for discovery."""
     controllers = tmp_path / "module" / "controllers"

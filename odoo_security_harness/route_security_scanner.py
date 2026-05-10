@@ -170,6 +170,17 @@ class RouteSecurityScanner(ast.NodeVisitor):
                 "csrf",
             )
 
+        if route.auth in {"public", "none"} and _is_get_only_route(methods) and _looks_mutating_route(path, node.name):
+            self._add(
+                "odoo-route-public-get-mutation",
+                "Public route exposes mutating action over GET",
+                "high",
+                node.lineno,
+                f"Public route {path} exposes a mutating-looking action over GET; keep GET idempotent and move state changes to POST with CSRF or a non-browser token",
+                path,
+                "methods",
+            )
+
         if route.auth in {"public", "none"} and not route.methods:
             self._add(
                 "odoo-route-public-all-methods",
@@ -416,6 +427,10 @@ def _is_static_literal(node: ast.AST) -> bool:
 def _looks_mutating_route(path: str, function_name: str) -> bool:
     haystack = f"{path} {function_name}".lower()
     return any(marker in haystack for marker in MUTATION_ROUTE_MARKERS)
+
+
+def _is_get_only_route(methods: set[str]) -> bool:
+    return bool(methods) and "GET" in methods and methods <= {"GET", "HEAD"}
 
 
 def _should_skip(path: Path) -> bool:

@@ -376,6 +376,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "csrf_state_change_get",
+        (
+            "odoo-route-public-get-mutation",
+            "public route exposes mutating action over get",
+            "mutating-looking action over get",
+            "keep get idempotent",
+        ),
+    ),
+    (
         "route_public_all_methods",
         (
             "odoo-route-public-all-methods",
