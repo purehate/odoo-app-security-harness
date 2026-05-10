@@ -60,6 +60,7 @@ class LoosePythonScanner(ast.NodeVisitor):
         self.module_aliases: dict[str, str] = {}
         self.function_aliases: dict[str, str] = {}
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[LoosePythonFinding]:
         """Scan one Python file."""
@@ -98,6 +99,11 @@ class LoosePythonScanner(ast.NodeVisitor):
             for alias in node.names:
                 self.function_aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
         self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_Assign(self, node: ast.Assign) -> None:
         """Track query variables built through string interpolation."""
@@ -267,7 +273,7 @@ class LoosePythonScanner(ast.NodeVisitor):
             return ""
         if _call_name(current.value) not in {"env", "self.env"}:
             return ""
-        key = _resolve_constant(current.slice, self.constants)
+        key = _resolve_constant(current.slice, self._effective_constants())
         if isinstance(key, ast.Constant) and isinstance(key.value, str):
             return key.value
         return ""
@@ -375,7 +381,7 @@ class LoosePythonScanner(ast.NodeVisitor):
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute) and (
                 node.func.attr == "sudo"
-                or (node.func.attr == "with_user" and _call_has_superuser_arg(node, self.constants))
+                or (node.func.attr == "with_user" and _call_has_superuser_arg(node, self._effective_constants()))
             ):
                 return True
             return self._expr_has_elevated_record(node.func)
@@ -410,6 +416,14 @@ class LoosePythonScanner(ast.NodeVisitor):
         if parts and parts[0] in self.module_aliases:
             return ".".join([self.module_aliases[parts[0]], *parts[1:]])
         return sink
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 def scan_loose_python(repo_path: Path) -> list[LoosePythonFinding]:
@@ -513,8 +527,12 @@ def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

@@ -250,6 +250,27 @@ records.with_user(ADMIN_UID).write({'state': 'done'})
     assert any(f.rule_id == "odoo-loose-python-sudo-write" for f in findings)
 
 
+def test_server_action_detects_class_constant_superuser_write(tmp_path: Path) -> None:
+    """Class-scoped with_user constants should be treated as privileged writes."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+class ActionHelper:
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+
+    def run(self, records):
+        elevated = records.with_user(ADMIN_UID)
+        elevated.write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-sudo-write" for f in findings)
+
+
 def test_server_action_detects_keyword_superuser_write(tmp_path: Path) -> None:
     """Keyword with_user(uid=SUPERUSER_ID) mutations are privileged writes."""
     script = tmp_path / "action.py"
@@ -418,6 +439,32 @@ CONFIG_MODEL = PARAMS_MODEL
 
 env[TARGET_MODEL].write({'active': False})
 env[CONFIG_MODEL].set_param('auth.signup.allow_uninvited', 'False')
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+    sensitive_mutations = [
+        finding for finding in findings if finding.rule_id == "odoo-loose-python-sensitive-model-mutation"
+    ]
+
+    assert len(sensitive_mutations) == 2
+
+
+def test_server_action_detects_class_constant_sensitive_model_mutation(tmp_path: Path) -> None:
+    """Sensitive model mutation should resolve class-scoped env[...] constants."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+class ActionHelper:
+    USERS_MODEL = 'res.users'
+    TARGET_MODEL = USERS_MODEL
+    PARAMS_MODEL = 'ir.config_parameter'
+    CONFIG_MODEL = PARAMS_MODEL
+
+    def run(self, env):
+        env[TARGET_MODEL].write({'active': False})
+        env[CONFIG_MODEL].set_param('auth.signup.allow_uninvited', 'False')
 """,
         encoding="utf-8",
     )
