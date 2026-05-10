@@ -332,6 +332,7 @@ odoo-review-run . --config .odoo-review/config.toml
 ```
 
 CLI flags override `.odoo-review/config.toml`. Built-in model packs are `default`, `cheap-recall`, `balanced`, `frontier-validation`, and `local-private`.
+Runtime config targets must be explicit `http://` or `https://` URLs; `runtime.odoomap_target` may also be `self` for the booted local runtime.
 
 Runtime evidence for an accepted candidate:
 

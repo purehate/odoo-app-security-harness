@@ -23,6 +23,7 @@ import re
 import sys
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlparse
 
 VALID_MODEL_PACKS = {"default", "cheap-recall", "balanced", "frontier-validation", "local-private"}
 VALID_CODEX_BUDGETS = {"low", "normal", "deep"}
@@ -47,6 +48,11 @@ VALID_SCOPE_RISK_KEYS = {
     "severity",
 }
 SCOPE_RISK_MATCH_KEYS = {"finding_id", "module", "file", "rule", "cwe"}
+
+
+def _is_http_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def validate_toml_config(path: Path) -> tuple[bool, list[str]]:
@@ -117,6 +123,12 @@ def validate_toml_config(path: Path) -> tuple[bool, list[str]]:
         for key in ("zap_target", "odoomap_target"):
             if key in runtime and (not isinstance(runtime[key], str) or not runtime[key].strip()):
                 errors.append(f"runtime.{key} must be a non-empty string")
+        if isinstance(runtime.get("zap_target"), str) and runtime["zap_target"].strip():
+            if not _is_http_url(runtime["zap_target"]):
+                errors.append("runtime.zap_target must be an http(s) URL")
+        if isinstance(runtime.get("odoomap_target"), str) and runtime["odoomap_target"].strip():
+            if runtime["odoomap_target"] != "self" and not _is_http_url(runtime["odoomap_target"]):
+                errors.append("runtime.odoomap_target must be 'self' or an http(s) URL")
         if runtime.get("enabled") is not True:
             if runtime.get("zap_target"):
                 errors.append("runtime.zap_target requires runtime.enabled = true")

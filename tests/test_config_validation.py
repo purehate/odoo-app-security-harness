@@ -214,6 +214,25 @@ zap_target = "https://qa.example.com"
         assert valid is True
         assert errors == []
 
+    def test_runtime_odoomap_target_accepts_self_when_runtime_enabled(self, tmp_path: Path) -> None:
+        """Team config should allow the runtime helper's explicit local target alias."""
+        path = self.write_config(
+            tmp_path,
+            """
+[models]
+model_pack = "balanced"
+
+[runtime]
+enabled = true
+odoomap_target = "self"
+""",
+        )
+
+        valid, errors = validate_real_toml_config(path)
+
+        assert valid is True
+        assert errors == []
+
     def test_runtime_odoomap_target_requires_runtime_enabled(self, tmp_path: Path) -> None:
         """A configured OdooMap target should not silently imply runtime mode."""
         path = self.write_config(
@@ -251,6 +270,44 @@ odoomap_target = ""
 
         assert valid is False
         assert "runtime.odoomap_target must be a non-empty string" in errors
+
+    def test_runtime_odoomap_target_must_be_http_url_or_self(self, tmp_path: Path) -> None:
+        """Reject ambiguous OdooMap targets before runtime command generation."""
+        path = self.write_config(
+            tmp_path,
+            """
+[models]
+model_pack = "balanced"
+
+[runtime]
+enabled = true
+odoomap_target = "qa.example.com"
+""",
+        )
+
+        valid, errors = validate_real_toml_config(path)
+
+        assert valid is False
+        assert "runtime.odoomap_target must be 'self' or an http(s) URL" in errors
+
+    def test_runtime_zap_target_must_be_http_url(self, tmp_path: Path) -> None:
+        """Reject ambiguous ZAP targets before runtime command generation."""
+        path = self.write_config(
+            tmp_path,
+            """
+[models]
+model_pack = "balanced"
+
+[runtime]
+enabled = true
+zap_target = "qa.example.com"
+""",
+        )
+
+        valid, errors = validate_real_toml_config(path)
+
+        assert valid is False
+        assert "runtime.zap_target must be an http(s) URL" in errors
 
     def test_unknown_runtime_keys_are_rejected(self, tmp_path: Path) -> None:
         """Catch misspelled runtime keys instead of silently ignoring them."""

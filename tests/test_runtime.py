@@ -8,6 +8,8 @@ from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 RUNTIME_SCRIPT = Path(__file__).resolve().parents[1] / "skills" / "odoo-code-review" / "scripts" / "odoo-review-runtime"
 RUN_SCRIPT = Path(__file__).resolve().parents[1] / "skills" / "odoo-code-review" / "scripts" / "odoo-review-run"
 
@@ -304,6 +306,24 @@ class TestOdooMapRuntime:
 
         assert cmd[:3] == ["odoomap", "-u", "http://127.0.0.1:8069"]
 
+    def test_build_odoomap_cmd_rejects_non_http_target(self, tmp_path: Path) -> None:
+        """OdooMap targets should be explicit authorized URLs or the self alias."""
+        namespace = runpy.run_path(str(RUNTIME_SCRIPT), run_name="__test_odoo_runtime__")
+        args = Namespace(
+            odoomap_target="qa.example.com",
+            odoomap_bin="odoomap",
+            odoomap_database=None,
+            odoomap_username=None,
+            odoomap_password=None,
+            odoomap_modules=False,
+            odoomap_cve=False,
+            odoomap_enumerate=False,
+            odoomap_limit=200,
+        )
+
+        with pytest.raises(ValueError, match="http\\(s\\) URL"):
+            namespace["build_odoomap_cmd"](args, "http://127.0.0.1:8069", tmp_path / "odoomap.txt")
+
     def test_build_odoomap_cmd_requires_complete_auth_for_enumeration(self, tmp_path: Path) -> None:
         """Authenticated enumeration should not be requested with partial credentials."""
         namespace = runpy.run_path(str(RUNTIME_SCRIPT), run_name="__test_odoo_runtime__")
@@ -324,6 +344,24 @@ class TestOdooMapRuntime:
         assert "-e" not in cmd
         assert "-pe" not in cmd
         assert "-l" not in cmd
+
+    def test_build_odoomap_cmd_rejects_non_positive_enumeration_limit(self, tmp_path: Path) -> None:
+        """Authenticated enumeration limits should not pass invalid values to OdooMap."""
+        namespace = runpy.run_path(str(RUNTIME_SCRIPT), run_name="__test_odoo_runtime__")
+        args = Namespace(
+            odoomap_target="https://qa.example.com",
+            odoomap_bin="odoomap",
+            odoomap_database="review",
+            odoomap_username="auditor",
+            odoomap_password="test-password",  # noqa: S106 - command construction fixture only
+            odoomap_modules=False,
+            odoomap_cve=False,
+            odoomap_enumerate=True,
+            odoomap_limit=0,
+        )
+
+        with pytest.raises(ValueError, match="positive integer"):
+            namespace["build_odoomap_cmd"](args, "http://127.0.0.1:8069", tmp_path / "odoomap.txt")
 
     def test_redact_odoomap_cmd_hides_password(self) -> None:
         """Credential-bearing OdooMap commands should be redacted in artifacts."""

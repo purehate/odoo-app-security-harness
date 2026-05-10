@@ -17,6 +17,7 @@ ensemble_passes = 0
 
 [runtime]
 enabled = false
+# Runtime targets must be explicit http(s) URLs; odoomap_target may also be "self".
 # zap_target = "https://qa.example.com"
 # odoomap_target = "https://qa.example.com"
 

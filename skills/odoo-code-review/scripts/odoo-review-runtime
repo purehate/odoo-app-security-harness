@@ -21,6 +21,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def parse_args() -> argparse.Namespace:
@@ -224,13 +225,35 @@ def quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
+def resolve_odoomap_target(target: str | None, base_url: str) -> str | None:
+    """Resolve and validate an explicit OdooMap target."""
+    if not target:
+        return None
+    if target == "self":
+        return base_url
+    parsed = urlparse(target)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("OdooMap target must be 'self' or an http(s) URL")
+    return target
+
+
+def validate_odoomap_args(args: argparse.Namespace, base_url: str) -> None:
+    """Validate optional OdooMap runtime settings before artifact generation."""
+    if not args.odoomap_target:
+        return
+    resolve_odoomap_target(args.odoomap_target, base_url)
+    if args.odoomap_enumerate and args.odoomap_database and args.odoomap_username and args.odoomap_password:
+        if args.odoomap_limit < 1:
+            raise ValueError("OdooMap enumeration limit must be a positive integer")
+    if args.odoomap_timeout < 1:
+        raise ValueError("OdooMap timeout must be a positive integer")
+
+
 def build_odoomap_cmd(args: argparse.Namespace, base_url: str, output_path: Path) -> list[str]:
     """Build a non-bruteforce OdooMap command for authorized runtime recon."""
-    target = args.odoomap_target
+    target = resolve_odoomap_target(args.odoomap_target, base_url)
     if not target:
         return []
-    if target == "self":
-        target = base_url
     cmd = [args.odoomap_bin, "-u", target, "-r", "-o", str(output_path)]
     if args.odoomap_database:
         cmd.extend(["-D", args.odoomap_database])
@@ -244,6 +267,8 @@ def build_odoomap_cmd(args: argparse.Namespace, base_url: str, output_path: Path
         cmd.extend(["--plugin", "cve-scanner"])
     has_auth = bool(args.odoomap_database and args.odoomap_username and args.odoomap_password)
     if args.odoomap_enumerate and has_auth:
+        if args.odoomap_limit < 1:
+            raise ValueError("OdooMap enumeration limit must be a positive integer")
         cmd.extend(["-e", "-pe", "-l", str(args.odoomap_limit)])
     return cmd
 
@@ -266,9 +291,10 @@ def run_odoomap(args: argparse.Namespace, base_url: str, runtime_dir: Path) -> d
     cmd = build_odoomap_cmd(args, base_url, output_path)
     if not cmd:
         return {"enabled": False}
+    target = resolve_odoomap_target(args.odoomap_target, base_url)
     result = {
         "enabled": True,
-        "target": base_url if args.odoomap_target == "self" else args.odoomap_target,
+        "target": target,
         "cmd": redact_odoomap_cmd(cmd),
         "output": str(output_path),
         "log": str(log_path),
@@ -371,6 +397,11 @@ def main() -> int:
     base_url = f"http://{args.host}:{args.port}"
     health_url = base_url + args.health_path
     cmd = build_cmd(args, repo, log_path)
+    try:
+        validate_odoomap_args(args, base_url)
+    except ValueError as exc:
+        print(f"Invalid OdooMap runtime settings: {exc}", file=sys.stderr)
+        return 1
     write_plan(runtime_dir, args, repo, cmd, base_url)
 
     pocs = collect_pocs(args, out)
