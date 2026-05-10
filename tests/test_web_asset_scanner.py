@@ -75,6 +75,50 @@ def test_legacy_jquery_html_getter_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-web-dom-xss-sink" and f.sink == "jquery.html" for f in findings)
 
 
+def test_dom_event_handler_assignment_detected(tmp_path: Path) -> None:
+    """String and request-derived DOM event handlers should be reviewed as DOM XSS leads."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """button.onclick = payload.handler;
+image.onerror = 'alert(1)';
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert sum(1 for f in findings if f.rule_id == "odoo-web-dom-xss-sink" and f.sink == "dom-event-handler") == 2
+
+
+def test_dom_event_handler_setattribute_detected(tmp_path: Path) -> None:
+    """setAttribute('on...') handlers can execute JavaScript from dynamic values."""
+    path = tmp_path / "widget.js"
+    path.write_text("button.setAttribute('onclick', response.handler);\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-dom-xss-sink" and f.sink == "setAttribute-event-handler" for f in findings
+    )
+
+
+def test_dom_event_handler_trusted_function_reference_ignored(tmp_path: Path) -> None:
+    """Trusted function references are common UI wiring and should not be noisy."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """button.onclick = this.onClick;
+select.onchange = handleChange;
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(
+        f.rule_id == "odoo-web-dom-xss-sink" and "event-handler" in f.sink for f in findings
+    )
+
+
 def test_string_eval_sink_detected(tmp_path: Path) -> None:
     """String code execution should be reported."""
     path = tmp_path / "widget.js"

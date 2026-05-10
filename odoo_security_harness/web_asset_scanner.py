@@ -35,6 +35,56 @@ DOM_XSS_PATTERNS = {
     "Range.createContextualFragment": re.compile(r"\.createContextualFragment\s*\("),
     "iframe.srcdoc": re.compile(r"\.srcdoc\s*=|\.setAttribute\s*\(\s*['\"]srcdoc['\"]\s*,"),
 }
+DOM_EVENT_HANDLER_NAMES = (
+    "abort",
+    "auxclick",
+    "beforeinput",
+    "blur",
+    "change",
+    "click",
+    "dblclick",
+    "error",
+    "focus",
+    "input",
+    "keydown",
+    "keypress",
+    "keyup",
+    "load",
+    "mousedown",
+    "mouseenter",
+    "mouseleave",
+    "mousemove",
+    "mouseout",
+    "mouseover",
+    "mouseup",
+    "pointerdown",
+    "pointerenter",
+    "pointerleave",
+    "pointermove",
+    "pointerout",
+    "pointerover",
+    "pointerup",
+    "submit",
+    "touchend",
+    "touchmove",
+    "touchstart",
+    "wheel",
+)
+DOM_EVENT_HANDLER_NAME_RE = "|".join(f"on{name}" for name in DOM_EVENT_HANDLER_NAMES)
+DOM_EVENT_HANDLER_ASSIGNMENT_RE = re.compile(
+    rf"\.(?P<event>{DOM_EVENT_HANDLER_NAME_RE})\s*=\s*(?P<value>[^;\n]+)",
+    re.IGNORECASE,
+)
+DOM_EVENT_HANDLER_SETATTRIBUTE_RE = re.compile(
+    rf"\.setAttribute\s*\(\s*['\"](?P<event>{DOM_EVENT_HANDLER_NAME_RE})['\"]\s*,\s*(?P<value>[^)\n]+)",
+    re.IGNORECASE,
+)
+DOM_EVENT_HANDLER_TAINT_RE = re.compile(
+    r"\b(?:event\.data|response\.\w+|data\.\w+|payload(?:\.\w+)?|params(?:\.\w+)?|props(?:\.\w+)?|"
+    r"URLSearchParams|location\.(?:search|hash)|document\.referrer|JSON\.parse|requestData|notificationData|"
+    r"html|markup|script)\b",
+    re.IGNORECASE,
+)
 
 STRING_EVAL_PATTERNS = {
     "eval": re.compile(r"\beval\s*\("),
@@ -294,6 +344,30 @@ class WebAssetScanner:
                         f"{sink} writes HTML in frontend code; verify data is sanitized or generated from trusted templates",
                         sink,
                     )
+
+            event_handler_match = DOM_EVENT_HANDLER_ASSIGNMENT_RE.search(line)
+            if event_handler_match and _looks_risky_dom_event_handler_value(event_handler_match.group("value")):
+                event_name = event_handler_match.group("event")
+                self._add(
+                    "odoo-web-dom-xss-sink",
+                    "DOM event handler injection sink",
+                    "high",
+                    line_number,
+                    f"{event_name} receives string or request-derived JavaScript in frontend code; use addEventListener with trusted handlers and keep untrusted data out of event attributes",
+                    "dom-event-handler",
+                )
+
+            event_attribute_match = DOM_EVENT_HANDLER_SETATTRIBUTE_RE.search(line)
+            if event_attribute_match and _looks_risky_dom_event_handler_value(event_attribute_match.group("value")):
+                event_name = event_attribute_match.group("event")
+                self._add(
+                    "odoo-web-dom-xss-sink",
+                    "DOM event handler injection sink",
+                    "high",
+                    line_number,
+                    f"{event_name} is set through setAttribute with string or request-derived JavaScript; use addEventListener with trusted handlers and keep untrusted data out of event attributes",
+                    "setAttribute-event-handler",
+                )
 
             for sink, pattern in STRING_EVAL_PATTERNS.items():
                 if pattern.search(line):
@@ -1402,6 +1476,13 @@ def _is_external_url(value: str) -> bool:
 
 def _is_static_js_literal(value: str) -> bool:
     return bool(re.fullmatch(r"""['"`][^'"`]*['"`]""", value))
+
+
+def _looks_risky_dom_event_handler_value(value: str) -> bool:
+    stripped = value.strip()
+    if stripped in {"", "null", "undefined", "false", "true"}:
+        return False
+    return _is_static_js_literal(stripped) or bool(DOM_EVENT_HANDLER_TAINT_RE.search(stripped))
 
 
 def _is_static_navigation_target(target: str) -> bool:
