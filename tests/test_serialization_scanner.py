@@ -169,6 +169,28 @@ def import_config(payload):
     assert not any(f.rule_id == "odoo-serialization-unsafe-yaml-load" for f in findings)
 
 
+def test_yaml_safe_loader_class_constant_is_not_reported(tmp_path: Path) -> None:
+    """Class-level static **options should preserve SafeLoader handling."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+import yaml
+
+class Importer:
+    LOADER = yaml.SafeLoader
+    YAML_OPTIONS = {'Loader': LOADER}
+
+    def import_config(self, payload):
+        return yaml.load(payload, **YAML_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-serialization-unsafe-yaml-load" for f in findings)
+
+
 def test_yaml_unsafe_load_is_reported(tmp_path: Path) -> None:
     """yaml.unsafe_load should be flagged even when not spelled as yaml.load."""
     py = tmp_path / "importer.py"
@@ -324,6 +346,32 @@ LOAD_OPTIONS = {'allow_pickle': ALLOW}
 def import_array(**kwargs):
     payload = kwargs.get('attachment')
     return np.load(payload, **LOAD_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical" and f.sink == "numpy.load"
+        for f in findings
+    )
+
+
+def test_numpy_load_class_constant_allow_pickle_is_reported(tmp_path: Path) -> None:
+    """Class-level static **options should not hide unsafe numpy object loading."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+import numpy as np
+
+class Importer:
+    ALLOW = True
+    LOAD_OPTIONS = {'allow_pickle': ALLOW}
+
+    def import_array(self, **kwargs):
+        payload = kwargs.get('attachment')
+        return np.load(payload, **LOAD_OPTIONS)
 """,
         encoding="utf-8",
     )
@@ -790,6 +838,31 @@ PARSER_OPTIONS = {'resolve_entities': ENABLE_ENTITIES}
 def import_xml(payload):
     parser = etree.XMLParser(**PARSER_OPTIONS)
     return etree.fromstring(payload, parser=parser)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-serialization-unsafe-xml-parser" for f in findings)
+
+
+def test_lxml_parser_class_constant_unsafe_options_are_reported(tmp_path: Path) -> None:
+    """Class-level static **parser options should not hide unsafe XML parser flags."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+from lxml import etree
+
+class Importer:
+    RESOLVE = True
+    LOAD_DTD = RESOLVE
+    NO_NETWORK = False
+    XML_OPTIONS = {'resolve_entities': RESOLVE, 'load_dtd': LOAD_DTD, 'no_network': NO_NETWORK}
+
+    def import_xml(self, payload):
+        parser = etree.XMLParser(**XML_OPTIONS)
+        return etree.fromstring(payload, parser=parser)
 """,
         encoding="utf-8",
     )

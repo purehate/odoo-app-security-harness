@@ -89,6 +89,7 @@ class SerializationScanner(ast.NodeVisitor):
         self.request_names: set[str] = {"request"}
         self.route_decorator_names: set[str] = {"route"}
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.size_guard_stack: list[bool] = []
 
     def scan_file(self) -> list[SerializationFinding]:
@@ -104,6 +105,11 @@ class SerializationScanner(ast.NodeVisitor):
         self.constants = _module_constants(tree)
         self.visit(tree)
         return self.findings
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous = set(self.tainted_names)
@@ -222,7 +228,7 @@ class SerializationScanner(ast.NodeVisitor):
                 f"{sink} can execute code or instantiate attacker-controlled objects; never use it on request, attachment, or integration data",
                 sink,
             )
-        elif sink == "yaml.load" and not _has_safe_yaml_loader(node, self.constants):
+        elif sink == "yaml.load" and not _has_safe_yaml_loader(node, self._effective_constants()):
             severity = "critical" if _call_has_tainted_input(node, self._expr_is_tainted) else "high"
             self._add(
                 "odoo-serialization-unsafe-yaml-load",
@@ -274,7 +280,7 @@ class SerializationScanner(ast.NodeVisitor):
                 "json.load()/loads() parses request, attachment, or integration data without a visible size guard; enforce byte limits before parsing",
                 sink,
             )
-        elif sink in NUMPY_LOAD_SINKS and _numpy_load_allows_pickle(node, self.constants):
+        elif sink in NUMPY_LOAD_SINKS and _numpy_load_allows_pickle(node, self._effective_constants()):
             severity = "critical" if _call_has_tainted_input(node, self._expr_is_tainted) else "high"
             self._add(
                 "odoo-serialization-unsafe-deserialization",
@@ -296,7 +302,7 @@ class SerializationScanner(ast.NodeVisitor):
                 sink,
             )
         elif sink in {"lxml.etree.XMLParser", "etree.XMLParser"} and _has_unsafe_xml_parser_option(
-            node, self.constants
+            node, self._effective_constants()
         ):
             self._add(
                 "odoo-serialization-unsafe-xml-parser",
@@ -424,6 +430,14 @@ class SerializationScanner(ast.NodeVisitor):
 
     def _is_request_or_attachment_derived(self, node: ast.AST) -> bool:
         return _is_request_or_attachment_derived(node, self.request_names)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, sink: str) -> None:
         self.findings.append(
@@ -560,8 +574,12 @@ def _loader_name(node: ast.AST) -> str:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_constant(statement.value):
