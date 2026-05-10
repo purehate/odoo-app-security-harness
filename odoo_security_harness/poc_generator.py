@@ -8,6 +8,8 @@ Given a finding (file, line, type), generates:
 
 from __future__ import annotations
 
+import re
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -35,11 +37,9 @@ class PoCGenerator:
     def generate_for_finding(self, finding: dict[str, Any]) -> PoC | None:
         """Generate a PoC for a specific finding."""
         rule_id = finding.get("rule_id", "")
-        file = finding.get("file", "")
-        line = finding.get("line", 0)
         title = finding.get("title", "")
 
-        if "public-route" in rule_id or "auth=" in title.lower():
+        if "public-route" in rule_id or "public" in rule_id or "auth=" in title.lower():
             return self._generate_route_poc(finding)
         elif "sql" in rule_id or "cr.execute" in title.lower():
             return self._generate_sql_poc(finding)
@@ -118,7 +118,7 @@ print("Manual testing steps:")
 print("1. Identify the vulnerable parameter")
 print("2. Submit payload through the UI or API")
 print("3. Check for SQL errors or changed behavior")
-"""
+"""  # noqa: S608
 
         return PoC(
             title=f"SQL Injection PoC: {finding.get('title', '')}",
@@ -140,12 +140,12 @@ print("3. Check for SQL errors or changed behavior")
 \u003cbody\u003e
     \u003ch1\u003eCSRF PoC\u003c/h1\u003e
     \u003cp\u003eThis form submits to {route} without CSRF token\u003c/p\u003e
-    
+
     \u003cform action="{url}" method="POST" id="csrf-form"\u003e
         \u003cinput type="hidden" name="field1" value="test" /\u003e
         \u003cinput type="submit" value="Submit" /\u003e
     \u003c/form\u003e
-    
+
     \u003cscript\u003e
         // Auto-submit for testing
         // document.getElementById('csrf-form').submit();
@@ -210,7 +210,7 @@ payloads = [
     "().__class__.__bases__[0].__subclasses__()",
     "().__class__.__mro__[1].__subclasses__()",
     "[x for x in ().__class__.__bases__[0].__subclasses__() if x.__name__ == 'os']",
-    "{'__builtins__': __import__('os')}['__builtins__'].system('id')",
+    "{{'__builtins__': __import__('os')}}['__builtins__'].system('id')",
 ]
 
 print("safe_eval Bypass PoC")
@@ -346,7 +346,7 @@ print("- Can you see internal/admin-only fields?")
             lines = content.splitlines()
 
             # Look for @http.route near the specified line
-            for i in range(max(0, line - 5), min(len(lines), line + 5)):
+            for i in range(max(0, line - 8), min(len(lines), line + 8)):
                 match = re.search(r'@http\.route\(["\']([^"\']+)["\']', lines[i])
                 if match:
                     return match.group(1)
@@ -356,14 +356,21 @@ print("- Can you see internal/admin-only fields?")
             return "/unknown"
 
 
-def generate_pocs(findings: list[dict[str, Any]], output_dir: Path) -> list[Path]:
+def generate_pocs(
+    findings: list[dict[str, Any]],
+    output_dir: Path,
+    base_url: str = "http://localhost:8069",
+    database: str = "odoo",
+) -> list[Path]:
     """Generate PoC scripts for a list of findings."""
-    generator = PoCGenerator()
+    generator = PoCGenerator(base_url=base_url, database=database)
     output_dir.mkdir(parents=True, exist_ok=True)
     generated: list[Path] = []
 
-    for finding in findings:
-        poc = generator.generate_for_finding(finding)
+    for index, finding in enumerate(findings, start=1):
+        finding_for_poc = dict(finding)
+        finding_for_poc.setdefault("id", _fallback_finding_id(finding_for_poc, index))
+        poc = generator.generate_for_finding(finding_for_poc)
         if poc:
             # Determine file extension based on method
             extensions = {
@@ -376,7 +383,7 @@ def generate_pocs(findings: list[dict[str, Any]], output_dir: Path) -> list[Path
             }
             ext = extensions.get(poc.method, ".txt")
 
-            filename = f"poc-{poc.finding_id}{ext}"
+            filename = f"poc-{_safe_filename(poc.finding_id)}{ext}"
             filepath = output_dir / filename
             filepath.write_text(poc.script, encoding="utf-8")
 
@@ -387,6 +394,66 @@ def generate_pocs(findings: list[dict[str, Any]], output_dir: Path) -> list[Path
             generated.append(filepath)
 
     return generated
+
+
+def poc_coverage_report(
+    findings: list[dict[str, Any]],
+    base_url: str = "http://localhost:8069",
+    database: str = "odoo",
+) -> dict[str, Any]:
+    """Build a report describing which findings have generated PoCs."""
+    generator = PoCGenerator(base_url=base_url, database=database)
+    rule_counts: Counter[str] = Counter()
+    generated_counts: Counter[str] = Counter()
+    unsupported_findings: list[dict[str, Any]] = []
+
+    for index, finding in enumerate(findings, start=1):
+        finding_for_poc = dict(finding)
+        finding_for_poc.setdefault("id", _fallback_finding_id(finding_for_poc, index))
+        rule_id = str(finding_for_poc.get("rule_id") or "unknown")
+        rule_counts[rule_id] += 1
+        poc = generator.generate_for_finding(finding_for_poc)
+        if poc is not None:
+            generated_counts[rule_id] += 1
+            continue
+        unsupported_findings.append(
+            {
+                "id": finding_for_poc["id"],
+                "rule_id": rule_id,
+                "title": finding_for_poc.get("title", ""),
+                "file": finding_for_poc.get("file", ""),
+                "line": finding_for_poc.get("line", 0),
+            }
+        )
+
+    generated_total = sum(generated_counts.values())
+    total = len(findings)
+    return {
+        "total_findings": total,
+        "generated_pocs": generated_total,
+        "coverage_ratio": round(generated_total / total, 4) if total else 1.0,
+        "unsupported_findings": unsupported_findings,
+        "rules": [
+            {
+                "rule_id": rule_id,
+                "findings": rule_counts[rule_id],
+                "generated_pocs": generated_counts.get(rule_id, 0),
+                "unsupported_findings": rule_counts[rule_id] - generated_counts.get(rule_id, 0),
+            }
+            for rule_id in sorted(rule_counts)
+        ],
+    }
+
+
+def _fallback_finding_id(finding: dict[str, Any], index: int) -> str:
+    """Build a stable per-run ID for scanner findings that do not include one."""
+    rule_id = str(finding.get("rule_id") or "finding")
+    return f"{index:04d}-{rule_id}"
+
+
+def _safe_filename(value: str) -> str:
+    """Sanitize a generated finding ID for filesystem use."""
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-") or "finding"
 
 
 def poc_to_markdown(poc: PoC) -> str:

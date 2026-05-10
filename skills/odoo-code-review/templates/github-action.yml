@@ -3,6 +3,7 @@
 # Drop into your Odoo addons repo at: .github/workflows/odoo-security.yml
 #
 # What it does:
+#   - Validates harness config files before running expensive review lanes
 #   - Runs odoo-review-run on every PR (scoped to changed files via --pr)
 #   - Runs full review on main
 #   - Uploads findings.sarif to GitHub Code Scanning (inline PR annotations)
@@ -57,6 +58,10 @@ jobs:
           pipx install pylint-odoo
           pipx install pip-audit
           pipx install detect-secrets
+
+      - name: Validate review config
+        run: |
+          odoo-review-validate-config --check-all .
 
       - name: Install Codex (optional)
         if: ${{ secrets.OPENAI_API_KEY != '' }}

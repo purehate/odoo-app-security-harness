@@ -319,10 +319,11 @@ Triage rubric + output format: `references/triage.md`.
 
 ### Phase 7.5 — Runtime Odoo Testing (Optional)
 
-Triggered by `--runtime`. The runner also writes `runtime/probes/` from the Phase 1 route map so runtime validation can replay generated probes, not only hand-written PoCs. Two sub-passes:
+Triggered by `--runtime`. The runner also writes `runtime/probes/` from the Phase 1 route map so runtime validation can replay generated probes, not only hand-written PoCs. Three sub-passes:
 
 - **Sub-pass A — odoo-bin runtime helper.** Run `scripts/odoo-review-runtime <OUT>` with explicit launch details (`--odoo-bin`, `--config`/`--database`, `--addons-path`) to boot Odoo, wait for `/web/login`, replay ACCEPT-finding PoC scripts with `ODOO_BASE_URL`, and capture logs/status/stdout under `<OUT>/runtime/`. Add `--run-generated-probes` to replay auto-safe route probes from `runtime/probes/safe-pocs.txt`; authenticated, parameterized, JSON, mixed-method, and method-unbounded routes remain manual templates unless `ODOO_REVIEW_ALLOW_UNSAFE_PROBES=1` is set.
 - **Sub-pass B — ZAP baseline (only if `--zap-target <url>`).** Run `zap-baseline.py` against the booted Odoo. macOS Docker quirk: mount needs `--user 0` and `chmod 777` on the wrk dir. Output → `<OUT>/runtime/zap/zap-baseline.{html,json}`.
+- **Sub-pass C — OdooMap runtime leads (only if `odoo-review-runtime --odoomap-target <url|self>`).** Use OdooMap only against an explicitly authorized QA/staging target or the booted local runtime (`self`). Capture version/module/CVE/authenticated model and CRUD-permission leads under `<OUT>/runtime/odoomap/`; treat the output as leads until Phase 7 source/runtime validation confirms a finding. The helper intentionally does not expose database, credential, user, master-password, or model-name brute-force switches, and redacts `--odoomap-password` / `$ODOOMAP_PASSWORD` from written command artifacts.
 
 Required when Gate 5 (PoC) demands runtime evidence.
 
@@ -381,6 +382,7 @@ Phase 8 also performs **fix-list reconciliation** against `inventory/fix-list.js
 - [ ] Phase 7: Codex negative-space draft; Claude confirms reportable gaps.
 - [ ] Phase 7.5 sub-pass A (only if `--runtime`): run `odoo-review-runtime <OUT>` with Odoo launch details, replay PoC scripts, capture evidence.
 - [ ] Phase 7.5 sub-pass B (only if `--runtime --zap-target <url>`): Codex/scripts run ZAP baseline → `<OUT>/runtime/zap/`.
+- [ ] Phase 7.5 sub-pass C (only if `odoo-review-runtime --odoomap-target <url|self>`): run OdooMap authorized runtime leads → `<OUT>/runtime/odoomap/`; do not promote leads without Phase 7 validation.
 - [ ] Phase 7.6 (auto when 2+ chained findings): Codex/scripts emit DOT + SVG → `<OUT>/attack-graphs/`.
 - [ ] Phase 7.7 (unless `--no-codex` and only when CRITICAL/HIGH ACCEPT exists): fresh Codex adversarial check → `<OUT>/codex/second-opinion/`.
 - [ ] Phase 7.8 (only if `--requirements <file>`): extract claims, compile predicates, judges, repair-loop, R-N findings.
@@ -402,6 +404,7 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 - `--joern` — enable Phase 3.5 Joern CPG graph review (skip on SMALL or `--quick`).
 - `--runtime` — enable Phase 7.5 sub-pass A and generate `runtime/probes/` route-probe templates. Use `odoo-review-runtime <OUT> --run-generated-probes` with Odoo launch details to boot Odoo and replay auto-safe probes plus hand-written PoCs.
 - `--zap-target <url>` — also run Phase 7.5 sub-pass B (ZAP baseline). Requires `--runtime`.
+- Runtime helper OdooMap flags — `odoo-review-runtime <OUT> --odoomap-target <url|self> [--odoomap-modules] [--odoomap-cve] [--odoomap-enumerate --odoomap-database <db> --odoomap-username <user> --odoomap-password <pass>]`. OdooMap is disabled unless target is explicit; brute-force switches are not exposed; artifact commands redact the password.
 - `--no-codex` — skip Codex heavy-worker lane and Phase 7.7 adversarial check; Claude performs all review work locally.
 - `--requirements <file>` — enable Phase 7.8 requirements-aware verification.
 - `--no-html` — skip `findings.html` generation in Phase 8 (default: on).
@@ -430,11 +433,12 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 The runner emits `findings.json` (after Phase 8). Four companion scripts process it:
 
 - **`odoo-review-finalize <OUT>`** — canonical Phase 8.6 wrapper. Runs export + diff, auto-detects baseline (`<OUT>/../.audit-baseline/findings.json` or `$ODOO_REVIEW_BASELINE`), runs the stock-CC unresolved-lead gate when `baseline_stock_cc=true`, stamps `finalize.log`, exits non-zero when ACCEPT severity ≥ `--fail-on` (default `high`) or stock-only leads remain unresolved. Use this from CI / non-Claude paths or manual re-export. `--fail-on none` disables only the severity gate; `--no-stock-gate` disables the stock gate.
-- **`odoo-review-runtime <OUT>`** — Phase 7.5 runtime helper. Boots Odoo from explicit `--odoo-bin`/`--config`/`--database`/`--addons-path` inputs, waits for a health URL, captures logs/status, and runs PoC scripts with `ODOO_BASE_URL`. `--run-generated-probes` replays runner-generated safe route probes.
+- **`odoo-review-runtime <OUT>`** — Phase 7.5 runtime helper. Boots Odoo from explicit `--odoo-bin`/`--config`/`--database`/`--addons-path` inputs, waits for a health URL, captures logs/status, and runs PoC scripts with `ODOO_BASE_URL`. `--run-generated-probes` replays runner-generated safe route probes. Optional `--odoomap-target <url|self>` captures OdooMap runtime leads under `runtime/odoomap/` without brute-force switches.
 - `odoo-review-export <.audit-dir>` — direct SARIF 2.1.0 + fingerprints + bounty/F-N.md emit. Called by `finalize`; expose for one-off re-export. Honors `scope.json` accepted_risks as SARIF `suppressions` unless `--no-suppress`.
 - `odoo-review-diff <baseline> <current>` — classifies findings new / fixed / unchanged / changed (severity OR triage delta) by `fingerprint`. Emits `delta.md` + `delta.json`. Called by `finalize` when baseline detected.
 - `odoo-review-rerun <directive>` — directive feedback-loop dispatcher (Qwen or Codex). See "Directive Feedback Loop" above.
 - `odoo-review-coverage <OUT>` — Phase 5.6 coverage diff. Parses `Reviewed:` blocks from hunter outputs, diffs against `inventory/py-files-by-module.json`, emits `coverage/coverage.{json,md}` + `coverage/gaps.md`. Pass `--fail-on-gap` to gate CI when any hunter skipped a module without justification.
+- `odoo-review-validate-config <config.toml>` — validate `.odoo-review/config.toml` schema before a run. `odoo-review-validate-config --check-all <repo>` also checks `.odoo-review/config.toml`, `.odoo-review.toml`, `scope.yml`, accepted-risk files, and fix-list files. Direct validation auto-detects `.audit-accepted-risks.*` and `.audit-fix-list.*`; use `--type accepted-risks` or `--type fix-list` for renamed governance files. Use this in CI when teams centralize harness flags or governance files.
 
 ## CI Template
 
@@ -445,6 +449,18 @@ The runner emits `findings.json` (after Phase 8). Four companion scripts process
 - Uploads `findings.sarif` to GitHub Code Scanning (`security-events: write`).
 - Sticky PR comment with `delta.md` (vs main baseline artifact).
 - 90-day artifact retention for `findings.json`, `delta.md`, `bounty/`.
+
+`templates/deep-scan-github-action.yml` is the static-only CI lane:
+
+- Runs `odoo-deep-scan . --out .audit-deep --pocs --fail-on "$ODOO_DEEP_SCAN_FAIL_ON"`.
+- Defaults `ODOO_DEEP_SCAN_FAIL_ON` to `high`; set the repository variable to `critical`, `medium`, `low`, or `none` as needed.
+- Set `ODOO_DEEP_SCAN_BASELINE` and `ODOO_DEEP_SCAN_FAIL_ON_NEW` to emit `deep-scan-delta.{json,md}` and fail only on new findings at the selected threshold.
+- Set `ODOO_DEEP_SCAN_ACCEPTED_RISKS` to suppress active accepted-risk matches and retain `00-accepted-risks.md` plus `inventory/accepted-risks.json`.
+- Set `ODOO_DEEP_SCAN_FIX_LIST` to tag tracked bugs/regressions without suppressing findings and retain `00-fix-list.md` plus `inventory/fix-list.json`.
+- Set `ODOO_DEEP_SCAN_CHECK_ONLY_ACCEPTED_RISKS=true` or `ODOO_DEEP_SCAN_CHECK_ONLY_FIX_LIST=true` to validate governance files and retain their reports without running scanners.
+- Set `ODOO_DEEP_SCAN_FAIL_ON_POLICY_ERRORS`, `ODOO_DEEP_SCAN_FAIL_ON_EXPIRED_ACCEPTED_RISK`, `ODOO_DEEP_SCAN_FAIL_ON_OVERDUE_FIX`, or `ODOO_DEEP_SCAN_FAIL_ON_FIX_REGRESSION` to enforce accepted-risk/fix-list governance health.
+- Set `ODOO_DEEP_SCAN_FAIL_ON_UNMAPPED_TAXONOMY=true` to fail CI on emitted rule IDs without CWE/CAPEC/OWASP metadata.
+- Uploads `deep-scan.sarif` to GitHub Code Scanning and retains `findings.html`, `deep-scan-delta.{json,md}`, accepted-risk/fix-list reports, `review-gate.json`, `taxonomy-gate.json`, `governance-gate.json`, `tooling.md`, module risk, inventories, and generated PoCs.
 
 ## Reference Files
 
@@ -512,7 +528,7 @@ Hunters know Odoo semantics. The two trust boundaries (`auth='public'` and `sudo
 - `references/lang-web.md` — TypeScript/Node patterns (for `static/src` JS only)
 - `references/triage.md` — rubric, output format, stats template
 - `references/findings-schema.md` — `findings.json` schema (v1.0) consumed by export/diff
-- `references/cwe-map.json` — 19 Odoo bug-shape → CWE/CAPEC/OWASP mappings (auto-copied to `inventory/cwe-map.json`)
+- `references/cwe-map.json` — 23 Odoo bug-shape → CWE/CAPEC/OWASP mappings (auto-copied to `inventory/cwe-map.json`)
 - `references/scope.example.yml` — scope.yml schema (excluded_modules / excluded_paths / accepted_risks — coarse engagement-scope layer)
 - `references/accepted-risks.md` — per-finding fingerprint suppression schema (fine-grained exclusion-bucket layer; fingerprint canonicalisation, legacy match rules, expiry semantics)
 - `references/accepted-risks.example.yml` — copy-paste template for `<repo>/.audit-accepted-risks.yml`

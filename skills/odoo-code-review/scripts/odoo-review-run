@@ -9,12 +9,12 @@ import csv
 import datetime as dt
 import fnmatch
 import json
-import os
 import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
@@ -117,6 +117,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--joern", action="store_true", help="Run Joern if installed")
     parser.add_argument("--runtime", action="store_true", help="Enable Phase 7.5 runtime evidence path; use odoo-review-runtime <OUT> to boot Odoo and replay PoCs.")
     parser.add_argument("--zap-target", help="ZAP target URL; requires --runtime")
+    parser.add_argument("--odoomap-target", help="Authorized QA/staging URL for optional OdooMap runtime recon. Requires --runtime.")
     parser.add_argument("--no-codex", action="store_true", help="Skip Codex hunter execution")
     parser.add_argument("--codex-model", default="gpt-5.3-codex", help="Codex model")
     parser.add_argument("--codex-budget", choices=["low", "normal", "deep"], default="normal")
@@ -241,6 +242,7 @@ def apply_project_config(args: argparse.Namespace, repo: Path) -> tuple[dict, Pa
     if runtime.get("enabled") is True and not cli_flag_present("--runtime"):
         args.runtime = True
     apply_value(args, "zap_target", runtime.get("zap_target"), "--zap-target")
+    apply_value(args, "odoomap_target", runtime.get("odoomap_target"), "--odoomap-target")
     apply_value(args, "odoo_version", odoo.get("version"), "--odoo-version")
     modules_value = review.get("modules")
     if isinstance(modules_value, list):
@@ -308,7 +310,7 @@ def run(cmd: list[str], cwd: Path, log_path: Path, stdout_path: Path | None = No
             log.write(f"\n[exit {completed.returncode}]\n\n")
         record.update({"returncode": completed.returncode, "output": str(stdout_path) if stdout_path else output[-2000:]})
         progress(f"done {label}: exit {completed.returncode}")
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
         with log_path.open("a", encoding="utf-8") as log:
             log.write(f"\n[TIMEOUT after {timeout}s]\n\n")
         record.update({"returncode": 124, "error": f"timeout after {timeout}s"})
@@ -676,9 +678,9 @@ SHARP_EDGE_WEIGHTS = {
 
 def scan_patterns(repo: Path, manifests: list[dict]) -> dict:
     compiled = {key: re.compile(value) for key, value in SHARP_EDGE_PATTERNS.items()}
-    counts = {key: 0 for key in SHARP_EDGE_PATTERNS}
+    counts = dict.fromkeys(SHARP_EDGE_PATTERNS, 0)
     hits: dict[str, list[dict]] = {key: [] for key in SHARP_EDGE_PATTERNS}
-    per_module: dict[str, dict[str, int]] = {item["module"]: {key: 0 for key in SHARP_EDGE_PATTERNS} for item in manifests}
+    per_module: dict[str, dict[str, int]] = {item["module"]: dict.fromkeys(SHARP_EDGE_PATTERNS, 0) for item in manifests}
     for item in manifests:
         module = item["module"]
         loose_file = item.get("_loose_file")
@@ -1311,7 +1313,6 @@ def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[d
         if module_routes:
             surface.append(f"- **HTTP routes:** {len(module_routes)}")
             for route in module_routes[:10]:
-                args_str = route.get("route_args") or ""
                 surface.append(f"  - `{route['file']}:{route['line']}` `{route.get('function') or '?'}` auth=`{route.get('auth')}` csrf=`{route.get('csrf')}` type=`{route.get('type')}`")
             if len(module_routes) > 10:
                 surface.append(f"  - … +{len(module_routes) - 10} more routes")
@@ -1572,6 +1573,21 @@ def write_runtime_probe_plan(out: Path, routes: list[dict], args: argparse.Names
 
     safe_list.write_text("\n".join(str(path) for path in safe_scripts) + ("\n" if safe_scripts else ""), encoding="utf-8")
     (probe_dir / "probes.json").write_text(json.dumps(probe_records, indent=2), encoding="utf-8")
+    runtime_cmd = [
+        "odoo-review-runtime",
+        str(out),
+        "--run-generated-probes",
+        "--odoo-bin",
+        "/path/to/odoo-bin",
+        "--config",
+        "/path/to/odoo.conf",
+        "--database",
+        "review_db",
+        "--addons-path",
+        "/path/to/addons",
+    ]
+    if getattr(args, "odoomap_target", None):
+        runtime_cmd.extend(["--odoomap-target", args.odoomap_target])
     readme_lines = [
         "# Runtime Probe Plan",
         "",
@@ -1587,7 +1603,7 @@ def write_runtime_probe_plan(out: Path, routes: list[dict], args: argparse.Names
         "Replay the generated safe probes after booting Odoo:",
         "",
         "```bash",
-        f"odoo-review-runtime {out} --run-generated-probes --odoo-bin /path/to/odoo-bin --config /path/to/odoo.conf --database review_db --addons-path /path/to/addons",
+        " ".join(shell_quote(part) for part in runtime_cmd),
         "```",
     ]
     (probe_dir / "README.md").write_text("\n".join(readme_lines) + "\n", encoding="utf-8")
@@ -1983,6 +1999,7 @@ def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, li
         "ensemble_passes": args.ensemble_passes,
         "runtime": args.runtime,
         "zap_target": args.zap_target,
+        "odoomap_target": args.odoomap_target,
         "requirements": args.requirements,
         "emit_json": args.emit_json,
         "emit_html": not args.no_html,
@@ -2491,6 +2508,7 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
         "quick": bool(getattr(args, "quick", False)),
         "joern": bool(getattr(args, "joern", False)),
         "runtime": bool(getattr(args, "runtime", False)),
+        "odoomap_target": getattr(args, "odoomap_target", None),
         "no_codex": bool(getattr(args, "no_codex", False)),
         "no_local_qwen": bool(getattr(args, "no_local_qwen", False)),
         "no_breadth": bool(getattr(args, "no_breadth", False)),
@@ -2546,6 +2564,10 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
         flag_lines.append("- **--joern** — Phase 3.5 CPG graph review")
     if mode["runtime"]:
         flag_lines.append("- **--runtime** — Phase 7.5 runtime evidence helper path")
+    if mode["odoomap_target"]:
+        flag_lines.append(
+            f"- **--odoomap-target {mode['odoomap_target']}** — optional authorized OdooMap runtime lead capture"
+        )
     if mode["model_pack"] != "default":
         flag_lines.append(f"- **--model-pack {mode['model_pack']}** — model/lane preset")
     if mode["ensemble"] != "off":
@@ -2580,6 +2602,9 @@ def main() -> int:
     args.project_config_warnings = config_warnings
     if args.zap_target and not args.runtime:
         print("--zap-target requires --runtime", file=sys.stderr)
+        return 2
+    if args.odoomap_target and not args.runtime:
+        print("--odoomap-target requires --runtime", file=sys.stderr)
         return 2
     autodetect_weekly_paths(args, repo)
     if args.out:
@@ -2708,13 +2733,13 @@ def main() -> int:
         ensemble_records = run_ensemble(args, repo, out, log_path)
     write_tooling(out, plan, scanner_records, qwen_record, codex_records, ensemble_records)
 
-    print(f"odoo-review-run complete")
+    print("odoo-review-run complete")
     print(f"Target: {repo}")
     print(f"Output: {out}")
     print(f"Modules: {len(manifests)}")
     print(f"Routes: {len(routes)}")
     print(f"Run plan: {out / 'tooling.md'}")
-    print(f"Next: Claude should continue Phase 5.5/6/7 validation using the generated artifacts.")
+    print("Next: Claude should continue Phase 5.5/6/7 validation using the generated artifacts.")
 
     if args.prune_old_runs and args.prune_old_runs > 0:
         stamped = sorted(

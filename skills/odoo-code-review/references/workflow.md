@@ -552,9 +552,9 @@ Save variant search to `<OUT>/variants/finding-N.md` with exact commands run.
 - DOWNGRADing to make the report shorter. Severity reflects reality.
 - Skipping variant analysis on ACCEPT. Variants ship in next quarter's audit and look like a miss.
 
-## Phase 7.5 — Runtime Validation (Optional: odoo-bin + ZAP)
+## Phase 7.5 — Runtime Validation (Optional: odoo-bin + ZAP + OdooMap)
 
-Triggered by `--runtime` (and/or `--zap-target <url>`). The runner first generates a route-derived probe plan under `runtime/probes/`, then `odoo-review-runtime` boots a disposable Odoo and/or hits a deployed QA target. Validates ACCEPT findings with real HTTP / `odoo-bin shell` / ZAP. Runs on ACCEPT findings whose Gate 5 (PoC) demands runtime evidence — race windows, concrete response shapes, attachment-serving behaviour, IDOR confirmation — and can also replay auto-safe public GET route probes for broader dynamic coverage.
+Triggered by `--runtime` (and/or `--zap-target <url>` / `--odoomap-target <url>`). The runner first generates a route-derived probe plan under `runtime/probes/`, then `odoo-review-runtime` boots a disposable Odoo and/or hits a deployed QA target. Validates ACCEPT findings with real HTTP / `odoo-bin shell` / ZAP / OdooMap lead material. Runs on ACCEPT findings whose Gate 5 (PoC) demands runtime evidence — race windows, concrete response shapes, attachment-serving behaviour, IDOR confirmation — and can also replay auto-safe public GET route probes for broader dynamic coverage.
 
 Never run against production. QA only.
 
@@ -584,6 +584,12 @@ docker run --rm --user 0 -v <OUT>/runtime/zap:/zap/wrk/:rw zaproxy/zap-stable \
 
 Authenticated active scan: feed Odoo session cookie (`session_id`) via header replacer or import a `.har` of a logged-in flow. Use `zap-full-scan.py` only on QA you own — never against production or shared instances.
 
+### Sub-pass C — OdooMap (authorized QA target, with `--odoomap-target <url|self>`)
+
+Use OdooMap as runtime lead generation only. It can confirm exposed Odoo version/metadata, enumerate installed modules, run CVE plugin checks, and perform authenticated model/CRUD enumeration when a database, username, and password are all supplied. Do not treat OdooMap output as a final finding without Phase 7 source/runtime validation.
+
+The runtime helper intentionally does not expose database, credential, user, master-password, or model-name brute-force switches. `--odoomap-enumerate` is skipped unless the full authenticated tuple is available. Generated command artifacts redact `--odoomap-password` / `$ODOOMAP_PASSWORD`.
+
 ### Output
 
 ```
@@ -599,6 +605,9 @@ runtime/
     ├── zap-baseline.html
     ├── zap-baseline.json
     └── active-scan.json   # only when authenticated active scan run
+└── odoomap/
+    ├── odoomap-output.txt
+    └── odoomap.log
 ```
 
 ### Triage uplift
@@ -606,6 +615,7 @@ runtime/
 - NEEDS-MANUAL → ACCEPT only with concrete evidence (HTTP response or ORM-state delta).
 - ACCEPT confidence +2 when runtime confirms.
 - ZAP-only finding without source-code corroboration → REJECT (false-positive risk too high).
+- OdooMap-only finding without source-code corroboration → REJECT or NEEDS-MANUAL depending on whether a safe PoC can validate it.
 
 ## Phase 7.6 — Attack Graph DOT/SVG (Chained Findings Only)
 

@@ -18,6 +18,7 @@ ensemble_passes = 0
 [runtime]
 enabled = false
 # zap_target = "https://qa.example.com"
+# odoomap_target = "https://qa.example.com"
 
 [odoo]
 # version = "17.0"

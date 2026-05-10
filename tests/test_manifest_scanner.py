@@ -1,0 +1,220 @@
+"""Tests for Odoo manifest/package scanning."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from odoo_security_harness.manifest_scanner import scan_manifests
+
+
+def _write_manifest(module: Path, content: str) -> None:
+    module.mkdir(parents=True, exist_ok=True)
+    (module / "__manifest__.py").write_text(content, encoding="utf-8")
+
+
+def test_installable_module_with_models_missing_acl_data(tmp_path: Path) -> None:
+    """Modules defining models should load ir.model.access.csv."""
+    module = tmp_path / "missing_acl"
+    _write_manifest(module, "{'name': 'Missing ACL', 'installable': True, 'data': []}")
+    models = module / "models"
+    models.mkdir()
+    (models / "thing.py").write_text(
+        "from odoo import models\nclass Thing(models.Model):\n    _name='x.thing'\n", encoding="utf-8"
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-missing-acl-data" and f.severity == "high" for f in findings)
+
+
+def test_demo_files_loaded_as_production_data(tmp_path: Path) -> None:
+    """Demo-looking files in data are installed in production databases."""
+    module = tmp_path / "demo_in_data"
+    _write_manifest(
+        module,
+        "{'name': 'Demo In Data', 'license': 'LGPL-3', 'data': ['security/ir.model.access.csv', 'demo/users.xml']}",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-demo-in-data" for f in findings)
+
+
+def test_application_demo_data_is_review_signal(tmp_path: Path) -> None:
+    """Application modules shipping demo data deserve review."""
+    module = tmp_path / "app_demo"
+    _write_manifest(
+        module,
+        "{'name': 'App Demo', 'license': 'LGPL-3', 'application': True, 'demo': ['demo/demo.xml']}",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-application-demo-data" for f in findings)
+
+
+def test_missing_license_for_installable_module(tmp_path: Path) -> None:
+    """Installable modules should explicitly state license metadata."""
+    module = tmp_path / "no_license"
+    _write_manifest(module, "{'name': 'No License', 'installable': True}")
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-missing-license" for f in findings)
+
+
+def test_unexpected_license_identifier_is_reported(tmp_path: Path) -> None:
+    """Unexpected license strings should be visible in packaging review."""
+    module = tmp_path / "odd_license"
+    _write_manifest(module, "{'name': 'Odd License', 'license': 'Commercial'}")
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-unexpected-license" for f in findings)
+
+
+def test_auto_install_module_loading_security_data_is_reported(tmp_path: Path) -> None:
+    """Implicitly installed modules that alter security data should be review-visible."""
+    module = tmp_path / "auto_security"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Auto Security',
+    'license': 'LGPL-3',
+    'auto_install': True,
+    'depends': ['sale'],
+    'data': ['security/groups.xml', 'security/ir.model.access.csv'],
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+    rule_ids = {f.rule_id for f in findings}
+
+    assert "odoo-manifest-auto-install-security-data" in rule_ids
+    assert "odoo-manifest-auto-install-without-depends" not in rule_ids
+
+
+def test_auto_install_dependency_list_loading_security_data_is_reported(tmp_path: Path) -> None:
+    """Odoo auto_install dependency lists should be treated as implicit installs."""
+    module = tmp_path / "auto_security_list"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Auto Security List',
+    'license': 'LGPL-3',
+    'auto_install': ['sale'],
+    'depends': ['sale'],
+    'data': ['security/groups.xml'],
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-auto-install-security-data" for f in findings)
+
+
+def test_auto_install_without_dependencies_is_reported(tmp_path: Path) -> None:
+    """auto_install=True without dependencies can activate unexpectedly."""
+    module = tmp_path / "auto_no_depends"
+    _write_manifest(module, "{'name': 'Auto No Depends', 'license': 'LGPL-3', 'auto_install': True}")
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-auto-install-without-depends" for f in findings)
+
+
+def test_remote_assets_are_reported(tmp_path: Path) -> None:
+    """Remote frontend assets in manifests are supply-chain and CSP review leads."""
+    module = tmp_path / "remote_assets"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Remote Assets',
+    'license': 'LGPL-3',
+    'assets': {
+        'web.assets_backend': [
+            'https://cdn.example.com/widget.js',
+            ('include', '//cdn.example.com/theme.css'),
+        ],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-remote-assets" and f.severity == "high" for f in findings)
+
+
+def test_legacy_remote_qweb_assets_are_reported(tmp_path: Path) -> None:
+    """Legacy qweb manifest entries can also pull remote templates."""
+    module = tmp_path / "remote_qweb"
+    _write_manifest(
+        module,
+        "{'name': 'Remote QWeb', 'license': 'LGPL-3', 'qweb': ['http://cdn.example.com/template.xml']}",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-remote-assets" for f in findings)
+
+
+def test_lifecycle_hooks_are_reported(tmp_path: Path) -> None:
+    """Install/uninstall hooks deserve explicit privileged-code review."""
+    module = tmp_path / "hooks"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Hooks',
+    'license': 'LGPL-3',
+    'post_init_hook': 'post_init',
+    'uninstall_hook': 'uninstall_cleanup',
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-lifecycle-hook" and f.severity == "medium" for f in findings)
+
+
+def test_suspicious_data_paths_are_reported(tmp_path: Path) -> None:
+    """Manifest data/demo paths should not escape the module tree."""
+    module = tmp_path / "suspicious_paths"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Suspicious Paths',
+    'license': 'LGPL-3',
+    'data': ['../shared/security.xml'],
+    'demo': ['/tmp/demo.xml'],
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-suspicious-data-path" and f.severity == "high" for f in findings)
+
+
+def test_malformed_manifest_is_reported(tmp_path: Path) -> None:
+    """Non-literal manifests should be surfaced for manual review."""
+    module = tmp_path / "bad_manifest"
+    _write_manifest(module, "not valid python {")
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-parse-error" for f in findings)
+
+
+def test_clean_manifest_has_no_findings(tmp_path: Path) -> None:
+    """A basic clean manifest with ACL data should pass this scanner."""
+    module = tmp_path / "clean"
+    _write_manifest(
+        module,
+        "{'name': 'Clean', 'license': 'LGPL-3', 'data': ['security/ir.model.access.csv'], 'installable': True}",
+    )
+    models = module / "models"
+    models.mkdir()
+    (models / "thing.py").write_text(
+        "from odoo import models\nclass Thing(models.Model):\n    _name='x.thing'\n", encoding="utf-8"
+    )
+
+    assert scan_manifests(tmp_path) == []

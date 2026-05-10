@@ -7,6 +7,7 @@ launch contract as flags or environment variables, boots Odoo, waits for a
 health URL, captures logs/status, and optionally runs a PoC script with
 ODOO_BASE_URL set.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,21 +24,100 @@ from pathlib import Path
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Boot Odoo for Phase 7.5 runtime evidence and optionally replay a PoC.")
+    parser = argparse.ArgumentParser(
+        description="Boot Odoo for Phase 7.5 runtime evidence and optionally replay a PoC."
+    )
     parser.add_argument("out_dir", help="Path to <OUT>/ produced by odoo-review-run")
     parser.add_argument("--repo", help="Repo/addons root. Defaults to run-mode.json repo, then out_dir parent.")
-    parser.add_argument("--odoo-bin", default=os.environ.get("ODOO_BIN", "odoo-bin"), help="Path to odoo-bin. Default: $ODOO_BIN or odoo-bin on PATH.")
-    parser.add_argument("--config", default=os.environ.get("ODOO_CONFIG"), help="Odoo config file. Default: $ODOO_CONFIG.")
-    parser.add_argument("--database", "--db", dest="database", default=os.environ.get("ODOO_DB"), help="Database name. Default: $ODOO_DB.")
-    parser.add_argument("--addons-path", default=os.environ.get("ODOO_ADDONS_PATH"), help="Comma-separated addons path. Default: $ODOO_ADDONS_PATH or repo.")
-    parser.add_argument("--port", type=int, default=int(os.environ.get("ODOO_PORT", "8069")), help="HTTP port. Default: $ODOO_PORT or 8069.")
-    parser.add_argument("--host", default=os.environ.get("ODOO_HOST", "127.0.0.1"), help="HTTP host for health checks. Default: 127.0.0.1.")
-    parser.add_argument("--health-path", default="/web/login", help="Path polled until Odoo is ready. Default: /web/login.")
+    parser.add_argument(
+        "--odoo-bin",
+        default=os.environ.get("ODOO_BIN", "odoo-bin"),
+        help="Path to odoo-bin. Default: $ODOO_BIN or odoo-bin on PATH.",
+    )
+    parser.add_argument(
+        "--config", default=os.environ.get("ODOO_CONFIG"), help="Odoo config file. Default: $ODOO_CONFIG."
+    )
+    parser.add_argument(
+        "--database",
+        "--db",
+        dest="database",
+        default=os.environ.get("ODOO_DB"),
+        help="Database name. Default: $ODOO_DB.",
+    )
+    parser.add_argument(
+        "--addons-path",
+        default=os.environ.get("ODOO_ADDONS_PATH"),
+        help="Comma-separated addons path. Default: $ODOO_ADDONS_PATH or repo.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("ODOO_PORT", "8069")),
+        help="HTTP port. Default: $ODOO_PORT or 8069.",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("ODOO_HOST", "127.0.0.1"),
+        help="HTTP host for health checks. Default: 127.0.0.1.",
+    )
+    parser.add_argument(
+        "--health-path", default="/web/login", help="Path polled until Odoo is ready. Default: /web/login."
+    )
     parser.add_argument("--timeout", type=int, default=120, help="Seconds to wait for Odoo readiness. Default: 120.")
-    parser.add_argument("--poc", action="append", default=[], help="PoC script to run after boot. Can be passed multiple times.")
-    parser.add_argument("--run-generated-probes", action="store_true", help="Replay auto-safe probe scripts generated under runtime/probes/safe-pocs.txt.")
+    parser.add_argument(
+        "--poc", action="append", default=[], help="PoC script to run after boot. Can be passed multiple times."
+    )
+    parser.add_argument(
+        "--run-generated-probes",
+        action="store_true",
+        help="Replay auto-safe probe scripts generated under runtime/probes/safe-pocs.txt.",
+    )
+    parser.add_argument(
+        "--odoomap-target",
+        default=os.environ.get("ODOOMAP_TARGET"),
+        help="Authorized QA/staging URL for optional OdooMap runtime recon. Disabled unless set.",
+    )
+    parser.add_argument(
+        "--odoomap-bin",
+        default=os.environ.get("ODOOMAP_BIN", "odoomap"),
+        help="OdooMap executable. Default: $ODOOMAP_BIN or odoomap on PATH.",
+    )
+    parser.add_argument(
+        "--odoomap-database",
+        default=os.environ.get("ODOOMAP_DB"),
+        help="OdooMap database name for authenticated enumeration. Default: $ODOOMAP_DB.",
+    )
+    parser.add_argument(
+        "--odoomap-username",
+        default=os.environ.get("ODOOMAP_USERNAME"),
+        help="OdooMap username for authenticated enumeration. Default: $ODOOMAP_USERNAME.",
+    )
+    parser.add_argument(
+        "--odoomap-password",
+        default=os.environ.get("ODOOMAP_PASSWORD"),
+        help="OdooMap password for authenticated enumeration. Default: $ODOOMAP_PASSWORD.",
+    )
+    parser.add_argument(
+        "--odoomap-modules",
+        action="store_true",
+        help="Ask OdooMap to enumerate installed modules. Does not enable brute force.",
+    )
+    parser.add_argument(
+        "--odoomap-cve", action="store_true", help="Run OdooMap's cve-scanner plugin. Does not enable brute force."
+    )
+    parser.add_argument(
+        "--odoomap-enumerate",
+        action="store_true",
+        help="Run authenticated model and CRUD-permission enumeration when OdooMap credentials are supplied. Does not enable brute force.",
+    )
+    parser.add_argument("--odoomap-limit", type=int, default=200, help="OdooMap enumeration limit. Default: 200.")
+    parser.add_argument(
+        "--odoomap-timeout", type=int, default=600, help="Seconds before stopping OdooMap. Default: 600."
+    )
     parser.add_argument("--keep-running", action="store_true", help="Leave Odoo running and write runtime/odoo.pid.")
-    parser.add_argument("--plan-only", action="store_true", help="Only write runtime command/plan artifacts; do not boot.")
+    parser.add_argument(
+        "--plan-only", action="store_true", help="Only write runtime command/plan artifacts; do not boot."
+    )
     return parser.parse_args()
 
 
@@ -50,7 +130,7 @@ def repo_from_run_mode(out: Path) -> Path:
             if repo:
                 return Path(repo).expanduser().resolve()
         except Exception:
-            pass
+            return out.parent.resolve()
     return out.parent.resolve()
 
 
@@ -76,7 +156,12 @@ def build_cmd(args: argparse.Namespace, repo: Path, log_path: Path) -> list[str]
 
 def write_plan(runtime_dir: Path, args: argparse.Namespace, repo: Path, cmd: list[str], base_url: str) -> None:
     shell_cmd = " ".join(quote(part) for part in cmd)
-    (runtime_dir / "boot-command.sh").write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + shell_cmd + "\n", encoding="utf-8")
+    odoomap_output = runtime_dir / "odoomap" / "odoomap-output.txt"
+    odoomap_cmd = build_odoomap_cmd(args, base_url, odoomap_output)
+    odoomap_display_cmd = redact_odoomap_cmd(odoomap_cmd)
+    (runtime_dir / "boot-command.sh").write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n" + shell_cmd + "\n", encoding="utf-8"
+    )
     lines = [
         "# Runtime Evidence Plan",
         "",
@@ -89,6 +174,7 @@ def write_plan(runtime_dir: Path, args: argparse.Namespace, repo: Path, cmd: lis
         f"- Addons path: `{args.addons_path or str(repo)}`",
         f"- Log: `{runtime_dir / 'odoo.log'}`",
         f"- Generated probes: `{'enabled' if args.run_generated_probes else 'disabled'}`",
+        f"- OdooMap: `{'enabled' if odoomap_cmd else 'disabled'}`",
         "",
         "## PoC Contract",
         "",
@@ -101,6 +187,20 @@ def write_plan(runtime_dir: Path, args: argparse.Namespace, repo: Path, cmd: lis
         "",
         "Capture PoC stdout/stderr under `runtime/reproductions/` and cite those files in Phase 7.5 evidence.",
     ]
+    if odoomap_cmd:
+        lines.extend(
+            [
+                "",
+                "## OdooMap",
+                "",
+                "OdooMap is run as opt-in runtime lead generation only against the explicitly authorized target.",
+                "The generated command intentionally excludes brute-force database, credential, user-enumeration, master-password, and model-name brute-force flags.",
+                "",
+                f"- Target: `{args.odoomap_target}`",
+                f"- Output: `{odoomap_output}`",
+                f"- Command: `{' '.join(quote(part) for part in odoomap_display_cmd)}`",
+            ]
+        )
     (runtime_dir / "runtime-plan.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -124,12 +224,83 @@ def quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
+def build_odoomap_cmd(args: argparse.Namespace, base_url: str, output_path: Path) -> list[str]:
+    """Build a non-bruteforce OdooMap command for authorized runtime recon."""
+    target = args.odoomap_target
+    if not target:
+        return []
+    if target == "self":
+        target = base_url
+    cmd = [args.odoomap_bin, "-u", target, "-r", "-o", str(output_path)]
+    if args.odoomap_database:
+        cmd.extend(["-D", args.odoomap_database])
+    if args.odoomap_username:
+        cmd.extend(["-U", args.odoomap_username])
+    if args.odoomap_password:
+        cmd.extend(["-P", args.odoomap_password])
+    if args.odoomap_modules:
+        cmd.append("--modules")
+    if args.odoomap_cve:
+        cmd.extend(["--plugin", "cve-scanner"])
+    has_auth = bool(args.odoomap_database and args.odoomap_username and args.odoomap_password)
+    if args.odoomap_enumerate and has_auth:
+        cmd.extend(["-e", "-pe", "-l", str(args.odoomap_limit)])
+    return cmd
+
+
+def redact_odoomap_cmd(cmd: list[str]) -> list[str]:
+    """Return an OdooMap command safe to write to review artifacts."""
+    redacted = list(cmd)
+    for idx, part in enumerate(redacted):
+        if part == "-P" and idx + 1 < len(redacted):
+            redacted[idx + 1] = "[REDACTED]"
+    return redacted
+
+
+def run_odoomap(args: argparse.Namespace, base_url: str, runtime_dir: Path) -> dict:
+    """Run optional OdooMap runtime recon and capture output as leads."""
+    odoomap_dir = runtime_dir / "odoomap"
+    odoomap_dir.mkdir(parents=True, exist_ok=True)
+    output_path = odoomap_dir / "odoomap-output.txt"
+    log_path = odoomap_dir / "odoomap.log"
+    cmd = build_odoomap_cmd(args, base_url, output_path)
+    if not cmd:
+        return {"enabled": False}
+    result = {
+        "enabled": True,
+        "target": base_url if args.odoomap_target == "self" else args.odoomap_target,
+        "cmd": redact_odoomap_cmd(cmd),
+        "output": str(output_path),
+        "log": str(log_path),
+        "lead_material_only": True,
+        "bruteforce_enabled": False,
+        "enumeration_enabled": bool(
+            args.odoomap_enumerate and args.odoomap_database and args.odoomap_username and args.odoomap_password
+        ),
+    }
+    try:
+        completed = subprocess.run(
+            cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=args.odoomap_timeout
+        )
+        log_path.write_text(completed.stdout or "", encoding="utf-8", errors="replace")
+        result["returncode"] = completed.returncode
+    except FileNotFoundError as exc:
+        log_path.write_text(f"OdooMap executable not found: {cmd[0]}\n", encoding="utf-8")
+        result.update({"returncode": 127, "error": str(exc)})
+    except subprocess.TimeoutExpired as exc:
+        log_path.write_text(
+            (exc.stdout or "") + f"\n[TIMEOUT after {args.odoomap_timeout}s]\n", encoding="utf-8", errors="replace"
+        )
+        result.update({"returncode": 124, "error": f"timeout after {args.odoomap_timeout}s"})
+    return result
+
+
 def wait_ready(url: str, timeout: int) -> tuple[bool, str]:
     deadline = time.time() + timeout
     last_error = ""
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=5) as resp:
+            with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310 - runtime health URL is explicit.
                 if 200 <= resp.status < 500:
                     return True, f"HTTP {resp.status}"
         except urllib.error.HTTPError as exc:
@@ -147,11 +318,13 @@ def run_pocs(args: argparse.Namespace, repo: Path, out: Path, base_url: str, run
     repro_dir.mkdir(parents=True, exist_ok=True)
     results: list[dict] = []
     env = os.environ.copy()
-    env.update({
-        "ODOO_BASE_URL": base_url,
-        "ODOO_REPO": str(repo),
-        "ODOO_REVIEW_OUT": str(out),
-    })
+    env.update(
+        {
+            "ODOO_BASE_URL": base_url,
+            "ODOO_REPO": str(repo),
+            "ODOO_REVIEW_OUT": str(out),
+        }
+    )
     if args.database:
         env["ODOO_DB"] = args.database
     for idx, poc in enumerate(args.poc, start=1):
@@ -163,7 +336,9 @@ def run_pocs(args: argparse.Namespace, repo: Path, out: Path, base_url: str, run
             continue
         cmd = ["bash", str(path)] if path.suffix in {".sh", ".bash"} else [str(path)]
         try:
-            completed = subprocess.run(cmd, cwd=str(repo), env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=600)
+            completed = subprocess.run(
+                cmd, cwd=str(repo), env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=600
+            )
             output.write_text(completed.stdout or "", encoding="utf-8", errors="replace")
             results.append({"poc": str(path), "returncode": completed.returncode, "output": str(output)})
         except subprocess.TimeoutExpired as exc:
@@ -209,6 +384,7 @@ def main() -> int:
         "plan_only": args.plan_only,
         "run_generated_probes": args.run_generated_probes,
         "poc_count": len(pocs),
+        "odoomap": {"enabled": bool(args.odoomap_target)},
         "ready": False,
         "pocs": [],
     }
@@ -245,6 +421,7 @@ def main() -> int:
         args.poc = pocs
         status["pocs"] = run_pocs(args, repo, out, base_url, runtime_dir)
         args.poc = original_pocs
+        status["odoomap"] = run_odoomap(args, base_url, runtime_dir)
         if args.keep_running:
             status["kept_running"] = True
             (runtime_dir / "status.json").write_text(json.dumps(status, indent=2, sort_keys=True), encoding="utf-8")

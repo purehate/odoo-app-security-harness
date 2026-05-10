@@ -85,7 +85,7 @@ Lane outputs are leads only. Nothing ships until Claude's 6-gate validation conf
 - Maps Odoo attack surface: routes, ACLs, record rules, sharp-edge APIs.
 - Scores per-module risk (`module-risk.md` + `inventory/module-risk.json`) so hunters hit highest-risk modules first.
 - Emits a risk-prioritized Phase 1.7 breadth plan for Claude Agent subagents, capped by `--breadth-budget` / `--breadth-max-chunks`.
-- Seeds hunters with `inventory/cwe-map.json` (19 Odoo bug-shape → CWE/CAPEC/OWASP mappings).
+- Seeds hunters with `inventory/cwe-map.json` (23 Odoo bug-shape → CWE/CAPEC/OWASP mappings).
 - Runs repeatable scanner setup for Semgrep, Bandit, Ruff, pylint-odoo, CodeQL, dependency tools, and optional Joern.
 - Runs local Qwen advisory notes through Ollama.
 - Launches or prepares Codex hunter tasks.
@@ -118,6 +118,7 @@ The direct runner is `odoo-review-run [target] [flags]`. The slash command forwa
 | `--joern` | Enable optional Joern CPG graph review. |
 | `--runtime` | Enable Phase 7.5 runtime path and generate `runtime/probes/` route-probe templates. |
 | `--zap-target <url>` | Run ZAP baseline against a QA target. Requires `--runtime`. |
+| `--odoomap-target <url>` | Add optional OdooMap runtime recon against an authorized QA/staging target. Requires `--runtime`; brute-force modes are not enabled. |
 | `--no-codex` | Skip Codex hunter execution. |
 | `--codex-model <name>` | Override Codex model. |
 | `--codex-budget low\|normal\|deep` | Set Codex pass budget label. |
@@ -168,6 +169,8 @@ Runtime helper:
 | `--timeout <seconds>` | Readiness timeout. Default: `120`. |
 | `--poc <script>` | Replay an explicit PoC script after Odoo is ready. Repeatable. |
 | `--run-generated-probes` | Replay auto-safe probes listed in `runtime/probes/safe-pocs.txt`. |
+| `--odoomap-target <url\|self>` | Run optional OdooMap recon/module/CVE leads against an authorized target. Use `self` for the booted local runtime URL. |
+| `--odoomap-enumerate` | Run OdooMap authenticated enumeration only when `--odoomap-database`, `--odoomap-username`, and `--odoomap-password` are all supplied. |
 | `--keep-running` | Leave Odoo running and write `runtime/odoo.pid`. |
 | `--plan-only` | Write runtime command/plan artifacts without booting Odoo. |
 
@@ -192,6 +195,9 @@ The installer copies:
   - `odoo-review-diff` — direct baseline vs current comparison (called by finalize)
   - `odoo-review-learn` — Phase 8.7 baseline/fix-list/accepted-risk learning helper
   - `odoo-review-stock-diff` — stock-Claude control-lane diff and lessons helper
+  - `odoo-review-coverage` — Phase 5.6 hunter coverage diff and CI gap gate
+  - `odoo-review-validate-config` — schema validator for `.odoo-review/config.toml`, `scope.yml`, accepted-risk files, and fix-list files; use `--type accepted-risks` or `--type fix-list` for renamed governance files
+  - `odoo-deep-scan` — standalone static scanner that emits JSON, Markdown, SARIF, PoCs, coverage inventories, and a CI gate
 
 ## Prerequisites
 
@@ -226,6 +232,45 @@ Direct runner:
 ```bash
 odoo-review-run /path/to/odoo-addons --allow-missing-lanes
 ```
+
+Standalone deep scanner:
+
+```bash
+odoo-deep-scan /path/to/odoo-addons \
+  --out .audit-deep \
+  --pocs \
+  --fail-on high \
+  --baseline .audit-baseline/deep-scan-findings.json \
+  --fail-on-new high \
+  --accepted-risks .audit-accepted-risks.yml \
+  --fix-list .audit-fix-list.yml \
+  --fail-on-fix-regression \
+  --fail-on-unmapped-taxonomy
+```
+
+Use `odoo-deep-scan` when you want the static harness without the full Claude/Qwen/Codex orchestration. It exits `0` by default, or `2` when `--fail-on critical|high|medium|low` finds a blocking severity. Add `--baseline <findings.json|audit-dir>` and `--fail-on-new critical|high|medium|low` to gate only findings that are new relative to a fingerprint baseline. Add `--accepted-risks <yml|json>` to suppress active, already-triaged findings while still reporting expired matches. Add `--fix-list <yml|json>` to tag tracked bugs, regressions, wontfix findings, and likely-fixed entries without suppressing findings. Use `--check-only-accepted-risks` or `--check-only-fix-list` to validate governance files and emit their inventory/report without running scanners. Governance gates are opt-in: `--fail-on-policy-errors`, `--fail-on-expired-accepted-risk`, `--fail-on-overdue-fix`, and `--fail-on-fix-regression`. Add `--fail-on-unmapped-taxonomy` to fail CI when a scanner emits a rule ID that lacks CWE/CAPEC/OWASP metadata. Use `--fail-on none` to disable severity gating.
+
+Standalone deep-scan outputs:
+
+- `deep-scan-findings.json` — normalized findings with stable IDs, fingerprints, and triage state.
+- `deep-scan-report.md` — Markdown findings report.
+- `findings.html` — self-contained offline triage report with accepted-risk and fix-list export queues.
+- `deep-scan.sarif` — SARIF 2.1.0 for GitHub Code Scanning and similar review tools.
+- `review-gate.json` — CI verdict, threshold, severity counts, and blocking finding summaries.
+- `taxonomy-gate.json` — CI verdict for unmapped emitted rule IDs when taxonomy drift gating is enabled.
+- `governance-gate.json` — CI verdict for accepted-risk/fix-list policy health gates.
+- `deep-scan-delta.json` + `deep-scan-delta.md` — fingerprint baseline delta when `--baseline` is supplied.
+- `00-accepted-risks.md` + `inventory/accepted-risks.json` — accepted-risk suppression inventory, suppressed findings, and expired matches.
+- `00-fix-list.md` + `inventory/fix-list.json` — fix-list tracking buckets for tracked, regression, wontfix, likely-fixed, confirmed-fixed, and drifted entries.
+- `deep-scan-validation.json` — finding schema validation result.
+- `tooling.md` — scanner coverage, rule catalog, finding summary, module risk, PoC coverage, and artifact manifest pointer.
+- `module-risk.md` + `inventory/module-risk.json` — per-module risk scoring for review prioritization.
+- `inventory/coverage/matcher-coverage.json` — surface, route, scanner-source, registry, rule-catalog, gate, and risk coverage.
+- `inventory/coverage/rule-catalog.json` — declared rule IDs and emitted/undocumented rule coverage.
+- `inventory/coverage/taxonomy-coverage.json` — emitted rule coverage for CWE/CAPEC/OWASP metadata.
+- `inventory/coverage/scanner-manifest.json` — scanner callable to source-label mapping.
+- `inventory/artifacts.json` — required/optional output bill of materials with existence, byte size, and counts.
+- `inventory/coverage/poc-coverage.json` and `pocs/` — generated PoC coverage and scripts when `--pocs` is enabled.
 
 Safer dry setup:
 
@@ -301,6 +346,21 @@ odoo-review-runtime .audit-YYYYMMDD-HHMM \
 
 The helper writes `runtime/status.json`, `runtime/odoo.log`, `runtime/odoo-stdout.log`, and PoC output logs under `runtime/reproductions/`.
 
+Optional OdooMap runtime leads can be captured alongside PoCs:
+
+```bash
+odoo-review-runtime .audit-YYYYMMDD-HHMM \
+  --odoo-bin /path/to/odoo-bin \
+  --config /path/to/odoo.conf \
+  --database review_db \
+  --addons-path /path/to/odoo/addons,/path/to/custom/addons \
+  --odoomap-target self \
+  --odoomap-modules \
+  --odoomap-cve
+```
+
+The OdooMap integration is lead material only and intentionally exposes reconnaissance/module/CVE/authenticated-enumeration options without database, credential, user, master-password, or model-name brute-force switches. Authenticated enumeration is skipped unless database, username, and password are all supplied. Output is written under `runtime/odoomap/`; generated command artifacts redact the OdooMap password.
+
 When the runner is invoked with `--runtime` or `-ks`, it also generates a route-derived probe plan under `runtime/probes/`. Literal public `GET`-only routes are listed in `runtime/probes/safe-pocs.txt` and can be replayed automatically:
 
 ```bash
@@ -371,6 +431,20 @@ Drop-in GitHub Action template at `skills/odoo-code-review/templates/github-acti
 
 Copy to `.github/workflows/odoo-security.yml` in your addons repo and set `OPENAI_API_KEY` secret if Codex lane is desired.
 
+For a lighter static-only CI lane, use `skills/odoo-code-review/templates/deep-scan-github-action.yml`:
+
+- Validates `.odoo-review/config.toml`, `.odoo-review.toml`, `scope.yml`, `.audit-accepted-risks.*`, and `.audit-fix-list.*` before scanning.
+- Runs `odoo-deep-scan . --out .audit-deep --pocs --fail-on "$ODOO_DEEP_SCAN_FAIL_ON"`.
+- Defaults the severity gate to `high`; set repository variable `ODOO_DEEP_SCAN_FAIL_ON` to `critical`, `medium`, `low`, or `none`.
+- Set `ODOO_DEEP_SCAN_BASELINE` plus `ODOO_DEEP_SCAN_FAIL_ON_NEW` to fail only on new findings over a baseline.
+- Set `ODOO_DEEP_SCAN_ACCEPTED_RISKS` to a YAML/JSON accepted-risk file to suppress active known findings.
+- Set `ODOO_DEEP_SCAN_FIX_LIST` to a YAML/JSON fix-list file to tag tracked bugs and regressions without suppressing them.
+- Set `ODOO_DEEP_SCAN_CHECK_ONLY_ACCEPTED_RISKS` or `ODOO_DEEP_SCAN_CHECK_ONLY_FIX_LIST` to `true` to validate governance files without running scanners.
+- Set `ODOO_DEEP_SCAN_FAIL_ON_POLICY_ERRORS`, `ODOO_DEEP_SCAN_FAIL_ON_EXPIRED_ACCEPTED_RISK`, `ODOO_DEEP_SCAN_FAIL_ON_OVERDUE_FIX`, or `ODOO_DEEP_SCAN_FAIL_ON_FIX_REGRESSION` to `true` to enforce governance health.
+- Set repository variable `ODOO_DEEP_SCAN_FAIL_ON_UNMAPPED_TAXONOMY` to `true` to fail CI on rule IDs without CWE/CAPEC/OWASP metadata.
+- Uploads `.audit-deep/deep-scan.sarif` to Code Scanning.
+- Persists `deep-scan-findings.json`, `review-gate.json`, `tooling.md`, module risk, inventories, and PoCs as 90-day artifacts.
+
 ## Output
 
 Default output goes to a stamped run directory:
@@ -395,7 +469,7 @@ Important artifacts:
 - `inventory/acl-index.json`
 - `inventory/sharp-edge-index.json`
 - `inventory/module-risk.json` — machine-readable risk score
-- `inventory/cwe-map.json` — 19 Odoo bug-shape → CWE/CAPEC/OWASP mappings (seeds hunters)
+- `inventory/cwe-map.json` — 23 Odoo bug-shape → CWE/CAPEC/OWASP mappings (seeds hunters)
 - `inventory/scope.json` — applied scope.yml + computed inclusions/exclusions
 - `local-qwen/module-notes.md`
 - `scans/*`

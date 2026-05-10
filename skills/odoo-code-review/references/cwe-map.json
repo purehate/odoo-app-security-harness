@@ -14,10 +14,94 @@
       "capec": ["CAPEC-115"],
       "owasp": "A07:2021 Identification and Authentication Failures"
     },
+    "portal_public_route": {
+      "label": "Portal-style route is publicly reachable and needs ownership or token checks",
+      "cwe": ["CWE-306", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "portal_access_token_without_helper": {
+      "label": "Portal route accepts access_token without using Odoo's portal access helper",
+      "cwe": ["CWE-287", "CWE-345", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "portal_document_check_missing_token": {
+      "label": "Portal _document_check_access call omits the supplied access_token",
+      "cwe": ["CWE-287", "CWE-345", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "portal_sudo_route_id_read": {
+      "label": "Portal route reads URL-selected records through sudo without visible portal access helper",
+      "cwe": ["CWE-269", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-233", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "portal_token_exposed_without_check": {
+      "label": "Portal route exposes access_token or access_url data without visible access validation",
+      "cwe": ["CWE-200", "CWE-522", "CWE-359"],
+      "capec": ["CAPEC-118", "CAPEC-31"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "portal_url_generated_without_check": {
+      "label": "Portal URL is generated without a nearby ownership or token access check",
+      "cwe": ["CWE-862", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "portal_manual_access_token_check": {
+      "label": "Portal route manually compares access_token instead of using Odoo portal access semantics",
+      "cwe": ["CWE-287", "CWE-345", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
     "csrf_state_change_get": {
       "label": "State-changing route accepts GET / missing methods=['POST']",
       "cwe": ["CWE-352"],
       "capec": ["CAPEC-62"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "route_auth_none": {
+      "label": "Odoo route uses auth='none' and bypasses database user authentication",
+      "cwe": ["CWE-306", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "route_cors_wildcard": {
+      "label": "Odoo route allows wildcard CORS",
+      "cwe": ["CWE-346", "CWE-942", "CWE-200"],
+      "capec": ["CAPEC-115", "CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "route_bearer_save_session": {
+      "label": "Bearer-authenticated Odoo route explicitly saves a browser session",
+      "cwe": ["CWE-384", "CWE-613", "CWE-287"],
+      "capec": ["CAPEC-31", "CAPEC-60"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "route_csrf_disabled_all_methods": {
+      "label": "Public Odoo route disables CSRF without restricting HTTP methods",
+      "cwe": ["CWE-352", "CWE-749", "CWE-693"],
+      "capec": ["CAPEC-62"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "route_unsafe_csrf_disabled": {
+      "label": "Odoo route disables CSRF on a mutating-looking endpoint",
+      "cwe": ["CWE-352", "CWE-345", "CWE-863"],
+      "capec": ["CAPEC-62", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "route_public_all_methods": {
+      "label": "Public Odoo route does not restrict allowed HTTP methods",
+      "cwe": ["CWE-749", "CWE-862", "CWE-693"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "route_public_sitemap_indexed": {
+      "label": "Public Odoo website route may be indexed in the sitemap",
+      "cwe": ["CWE-200", "CWE-213", "CWE-359"],
+      "capec": ["CAPEC-118"],
       "owasp": "A01:2021 Broken Access Control"
     },
     "raw_sql_injection": {
@@ -26,11 +110,573 @@
       "capec": ["CAPEC-66"],
       "owasp": "A03:2021 Injection"
     },
+    "raw_sql_interpolated_query": {
+      "label": "Runtime cr.execute query is built through interpolation or concatenation",
+      "cwe": ["CWE-89", "CWE-20"],
+      "capec": ["CAPEC-66"],
+      "owasp": "A03:2021 Injection"
+    },
+    "raw_sql_request_derived_input": {
+      "label": "Request-derived data reaches runtime cr.execute query or parameters",
+      "cwe": ["CWE-89", "CWE-20", "CWE-862"],
+      "capec": ["CAPEC-66", "CAPEC-21"],
+      "owasp": "A03:2021 Injection"
+    },
+    "raw_sql_broad_destructive_query": {
+      "label": "Runtime cr.execute performs broad destructive SQL without obvious row scoping",
+      "cwe": ["CWE-284", "CWE-862", "CWE-639"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "raw_sql_write_no_company_scope": {
+      "label": "Runtime UPDATE or DELETE SQL lacks visible multi-company scoping",
+      "cwe": ["CWE-284", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "raw_sql_manual_transaction": {
+      "label": "Runtime code manually commits or rolls back database transactions",
+      "cwe": ["CWE-664", "CWE-703"],
+      "capec": ["CAPEC-17"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "deep_with_user_admin": {
+      "label": "Odoo code switches execution to the admin or superuser identity",
+      "cwe": ["CWE-269", "CWE-266", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "deep_markup_user_input": {
+      "label": "Odoo code marks request or user-controlled data as trusted HTML",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "deep_html_sanitize_false": {
+      "label": "Odoo HTML field disables sanitization",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "multi_company_missing_check_company": {
+      "label": "Odoo Many2one field lacks check_company enforcement",
+      "cwe": ["CWE-284", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "multi_company_check_company_disabled": {
+      "label": "Odoo field explicitly disables check_company enforcement",
+      "cwe": ["CWE-284", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "multi_company_search_no_company_scope": {
+      "label": "Odoo ORM search lacks visible company scoping",
+      "cwe": ["CWE-284", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "multi_company_sudo_search_no_company_scope": {
+      "label": "Odoo elevated ORM search lacks visible company scoping",
+      "cwe": ["CWE-269", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "multi_company_with_company_user_input": {
+      "label": "Odoo with_company receives request or user-controlled company values",
+      "cwe": ["CWE-20", "CWE-284", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "multi_company_context_user_input": {
+      "label": "Odoo company context keys receive request or user-controlled values",
+      "cwe": ["CWE-20", "CWE-284", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "multi_company_rule_missing_company_scope": {
+      "label": "Odoo record rule on company-scoped data lacks company restrictions",
+      "cwe": ["CWE-284", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "qweb_xss_t_raw": {
       "label": "QWeb t-raw rendering attacker-controlled string",
       "cwe": ["CWE-79"],
       "capec": ["CAPEC-63"],
       "owasp": "A03:2021 Injection"
+    },
+    "qweb_dangerous_tag": {
+      "label": "QWeb template renders dangerous script-capable HTML tags",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "qweb_html_widget_render": {
+      "label": "QWeb renders rich HTML widget content that requires sanitization review",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "qweb_inline_event_handler": {
+      "label": "QWeb template includes inline JavaScript event handler attributes",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "qweb_sensitive_field_render": {
+      "label": "QWeb template renders sensitive fields such as tokens, secrets, passwords, or bank data",
+      "cwe": ["CWE-200", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "qweb_dynamic_url_attribute": {
+      "label": "QWeb template binds dynamic URLs into href, src, or action attributes",
+      "cwe": ["CWE-79", "CWE-601", "CWE-20"],
+      "capec": ["CAPEC-63", "CAPEC-178"],
+      "owasp": "A03:2021 Injection"
+    },
+    "qweb_dynamic_template_render": {
+      "label": "QWeb t-call chooses a template from dynamic data",
+      "cwe": ["CWE-94", "CWE-79"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "qweb_event_handler_injection": {
+      "label": "QWeb dynamic event handler mixes data into JavaScript context",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "qweb_markup_escape_bypass": {
+      "label": "QWeb t-out/t-esc renders Markup() as trusted HTML",
+      "cwe": ["CWE-79"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "qweb_inline_script_execution": {
+      "label": "QWeb template embeds inline JavaScript or output expressions in JavaScript context",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "qweb_raw_output_mode": {
+      "label": "QWeb t-out-mode raw disables escaped rendering",
+      "cwe": ["CWE-79"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "i18n_dangerous_html": {
+      "label": "Translation catalog injects dangerous HTML or scriptable URL schemes",
+      "cwe": ["CWE-79", "CWE-116", "CWE-601"],
+      "capec": ["CAPEC-63", "CAPEC-178"],
+      "owasp": "A03:2021 Injection"
+    },
+    "i18n_qweb_raw_output": {
+      "label": "Translation catalog injects raw QWeb output directives",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "i18n_template_expression_injection": {
+      "label": "Translation catalog injects QWeb template expressions or control directives",
+      "cwe": ["CWE-94", "CWE-79", "CWE-200"],
+      "capec": ["CAPEC-242", "CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "i18n_placeholder_mismatch": {
+      "label": "Translation catalog changes interpolation placeholders from the reviewed source string",
+      "cwe": ["CWE-116", "CWE-20", "CWE-707"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "frontend_dom_xss": {
+      "label": "Frontend DOM API writes or parses attacker-controlled HTML",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "frontend_message_origin_validation": {
+      "label": "Frontend message event handler lacks event.origin validation",
+      "cwe": ["CWE-346", "CWE-345", "CWE-942"],
+      "capec": ["CAPEC-115", "CAPEC-173"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "frontend_prototype_pollution": {
+      "label": "Frontend object merge allows prototype pollution",
+      "cwe": ["CWE-1321", "CWE-915"],
+      "capec": ["CAPEC-250"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "frontend_unsafe_markup": {
+      "label": "Frontend markup() marks untrusted HTML as safe",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "frontend_csrf_token_missing": {
+      "label": "Frontend unsafe HTTP request lacks visible CSRF token",
+      "cwe": ["CWE-352"],
+      "capec": ["CAPEC-62"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "frontend_dynamic_orm_service_call": {
+      "label": "Frontend ORM service call uses dynamic model, method, domain, or values",
+      "cwe": ["CWE-639", "CWE-862", "CWE-20"],
+      "capec": ["CAPEC-1", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "frontend_dynamic_action_window": {
+      "label": "Frontend act_window action uses dynamic model, domain, context, or record selection",
+      "cwe": ["CWE-639", "CWE-862", "CWE-20"],
+      "capec": ["CAPEC-1", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "frontend_dangerous_url_scheme": {
+      "label": "Frontend or QWeb URL attributes use executable URL schemes",
+      "cwe": ["CWE-79", "CWE-601"],
+      "owasp": "A03:2021 Injection"
+    },
+    "frontend_sensitive_object_url": {
+      "label": "Frontend exposes sensitive values through Blob object URLs",
+      "cwe": ["CWE-200", "CWE-922", "CWE-359"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "frontend_raw_crypto_key": {
+      "label": "Frontend imports raw or hard-coded cryptographic key material",
+      "cwe": ["CWE-321", "CWE-798", "CWE-922"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "frontend_sensitive_credential_management": {
+      "label": "Frontend stores sensitive values through browser Credential Management APIs",
+      "cwe": ["CWE-522", "CWE-922", "CWE-200"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "frontend_sensitive_history_url": {
+      "label": "Frontend persists credential-bearing URLs into browser history",
+      "cwe": ["CWE-598", "CWE-200", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "frontend_sensitive_url_exposure": {
+      "label": "Frontend URL, query string, or fragment carries token or secret-like data",
+      "cwe": ["CWE-598", "CWE-200", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "frontend_reverse_tabnabbing": {
+      "label": "Frontend link opens a new tab without opener isolation",
+      "cwe": ["CWE-1022"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "frontend_iframe_sandbox_missing": {
+      "label": "Frontend iframe embeds content without sandbox restrictions",
+      "cwe": ["CWE-693", "CWE-1021"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "frontend_iframe_sandbox_escape": {
+      "label": "Frontend iframe sandbox combines script execution with same-origin privileges",
+      "cwe": ["CWE-693", "CWE-1021"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "frontend_external_script_missing_sri": {
+      "label": "Frontend loads external JavaScript without Subresource Integrity pinning",
+      "cwe": ["CWE-353", "CWE-829"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "frontend_external_stylesheet_missing_sri": {
+      "label": "Frontend loads external CSS without Subresource Integrity pinning",
+      "cwe": ["CWE-353", "CWE-829"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "frontend_dynamic_code_import": {
+      "label": "Frontend imports JavaScript at runtime from external or request-derived module targets",
+      "cwe": ["CWE-829", "CWE-94"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "frontend_dynamic_worker_script": {
+      "label": "Frontend starts Worker scripts from external or request-derived script targets",
+      "cwe": ["CWE-829", "CWE-94"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "frontend_dynamic_import_scripts": {
+      "label": "Worker importScripts loads scripts from external or request-derived targets",
+      "cwe": ["CWE-829", "CWE-94"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "frontend_dynamic_service_worker": {
+      "label": "Frontend registers Service Workers from external or request-derived script targets",
+      "cwe": ["CWE-829", "CWE-94"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "frontend_dynamic_wasm_loading": {
+      "label": "Frontend loads WebAssembly from external or request-derived sources",
+      "cwe": ["CWE-829", "CWE-94"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "frontend_dynamic_css_injection": {
+      "label": "Frontend writes request-derived CSS into stylesheet APIs",
+      "cwe": ["CWE-79", "CWE-1021"],
+      "owasp": "A03:2021 Injection"
+    },
+    "frontend_dynamic_live_connection": {
+      "label": "Frontend opens WebSocket/EventSource connections to external or request-derived endpoints",
+      "cwe": ["CWE-346", "CWE-200"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "frontend_document_domain_relaxation": {
+      "label": "Frontend relaxes same-origin isolation with document.domain",
+      "cwe": ["CWE-346", "CWE-942"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "frontend_sensitive_document_cookie": {
+      "label": "Frontend writes sensitive cookies through JavaScript-readable document.cookie",
+      "cwe": ["CWE-1004", "CWE-614"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "frontend_sensitive_browser_storage": {
+      "label": "Frontend stores sensitive values in browser-controlled storage",
+      "cwe": ["CWE-200", "CWE-922", "CWE-312"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "frontend_string_code_execution": {
+      "label": "Frontend executes JavaScript from strings or string-built code paths",
+      "cwe": ["CWE-94", "CWE-95", "CWE-79"],
+      "capec": ["CAPEC-242", "CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "frontend_sensitive_window_name": {
+      "label": "Frontend stores sensitive values in navigation-persistent window.name",
+      "cwe": ["CWE-200", "CWE-922"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "frontend_sensitive_indexeddb_storage": {
+      "label": "Frontend persists sensitive values in IndexedDB object stores",
+      "cwe": ["CWE-922", "CWE-200"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "frontend_sensitive_cache_api_storage": {
+      "label": "Frontend persists sensitive requests or responses in the browser Cache API",
+      "cwe": ["CWE-524", "CWE-922"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "frontend_sensitive_console_logging": {
+      "label": "Frontend logs sensitive values to the browser console",
+      "cwe": ["CWE-532", "CWE-200"],
+      "owasp": "A09:2021 Security Logging and Monitoring Failures"
+    },
+    "frontend_sensitive_send_beacon": {
+      "label": "Frontend sends sensitive values through navigator.sendBeacon",
+      "cwe": ["CWE-201", "CWE-200"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "frontend_sensitive_clipboard_write": {
+      "label": "Frontend writes sensitive values to the system clipboard",
+      "cwe": ["CWE-200", "CWE-359"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "frontend_sensitive_notification": {
+      "label": "Frontend displays sensitive values in browser or OS notifications",
+      "cwe": ["CWE-359", "CWE-200"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "frontend_sensitive_broadcast_channel": {
+      "label": "Frontend shares sensitive values through BroadcastChannel names or messages",
+      "cwe": ["CWE-200", "CWE-359"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "frontend_dynamic_bus_channel": {
+      "label": "Frontend bus service subscribes to dynamic or broad realtime channel",
+      "cwe": ["CWE-639", "CWE-862", "CWE-200"],
+      "capec": ["CAPEC-1", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_template_html_injection": {
+      "label": "Mail template renders raw or trusted HTML in outbound email",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "mail_template_token_exposure": {
+      "label": "Mail template can expose or retain tokenized account-access links",
+      "cwe": ["CWE-200", "CWE-522", "CWE-598", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "mail_template_privileged_rendering": {
+      "label": "Mail template renders content through sudo or superuser context",
+      "cwe": ["CWE-200", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_template_recipient_control": {
+      "label": "Mail template derives sensitive recipients or senders from mutable record data",
+      "cwe": ["CWE-200", "CWE-345", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_alias_sensitive_model_ingress": {
+      "label": "Inbound mail alias allows broad senders to create or route messages into sensitive models",
+      "cwe": ["CWE-862", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_alias_broad_sender_policy": {
+      "label": "Inbound mail alias accepts everyone or lacks an explicit sender policy",
+      "cwe": ["CWE-862", "CWE-345", "CWE-284"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_alias_privileged_defaults": {
+      "label": "Inbound mail alias assigns privileged defaults such as users, groups, sudo, or company fields",
+      "cwe": ["CWE-269", "CWE-863", "CWE-915"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_alias_dynamic_defaults": {
+      "label": "Inbound mail alias evaluates dynamic alias_defaults code",
+      "cwe": ["CWE-94", "CWE-95", "CWE-20"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "mail_alias_privileged_owner": {
+      "label": "Inbound mail alias creates or routes messages as an admin or root owner",
+      "cwe": ["CWE-269", "CWE-863", "CWE-266"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_alias_forced_thread_injection": {
+      "label": "Broad inbound mail alias forces external messages into an existing record thread",
+      "cwe": ["CWE-862", "CWE-915", "CWE-345"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_chatter_public_notification": {
+      "label": "Public or unauthenticated route posts chatter, creates outbound mail, or sends email",
+      "cwe": ["CWE-306", "CWE-862", "CWE-770"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_chatter_privileged_notification": {
+      "label": "Chatter or outbound mail notification is sent through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-122", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_chatter_force_send": {
+      "label": "Outbound mail is force-sent synchronously instead of queued",
+      "cwe": ["CWE-400", "CWE-770"],
+      "capec": ["CAPEC-125"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "mail_chatter_follower_subscription": {
+      "label": "Chatter follower subscription can expose private record updates to unauthorized recipients",
+      "cwe": ["CWE-862", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_followers_mutation_exposure": {
+      "label": "mail.followers mutation can subscribe unauthorized recipients to private record notifications",
+      "cwe": ["CWE-862", "CWE-863", "CWE-915", "CWE-200"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "mail_chatter_sensitive_content": {
+      "label": "Chatter or outbound mail body includes token, password, secret, or private workflow data",
+      "cwe": ["CWE-200", "CWE-522", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "mail_chatter_tainted_content": {
+      "label": "Chatter or outbound mail body includes request-controlled content",
+      "cwe": ["CWE-79", "CWE-20", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "mail_chatter_tainted_recipients": {
+      "label": "Chatter or outbound mail recipients are request-controlled",
+      "cwe": ["CWE-20", "CWE-200", "CWE-345"],
+      "capec": ["CAPEC-118", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "report_privileged_rendering": {
+      "label": "Report rendering bypasses normal record access with sudo",
+      "cwe": ["CWE-200", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "report_sudo_enabled": {
+      "label": "Report action enables report_sudo and may render beyond caller access",
+      "cwe": ["CWE-269", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-233", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "report_sudo_render_call": {
+      "label": "Report render call uses sudo or elevated records",
+      "cwe": ["CWE-269", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-233", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "report_access_control_exposure": {
+      "label": "Report action or public route can expose sensitive records without sufficient authorization",
+      "cwe": ["CWE-200", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "report_sensitive_no_groups": {
+      "label": "Sensitive model report action lacks groups restriction",
+      "cwe": ["CWE-862", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "report_public_render_route": {
+      "label": "Public route renders a report and must enforce record ownership or tokens",
+      "cwe": ["CWE-306", "CWE-862", "CWE-639"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "report_cached_document_exposure": {
+      "label": "Report caching or filenames can retain or disclose sensitive document data",
+      "cwe": ["CWE-200", "CWE-359", "CWE-524"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "report_dynamic_attachment_cache": {
+      "label": "Report caches object-derived attachments that may outlive access changes",
+      "cwe": ["CWE-524", "CWE-200", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "report_sensitive_filename_expression": {
+      "label": "Report filename expression includes token, secret, password, or API-key-like data",
+      "cwe": ["CWE-200", "CWE-359", "CWE-598"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "report_tainted_render_selection": {
+      "label": "Report rendering receives request-controlled records or report action selection",
+      "cwe": ["CWE-639", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "report_tainted_render_records": {
+      "label": "Report rendering receives request-controlled record ids, records, data, or context",
+      "cwe": ["CWE-20", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "report_tainted_render_data": {
+      "label": "Report rendering receives request-controlled data or context options",
+      "cwe": ["CWE-20", "CWE-915", "CWE-639"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "report_tainted_render_action": {
+      "label": "Report rendering is invoked on a request-controlled report action object",
+      "cwe": ["CWE-20", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
     },
     "html_field_no_sanitize": {
       "label": "fields.Html(sanitize=False) on user-writable field",
@@ -38,17 +684,2061 @@
       "capec": ["CAPEC-63"],
       "owasp": "A03:2021 Injection"
     },
+    "html_sanitizer_relaxed": {
+      "label": "tools.html_sanitize runs with relaxed strict=False policy",
+      "cwe": ["CWE-79", "CWE-80", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "field_sensitive_access_control": {
+      "label": "Sensitive model fields lack admin-only group restrictions",
+      "cwe": ["CWE-200", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "field_sensitive_persistence_leak": {
+      "label": "Sensitive field values can leak through indexes, chatter tracking, or record copies",
+      "cwe": ["CWE-200", "CWE-359", "CWE-522"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "field_compute_sudo_projection": {
+      "label": "Sudo-computed fields can project private data past record rules",
+      "cwe": ["CWE-200", "CWE-863", "CWE-284"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "field_html_sanitizer_bypass": {
+      "label": "HTML field configuration disables or exposes sanitizer bypass controls",
+      "cwe": ["CWE-79", "CWE-80", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "field_binary_database_storage": {
+      "label": "Binary field stores file content in database rows instead of attachment storage",
+      "cwe": ["CWE-200", "CWE-922", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "property_field_company_scope": {
+      "label": "Company-dependent property field can fall back across companies or mask missing company-scoped values",
+      "cwe": ["CWE-284", "CWE-668", "CWE-200"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "property_field_sensitive_access": {
+      "label": "Sensitive company-dependent property field lacks group restrictions",
+      "cwe": ["CWE-862", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "property_record_global_default": {
+      "label": "ir.property default is global instead of company-scoped",
+      "cwe": ["CWE-284", "CWE-668", "CWE-200"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "property_record_broad_scope": {
+      "label": "ir.property default lacks record/resource scope and may apply broadly",
+      "cwe": ["CWE-284", "CWE-668"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "property_sensitive_value": {
+      "label": "ir.property configures sensitive accounting, payment, credential, token, or security values",
+      "cwe": ["CWE-200", "CWE-522", "CWE-668"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "property_public_mutation": {
+      "label": "Public route mutates ir.property accounting or configuration defaults",
+      "cwe": ["CWE-306", "CWE-862", "CWE-915"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "property_privileged_mutation": {
+      "label": "ir.property mutation runs through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-863", "CWE-668"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "property_tainted_mutation": {
+      "label": "Request-controlled data reaches ir.property mutation",
+      "cwe": ["CWE-20", "CWE-915", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "manifest_parse_integrity": {
+      "label": "Odoo manifest cannot be parsed as static literal install metadata",
+      "cwe": ["CWE-20", "CWE-1104"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "manifest_acl_packaging_gap": {
+      "label": "Installable module defines models but does not load ACL security data",
+      "cwe": ["CWE-862", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "manifest_demo_data_exposure": {
+      "label": "Demo or sample data is shipped through production or application manifest paths",
+      "cwe": ["CWE-200", "CWE-798", "CWE-1188"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "manifest_license_metadata": {
+      "label": "Odoo manifest license metadata is missing or uses an unexpected identifier",
+      "cwe": ["CWE-1104"],
+      "owasp": "A06:2021 Vulnerable and Outdated Components"
+    },
+    "manifest_auto_install_security": {
+      "label": "auto_install manifest posture can implicitly load security data or activate unexpectedly",
+      "cwe": ["CWE-732", "CWE-266", "CWE-284"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "manifest_remote_asset_supply_chain": {
+      "label": "Odoo manifest references remote frontend assets",
+      "cwe": ["CWE-829", "CWE-494", "CWE-346"],
+      "capec": ["CAPEC-186"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "manifest_risky_dependency": {
+      "label": "Odoo manifest declares Python dependencies with security-sensitive usage",
+      "cwe": ["CWE-1104", "CWE-829"],
+      "owasp": "A06:2021 Vulnerable and Outdated Components"
+    },
+    "view_inheritance_broad_security_xpath": {
+      "label": "Inherited view uses broad XPath against security-sensitive buttons or fields",
+      "cwe": ["CWE-693", "CWE-284"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "view_inheritance_group_relaxation": {
+      "label": "Inherited view removes groups or exposes sensitive controls to public or portal users",
+      "cwe": ["CWE-862", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "view_inheritance_object_button_exposure": {
+      "label": "Inherited view adds or replaces object-method buttons without preserving authorization posture",
+      "cwe": ["CWE-862", "CWE-863", "CWE-284"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "view_inheritance_sensitive_field_exposure": {
+      "label": "Inherited view reveals, replaces, or inserts sensitive fields without sufficient UI restrictions",
+      "cwe": ["CWE-200", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-118", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "model_sensitive_display_name": {
+      "label": "Odoo model display name is backed by a sensitive field",
+      "cwe": ["CWE-200", "CWE-359", "CWE-522"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "model_delegated_inheritance_exposure": {
+      "label": "Delegated inheritance can expose sensitive delegated model fields through wrapper ACLs",
+      "cwe": ["CWE-862", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "model_delegated_link_integrity": {
+      "label": "Delegated inheritance link is missing, optional, or lacks cascade semantics",
+      "cwe": ["CWE-284", "CWE-665", "CWE-404"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "model_secret_persistence": {
+      "label": "Secret-like model field can be copied into duplicated records",
+      "cwe": ["CWE-522", "CWE-200", "CWE-312"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "model_audit_metadata_disabled": {
+      "label": "Odoo model disables create/write audit metadata maintenance",
+      "cwe": ["CWE-778", "CWE-223", "CWE-284"],
+      "owasp": "A09:2021 Security Logging and Monitoring Failures"
+    },
+    "model_manual_sql_storage": {
+      "label": "Odoo model uses manually managed SQL storage or views",
+      "cwe": ["CWE-284", "CWE-863", "CWE-89"],
+      "capec": ["CAPEC-21", "CAPEC-66"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "model_identifier_uniqueness": {
+      "label": "Required business identifier lacks an obvious uniqueness constraint",
+      "cwe": ["CWE-20", "CWE-345", "CWE-841"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "model_monetary_currency_integrity": {
+      "label": "Monetary field lacks an explicit currency field or model currency",
+      "cwe": ["CWE-682", "CWE-670"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "model_method_dynamic_evaluation": {
+      "label": "Odoo lifecycle model method performs dynamic evaluation",
+      "cwe": ["CWE-94", "CWE-95"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "model_method_sensitive_model_mutation": {
+      "label": "Odoo lifecycle model method mutates a sensitive model",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122", "CAPEC-17"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "model_method_elevated_mutation": {
+      "label": "Odoo lifecycle model method mutates records through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-122", "CAPEC-17"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "model_method_http_without_timeout": {
+      "label": "Odoo lifecycle model method performs outbound HTTP without an explicit timeout",
+      "cwe": ["CWE-400", "CWE-770", "CWE-703"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "constraint_sudo_visibility_gap": {
+      "label": "Odoo constraint validates through sudo and may hide record-rule or company visibility issues",
+      "cwe": ["CWE-284", "CWE-863", "CWE-178"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "constraint_unbounded_search": {
+      "label": "Odoo constraint performs an unbounded search during validation",
+      "cwe": ["CWE-400", "CWE-770"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "constraint_singleton_assumption": {
+      "label": "Odoo constraint assumes a singleton recordset during batch validation",
+      "cwe": ["CWE-703", "CWE-754"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "constraint_ineffective_return": {
+      "label": "Odoo constraint returns a value instead of raising ValidationError",
+      "cwe": ["CWE-754", "CWE-703"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "constraint_registration_gap": {
+      "label": "Odoo constraint decorator may not register or trigger for intended fields",
+      "cwe": ["CWE-693", "CWE-670", "CWE-754"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "access_override_sudo_search": {
+      "label": "Odoo search override reads through sudo or superuser context",
+      "cwe": ["CWE-863", "CWE-284", "CWE-639"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "access_override_missing_super": {
+      "label": "Odoo access override does not call super and may drop base ACL or record-rule checks",
+      "cwe": ["CWE-693", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "access_override_allow_all": {
+      "label": "Odoo access override returns allow-all without preserving inherited checks",
+      "cwe": ["CWE-862", "CWE-863", "CWE-285"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "access_override_filter_self": {
+      "label": "Odoo record-rule filter override returns self and bypasses filtering",
+      "cwe": ["CWE-863", "CWE-284", "CWE-639"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "record_rule_universal_sensitive_domain": {
+      "label": "Odoo record rule grants a universal domain on a sensitive or security model",
+      "cwe": ["CWE-862", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "record_rule_public_sensitive_no_owner_scope": {
+      "label": "Odoo public or portal record rule on a sensitive model lacks owner, token, or company scope",
+      "cwe": ["CWE-862", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "record_rule_portal_sensitive_mutation": {
+      "label": "Odoo public or portal record rule allows write, create, or delete on a sensitive model",
+      "cwe": ["CWE-269", "CWE-732", "CWE-863"],
+      "capec": ["CAPEC-122", "CAPEC-17"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "record_rule_global_sensitive_mutation": {
+      "label": "Odoo global record rule allows mutation on a sensitive model without group scoping",
+      "cwe": ["CWE-269", "CWE-732", "CWE-863"],
+      "capec": ["CAPEC-122", "CAPEC-17"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "record_rule_domain_group_logic": {
+      "label": "Odoo record-rule domain embeds group logic inside domain_force",
+      "cwe": ["CWE-863", "CWE-840", "CWE-693"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "record_rule_context_dependent_domain": {
+      "label": "Odoo record-rule domain depends on caller-controlled context",
+      "cwe": ["CWE-20", "CWE-284", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "record_rule_company_hierarchy_expansion": {
+      "label": "Odoo record rule expands access through company hierarchy with child_of",
+      "cwe": ["CWE-284", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "record_rule_empty_permissions": {
+      "label": "Odoo record rule disables every permission and may be ineffective or misleading",
+      "cwe": ["CWE-693", "CWE-670"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "button_action_sensitive_model_mutation": {
+      "label": "Odoo button or action method mutates a sensitive model",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122", "CAPEC-17"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "button_action_sudo_mutation": {
+      "label": "Odoo button or action method mutates records through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-122", "CAPEC-17"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "button_action_sensitive_state_write": {
+      "label": "Odoo button or action method writes approval, payment, posting, or workflow state",
+      "cwe": ["CWE-841", "CWE-863", "CWE-284"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "button_action_unlink_no_access_check": {
+      "label": "Odoo button or action method deletes records without a visible access or group guard",
+      "cwe": ["CWE-862", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "button_action_mutation_no_access_check": {
+      "label": "Odoo button or action method performs sensitive mutation without a visible access or group guard",
+      "cwe": ["CWE-862", "CWE-863", "CWE-841"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "view_domain_sensitive_action_broad_domain": {
+      "label": "Odoo act_window for a sensitive model uses a broad domain without groups",
+      "cwe": ["CWE-862", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "view_domain_global_sensitive_filter_broad_domain": {
+      "label": "Odoo global saved filter applies a broad domain to a sensitive model",
+      "cwe": ["CWE-200", "CWE-863", "CWE-284"],
+      "capec": ["CAPEC-118", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "view_domain_global_default_sensitive_filter": {
+      "label": "Odoo global default saved filter affects a sensitive model",
+      "cwe": ["CWE-200", "CWE-863", "CWE-670"],
+      "capec": ["CAPEC-118", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "view_domain_dynamic_evaluation": {
+      "label": "Odoo XML domain or context performs dynamic evaluation",
+      "cwe": ["CWE-94", "CWE-95"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "view_context_active_test_disabled": {
+      "label": "Odoo XML context disables active_test and can include inactive records",
+      "cwe": ["CWE-200", "CWE-284", "CWE-670"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "view_context_company_scope_control": {
+      "label": "Odoo XML context sets company scope from active, user, or context values",
+      "cwe": ["CWE-284", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "view_context_privileged_default": {
+      "label": "Odoo XML context defaults privileged, company, user, or portal/share-sensitive fields",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "view_context_default_groups": {
+      "label": "Odoo XML context defaults user or group assignment fields",
+      "cwe": ["CWE-269", "CWE-732", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "view_context_risky_framework_flag": {
+      "label": "Odoo XML context enables framework flags that bypass tracking, password reset, install, uninstall, or accounting safeguards",
+      "cwe": ["CWE-693", "CWE-840", "CWE-670"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "xml_data_core_xmlid_override": {
+      "label": "Odoo XML data overrides a core module external ID",
+      "cwe": ["CWE-668", "CWE-732", "CWE-829"],
+      "capec": ["CAPEC-17"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "xml_data_core_xmlid_delete": {
+      "label": "Odoo XML data deletes a core module external ID",
+      "cwe": ["CWE-668", "CWE-732", "CWE-829"],
+      "capec": ["CAPEC-17"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "xml_data_sensitive_noupdate": {
+      "label": "Odoo sensitive XML data operation is protected by noupdate and may not receive future fixes",
+      "cwe": ["CWE-664", "CWE-672", "CWE-693"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "xml_data_forcecreate_disabled": {
+      "label": "Odoo XML record disables forcecreate so missing security or configuration data is not recreated",
+      "cwe": ["CWE-670", "CWE-693"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "xml_data_manual_model_data_write": {
+      "label": "Odoo XML data writes ir.model.data directly and can hijack XML ID ownership or update semantics",
+      "cwe": ["CWE-668", "CWE-732", "CWE-829"],
+      "capec": ["CAPEC-17"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "xml_data_sensitive_delete": {
+      "label": "Odoo XML data deletes security-sensitive records during install or update",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-17", "CAPEC-122"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "xml_data_sensitive_search_delete": {
+      "label": "Odoo XML data search-deletes security-sensitive records with a broad or version-dependent domain",
+      "cwe": ["CWE-20", "CWE-269", "CWE-284"],
+      "capec": ["CAPEC-17"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "xml_data_sensitive_function_mutation": {
+      "label": "Odoo XML function mutates security-sensitive records during install or update",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-17", "CAPEC-122"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "xml_data_group_privilege_implication": {
+      "label": "Odoo XML data makes one group imply a privileged group",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "xml_data_user_admin_group_assignment": {
+      "label": "Odoo XML data assigns users to privileged groups",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "xml_data_function_security_model_mutation": {
+      "label": "Odoo XML function mutates security model records",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-17", "CAPEC-122"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "xml_data_public_mail_channel": {
+      "label": "Odoo XML data exposes a mail channel publicly",
+      "cwe": ["CWE-200", "CWE-284", "CWE-862"],
+      "capec": ["CAPEC-118", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "ui_action_without_groups": {
+      "label": "Odoo UI action or object button lacks explicit groups",
+      "cwe": ["CWE-284", "CWE-862"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "ui_public_object_button": {
+      "label": "Odoo object button is exposed to public or portal users",
+      "cwe": ["CWE-284", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "ui_sensitive_action_without_groups": {
+      "label": "Odoo sensitive action, button, or menu lacks explicit groups",
+      "cwe": ["CWE-284", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "metadata_public_write_acl": {
+      "label": "Odoo metadata grants public or portal groups write, create, or delete ACL permissions",
+      "cwe": ["CWE-862", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "metadata_sensitive_public_read_acl": {
+      "label": "Odoo metadata grants public or portal groups read ACLs on sensitive models",
+      "cwe": ["CWE-200", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "metadata_group_privilege_escalation": {
+      "label": "Odoo group metadata implies admin or internal-user privileges",
+      "cwe": ["CWE-269", "CWE-732", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "metadata_user_group_assignment": {
+      "label": "Odoo user metadata assigns admin or internal-user groups",
+      "cwe": ["CWE-269", "CWE-732", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "metadata_sensitive_field_exposure": {
+      "label": "Odoo field metadata exposes sensitive fields through public groups or missing groups",
+      "cwe": ["CWE-200", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-118", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "metadata_sensitive_field_writable": {
+      "label": "Odoo field metadata makes sensitive fields writable",
+      "cwe": ["CWE-284", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "metadata_dynamic_compute_code": {
+      "label": "Odoo field metadata contains dynamic compute code",
+      "cwe": ["CWE-94", "CWE-95", "CWE-269"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "migration_lifecycle_hook_review": {
+      "label": "Odoo manifest lifecycle hook requires install or uninstall side-effect review",
+      "cwe": ["CWE-269", "CWE-840", "CWE-693"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "migration_missing_lifecycle_hook": {
+      "label": "Odoo manifest lifecycle hook function is missing and may skip security setup",
+      "cwe": ["CWE-703", "CWE-754", "CWE-693"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "migration_interpolated_sql": {
+      "label": "Odoo migration or lifecycle hook executes interpolated SQL",
+      "cwe": ["CWE-89", "CWE-20"],
+      "capec": ["CAPEC-66"],
+      "owasp": "A03:2021 Injection"
+    },
+    "migration_destructive_sql": {
+      "label": "Odoo migration or lifecycle hook executes destructive SQL",
+      "cwe": ["CWE-20", "CWE-284", "CWE-664"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "migration_sudo_mutation": {
+      "label": "Odoo migration or lifecycle hook performs elevated record mutation",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "migration_manual_transaction": {
+      "label": "Odoo migration or lifecycle hook manually commits or rolls back transactions",
+      "cwe": ["CWE-367", "CWE-362", "CWE-703"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "migration_http_without_timeout": {
+      "label": "Odoo migration or lifecycle hook performs outbound HTTP without timeout",
+      "cwe": ["CWE-400", "CWE-770", "CWE-703"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "migration_process_execution": {
+      "label": "Odoo migration or lifecycle hook executes a subprocess",
+      "cwe": ["CWE-78", "CWE-88", "CWE-269"],
+      "capec": ["CAPEC-88"],
+      "owasp": "A03:2021 Injection"
+    },
+    "module_lifecycle_public_route": {
+      "label": "Odoo public route can install, upgrade, or uninstall modules",
+      "cwe": ["CWE-306", "CWE-862", "CWE-269"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "module_lifecycle_sudo_operation": {
+      "label": "Odoo module lifecycle operation runs through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "module_lifecycle_immediate_operation": {
+      "label": "Odoo immediate module lifecycle operation can alter installed code, data, and registry state",
+      "cwe": ["CWE-840", "CWE-693", "CWE-664"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "module_lifecycle_tainted_selection": {
+      "label": "Odoo module lifecycle operation uses request-derived module selection",
+      "cwe": ["CWE-20", "CWE-269", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "automation_broad_sensitive_trigger": {
+      "label": "Odoo automated action runs broadly on a sensitive model",
+      "cwe": ["CWE-284", "CWE-862", "CWE-693"],
+      "capec": ["CAPEC-115", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "automation_dynamic_eval": {
+      "label": "Odoo automated action performs dynamic Python evaluation",
+      "cwe": ["CWE-94", "CWE-95", "CWE-20"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "automation_sudo_mutation": {
+      "label": "Odoo automated action mutates records through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "automation_sensitive_model_mutation": {
+      "label": "Odoo automated action mutates security, identity, payment, attachment, or configuration models",
+      "cwe": ["CWE-284", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "automation_http_without_timeout": {
+      "label": "Odoo automated action performs outbound HTTP without timeout",
+      "cwe": ["CWE-400", "CWE-770", "CWE-918"],
+      "capec": ["CAPEC-125", "CAPEC-664"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "scheduled_job_elevated_mutation": {
+      "label": "Odoo scheduled job mutates records through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "scheduled_job_sensitive_model_mutation": {
+      "label": "Odoo scheduled job mutates security, identity, payment, attachment, or runtime configuration models",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "scheduled_job_dynamic_evaluation": {
+      "label": "Odoo scheduled job performs dynamic evaluation",
+      "cwe": ["CWE-94", "CWE-95", "CWE-20"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "scheduled_job_manual_transaction": {
+      "label": "Odoo scheduled job manually commits or rolls back transactions",
+      "cwe": ["CWE-367", "CWE-362", "CWE-703"],
+      "capec": ["CAPEC-29"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "scheduled_job_unbounded_search": {
+      "label": "Odoo scheduled job performs unbounded ORM searches",
+      "cwe": ["CWE-400", "CWE-770", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "scheduled_job_http_without_timeout": {
+      "label": "Odoo scheduled job performs outbound HTTP without an explicit timeout",
+      "cwe": ["CWE-400", "CWE-770", "CWE-703"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "scheduled_job_tls_verification_disabled": {
+      "label": "Odoo scheduled job disables TLS verification for outbound HTTP",
+      "cwe": ["CWE-295", "CWE-297", "CWE-319"],
+      "capec": ["CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "scheduled_job_sync_without_limit": {
+      "label": "Odoo scheduled sync or import job lacks a visible batch limit",
+      "cwe": ["CWE-400", "CWE-770", "CWE-834"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "xml_cron_admin_user": {
+      "label": "Odoo ir.cron is configured to execute as admin or root",
+      "cwe": ["CWE-269", "CWE-266", "CWE-863"],
+      "capec": ["CAPEC-233", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "xml_cron_root_code": {
+      "label": "Odoo ir.cron executes Python code as admin or root",
+      "cwe": ["CWE-269", "CWE-94", "CWE-863"],
+      "capec": ["CAPEC-233", "CAPEC-242"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "xml_cron_http_without_timeout": {
+      "label": "Odoo ir.cron code performs outbound HTTP without a visible timeout",
+      "cwe": ["CWE-400", "CWE-770", "CWE-703"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "xml_cron_doall_enabled": {
+      "label": "Odoo ir.cron catches up missed executions with doall=True",
+      "cwe": ["CWE-400", "CWE-770", "CWE-841"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "xml_cron_short_interval": {
+      "label": "Odoo ir.cron runs at a very short interval",
+      "cwe": ["CWE-400", "CWE-770", "CWE-834"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "xml_cron_external_sync_review": {
+      "label": "Odoo ir.cron appears to perform external sync without visible guardrails",
+      "cwe": ["CWE-400", "CWE-770", "CWE-703"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "queue_job_missing_identity_key": {
+      "label": "Odoo delayed job enqueue lacks an identity key for idempotency",
+      "cwe": ["CWE-400", "CWE-770", "CWE-841"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "queue_job_public_enqueue": {
+      "label": "Odoo public route enqueues a background job",
+      "cwe": ["CWE-306", "CWE-352", "CWE-862", "CWE-770"],
+      "capec": ["CAPEC-62", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "queue_job_elevated_mutation": {
+      "label": "Odoo queue job mutates records through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "queue_job_sensitive_model_mutation": {
+      "label": "Odoo queue job mutates security, identity, payment, attachment, or runtime configuration models",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "queue_job_dynamic_evaluation": {
+      "label": "Odoo queue job performs dynamic evaluation",
+      "cwe": ["CWE-94", "CWE-95", "CWE-20"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "queue_job_http_without_timeout": {
+      "label": "Odoo queue job performs outbound HTTP without an explicit timeout",
+      "cwe": ["CWE-400", "CWE-770", "CWE-703"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "serialization_unsafe_deserialization": {
+      "label": "Odoo addon deserializes pickle-backed or object-capable data",
+      "cwe": ["CWE-502", "CWE-94", "CWE-20"],
+      "capec": ["CAPEC-586"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "serialization_unsafe_yaml_load": {
+      "label": "Odoo addon uses YAML loading that can construct arbitrary Python objects",
+      "cwe": ["CWE-502", "CWE-94", "CWE-20"],
+      "capec": ["CAPEC-586"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "serialization_yaml_full_load": {
+      "label": "Odoo addon uses YAML full_load on addon, request, attachment, or integration data",
+      "cwe": ["CWE-502", "CWE-20"],
+      "owasp": "A08:2021 Software and Data Integrity Failures"
+    },
+    "serialization_literal_eval_tainted": {
+      "label": "Odoo addon parses request, attachment, or integration data with literal_eval",
+      "cwe": ["CWE-20", "CWE-400", "CWE-770"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "serialization_json_load_without_size_check": {
+      "label": "Odoo addon parses request, attachment, or integration JSON without visible size limits",
+      "cwe": ["CWE-400", "CWE-770", "CWE-20"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "serialization_xml_fromstring_tainted": {
+      "label": "Odoo addon parses request or attachment XML without hardened parser controls",
+      "cwe": ["CWE-611", "CWE-776", "CWE-400"],
+      "capec": ["CAPEC-221", "CAPEC-197"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "serialization_unsafe_xml_parser": {
+      "label": "Odoo addon enables unsafe XML parser options for DTD, entity, network, or huge-tree behavior",
+      "cwe": ["CWE-611", "CWE-776", "CWE-827"],
+      "capec": ["CAPEC-221", "CAPEC-197"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "wizard_binary_import_field": {
+      "label": "Odoo TransientModel wizard exposes binary upload or import input",
+      "cwe": ["CWE-434", "CWE-400", "CWE-20"],
+      "capec": ["CAPEC-1", "CAPEC-125"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "wizard_sensitive_model_mutation": {
+      "label": "Odoo wizard mutates sensitive security, identity, payment, or configuration models",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "wizard_sudo_mutation": {
+      "label": "Odoo wizard mutates records through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "wizard_upload_parser": {
+      "label": "Odoo wizard parses uploaded file content without complete parser-hardening evidence",
+      "cwe": ["CWE-20", "CWE-434", "CWE-400"],
+      "capec": ["CAPEC-1", "CAPEC-125"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "wizard_dynamic_active_model": {
+      "label": "Odoo wizard uses context active_model to dynamically select an environment model",
+      "cwe": ["CWE-20", "CWE-915", "CWE-862"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "wizard_active_ids_bulk_mutation": {
+      "label": "Odoo wizard mutates records selected from context active_ids",
+      "cwe": ["CWE-639", "CWE-863", "CWE-284"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "wizard_mutation_no_access_check": {
+      "label": "Odoo wizard action mutates records without visible access or group checks",
+      "cwe": ["CWE-862", "CWE-863", "CWE-285"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "wizard_long_transient_retention": {
+      "label": "Odoo TransientModel wizard retains temporary records longer than expected",
+      "cwe": ["CWE-200", "CWE-922", "CWE-668"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "wizard_upload_parser_no_size_check": {
+      "label": "Odoo wizard parses uploaded content without visible size limits",
+      "cwe": ["CWE-400", "CWE-770", "CWE-20"],
+      "capec": ["CAPEC-125"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "settings_sensitive_config_field_no_admin_groups": {
+      "label": "Odoo settings field stores sensitive config without admin-only groups",
+      "cwe": ["CWE-200", "CWE-522", "CWE-862"],
+      "capec": ["CAPEC-118", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "settings_config_field_public_groups": {
+      "label": "Odoo settings field exposes config parameters to public or portal groups",
+      "cwe": ["CWE-862", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-122", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "settings_security_toggle_no_admin_groups": {
+      "label": "Odoo security-sensitive setting lacks admin-only groups",
+      "cwe": ["CWE-862", "CWE-269", "CWE-284"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "settings_security_toggle_unsafe_default": {
+      "label": "Odoo security-sensitive setting defaults to unsafe posture",
+      "cwe": ["CWE-16", "CWE-693", "CWE-1188"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "settings_implies_admin_group": {
+      "label": "Odoo settings toggle grants or implies administrator groups",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "settings_module_toggle_no_admin_groups": {
+      "label": "Odoo settings module install toggle lacks admin-only groups",
+      "cwe": ["CWE-862", "CWE-269", "CWE-284"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "settings_elevated_config_write": {
+      "label": "Odoo settings method writes config parameters through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-284", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "signup_public_token_route": {
+      "label": "Odoo public signup or reset route handles account recovery tokens",
+      "cwe": ["CWE-306", "CWE-352", "CWE-863"],
+      "capec": ["CAPEC-62", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "signup_tainted_reset_trigger": {
+      "label": "Odoo signup or reset helper is triggered by request-derived data",
+      "cwe": ["CWE-307", "CWE-203", "CWE-799"],
+      "capec": ["CAPEC-49", "CAPEC-115"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "signup_tainted_token_lookup": {
+      "label": "Odoo identity lookup uses request-derived signup, reset, or access tokens",
+      "cwe": ["CWE-287", "CWE-345", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "signup_token_lookup_without_expiry": {
+      "label": "Odoo signup or reset token lookup lacks visible expiry enforcement",
+      "cwe": ["CWE-613", "CWE-287", "CWE-345"],
+      "capec": ["CAPEC-115"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "signup_tainted_identity_token_write": {
+      "label": "Odoo request-derived data mutates signup, access token, or password fields",
+      "cwe": ["CWE-640", "CWE-287", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "signup_public_sudo_identity_flow": {
+      "label": "Odoo public signup or reset flow reads or mutates identity records through sudo",
+      "cwe": ["CWE-269", "CWE-287", "CWE-863"],
+      "capec": ["CAPEC-122", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "signup_token_exposed_public_route": {
+      "label": "Odoo public signup or reset response exposes reusable account takeover tokens",
+      "cwe": ["CWE-200", "CWE-598", "CWE-522", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "identity_public_route_mutation": {
+      "label": "Public or unauthenticated Odoo route mutates users or groups",
+      "cwe": ["CWE-306", "CWE-862", "CWE-269", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "identity_elevated_mutation": {
+      "label": "Odoo user or group mutation runs through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-284", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "identity_request_derived_mutation": {
+      "label": "Request-derived data reaches Odoo user or group mutation",
+      "cwe": ["CWE-20", "CWE-915", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "identity_privilege_field_write": {
+      "label": "Odoo identity mutation writes privilege-bearing fields",
+      "cwe": ["CWE-269", "CWE-732", "CWE-863", "CWE-915"],
+      "capec": ["CAPEC-122", "CAPEC-233"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "safe_eval_user_input": {
       "label": "safe_eval over attacker-controlled expression",
       "cwe": ["CWE-94", "CWE-95"],
       "capec": ["CAPEC-242"],
       "owasp": "A03:2021 Injection"
     },
+    "loose_python_eval_exec": {
+      "label": "Server action or loose Python script calls eval or exec",
+      "cwe": ["CWE-94", "CWE-95"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "loose_python_safe_eval": {
+      "label": "Server action or loose Python script calls safe_eval",
+      "cwe": ["CWE-94", "CWE-95"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "loose_python_sudo_write": {
+      "label": "Server action or loose Python script performs sudo write/create/unlink",
+      "cwe": ["CWE-269", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "loose_python_sensitive_model_mutation": {
+      "label": "Server action or loose Python script mutates a sensitive model",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "loose_python_manual_transaction": {
+      "label": "Server action or loose Python script manually commits or rolls back transactions",
+      "cwe": ["CWE-664", "CWE-703"],
+      "capec": ["CAPEC-17"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "loose_python_http_no_timeout": {
+      "label": "Server action or loose Python script performs outbound HTTP without timeout",
+      "cwe": ["CWE-400", "CWE-770", "CWE-918"],
+      "capec": ["CAPEC-125", "CAPEC-664"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "loose_python_sql_injection": {
+      "label": "Server action or loose Python script builds raw SQL through interpolation",
+      "cwe": ["CWE-89", "CWE-20"],
+      "capec": ["CAPEC-66"],
+      "owasp": "A03:2021 Injection"
+    },
+    "oauth_public_callback_route": {
+      "label": "OAuth/OIDC callback route is public and needs explicit state, nonce, provider, and redirect binding",
+      "cwe": ["CWE-306", "CWE-352", "CWE-345"],
+      "capec": ["CAPEC-62", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "oauth_missing_state_nonce": {
+      "label": "OAuth/OIDC callback lacks state or nonce binding",
+      "cwe": ["CWE-352", "CWE-345", "CWE-613"],
+      "capec": ["CAPEC-62", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "oauth_http_without_timeout": {
+      "label": "OAuth/OIDC token or userinfo HTTP validation lacks a timeout",
+      "cwe": ["CWE-400", "CWE-770", "CWE-703"],
+      "capec": ["CAPEC-125"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "oauth_tls_verification_disabled": {
+      "label": "OAuth/OIDC token or userinfo HTTP validation disables TLS certificate verification",
+      "cwe": ["CWE-295", "CWE-297", "CWE-345"],
+      "capec": ["CAPEC-94", "CAPEC-102"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "oauth_tainted_validation_url": {
+      "label": "Request-derived data controls OAuth/OIDC token or userinfo validation URL",
+      "cwe": ["CWE-918", "CWE-200", "CWE-601"],
+      "capec": ["CAPEC-664", "CAPEC-118"],
+      "owasp": "A10:2021 Server-Side Request Forgery"
+    },
+    "oauth_jwt_verification_disabled": {
+      "label": "OAuth/OIDC JWT decode disables signature or claim verification",
+      "cwe": ["CWE-347", "CWE-345", "CWE-613"],
+      "capec": ["CAPEC-115"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "oauth_request_token_decode": {
+      "label": "Request-derived OAuth/OIDC token is decoded and needs constrained issuer, audience, nonce, expiry, algorithm, and key selection",
+      "cwe": ["CWE-345", "CWE-347", "CWE-20"],
+      "capec": ["CAPEC-115"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "oauth_token_exchange_missing_pkce": {
+      "label": "OAuth/OIDC authorization-code token exchange lacks a visible PKCE code verifier",
+      "cwe": ["CWE-345", "CWE-287", "CWE-346"],
+      "capec": ["CAPEC-115", "CAPEC-62"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "oauth_tainted_identity_write": {
+      "label": "Request-derived OAuth/OIDC identity data reaches res.users mutation",
+      "cwe": ["CWE-287", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "oauth_session_authenticate": {
+      "label": "OAuth/OIDC flow creates a session and needs state, nonce, and provider identity binding before authentication",
+      "cwe": ["CWE-287", "CWE-345", "CWE-613"],
+      "capec": ["CAPEC-115", "CAPEC-62"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "session_public_authenticate": {
+      "label": "Public or unauthenticated controller authenticates a session with request-controlled credentials",
+      "cwe": ["CWE-287", "CWE-307", "CWE-352"],
+      "capec": ["CAPEC-112", "CAPEC-115", "CAPEC-62"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "session_public_user_lookup": {
+      "label": "Public or unauthenticated route looks up users from request-controlled input before authentication",
+      "cwe": ["CWE-203", "CWE-209", "CWE-307"],
+      "capec": ["CAPEC-575", "CAPEC-112"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "session_direct_uid_assignment": {
+      "label": "Controller directly mutates request.session.uid and can enable session fixation or account switching",
+      "cwe": ["CWE-384", "CWE-287", "CWE-639"],
+      "capec": ["CAPEC-593", "CAPEC-21"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "session_direct_request_uid_assignment": {
+      "label": "Controller directly mutates request.uid outside the normal Odoo authentication boundary",
+      "cwe": ["CWE-269", "CWE-287", "CWE-863"],
+      "capec": ["CAPEC-233", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "session_update_env_superuser": {
+      "label": "Controller switches the active request environment to a superuser identity",
+      "cwe": ["CWE-269", "CWE-266", "CWE-863"],
+      "capec": ["CAPEC-233", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "session_update_env_tainted_user": {
+      "label": "Controller switches the active request environment using a request-controlled user",
+      "cwe": ["CWE-639", "CWE-287", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "session_public_update_env": {
+      "label": "Public or unauthenticated route switches the active request environment",
+      "cwe": ["CWE-862", "CWE-287", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "session_environment_superuser": {
+      "label": "Manual Odoo Environment construction uses a superuser identity",
+      "cwe": ["CWE-269", "CWE-266", "CWE-863"],
+      "capec": ["CAPEC-233", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "session_environment_tainted_user": {
+      "label": "Manual Odoo Environment construction uses a request-controlled user",
+      "cwe": ["CWE-639", "CWE-287", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "session_logout_weak_route": {
+      "label": "Logout or session-reset route has weak method or CSRF protection",
+      "cwe": ["CWE-352", "CWE-613", "CWE-749"],
+      "capec": ["CAPEC-62"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "session_token_exposed": {
+      "label": "Controller response exposes session, CSRF, or token material",
+      "cwe": ["CWE-200", "CWE-522", "CWE-613"],
+      "capec": ["CAPEC-31", "CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "session_ir_http_auth_override": {
+      "label": "ir.http authentication boundary is overridden and must preserve Odoo authentication guarantees",
+      "cwe": ["CWE-287", "CWE-306", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "session_ir_http_superuser_auth": {
+      "label": "ir.http authentication override grants a superuser or administrator identity",
+      "cwe": ["CWE-269", "CWE-287", "CWE-863"],
+      "capec": ["CAPEC-233", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "session_ir_http_bypass": {
+      "label": "ir.http authentication override appears to bypass login, API-key, or session validation",
+      "cwe": ["CWE-287", "CWE-306", "CWE-862"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "session_cookie_weak_flags": {
+      "label": "Session, CSRF, or token cookie lacks Secure, HttpOnly, or SameSite restrictions",
+      "cwe": ["CWE-614", "CWE-1004", "CWE-1275"],
+      "capec": ["CAPEC-31", "CAPEC-102"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "sensitive_cookie_cacheable_response": {
+      "label": "Response setting a session, CSRF, or token cookie can be cached",
+      "cwe": ["CWE-525", "CWE-524", "CWE-613"],
+      "capec": ["CAPEC-31", "CAPEC-102"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "cache_public_sensitive_response": {
+      "label": "Public sensitive response lacks no-store or private cache-control",
+      "cwe": ["CWE-525", "CWE-524", "CWE-200"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "cache_public_sensitive_render": {
+      "label": "Public rendered response includes token or secret-like data without visible cache hardening",
+      "cwe": ["CWE-525", "CWE-524", "CWE-200"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "cache_public_file_download": {
+      "label": "Public sensitive file download may be cacheable by browsers or proxies",
+      "cwe": ["CWE-525", "CWE-200", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "cache_public_cacheable_sensitive_route": {
+      "label": "Public sensitive route explicitly sets cacheable Cache-Control headers",
+      "cwe": ["CWE-525", "CWE-524", "CWE-200"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "orm_domain_tainted_sudo_search": {
+      "label": "Odoo ORM search uses a request or context-controlled domain through sudo or superuser",
+      "cwe": ["CWE-20", "CWE-269", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "orm_domain_tainted_search": {
+      "label": "Odoo ORM search uses a request or context-controlled domain",
+      "cwe": ["CWE-20", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "orm_domain_dynamic_evaluation": {
+      "label": "Odoo ORM domain construction evaluates request or context-controlled data",
+      "cwe": ["CWE-94", "CWE-95", "CWE-20"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "orm_domain_filtered_dynamic_logic": {
+      "label": "Odoo record filtering uses request, env, context, or sudo logic instead of durable access controls",
+      "cwe": ["CWE-284", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "domain_injection": {
       "label": "search/read domain built from request.params without validation",
       "cwe": ["CWE-20", "CWE-639"],
       "capec": ["CAPEC-21"],
       "owasp": "A03:2021 Injection"
+    },
+    "json_route_record_idor": {
+      "label": "JSON route uses request-controlled IDs or domains to select records",
+      "cwe": ["CWE-639", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "json_route_public_auth": {
+      "label": "Public or unauthenticated JSON route exposes RPC-style functionality",
+      "cwe": ["CWE-306", "CWE-862", "CWE-770"],
+      "capec": ["CAPEC-21", "CAPEC-125"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "json_route_csrf_disabled": {
+      "label": "JSON route explicitly disables CSRF protection",
+      "cwe": ["CWE-352", "CWE-346", "CWE-345"],
+      "capec": ["CAPEC-62", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "json_route_sudo_mutation": {
+      "label": "JSON route mutates records through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-862", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-233", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "json_route_public_sudo_read": {
+      "label": "Public JSON route reads records through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-200", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-233", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "json_route_mass_assignment": {
+      "label": "JSON route passes request-derived data into ORM mutations",
+      "cwe": ["CWE-915", "CWE-20", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "json_route_tainted_domain": {
+      "label": "JSON route uses request-controlled ORM search domains",
+      "cwe": ["CWE-20", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "payment_public_callback_no_signature": {
+      "label": "Public payment callback lacks visible provider signature or HMAC validation",
+      "cwe": ["CWE-345", "CWE-352", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-62", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "payment_weak_signature_compare": {
+      "label": "Payment webhook compares provider signatures without constant-time comparison",
+      "cwe": ["CWE-208", "CWE-345", "CWE-203"],
+      "capec": ["CAPEC-115", "CAPEC-462"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "payment_state_without_validation": {
+      "label": "Payment notification changes transaction state without visible signature or reference validation",
+      "cwe": ["CWE-345", "CWE-346", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "payment_state_without_reconciliation": {
+      "label": "Payment notification finalizes state without amount and currency reconciliation",
+      "cwe": ["CWE-345", "CWE-840", "CWE-841"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "payment_state_without_idempotency": {
+      "label": "Payment notification changes transaction state without an idempotency or duplicate-event guard",
+      "cwe": ["CWE-294", "CWE-841", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-62"],
+      "owasp": "A04:2021 Insecure Design"
+    },
+    "payment_transaction_lookup_weak": {
+      "label": "Payment transaction lookup lacks provider and provider-reference scoping",
+      "cwe": ["CWE-639", "CWE-863", "CWE-345"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "publication_public_attachment": {
+      "label": "ir.attachment record is explicitly world-readable",
+      "cwe": ["CWE-200", "CWE-213", "CWE-732"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "publication_sensitive_public_attachment": {
+      "label": "Sensitive-looking ir.attachment record is explicitly world-readable",
+      "cwe": ["CWE-200", "CWE-213", "CWE-359", "CWE-732"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "publication_sensitive_website_published": {
+      "label": "Sensitive model record is marked website-published",
+      "cwe": ["CWE-200", "CWE-213", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "publication_portal_share_sensitive": {
+      "label": "Portal/share wizard targets sensitive records or generated public links",
+      "cwe": ["CWE-200", "CWE-284", "CWE-359"],
+      "capec": ["CAPEC-118", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "publication_sensitive_default_published": {
+      "label": "Sensitive model defaults records to a website-published state",
+      "cwe": ["CWE-200", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "publication_public_route_mutation": {
+      "label": "Public or unauthenticated route changes website publication flags on sensitive records",
+      "cwe": ["CWE-306", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "attachment_public_route_mutation": {
+      "label": "Public or unauthenticated route mutates ir.attachment records",
+      "cwe": ["CWE-306", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "attachment_sudo_mutation": {
+      "label": "ir.attachment mutation runs through sudo or a superuser identity",
+      "cwe": ["CWE-269", "CWE-284", "CWE-863"],
+      "capec": ["CAPEC-233", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "attachment_tainted_res_model": {
+      "label": "Request-derived res_model controls ir.attachment creation binding",
+      "cwe": ["CWE-20", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "attachment_tainted_res_id": {
+      "label": "Request-derived res_id controls ir.attachment creation binding",
+      "cwe": ["CWE-20", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "attachment_public_orphan": {
+      "label": "Public ir.attachment is created without both res_model and res_id record binding",
+      "cwe": ["CWE-200", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "attachment_public_sensitive_binding": {
+      "label": "Public ir.attachment is bound to a sensitive model",
+      "cwe": ["CWE-200", "CWE-213", "CWE-359", "CWE-732"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "attachment_public_write": {
+      "label": "ir.attachment write makes an existing file public",
+      "cwe": ["CWE-200", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "attachment_tainted_res_model_write": {
+      "label": "Request-derived res_model rebinding reaches ir.attachment write",
+      "cwe": ["CWE-20", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "attachment_tainted_res_id_write": {
+      "label": "Request-derived res_id rebinding reaches ir.attachment write",
+      "cwe": ["CWE-20", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "attachment_tainted_access_token_write": {
+      "label": "Request-derived access_token is written to ir.attachment",
+      "cwe": ["CWE-345", "CWE-287", "CWE-639"],
+      "capec": ["CAPEC-115", "CAPEC-21"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "attachment_tainted_lookup": {
+      "label": "Request-derived input selects ir.attachment records",
+      "cwe": ["CWE-639", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "file_upload_tainted_path_write": {
+      "label": "Request-controlled upload path is used for filesystem write, copy, or move",
+      "cwe": ["CWE-22", "CWE-73", "CWE-434"],
+      "capec": ["CAPEC-126", "CAPEC-64"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "file_upload_base64_decode": {
+      "label": "Request-derived base64 upload data is decoded before size, type, and destination validation",
+      "cwe": ["CWE-400", "CWE-770", "CWE-20"],
+      "capec": ["CAPEC-125"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "file_upload_attachment_from_request": {
+      "label": "ir.attachment is created from request-derived upload data",
+      "cwe": ["CWE-434", "CWE-20", "CWE-862"],
+      "capec": ["CAPEC-1", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "file_upload_public_attachment_create": {
+      "label": "Uploaded content is stored as a public ir.attachment",
+      "cwe": ["CWE-200", "CWE-434", "CWE-732"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "file_upload_archive_extraction": {
+      "label": "Uploaded or untrusted archive extraction can write outside the intended directory",
+      "cwe": ["CWE-22", "CWE-73", "CWE-434"],
+      "capec": ["CAPEC-126", "CAPEC-64"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "file_upload_secure_filename_only": {
+      "label": "Upload path validation relies on secure_filename without destination, extension, content type, uniqueness, or overwrite controls",
+      "cwe": ["CWE-20", "CWE-434", "CWE-73"],
+      "capec": ["CAPEC-126"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "file_upload_unsafe_tempfile": {
+      "label": "Upload flow uses tempfile.mktemp and creates predictable race-prone paths",
+      "cwe": ["CWE-377", "CWE-362", "CWE-73"],
+      "capec": ["CAPEC-29", "CAPEC-27"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "binary_attachment_data_response": {
+      "label": "Controller returns ir.attachment or binary field data directly",
+      "cwe": ["CWE-200", "CWE-639", "CWE-862"],
+      "capec": ["CAPEC-118", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "binary_content_sudo": {
+      "label": "ir.http.binary_content is called through sudo or a superuser identity",
+      "cwe": ["CWE-269", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-233", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "binary_tainted_content_args": {
+      "label": "Request-derived model, record, or field selectors reach ir.http.binary_content",
+      "cwe": ["CWE-20", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "binary_tainted_web_content_redirect": {
+      "label": "Request-derived data builds a /web/content or /web/image redirect URL",
+      "cwe": ["CWE-601", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "binary_tainted_content_disposition": {
+      "label": "Request-derived filename reaches Content-Disposition download headers",
+      "cwe": ["CWE-113", "CWE-73", "CWE-20"],
+      "capec": ["CAPEC-105", "CAPEC-126"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "publication_sensitive_runtime_published": {
+      "label": "Runtime code changes publication flags on sensitive records",
+      "cwe": ["CWE-284", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-115", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "publication_tainted_runtime_published": {
+      "label": "Request-derived data controls publication flags on sensitive records",
+      "cwe": ["CWE-20", "CWE-915", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "payment_webhook_integrity": {
+      "label": "Payment webhook or callback can be forged, replayed, mismatched, or bound to the wrong transaction",
+      "cwe": ["CWE-345", "CWE-352", "CWE-841", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-62", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "api_key_credential_exposure": {
+      "label": "API key material is created, stored, looked up, or returned through unsafe code paths",
+      "cwe": ["CWE-200", "CWE-522", "CWE-798", "CWE-862"],
+      "capec": ["CAPEC-115", "CAPEC-118"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "api_key_xml_record": {
+      "label": "Odoo module data declares res.users.apikeys records",
+      "cwe": ["CWE-798", "CWE-522", "CWE-259"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "api_key_public_route_mutation": {
+      "label": "Public or unauthenticated route can create, rename, or revoke API keys",
+      "cwe": ["CWE-306", "CWE-862", "CWE-352"],
+      "capec": ["CAPEC-115", "CAPEC-62"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "api_key_sudo_mutation": {
+      "label": "API key mutation runs through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-863", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "api_key_request_derived_mutation": {
+      "label": "Request-derived data reaches API key create, write, or unlink calls",
+      "cwe": ["CWE-639", "CWE-915", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "api_key_tainted_lookup": {
+      "label": "Request-derived data searches API key records",
+      "cwe": ["CWE-639", "CWE-203", "CWE-522"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "runtime_config_security_misconfiguration": {
+      "label": "Runtime configuration changes weaken Odoo security or external link integrity",
+      "cwe": ["CWE-16", "CWE-693", "CWE-601"],
+      "capec": ["CAPEC-115"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "config_parameter_security_toggle_write": {
+      "label": "ir.config_parameter writes enable or accept request-controlled security-sensitive toggles",
+      "cwe": ["CWE-16", "CWE-693", "CWE-862", "CWE-269"],
+      "capec": ["CAPEC-115", "CAPEC-122"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "config_parameter_base_url_write": {
+      "label": "ir.config_parameter writes request-controlled or insecure web.base.url values",
+      "cwe": ["CWE-601", "CWE-20", "CWE-319"],
+      "capec": ["CAPEC-178", "CAPEC-21"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "config_parameter_sensitive_read": {
+      "label": "Sensitive ir.config_parameter values are read from public or elevated code paths",
+      "cwe": ["CWE-200", "CWE-522", "CWE-863"],
+      "capec": ["CAPEC-118", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "config_parameter_tainted_access": {
+      "label": "Request-controlled data selects or writes ir.config_parameter keys or values",
+      "cwe": ["CWE-20", "CWE-200", "CWE-915", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "config_parameter_secret_default": {
+      "label": "Sensitive ir.config_parameter values use deployable literal defaults or hardcoded writes",
+      "cwe": ["CWE-798", "CWE-259", "CWE-522"],
+      "capec": ["CAPEC-70"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "config_parameter_elevated_write": {
+      "label": "ir.config_parameter writes use sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-284", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "controller_sensitive_response_exposure": {
+      "label": "Controller response exposes token, API key, password, or secret-shaped data",
+      "cwe": ["CWE-200", "CWE-522", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "controller_open_redirect": {
+      "label": "Controller redirects to a request-controlled URL",
+      "cwe": ["CWE-601", "CWE-20"],
+      "capec": ["CAPEC-178"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "controller_cors_wildcard_origin": {
+      "label": "Controller response allows cross-origin reads from any origin",
+      "cwe": ["CWE-346", "CWE-942", "CWE-200"],
+      "capec": ["CAPEC-115", "CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "controller_response_header_injection": {
+      "label": "Controller response headers include request-controlled data",
+      "cwe": ["CWE-113", "CWE-20", "CWE-93"],
+      "capec": ["CAPEC-34"],
+      "owasp": "A03:2021 Injection"
+    },
+    "controller_tainted_html_response": {
+      "label": "Controller returns request-derived data as an HTML response",
+      "cwe": ["CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "controller_tainted_cookie": {
+      "label": "Controller sets cookie names or values from request-controlled data",
+      "cwe": ["CWE-20", "CWE-565", "CWE-384"],
+      "capec": ["CAPEC-31", "CAPEC-60"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "controller_cookie_missing_security_flags": {
+      "label": "Controller sets cookies without Secure, HttpOnly, or SameSite flags",
+      "cwe": ["CWE-614", "CWE-1004", "CWE-1275"],
+      "capec": ["CAPEC-31", "CAPEC-60"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "controller_tainted_file_response": {
+      "label": "Controller file responses or offload headers use request-controlled filesystem paths",
+      "cwe": ["CWE-22", "CWE-23", "CWE-200"],
+      "capec": ["CAPEC-126", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "orm_context_active_test_disabled": {
+      "label": "Odoo ORM context disables active record filtering and can include inactive records",
+      "cwe": ["CWE-200", "CWE-284", "CWE-670"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "orm_context_sudo_active_test_read": {
+      "label": "Odoo privileged ORM read disables active record filtering",
+      "cwe": ["CWE-200", "CWE-269", "CWE-284"],
+      "capec": ["CAPEC-118", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "orm_context_privileged_mode": {
+      "label": "Odoo ORM context enables install or uninstall framework modes",
+      "cwe": ["CWE-269", "CWE-693", "CWE-840"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "orm_context_privileged_default": {
+      "label": "Odoo ORM context seeds privilege-bearing default values",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "orm_context_request_active_test_disabled": {
+      "label": "Odoo request context disables active record filtering for later route work",
+      "cwe": ["CWE-200", "CWE-284", "CWE-670"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "orm_context_request_tracking_disabled": {
+      "label": "Odoo request context disables chatter, tracking, or subscription audit behavior",
+      "cwe": ["CWE-778", "CWE-693", "CWE-840"],
+      "owasp": "A09:2021 Security Logging and Monitoring Failures"
+    },
+    "orm_context_request_notification_disabled": {
+      "label": "Odoo request context suppresses account, password, or mail notifications",
+      "cwe": ["CWE-778", "CWE-693", "CWE-840"],
+      "owasp": "A09:2021 Security Logging and Monitoring Failures"
+    },
+    "orm_context_request_privileged_mode": {
+      "label": "Odoo request context enables privileged framework mode for later ORM work",
+      "cwe": ["CWE-269", "CWE-693", "CWE-840"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "orm_context_request_privileged_default": {
+      "label": "Odoo request context seeds privilege-bearing defaults for later create flows",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "orm_context_tracking_disabled_mutation": {
+      "label": "Odoo ORM mutation disables chatter, tracking, or subscription audit behavior",
+      "cwe": ["CWE-778", "CWE-693", "CWE-840"],
+      "owasp": "A09:2021 Security Logging and Monitoring Failures"
+    },
+    "orm_context_notification_disabled_mutation": {
+      "label": "Odoo ORM mutation suppresses account, password, or mail notifications",
+      "cwe": ["CWE-778", "CWE-693", "CWE-840"],
+      "owasp": "A09:2021 Security Logging and Monitoring Failures"
+    },
+    "orm_context_privileged_mode_mutation": {
+      "label": "Odoo ORM mutation runs with privileged install or uninstall framework modes",
+      "cwe": ["CWE-269", "CWE-693", "CWE-840"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "orm_context_privileged_default_mutation": {
+      "label": "Odoo ORM mutation uses privilege-bearing default context values",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "action_window_sensitive_exposure": {
+      "label": "ir.actions.act_window exposes sensitive models through public routes or broad domains",
+      "cwe": ["CWE-200", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "action_window_privileged_context": {
+      "label": "ir.actions.act_window context seeds privileged defaults or archived-record visibility",
+      "cwe": ["CWE-269", "CWE-284", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "action_window_company_scope_context": {
+      "label": "ir.actions.act_window context changes company scoping",
+      "cwe": ["CWE-284", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "action_window_tainted_definition": {
+      "label": "ir.actions.act_window model, domain, or context is request-controlled",
+      "cwe": ["CWE-20", "CWE-639", "CWE-915", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "action_url_external_navigation": {
+      "label": "ir.actions.act_url exposes external navigation through broad or public triggers",
+      "cwe": ["CWE-601", "CWE-1022", "CWE-862"],
+      "capec": ["CAPEC-178", "CAPEC-103"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "action_url_public_route": {
+      "label": "Public route returns or mutates ir.actions.act_url navigation",
+      "cwe": ["CWE-306", "CWE-601", "CWE-862"],
+      "capec": ["CAPEC-115", "CAPEC-178"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "action_url_external_no_groups": {
+      "label": "External ir.actions.act_url declaration lacks groups restriction",
+      "cwe": ["CWE-862", "CWE-601", "CWE-1022"],
+      "capec": ["CAPEC-21", "CAPEC-178"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "action_url_external_new_window": {
+      "label": "External ir.actions.act_url opens in a new window",
+      "cwe": ["CWE-1022", "CWE-601"],
+      "capec": ["CAPEC-103", "CAPEC-178"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "action_url_unsafe_scheme": {
+      "label": "ir.actions.act_url uses executable or local-file URL scheme",
+      "cwe": ["CWE-79", "CWE-601", "CWE-939"],
+      "capec": ["CAPEC-63", "CAPEC-178"],
+      "owasp": "A03:2021 Injection"
+    },
+    "action_url_tainted_navigation": {
+      "label": "ir.actions.act_url target is request-controlled",
+      "cwe": ["CWE-601", "CWE-20"],
+      "capec": ["CAPEC-178"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "action_url_sensitive_url_material": {
+      "label": "ir.actions.act_url embeds token or secret-like material in navigable URLs",
+      "cwe": ["CWE-598", "CWE-200", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "database_listing_exposure": {
+      "label": "Controller exposes available Odoo database names",
+      "cwe": ["CWE-200", "CWE-203"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "database_manager_exposure": {
+      "label": "Controller exposes Odoo database manager create/drop/backup/restore operations",
+      "cwe": ["CWE-306", "CWE-862", "CWE-352"],
+      "capec": ["CAPEC-115", "CAPEC-62"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "database_tainted_selection": {
+      "label": "Request-controlled data selects or filters the active Odoo database",
+      "cwe": ["CWE-20", "CWE-284", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "database_tainted_management_input": {
+      "label": "Request-controlled data reaches Odoo database manager operations",
+      "cwe": ["CWE-20", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "database_session_selection": {
+      "label": "Controller assigns request-controlled values to request.session.db",
+      "cwe": ["CWE-20", "CWE-284", "CWE-863"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "outbound_integration_credential_forwarding": {
+      "label": "Outbound integration forwards request-derived Authorization, API key, or HTTP auth material",
+      "cwe": ["CWE-200", "CWE-522", "CWE-346"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "integration_http_no_timeout": {
+      "label": "Outbound integration HTTP call lacks an explicit timeout",
+      "cwe": ["CWE-400", "CWE-770"],
+      "capec": ["CAPEC-125"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "integration_tls_verify_disabled": {
+      "label": "Outbound integration HTTP call disables TLS certificate verification",
+      "cwe": ["CWE-295", "CWE-319", "CWE-346"],
+      "capec": ["CAPEC-94", "CAPEC-117"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "integration_tainted_url_ssrf": {
+      "label": "Outbound integration URL is request-controlled and can reach unintended hosts",
+      "cwe": ["CWE-918", "CWE-20", "CWE-200"],
+      "capec": ["CAPEC-664", "CAPEC-21"],
+      "owasp": "A10:2021 Server-Side Request Forgery"
+    },
+    "integration_subprocess_shell_true": {
+      "label": "Integration subprocess uses shell=True",
+      "cwe": ["CWE-78", "CWE-88"],
+      "capec": ["CAPEC-88"],
+      "owasp": "A03:2021 Injection"
+    },
+    "integration_os_command_execution": {
+      "label": "Integration flow invokes shell-based OS command execution",
+      "cwe": ["CWE-78", "CWE-88"],
+      "capec": ["CAPEC-88"],
+      "owasp": "A03:2021 Injection"
+    },
+    "integration_tainted_command_args": {
+      "label": "Request-derived data reaches integration process command or arguments",
+      "cwe": ["CWE-78", "CWE-20", "CWE-88"],
+      "capec": ["CAPEC-88", "CAPEC-21"],
+      "owasp": "A03:2021 Injection"
+    },
+    "integration_process_no_timeout": {
+      "label": "Integration process execution lacks an explicit timeout",
+      "cwe": ["CWE-400", "CWE-770"],
+      "capec": ["CAPEC-125"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "integration_report_command_review": {
+      "label": "External report or document converter command requires path, timeout, and sandbox review",
+      "cwe": ["CWE-78", "CWE-22", "CWE-400"],
+      "capec": ["CAPEC-88", "CAPEC-126", "CAPEC-125"],
+      "owasp": "A03:2021 Injection"
+    },
+    "realtime_channel_subscription_authorization": {
+      "label": "Realtime bus subscription accepts broad or request-controlled channels",
+      "cwe": ["CWE-862", "CWE-863", "CWE-284"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "realtime_public_route_bus_send": {
+      "label": "Public route sends realtime bus notifications",
+      "cwe": ["CWE-306", "CWE-862", "CWE-770"],
+      "capec": ["CAPEC-115", "CAPEC-125"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "realtime_bus_send_sudo": {
+      "label": "Realtime bus notification is sent through elevated environment",
+      "cwe": ["CWE-269", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-233", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "realtime_broad_or_tainted_channel": {
+      "label": "Realtime bus notification targets broad or request-controlled channel",
+      "cwe": ["CWE-862", "CWE-863", "CWE-284"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "realtime_sensitive_payload": {
+      "label": "Realtime bus payload may expose sensitive fields to unauthorized recipients",
+      "cwe": ["CWE-200", "CWE-359", "CWE-862"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "realtime_notification_sudo": {
+      "label": "Notification or message call is sent through elevated environment",
+      "cwe": ["CWE-269", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-233", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "realtime_tainted_notification_content": {
+      "label": "Notification content includes request-controlled data",
+      "cwe": ["CWE-79", "CWE-20", "CWE-862"],
+      "capec": ["CAPEC-63", "CAPEC-21"],
+      "owasp": "A03:2021 Injection"
+    },
+    "realtime_bus_channel_authorization": {
+      "label": "Realtime bus channels or payloads can expose notifications to unauthorized subscribers",
+      "cwe": ["CWE-200", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "website_form_route_csrf_disabled": {
+      "label": "Website form route disables CSRF protection for public model creation or mutation",
+      "cwe": ["CWE-352", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-62", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "website_form_public_model_create": {
+      "label": "Website form posts directly to Odoo model creation",
+      "cwe": ["CWE-862", "CWE-915", "CWE-284"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "website_form_sensitive_field": {
+      "label": "Website form exposes sensitive model fields to public submitters",
+      "cwe": ["CWE-915", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "website_form_file_upload": {
+      "label": "Public website form accepts file uploads",
+      "cwe": ["CWE-434", "CWE-20", "CWE-862"],
+      "capec": ["CAPEC-1", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "website_form_missing_csrf_token": {
+      "label": "Website form posts to model creation without a visible CSRF token",
+      "cwe": ["CWE-352", "CWE-346", "CWE-862"],
+      "capec": ["CAPEC-62"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "website_form_hidden_model_selector": {
+      "label": "Website form carries model or field metadata in client-controlled hidden inputs",
+      "cwe": ["CWE-915", "CWE-20", "CWE-862"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "website_form_sanitize_disabled": {
+      "label": "Website form disables input sanitization for public submitted content",
+      "cwe": ["CWE-79", "CWE-116", "CWE-80"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A03:2021 Injection"
+    },
+    "website_form_external_success_redirect": {
+      "label": "Website form redirects successful submissions to an external URL",
+      "cwe": ["CWE-601", "CWE-200", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "website_form_dangerous_success_redirect": {
+      "label": "Website form redirects successful submissions to an executable or local-file URL scheme",
+      "cwe": ["CWE-79", "CWE-601", "CWE-20"],
+      "capec": ["CAPEC-63", "CAPEC-178"],
+      "owasp": "A03:2021 Injection"
+    },
+    "website_form_field_allowlisted_sensitive": {
+      "label": "Sensitive model field is explicitly allowlisted for website form submissions",
+      "cwe": ["CWE-915", "CWE-639", "CWE-863"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "website_form_public_record_mutation": {
+      "label": "Public website forms can create or mutate model records without sufficient CSRF, field, or model restrictions",
+      "cwe": ["CWE-352", "CWE-862", "CWE-915"],
+      "capec": ["CAPEC-62", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "sensitive_model_mutation": {
+      "label": "Code mutates security, identity, payment, attachment, or runtime configuration models",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "export_spreadsheet_formula_injection": {
+      "label": "CSV or XLSX export writes unsanitized record or request data that can become spreadsheet formulas",
+      "cwe": ["CWE-1236", "CWE-20", "CWE-116"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "export_tainted_formula": {
+      "label": "XLSX formula expression is built from request or record data",
+      "cwe": ["CWE-1236", "CWE-94", "CWE-20"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
+    "export_request_controlled_fields": {
+      "label": "ORM export or read field list is request-controlled instead of server-side allowlisted",
+      "cwe": ["CWE-20", "CWE-200", "CWE-639"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "export_sensitive_fields": {
+      "label": "ORM export or read includes sensitive identity, credential, payment, or access-control fields",
+      "cwe": ["CWE-200", "CWE-359", "CWE-522"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "sensitive_model_default_export": {
+      "label": "Sensitive model read/export uses default fields instead of an explicit allowlist",
+      "cwe": ["CWE-200", "CWE-213", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "default_public_route_set": {
+      "label": "Public or unauthenticated route writes persisted ir.default values",
+      "cwe": ["CWE-306", "CWE-862", "CWE-732"],
+      "capec": ["CAPEC-115", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "default_sudo_set": {
+      "label": "Privileged context writes persisted ir.default values without explicit scope controls",
+      "cwe": ["CWE-269", "CWE-862", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "default_request_derived_set": {
+      "label": "Request-derived field or value reaches ir.default.set",
+      "cwe": ["CWE-20", "CWE-915", "CWE-732"],
+      "capec": ["CAPEC-21", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "default_sensitive_field_set": {
+      "label": "Runtime ir.default.set writes sensitive privilege, company, accounting, pricing, or identity fields",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "default_sensitive_model_set": {
+      "label": "Runtime ir.default.set seeds defaults for sensitive security, identity, payment, or runtime configuration models",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "default_global_scope": {
+      "label": "ir.default record has global scope across users or companies",
+      "cwe": ["CWE-284", "CWE-668", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "default_sensitive_value": {
+      "label": "XML ir.default data preconfigures sensitive privilege, company, accounting, pricing, or identity fields",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "default_sensitive_model_value": {
+      "label": "XML ir.default data preconfigures defaults for sensitive security, identity, payment, or runtime configuration models",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "sequence_public_route_next": {
+      "label": "Public or unauthenticated route consumes an ir.sequence counter",
+      "cwe": ["CWE-306", "CWE-862", "CWE-770"],
+      "capec": ["CAPEC-115", "CAPEC-125"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "sequence_tainted_code": {
+      "label": "Request-derived input controls the ir.sequence code being consumed",
+      "cwe": ["CWE-20", "CWE-862", "CWE-200"],
+      "capec": ["CAPEC-21", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "sequence_sensitive_code_use": {
+      "label": "Security-sensitive flow uses predictable ir.sequence values",
+      "cwe": ["CWE-330", "CWE-331", "CWE-287"],
+      "capec": ["CAPEC-112", "CAPEC-20"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "sequence_sensitive_declaration": {
+      "label": "ir.sequence declaration appears to generate security tokens, reset codes, coupons, invites, or secrets",
+      "cwe": ["CWE-330", "CWE-331", "CWE-798"],
+      "capec": ["CAPEC-112", "CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "sequence_sensitive_global_scope": {
+      "label": "Security-sensitive ir.sequence lacks company scoping",
+      "cwe": ["CWE-668", "CWE-284", "CWE-359"],
+      "capec": ["CAPEC-122", "CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "sequence_business_global_scope": {
+      "label": "Business-critical ir.sequence lacks company scoping",
+      "cwe": ["CWE-668", "CWE-284", "CWE-840"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "sensitive_model_default_configuration": {
+      "label": "ir.default seeds sensitive security, identity, payment, or runtime configuration models",
+      "cwe": ["CWE-269", "CWE-284", "CWE-732"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "sensitive_model_public_exposure": {
+      "label": "Sensitive model records, attachments, shares, or followers are exposed to public or notification surfaces",
+      "cwe": ["CWE-200", "CWE-213", "CWE-359"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
     },
     "ssrf_outbound_request": {
       "label": "requests.get / urllib URL controlled by user input",
@@ -65,6 +2755,48 @@
     "hardcoded_secret": {
       "label": "API key / password / token committed to source",
       "cwe": ["CWE-798", "CWE-259"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "secret_hardcoded_value": {
+      "label": "Secret-like literal is committed in source code",
+      "cwe": ["CWE-798", "CWE-259", "CWE-522"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "secret_config_parameter_code_value": {
+      "label": "Code writes committed secret values into ir.config_parameter",
+      "cwe": ["CWE-798", "CWE-259", "CWE-522"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "secret_config_parameter_xml_value": {
+      "label": "Module XML data commits sensitive ir.config_parameter values",
+      "cwe": ["CWE-798", "CWE-259", "CWE-522"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "secret_weak_user_password_data": {
+      "label": "Module XML data commits weak res.users passwords",
+      "cwe": ["CWE-521", "CWE-259", "CWE-798"],
+      "capec": ["CAPEC-49", "CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "secret_user_password_data": {
+      "label": "Module XML data commits reusable res.users passwords",
+      "cwe": ["CWE-798", "CWE-259", "CWE-522"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "secret_weak_admin_passwd": {
+      "label": "Odoo database manager master password is weak or placeholder-like",
+      "cwe": ["CWE-521", "CWE-259", "CWE-798"],
+      "capec": ["CAPEC-49", "CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "secret_config_file_value": {
+      "label": "Odoo config file commits environment secret values",
+      "cwe": ["CWE-798", "CWE-259", "CWE-522"],
       "capec": ["CAPEC-191"],
       "owasp": "A07:2021 Identification and Authentication Failures"
     },
@@ -121,6 +2853,87 @@
       "cwe": ["CWE-367", "CWE-362"],
       "capec": ["CAPEC-29"],
       "owasp": "A04:2021 Insecure Design"
+    },
+    "deployment_security_misconfiguration": {
+      "label": "Odoo deployment or runtime configuration weakens production security controls",
+      "cwe": ["CWE-16", "CWE-693"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "deployment_oauth_validation_missing": {
+      "label": "Odoo OAuth provider lacks a validation endpoint for token and identity checks",
+      "cwe": ["CWE-287", "CWE-345", "CWE-863"],
+      "capec": ["CAPEC-115"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "deployment_oauth_insecure_endpoint": {
+      "label": "Odoo OAuth provider uses insecure HTTP endpoints",
+      "cwe": ["CWE-319", "CWE-295", "CWE-346"],
+      "capec": ["CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "deployment_committed_secret": {
+      "label": "Odoo deployment commits OAuth or database-manager secrets",
+      "cwe": ["CWE-798", "CWE-259", "CWE-522"],
+      "capec": ["CAPEC-70"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "deployment_weak_master_password": {
+      "label": "Odoo database manager master password is weak, empty, or placeholder-like",
+      "cwe": ["CWE-521", "CWE-259", "CWE-798"],
+      "capec": ["CAPEC-49"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
+    "deployment_dev_or_test_mode": {
+      "label": "Odoo deployment enables developer or test modes in production configuration",
+      "cwe": ["CWE-489", "CWE-16", "CWE-693"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "deployment_database_manager_exposure": {
+      "label": "Odoo deployment exposes database listing or database manager create/drop operations",
+      "cwe": ["CWE-200", "CWE-306", "CWE-862"],
+      "capec": ["CAPEC-118", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "deployment_dbfilter_weak": {
+      "label": "Odoo dbfilter allows unintended database selection",
+      "cwe": ["CWE-284", "CWE-863", "CWE-200"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "deployment_proxy_mode_disabled": {
+      "label": "Odoo proxy_mode is disabled behind reverse-proxy style deployment",
+      "cwe": ["CWE-16", "CWE-693", "CWE-346"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "deployment_database_tls_weak": {
+      "label": "Odoo database TLS mode is disabled or opportunistic",
+      "cwe": ["CWE-319", "CWE-295"],
+      "capec": ["CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
+    "deployment_worker_limits_weak": {
+      "label": "Odoo deployment lacks worker isolation or execution time limits",
+      "cwe": ["CWE-400", "CWE-770", "CWE-664"],
+      "capec": ["CAPEC-125"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "deployment_debug_logging": {
+      "label": "Odoo deployment enables debug logging that can expose sensitive data",
+      "cwe": ["CWE-532", "CWE-209", "CWE-200"],
+      "capec": ["CAPEC-215"],
+      "owasp": "A09:2021 Security Logging and Monitoring Failures"
+    },
+    "deployment_base_url_integrity": {
+      "label": "Odoo deployment allows generated-link poisoning or insecure base URLs",
+      "cwe": ["CWE-601", "CWE-346", "CWE-319"],
+      "capec": ["CAPEC-178"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "deployment_open_signup": {
+      "label": "Odoo deployment enables broad public or OAuth account self-registration",
+      "cwe": ["CWE-306", "CWE-862", "CWE-269"],
+      "capec": ["CAPEC-115", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
     }
   }
 }

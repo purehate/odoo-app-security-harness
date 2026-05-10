@@ -26,6 +26,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "defusedxml>=0.7.1",
     "pyyaml>=6.0",
 ]
 
@@ -34,6 +35,7 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pytest-asyncio>=0.21.0",
+    "hatchling>=1.21.0",
     "black>=23.0",
     "ruff>=0.1.0",
     "mypy>=1.5",
@@ -55,6 +57,11 @@ odoo-review-diff = "odoo_security_harness.scripts.odoo_review_diff:main"
 odoo-review-finalize = "odoo_security_harness.scripts.odoo_review_finalize:main"
 odoo-review-runtime = "odoo_security_harness.scripts.odoo_review_runtime:main"
 odoo-review-coverage = "odoo_security_harness.scripts.odoo_review_coverage:main"
+odoo-review-learn = "odoo_security_harness.scripts.odoo_review_learn:main"
+odoo-review-rerun = "odoo_security_harness.scripts.odoo_review_rerun:main"
+odoo-review-stock-diff = "odoo_security_harness.scripts.odoo_review_stock_diff:main"
+odoo-deep-scan = "odoo_security_harness.scripts.odoo_deep_scan:main"
+odoo-review-validate-config = "odoo_security_harness.scripts.validate_config:main"
 
 [project.urls]
 Homepage = "https://github.com/purehate/odoo-app-security-harness"
@@ -62,6 +69,9 @@ Issues = "https://github.com/purehate/odoo-app-security-harness/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["odoo_security_harness"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"skills/odoo-code-review" = "skills/odoo-code-review"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -100,6 +110,8 @@ exclude = '''
 [tool.ruff]
 line-length = 120
 target-version = "py39"
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -116,7 +128,7 @@ ignore = [
     "S607",  # start-process-with-partial-path
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]  # assert allowed in tests
 
 [tool.mypy]

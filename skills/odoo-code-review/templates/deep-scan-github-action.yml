@@ -1,0 +1,138 @@
+# Odoo Deep Scan — GitHub Action template
+#
+# Drop into your Odoo addons repo at: .github/workflows/odoo-deep-scan.yml
+#
+# What it does:
+#   - Validates harness config files before running expensive deep-scan lanes
+#   - Runs the standalone odoo-deep-scan static harness
+#   - Fails CI when review-gate.json blocks at the configured severity
+#   - Uploads deep-scan.sarif to GitHub Code Scanning
+#   - Persists all deep-scan artifacts for triage and trend tracking
+#
+# Prerequisites:
+#   - Repository permissions: contents:read, security-events:write
+#   - Optional repository variable: ODOO_DEEP_SCAN_FAIL_ON = critical|high|medium|low|none
+#   - Optional repository variable: ODOO_DEEP_SCAN_BASELINE = path to baseline findings JSON or audit dir
+#   - Optional repository variable: ODOO_DEEP_SCAN_FAIL_ON_NEW = critical|high|medium|low|none
+#   - Optional repository variable: ODOO_DEEP_SCAN_ACCEPTED_RISKS = path to accepted-risk YAML/JSON
+#   - Optional repository variable: ODOO_DEEP_SCAN_FIX_LIST = path to fix-list YAML/JSON
+#   - Optional repository variable: ODOO_DEEP_SCAN_CHECK_ONLY_ACCEPTED_RISKS = true|false
+#   - Optional repository variable: ODOO_DEEP_SCAN_CHECK_ONLY_FIX_LIST = true|false
+#   - Optional repository variable: ODOO_DEEP_SCAN_FAIL_ON_POLICY_ERRORS = true|false
+#   - Optional repository variable: ODOO_DEEP_SCAN_FAIL_ON_EXPIRED_ACCEPTED_RISK = true|false
+#   - Optional repository variable: ODOO_DEEP_SCAN_FAIL_ON_OVERDUE_FIX = true|false
+#   - Optional repository variable: ODOO_DEEP_SCAN_FAIL_ON_FIX_REGRESSION = true|false
+#   - Optional repository variable: ODOO_DEEP_SCAN_FAIL_ON_UNMAPPED_TAXONOMY = true|false
+
+name: Odoo Deep Scan
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  deep-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ODOO_DEEP_SCAN_FAIL_ON: ${{ vars.ODOO_DEEP_SCAN_FAIL_ON || 'high' }}
+      ODOO_DEEP_SCAN_BASELINE: ${{ vars.ODOO_DEEP_SCAN_BASELINE || '' }}
+      ODOO_DEEP_SCAN_FAIL_ON_NEW: ${{ vars.ODOO_DEEP_SCAN_FAIL_ON_NEW || 'none' }}
+      ODOO_DEEP_SCAN_ACCEPTED_RISKS: ${{ vars.ODOO_DEEP_SCAN_ACCEPTED_RISKS || '' }}
+      ODOO_DEEP_SCAN_FIX_LIST: ${{ vars.ODOO_DEEP_SCAN_FIX_LIST || '' }}
+      ODOO_DEEP_SCAN_CHECK_ONLY_ACCEPTED_RISKS: ${{ vars.ODOO_DEEP_SCAN_CHECK_ONLY_ACCEPTED_RISKS || 'false' }}
+      ODOO_DEEP_SCAN_CHECK_ONLY_FIX_LIST: ${{ vars.ODOO_DEEP_SCAN_CHECK_ONLY_FIX_LIST || 'false' }}
+      ODOO_DEEP_SCAN_FAIL_ON_POLICY_ERRORS: ${{ vars.ODOO_DEEP_SCAN_FAIL_ON_POLICY_ERRORS || 'false' }}
+      ODOO_DEEP_SCAN_FAIL_ON_EXPIRED_ACCEPTED_RISK: ${{ vars.ODOO_DEEP_SCAN_FAIL_ON_EXPIRED_ACCEPTED_RISK || 'false' }}
+      ODOO_DEEP_SCAN_FAIL_ON_OVERDUE_FIX: ${{ vars.ODOO_DEEP_SCAN_FAIL_ON_OVERDUE_FIX || 'false' }}
+      ODOO_DEEP_SCAN_FAIL_ON_FIX_REGRESSION: ${{ vars.ODOO_DEEP_SCAN_FAIL_ON_FIX_REGRESSION || 'false' }}
+      ODOO_DEEP_SCAN_FAIL_ON_UNMAPPED_TAXONOMY: ${{ vars.ODOO_DEEP_SCAN_FAIL_ON_UNMAPPED_TAXONOMY || 'false' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install harness
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "git+https://github.com/purehate/odoo-app-security-harness.git"
+
+      - name: Validate review config
+        run: |
+          odoo-review-validate-config --check-all .
+
+      - name: Run standalone deep scan
+        run: |
+          args=(. --out .audit-deep --pocs --fail-on "${ODOO_DEEP_SCAN_FAIL_ON}")
+          if [[ -n "${ODOO_DEEP_SCAN_BASELINE}" ]]; then
+            args+=(--baseline "${ODOO_DEEP_SCAN_BASELINE}" --fail-on-new "${ODOO_DEEP_SCAN_FAIL_ON_NEW}")
+          fi
+          if [[ -n "${ODOO_DEEP_SCAN_ACCEPTED_RISKS}" ]]; then
+            args+=(--accepted-risks "${ODOO_DEEP_SCAN_ACCEPTED_RISKS}")
+          fi
+          if [[ -n "${ODOO_DEEP_SCAN_FIX_LIST}" ]]; then
+            args+=(--fix-list "${ODOO_DEEP_SCAN_FIX_LIST}")
+          fi
+          if [[ "${ODOO_DEEP_SCAN_CHECK_ONLY_ACCEPTED_RISKS}" == "true" ]]; then
+            args+=(--check-only-accepted-risks)
+          fi
+          if [[ "${ODOO_DEEP_SCAN_CHECK_ONLY_FIX_LIST}" == "true" ]]; then
+            args+=(--check-only-fix-list)
+          fi
+          if [[ "${ODOO_DEEP_SCAN_FAIL_ON_POLICY_ERRORS}" == "true" ]]; then
+            args+=(--fail-on-policy-errors)
+          fi
+          if [[ "${ODOO_DEEP_SCAN_FAIL_ON_EXPIRED_ACCEPTED_RISK}" == "true" ]]; then
+            args+=(--fail-on-expired-accepted-risk)
+          fi
+          if [[ "${ODOO_DEEP_SCAN_FAIL_ON_OVERDUE_FIX}" == "true" ]]; then
+            args+=(--fail-on-overdue-fix)
+          fi
+          if [[ "${ODOO_DEEP_SCAN_FAIL_ON_FIX_REGRESSION}" == "true" ]]; then
+            args+=(--fail-on-fix-regression)
+          fi
+          if [[ "${ODOO_DEEP_SCAN_FAIL_ON_UNMAPPED_TAXONOMY}" == "true" ]]; then
+            args+=(--fail-on-unmapped-taxonomy)
+          fi
+          odoo-deep-scan "${args[@]}"
+
+      - name: Upload SARIF to Code Scanning
+        if: ${{ always() && hashFiles('.audit-deep/deep-scan.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: .audit-deep/deep-scan.sarif
+          category: odoo-deep-scan
+
+      - name: Upload deep-scan artifacts
+        if: ${{ always() && hashFiles('.audit-deep/inventory/artifacts.json', '.audit-deep/inventory/accepted-risks.json', '.audit-deep/inventory/fix-list.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: odoo-deep-scan
+          path: |
+            .audit-deep/deep-scan-findings.json
+            .audit-deep/deep-scan-report.md
+            .audit-deep/findings.html
+            .audit-deep/deep-scan.sarif
+            .audit-deep/deep-scan-delta.json
+            .audit-deep/deep-scan-delta.md
+            .audit-deep/00-accepted-risks.md
+            .audit-deep/00-fix-list.md
+            .audit-deep/review-gate.json
+            .audit-deep/taxonomy-gate.json
+            .audit-deep/governance-gate.json
+            .audit-deep/tooling.md
+            .audit-deep/module-risk.md
+            .audit-deep/inventory/
+            .audit-deep/pocs/
+          retention-days: 90
