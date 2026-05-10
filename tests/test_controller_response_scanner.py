@@ -1835,6 +1835,84 @@ class Controller(http.Controller):
     assert scan_controller_responses(tmp_path) == []
 
 
+def test_flags_weak_hsts_header(tmp_path: Path) -> None:
+    """Controllers should not set HSTS headers that disable HTTPS enforcement."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/page', auth='public')
+    def page(self):
+        return request.make_response('ok', headers={'Strict-Transport-Security': 'max-age=0'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-weak-hsts-header"
+        and f.severity == "medium"
+        and "max-age=0" in f.message
+        for f in findings
+    )
+
+
+def test_flags_short_hsts_header(tmp_path: Path) -> None:
+    """Very short HSTS lifetimes should be highlighted as weak posture."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/account/page', auth='user')
+    def page(self):
+        response = request.make_response('ok')
+        response.headers['Strict-Transport-Security'] = 'max-age=3600'
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-weak-hsts-header"
+        and f.severity == "low"
+        and "max-age=3600" in f.message
+        for f in findings
+    )
+
+
+def test_strong_hsts_header_is_ignored(tmp_path: Path) -> None:
+    """Long HSTS max-age values should avoid posture noise."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/page', auth='public')
+    def page(self):
+        response = request.make_response('ok')
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_controller_responses(tmp_path) == []
+
+
 def test_flags_weak_permissions_policy_header(tmp_path: Path) -> None:
     """Permissions-Policy should not grant sensitive APIs to arbitrary origins."""
     controllers = tmp_path / "module" / "controllers"

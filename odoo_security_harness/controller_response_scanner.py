@@ -70,6 +70,7 @@ SENSITIVE_RESPONSE_MARKERS = (
     "token",
 )
 FILE_OFFLOAD_HEADERS = {"x-accel-redirect", "x-sendfile"}
+MIN_HSTS_MAX_AGE_SECONDS = 15_552_000
 SENSITIVE_BROWSER_POLICY_FEATURES = (
     "camera",
     "microphone",
@@ -451,6 +452,17 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "medium" if route.auth in {"public", "none"} else "low",
                 line,
                 f"Controller sets Referrer-Policy to {weak_referrer_policy!r}; use no-referrer or strict-origin-when-cross-origin to reduce tokenized URL leakage",
+                sink,
+            )
+        weak_hsts_reason = _weak_hsts_reason(lowered_header, value, self._effective_constants())
+        if weak_hsts_reason:
+            route = self._current_route()
+            self._add(
+                "odoo-controller-weak-hsts-header",
+                "Controller sets weak Strict-Transport-Security",
+                "medium" if route.auth in {"public", "none"} else "low",
+                line,
+                f"Controller sets a weak Strict-Transport-Security header ({weak_hsts_reason}); use a long max-age such as 31536000 and includeSubDomains where appropriate",
                 sink,
             )
         weak_permissions_policy = _weak_permissions_policy_reason(
@@ -1071,6 +1083,23 @@ def _weak_referrer_policy_value(header_name: str, value: ast.AST, constants: dic
     policy = _constant_string(value, constants).strip()
     if policy.lower() in {"unsafe-url", "no-referrer-when-downgrade"}:
         return policy
+    return ""
+
+
+def _weak_hsts_reason(header_name: str, value: ast.AST, constants: dict[str, ast.AST]) -> str:
+    if header_name != "strict-transport-security":
+        return ""
+    hsts = _constant_string(value, constants).strip().lower()
+    if not hsts:
+        return ""
+    max_age_match = re.search(r"(?:^|;)\s*max-age\s*=\s*(\d+)", hsts)
+    if not max_age_match:
+        return "missing max-age"
+    max_age = int(max_age_match.group(1))
+    if max_age == 0:
+        return "max-age=0 disables HSTS"
+    if max_age < MIN_HSTS_MAX_AGE_SECONDS:
+        return f"max-age={max_age} is shorter than {MIN_HSTS_MAX_AGE_SECONDS}"
     return ""
 
 

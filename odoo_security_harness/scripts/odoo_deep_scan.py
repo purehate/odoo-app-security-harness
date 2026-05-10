@@ -3820,6 +3820,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "controller_weak_hsts_header",
+        (
+            "odoo-controller-weak-hsts-header",
+            "controller sets weak strict-transport-security",
+            "weak strict-transport-security header",
+            "max-age=0 disables hsts",
+            "use a long max-age",
+        ),
+    ),
+    (
         "controller_weak_permissions_policy",
         (
             "odoo-controller-weak-permissions-policy",

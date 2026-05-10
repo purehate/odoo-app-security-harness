@@ -2270,6 +2270,12 @@
       "capec": ["CAPEC-118"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "controller_weak_hsts_header": {
+      "label": "Controller sets a weak Strict-Transport-Security header",
+      "cwe": ["CWE-319", "CWE-693"],
+      "capec": ["CAPEC-94"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
     "controller_weak_permissions_policy": {
       "label": "Controller sets a weak Permissions-Policy or Feature-Policy header",
       "cwe": ["CWE-693", "CWE-200", "CWE-284"],
