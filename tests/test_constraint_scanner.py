@@ -117,6 +117,39 @@ class Partner(models.Model):
     assert any(f.model == "x.partner" for f in findings)
 
 
+def test_flags_class_constant_backed_dotted_field_model_and_ignored_return(tmp_path: Path) -> None:
+    """Class-scoped constant aliases should still drive constraint checks."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "partner.py").write_text(
+        """
+from odoo import api, models
+
+class Partner(models.Model):
+    MODEL_BASE = 'x.partner'
+    MODEL_NAME = MODEL_BASE
+    DOTTED_BASE = 'company_id.name'
+    DOTTED_FIELD = DOTTED_BASE
+    IGNORED_BASE = False
+    IGNORED = IGNORED_BASE
+    _name = MODEL_NAME
+
+    @api.constrains(DOTTED_FIELD)
+    def _check_company_name(self):
+        return IGNORED
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_constraints(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-constraint-dotted-field" in rule_ids
+    assert "odoo-constraint-return-ignored" in rule_ids
+    assert "odoo-constraint-dynamic-field" not in rule_ids
+    assert any(f.model == "x.partner" for f in findings)
+
+
 def test_flags_sudo_and_unbounded_search_in_constraint(tmp_path: Path) -> None:
     """Constraint searches should avoid sudo() bypasses and unbounded scans."""
     models = tmp_path / "module" / "models"
@@ -367,6 +400,41 @@ class Code(models.Model):
     assert "odoo-constraint-sudo-search" in rule_ids
     assert "odoo-constraint-unbounded-search" in rule_ids
     assert "odoo-constraint-dynamic-field" not in rule_ids
+
+
+def test_flags_class_constant_backed_with_user_root_search_in_constraint(tmp_path: Path) -> None:
+    """Class-scoped superuser and field aliases should keep sudo-read posture."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "code.py").write_text(
+        """
+from odoo import api, models
+
+class Code(models.Model):
+    ROOT_BASE = 1
+    ROOT_UID = ROOT_BASE
+    CODE_BASE = 'code'
+    CODE_FIELD = CODE_BASE
+    MODEL_NAME = 'x.code'
+    _name = MODEL_NAME
+
+    @api.constrains(CODE_FIELD)
+    def _check_code_unique(self):
+        Codes = self.env['x.code'].with_user(ROOT_UID)
+        duplicates = Codes.search([('code', '=', self.code)])
+        if duplicates:
+            raise ValidationError('duplicate')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_constraints(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-constraint-sudo-search" in rule_ids
+    assert "odoo-constraint-unbounded-search" in rule_ids
+    assert "odoo-constraint-dynamic-field" not in rule_ids
+    assert any(f.model == "x.code" for f in findings)
 
 
 def test_flags_env_ref_admin_search_in_constraint(tmp_path: Path) -> None:

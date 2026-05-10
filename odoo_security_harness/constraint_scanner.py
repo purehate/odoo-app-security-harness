@@ -45,6 +45,7 @@ class ConstraintScanner(ast.NodeVisitor):
         self.model_stack: list[str] = []
         self.method_stack: list[ConstraintContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[ConstraintFinding]:
         """Scan the file."""
@@ -64,9 +65,11 @@ class ConstraintScanner(ast.NodeVisitor):
         if not _is_odoo_model(node):
             self.generic_visit(node)
             return
-        self.model_stack.append(_extract_model_name(node, self.constants))
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.model_stack.append(_extract_model_name(node, self._effective_constants()))
         self.generic_visit(node)
         self.model_stack.pop()
+        self.class_constants_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         if not self.model_stack:
@@ -79,7 +82,7 @@ class ConstraintScanner(ast.NodeVisitor):
             self.generic_visit(node)
             return
 
-        fields = _constraint_fields(decorator, self.constants) if decorator else []
+        fields = _constraint_fields(decorator, self._effective_constants()) if decorator else []
         context = ConstraintContext(name=node.name)
         self.method_stack.append(context)
 
@@ -118,7 +121,7 @@ class ConstraintScanner(ast.NodeVisitor):
 
         context = self.method_stack[-1]
         sink = _call_name(node.func)
-        if _is_sudo_read_call(node, sink, context.sudo_vars, self.constants):
+        if _is_sudo_read_call(node, sink, context.sudo_vars, self._effective_constants()):
             self._add(
                 "odoo-constraint-sudo-search",
                 "Constraint reads through sudo",
@@ -162,7 +165,7 @@ class ConstraintScanner(ast.NodeVisitor):
             self.generic_visit(node)
             return
 
-        if _returns_false_or_none(node, self.constants):
+        if _returns_false_or_none(node, self._effective_constants()):
             context = self.method_stack[-1]
             self._add(
                 "odoo-constraint-return-ignored",
@@ -199,7 +202,7 @@ class ConstraintScanner(ast.NodeVisitor):
             return
 
         for arg in decorator.args:
-            resolved_arg = _resolve_constant(arg, self.constants)
+            resolved_arg = _resolve_constant(arg, self._effective_constants())
             if not isinstance(resolved_arg, ast.Constant) or not isinstance(resolved_arg.value, str):
                 self._add(
                     "odoo-constraint-dynamic-field",
@@ -266,10 +269,18 @@ class ConstraintScanner(ast.NodeVisitor):
             return
         if not isinstance(target, ast.Name):
             return
-        if _is_sudo_expr(value, context.sudo_vars, self.constants):
+        if _is_sudo_expr(value, context.sudo_vars, self._effective_constants()):
             context.sudo_vars.add(target.id)
         else:
             context.sudo_vars.discard(target.id)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 @dataclass
@@ -478,8 +489,12 @@ def _unpack_target_value_pairs(
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
@@ -495,13 +510,25 @@ def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
+    return _resolve_constant_seen(node, constants, set())
+
+
+def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: set[str]) -> ast.AST:
     if isinstance(node, ast.Name):
-        return constants.get(node.id, node)
+        if node.id in seen:
+            return node
+        resolved = constants.get(node.id)
+        if resolved is None:
+            return node
+        seen.add(node.id)
+        return _resolve_constant_seen(resolved, constants, seen)
     return node
 
 
 def _is_static_literal(node: ast.AST) -> bool:
-    return isinstance(node, ast.Constant) and isinstance(node.value, str | bool | int | float | type(None))
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str | bool | int | float | type(None))
+    return isinstance(node, ast.Name)
 
 
 def _should_skip(path: Path) -> bool:
