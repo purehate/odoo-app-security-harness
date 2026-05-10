@@ -57,7 +57,8 @@ class RawSqlScanner(ast.NodeVisitor):
         self.sql_literal_vars: dict[str, str] = {}
         self.tainted_vars: set[str] = set()
         self.cursor_vars: set[str] = {"cr"}
-        self.route_decorator_names: set[str] = {"route"}
+        self.http_module_names: set[str] = {"http"}
+        self.route_decorator_names: set[str] = set()
 
     def scan_file(self) -> list[RawSqlFinding]:
         """Scan the file."""
@@ -73,7 +74,11 @@ class RawSqlScanner(ast.NodeVisitor):
         return self.findings
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        if node.module == "odoo.http":
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.http_module_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
                     self.request_names.add(alias.asname or alias.name)
@@ -83,7 +88,7 @@ class RawSqlScanner(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_vars)
-        if _function_is_http_route(node, self.route_decorator_names):
+        if _function_is_http_route(node, self.route_decorator_names, self.http_module_names):
             for arg in [*node.args.args, *node.args.kwonlyargs]:
                 if arg.arg not in {"self", "cls"}:
                     self.tainted_vars.add(arg.arg)
@@ -484,16 +489,30 @@ def _call_name(node: ast.AST) -> str:
 def _function_is_http_route(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     route_decorator_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
 ) -> bool:
-    return any(_is_http_route(decorator, route_decorator_names) for decorator in node.decorator_list)
+    return any(
+        _is_http_route(decorator, route_decorator_names, http_module_names)
+        for decorator in node.decorator_list
+    )
 
 
-def _is_http_route(node: ast.AST, route_decorator_names: set[str] | None = None) -> bool:
-    route_decorator_names = route_decorator_names or {"route"}
+def _is_http_route(
+    node: ast.AST,
+    route_decorator_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
+) -> bool:
+    route_decorator_names = route_decorator_names or set()
+    http_module_names = http_module_names or {"http"}
     target = node.func if isinstance(node, ast.Call) else node
     if isinstance(target, ast.Name):
         return target.id in route_decorator_names
-    return _call_name(target) == "http.route"
+    return (
+        isinstance(target, ast.Attribute)
+        and target.attr == "route"
+        and isinstance(target.value, ast.Name)
+        and target.value.id in http_module_names
+    )
 
 
 def _safe_unparse(node: ast.AST) -> str:

@@ -668,6 +668,52 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-raw-sql-request-derived-input" for f in findings)
 
 
+def test_flags_aliased_http_module_route_path_sql_parameter(tmp_path: Path) -> None:
+    """Aliased Odoo http modules should still taint route path parameters."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/lookup/<int:partner_id>', auth='public')
+    def lookup(self, partner_id):
+        request.env.cr.execute("SELECT * FROM res_partner WHERE id = %s", (partner_id,))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_raw_sql(tmp_path)
+
+    assert any(f.rule_id == "odoo-raw-sql-request-derived-input" for f in findings)
+
+
+def test_ignores_non_odoo_bare_route_decorator_parameters(tmp_path: Path) -> None:
+    """Bare route decorators should not taint parameters without an Odoo route import."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo.http import request
+
+def route(path, **kwargs):
+    return lambda func: func
+
+class Controller:
+    @route('/lookup/<int:partner_id>', auth='public')
+    def lookup(self, partner_id):
+        request.env.cr.execute("SELECT * FROM res_partner WHERE id = %s", (partner_id,))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_raw_sql(tmp_path)
+
+    assert not any(f.rule_id == "odoo-raw-sql-request-derived-input" for f in findings)
+
+
 def test_flags_broad_destructive_runtime_sql(tmp_path: Path) -> None:
     """Runtime destructive SQL without WHERE should be a high-signal review finding."""
     models = tmp_path / "module" / "models"
