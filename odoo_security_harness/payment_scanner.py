@@ -60,6 +60,7 @@ class PaymentScanner(ast.NodeVisitor):
         self.path = path
         self.findings: list[PaymentFinding] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.route_decorator_names: set[str] = {"route"}
 
     def scan_file(self) -> list[PaymentFinding]:
@@ -84,7 +85,8 @@ class PaymentScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
-        route = _route_info(node, self.constants, self.route_decorator_names)
+        constants = self._effective_constants()
+        route = _route_info(node, constants, self.route_decorator_names)
         has_signature_check = _has_signature_check(node)
         has_weak_signature_compare = _has_weak_signature_compare(node)
         has_any_signature_check = has_signature_check or has_weak_signature_compare
@@ -113,7 +115,7 @@ class PaymentScanner(ast.NodeVisitor):
                 )
 
         if _is_payment_handler_function(node, route):
-            changes_payment_state = _calls_payment_state_transition(node, self.constants)
+            changes_payment_state = _calls_payment_state_transition(node, constants)
             if changes_payment_state and not has_any_signature_check:
                 self._add(
                     "odoo-payment-state-without-validation",
@@ -144,7 +146,7 @@ class PaymentScanner(ast.NodeVisitor):
                     node.name,
                 )
 
-            if _has_weak_payment_transaction_lookup(node, self.constants):
+            if _has_weak_payment_transaction_lookup(node, constants):
                 self._add(
                     "odoo-payment-transaction-lookup-weak",
                     "Payment transaction lookup lacks provider/reference scoping",
@@ -158,6 +160,19 @@ class PaymentScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _add(
         self,
@@ -223,8 +238,12 @@ def _apply_route_option(info: dict[str, Any], key: str, value_node: ast.AST, con
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

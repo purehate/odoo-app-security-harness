@@ -304,6 +304,66 @@ class PaymentController(http.Controller):
     )
 
 
+def test_class_constant_backed_payment_callback_without_signature_is_reported(tmp_path: Path) -> None:
+    """Class-scoped route constants should not hide public csrf-disabled payment callbacks."""
+    py = tmp_path / "controllers.py"
+    py.write_text(
+        """
+from odoo import http
+
+class PaymentController(http.Controller):
+    PAYMENT_ROUTE = '/payment/provider/webhook'
+    AUTH_BASE = 'public'
+    AUTH = AUTH_BASE
+    CSRF = False
+
+    @http.route(PAYMENT_ROUTE, auth=AUTH, csrf=CSRF)
+    def webhook(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "webhook"
+        for f in findings
+    )
+
+
+def test_class_constant_static_unpack_payment_callback_without_signature_is_reported(tmp_path: Path) -> None:
+    """Class-scoped route option dictionaries should not hide auth/csrf/path posture."""
+    py = tmp_path / "controllers.py"
+    py.write_text(
+        """
+from odoo import http
+
+class PaymentController(http.Controller):
+    PAYMENT_ROUTE = '/payment/provider/notify'
+    AUTH = 'none'
+    CSRF = False
+    PAYMENT_OPTIONS = {
+        'routes': [PAYMENT_ROUTE],
+        'auth': AUTH,
+        'csrf': CSRF,
+    }
+
+    @http.route(**PAYMENT_OPTIONS)
+    def notify(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "notify"
+        for f in findings
+    )
+
+
 def test_constant_alias_payment_route_state_and_lookup_are_reported(tmp_path: Path) -> None:
     """Alias chains should not hide payment route metadata, state writes, or weak lookups."""
     py = tmp_path / "controllers.py"
@@ -329,6 +389,42 @@ ROOT = ROOT_BASE
 
 class PaymentController(http.Controller):
     @http.route(PAYMENT_ROUTES, auth=AUTH, csrf=CSRF)
+    def webhook(self, **post):
+        tx = request.env[TX_MODEL].with_user(ROOT).search([('reference', '=', post.get('reference'))])
+        vals = {STATE_KEY: DONE_STATE}
+        tx.write(vals)
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+    rule_ids = {f.rule_id for f in findings}
+
+    assert "odoo-payment-public-callback-no-signature" in rule_ids
+    assert "odoo-payment-state-without-validation" in rule_ids
+    assert "odoo-payment-transaction-lookup-weak" in rule_ids
+
+
+def test_class_constant_alias_payment_route_state_and_lookup_are_reported(tmp_path: Path) -> None:
+    """Class-scoped aliases should expose route metadata, state writes, and weak lookups."""
+    py = tmp_path / "controllers.py"
+    py.write_text(
+        """
+from odoo import SUPERUSER_ID, http
+from odoo.http import request
+
+class PaymentController(http.Controller):
+    ROUTE_BASE = '/payment/provider/webhook'
+    PAYMENT_ROUTE = ROUTE_BASE
+    AUTH = 'public'
+    CSRF = False
+    TX_MODEL = 'payment.transaction'
+    STATE_KEY = 'state'
+    DONE_STATE = 'done'
+    ROOT = SUPERUSER_ID
+
+    @http.route(PAYMENT_ROUTE, auth=AUTH, csrf=CSRF)
     def webhook(self, **post):
         tx = request.env[TX_MODEL].with_user(ROOT).search([('reference', '=', post.get('reference'))])
         vals = {STATE_KEY: DONE_STATE}
@@ -947,6 +1043,34 @@ ROOT = ROOT_BASE
 
 class PaymentTransaction(models.Model):
     _inherit = 'payment.transaction'
+
+    def _get_tx_from_notification_data(self, provider_code, notification_data):
+        domain = [
+            (PROVIDER_CODE, '=', provider_code),
+            (PROVIDER_REF, '=', notification_data['reference']),
+        ]
+        return self.with_user(user=ROOT).search(domain)
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-payment-transaction-lookup-weak" for f in findings)
+
+
+def test_class_constant_provider_scoped_transaction_lookup_is_ignored(tmp_path: Path) -> None:
+    """Class-scoped provider/reference domain fields should count as scoped."""
+    py = tmp_path / "models.py"
+    py.write_text(
+        """
+from odoo import SUPERUSER_ID, models
+
+class PaymentTransaction(models.Model):
+    _inherit = 'payment.transaction'
+    PROVIDER_CODE = 'provider_code'
+    PROVIDER_REF = 'provider_reference'
+    ROOT = SUPERUSER_ID
 
     def _get_tx_from_notification_data(self, provider_code, notification_data):
         domain = [
