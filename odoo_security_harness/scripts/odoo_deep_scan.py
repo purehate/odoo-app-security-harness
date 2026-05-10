@@ -540,6 +540,7 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "qweb_event_handler_injection",
         (
+            "web-owl-qweb-dynamic-event-handler",
             "qweb-dynamic-event-handler",
             "dynamic-event-handler",
             "dynamic event handler",
@@ -2957,7 +2958,9 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "frontend_dom_xss",
         (
+            "web-owl-qweb-srcdoc-html",
             "web-dom-xss-sink",
+            "owl inline template writes iframe srcdoc html",
             "dom html injection sink",
             "writes html in frontend code",
             "domparser.parsefromstring",
@@ -3204,8 +3207,10 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "frontend_dynamic_code_import",
         (
+            "web-owl-qweb-dynamic-script-src",
             "qweb-dynamic-script-src",
             "web-dynamic-code-import",
+            "owl inline template script source uses dynamic target",
             "qweb script source uses dynamic target",
             "dynamic javascript import uses external or request-derived target",
             "imports javascript at runtime",

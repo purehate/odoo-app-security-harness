@@ -1021,13 +1021,19 @@ def test_taxonomy_coverage_classifies_qweb_event_handler_injection() -> None:
                 "source": "qweb",
                 "title": "Dynamic event handler attribute",
                 "message": "t-attf-onclick formats a JavaScript event handler; attribute escaping is not enough for JavaScript context",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-dynamic-event-handler",
+                "source": "web-asset",
+                "title": "OWL inline template builds JavaScript event handler",
+                "message": "OWL xml template contains a dynamic or inline JavaScript event handler",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "qweb_event_handler_injection"
-    assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"qweb_event_handler_injection"}
+    assert all("CWE-79" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_qweb_markup_escape_bypass() -> None:
@@ -1140,13 +1146,19 @@ def test_taxonomy_coverage_classifies_frontend_dom_xss() -> None:
                 "source": "web-assets",
                 "title": "DOM HTML injection sink",
                 "message": "DOMParser.parseFromString parses request-derived text/html in frontend code",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-srcdoc-html",
+                "source": "web-asset",
+                "title": "OWL inline template writes iframe srcdoc HTML",
+                "message": "OWL xml template writes dynamic HTML into iframe srcdoc",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_dom_xss"
-    assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_dom_xss"}
+    assert all("CWE-79" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_qweb_srcdoc_dom_xss() -> None:
@@ -2369,13 +2381,19 @@ def test_taxonomy_coverage_classifies_qweb_dynamic_script_src() -> None:
                 "source": "qweb",
                 "title": "QWeb script source uses dynamic target",
                 "message": "QWeb script imports JavaScript at runtime from an external or dynamic target",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-dynamic-script-src",
+                "source": "web-asset",
+                "title": "OWL inline template script source uses dynamic target",
+                "message": "OWL xml template imports JavaScript at runtime from an external or dynamic target",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_dynamic_code_import"
-    assert "CWE-829" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_dynamic_code_import"}
+    assert all("CWE-829" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_web_dynamic_worker_script() -> None:

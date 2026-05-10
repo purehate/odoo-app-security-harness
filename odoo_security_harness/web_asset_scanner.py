@@ -300,6 +300,12 @@ MESSAGE_ORIGIN_VALIDATION_RE = re.compile(
 OWL_XML_TEMPLATE_RE = re.compile(r"\bxml\s*`(?P<body>(?:\\`|[^`])*)`", re.IGNORECASE | re.DOTALL)
 OWL_TEMPLATE_T_RAW_RE = re.compile(r"\bt-raw\s*=", re.IGNORECASE)
 OWL_TEMPLATE_RAW_OUTPUT_MODE_RE = re.compile(r"\bt-out-mode\s*=\s*['\"]raw['\"]", re.IGNORECASE)
+OWL_TEMPLATE_DYNAMIC_EVENT_RE = re.compile(r"\b(?:on\w+|t-attf?-on\w+)\s*=", re.IGNORECASE)
+OWL_TEMPLATE_SRCDOC_RE = re.compile(r"\bt-attf?-srcdoc\s*=", re.IGNORECASE)
+OWL_TEMPLATE_DYNAMIC_SCRIPT_SRC_RE = re.compile(
+    r"<script\b[^>]*\bt-attf?-src\s*=",
+    re.IGNORECASE,
+)
 
 
 def scan_web_assets(repo_path: Path) -> list[WebAssetFinding]:
@@ -1078,6 +1084,33 @@ class WebAssetScanner:
                     "high",
                     line,
                     "OWL xml template uses t-out-mode='raw' and disables normal escaping; verify rendered data is sanitized and trusted",
+                    "owl-template",
+                )
+            if OWL_TEMPLATE_DYNAMIC_EVENT_RE.search(body):
+                self._add(
+                    "odoo-web-owl-qweb-dynamic-event-handler",
+                    "OWL inline template builds JavaScript event handler",
+                    "high",
+                    line,
+                    "OWL xml template contains a dynamic or inline JavaScript event handler; verify user data cannot reach JavaScript attribute context",
+                    "owl-template",
+                )
+            if OWL_TEMPLATE_SRCDOC_RE.search(body):
+                self._add(
+                    "odoo-web-owl-qweb-srcdoc-html",
+                    "OWL inline template writes iframe srcdoc HTML",
+                    "high",
+                    line,
+                    "OWL xml template writes dynamic HTML into iframe srcdoc; sanitize HTML and sandbox the frame before rendering untrusted template data",
+                    "owl-template",
+                )
+            if OWL_TEMPLATE_DYNAMIC_SCRIPT_SRC_RE.search(body):
+                self._add(
+                    "odoo-web-owl-qweb-dynamic-script-src",
+                    "OWL inline template script source uses dynamic target",
+                    "high",
+                    line,
+                    "OWL xml template imports JavaScript at runtime from an external or dynamic target; restrict script URLs to reviewed bundles or strict allowlists",
                     "owl-template",
                 )
 

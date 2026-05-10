@@ -1283,6 +1283,61 @@ def test_owl_inline_template_escaped_output_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id in {"odoo-web-owl-qweb-t-raw", "odoo-web-owl-raw-output-mode"} for f in findings)
 
 
+def test_owl_inline_template_dynamic_event_handler_detected(tmp_path: Path) -> None:
+    """OWL inline templates should not build JavaScript event handlers dynamically."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<button t-att-onclick=\"props.handler\">Pay</button>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-dynamic-event-handler"
+        and f.sink == "owl-template"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_srcdoc_detected(tmp_path: Path) -> None:
+    """OWL inline iframe srcdoc attributes should stay out of request-derived HTML."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<iframe sandbox=\"\" t-att-srcdoc=\"props.preview_html\"/>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-srcdoc-html"
+        and f.sink == "owl-template"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_dynamic_script_src_detected(tmp_path: Path) -> None:
+    """OWL inline script src attributes should not import runtime-selected code."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<script t-att-src=\"props.script_url\"></script>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-dynamic-script-src"
+        and f.sink == "owl-template"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_owl_event_binding_ignored(tmp_path: Path) -> None:
+    """OWL t-on handlers reference component methods and are not string event attributes."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<button t-on-click=\"onPay\">Pay</button>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-dynamic-event-handler" for f in findings)
+
+
 def test_message_handler_missing_origin_check_detected(tmp_path: Path) -> None:
     """Inbound postMessage handlers should validate event.origin before using data."""
     path = tmp_path / "widget.js"
