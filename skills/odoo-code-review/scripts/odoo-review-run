@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 try:
     import tomllib
@@ -100,6 +101,21 @@ def progress(message: str) -> None:
     print(f"[odoo-review-run] {message}", flush=True)
 
 
+def is_http_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def validate_runtime_targets(args: argparse.Namespace) -> list[str]:
+    errors: list[str] = []
+    if getattr(args, "zap_target", None) and not is_http_url(args.zap_target):
+        errors.append("--zap-target must be an http(s) URL")
+    odoomap_target = getattr(args, "odoomap_target", None)
+    if odoomap_target and odoomap_target != "self" and not is_http_url(odoomap_target):
+        errors.append("--odoomap-target must be 'self' or an http(s) URL")
+    return errors
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run repeatable setup for the odoo-code-review Odoo audit harness.")
     parser.add_argument("target", nargs="?", default=".", help="Odoo repo/addons path. Defaults to current directory.")
@@ -117,7 +133,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--joern", action="store_true", help="Run Joern if installed")
     parser.add_argument("--runtime", action="store_true", help="Enable Phase 7.5 runtime evidence path; use odoo-review-runtime <OUT> to boot Odoo and replay PoCs.")
     parser.add_argument("--zap-target", help="ZAP target URL; requires --runtime")
-    parser.add_argument("--odoomap-target", help="Authorized QA/staging URL for optional OdooMap runtime recon. Requires --runtime.")
+    parser.add_argument("--odoomap-target", help="Authorized QA/staging URL or 'self' for optional OdooMap runtime recon. Requires --runtime.")
     parser.add_argument("--no-codex", action="store_true", help="Skip Codex hunter execution")
     parser.add_argument("--codex-model", default="gpt-5.3-codex", help="Codex model")
     parser.add_argument("--codex-budget", choices=["low", "normal", "deep"], default="normal")
@@ -2605,6 +2621,11 @@ def main() -> int:
         return 2
     if args.odoomap_target and not args.runtime:
         print("--odoomap-target requires --runtime", file=sys.stderr)
+        return 2
+    runtime_target_errors = validate_runtime_targets(args)
+    if runtime_target_errors:
+        for error in runtime_target_errors:
+            print(error, file=sys.stderr)
         return 2
     autodetect_weekly_paths(args, repo)
     if args.out:

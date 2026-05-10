@@ -486,6 +486,34 @@ class TestOdooMapRunnerHints:
         content = (out / "runtime" / "probes" / "README.md").read_text(encoding="utf-8")
         assert "--odoomap-target https://qa.example.com" in content
 
+    def test_runtime_probe_readme_allows_self_odoomap_target(self, tmp_path: Path) -> None:
+        """The main runner should pass the runtime helper's explicit self alias through."""
+        namespace = runpy.run_path(str(RUN_SCRIPT), run_name="__test_odoo_run__")
+        out = tmp_path / ".audit"
+        args = Namespace(runtime=True, odoomap_target="self")
+
+        namespace["write_runtime_probe_plan"](out, [], args)
+
+        content = (out / "runtime" / "probes" / "README.md").read_text(encoding="utf-8")
+        assert "--odoomap-target self" in content
+
+    def test_validate_runtime_targets_rejects_ambiguous_targets(self) -> None:
+        """Runtime target flags should be explicit URLs before handoff artifacts are written."""
+        namespace = runpy.run_path(str(RUN_SCRIPT), run_name="__test_odoo_run__")
+        args = Namespace(runtime=True, zap_target="qa.example.com", odoomap_target="qa.example.com")
+
+        errors = namespace["validate_runtime_targets"](args)
+
+        assert "--zap-target must be an http(s) URL" in errors
+        assert "--odoomap-target must be 'self' or an http(s) URL" in errors
+
+    def test_validate_runtime_targets_accepts_http_urls_and_self(self) -> None:
+        """The runner should accept the same OdooMap self alias as the runtime helper."""
+        namespace = runpy.run_path(str(RUN_SCRIPT), run_name="__test_odoo_run__")
+        args = Namespace(runtime=True, zap_target="https://qa.example.com", odoomap_target="self")
+
+        assert namespace["validate_runtime_targets"](args) == []
+
     def test_run_mode_records_odoomap_target_active_flag(self, tmp_path: Path) -> None:
         """The lead-session run mode should surface OdooMap as an active runtime flag."""
         namespace = runpy.run_path(str(RUN_SCRIPT), run_name="__test_odoo_run__")

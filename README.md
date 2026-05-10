@@ -118,7 +118,7 @@ The direct runner is `odoo-review-run [target] [flags]`. The slash command forwa
 | `--joern` | Enable optional Joern CPG graph review. |
 | `--runtime` | Enable Phase 7.5 runtime path and generate `runtime/probes/` route-probe templates. |
 | `--zap-target <url>` | Run ZAP baseline against a QA target. Requires `--runtime`. |
-| `--odoomap-target <url>` | Add optional OdooMap runtime recon against an authorized QA/staging target. Requires `--runtime`; brute-force modes are not enabled. |
+| `--odoomap-target <url\|self>` | Add optional OdooMap runtime recon against an authorized QA/staging target. Requires `--runtime`; brute-force modes are not enabled. |
 | `--no-codex` | Skip Codex hunter execution. |
 | `--codex-model <name>` | Override Codex model. |
 | `--codex-budget low\|normal\|deep` | Set Codex pass budget label. |
