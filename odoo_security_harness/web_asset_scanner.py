@@ -157,6 +157,10 @@ SENSITIVE_STORAGE_RE = re.compile(
     r"\b(?:localStorage|sessionStorage)\.setItem\s*\(\s*['\"][^'\"]*(?:token|secret|password|api[_-]?key|csrf|session)[^'\"]*['\"]",
     re.IGNORECASE,
 )
+SENSITIVE_STORAGE_READ_RE = re.compile(
+    r"\b(?:localStorage|sessionStorage)\.getItem\s*\(\s*['\"][^'\"]*(?:token|secret|password|api[_-]?key|csrf|session)[^'\"]*['\"]",
+    re.IGNORECASE,
+)
 SENSITIVE_STORAGE_ASSIGNMENT_RE = re.compile(
     r"\b(?:localStorage|sessionStorage)\s*"
     r"(?:\.\s*(?P<property>[A-Za-z_$][\w$]*)|\[\s*['\"](?P<bracket>[^'\"]+)['\"]\s*\])"
@@ -556,6 +560,16 @@ class WebAssetScanner:
                     "high",
                     line_number,
                     "Frontend code writes token/secret/password-like data to localStorage or sessionStorage; verify XSS cannot persist or steal credentials",
+                    "browser-storage",
+                )
+
+            if SENSITIVE_STORAGE_READ_RE.search(line):
+                self._add(
+                    "odoo-web-sensitive-browser-storage",
+                    "Sensitive value read from browser storage",
+                    "high",
+                    line_number,
+                    "Frontend code reads token/secret/password-like data from localStorage or sessionStorage; avoid depending on XSS-readable browser storage for credentials",
                     "browser-storage",
                 )
 

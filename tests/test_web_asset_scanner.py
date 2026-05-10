@@ -831,6 +831,26 @@ def test_sensitive_browser_storage_assignment_detected(tmp_path: Path) -> None:
     assert all(f.severity == "high" and f.sink == "browser-storage" for f in matches)
 
 
+def test_sensitive_browser_storage_read_detected(tmp_path: Path) -> None:
+    """Reading credential-like values from browser storage is also an exposure signal."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "const token = localStorage.getItem('access_token');\n"
+        "const apiKey = sessionStorage.getItem('api-key');\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    matches = [
+        f
+        for f in findings
+        if f.rule_id == "odoo-web-sensitive-browser-storage" and "read from browser storage" in f.title
+    ]
+    assert len(matches) == 2
+    assert all(f.severity == "high" and f.sink == "browser-storage" for f in matches)
+
+
 def test_static_browser_storage_assignment_ignored(tmp_path: Path) -> None:
     """Static non-sensitive preference writes should not create storage noise."""
     path = tmp_path / "widget.js"

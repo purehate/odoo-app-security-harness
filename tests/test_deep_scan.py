@@ -7390,8 +7390,8 @@ def test_taxonomy_coverage_classifies_frontend_and_cookie_rule_gaps() -> None:
             {
                 "source": "web-assets",
                 "rule_id": "odoo-web-sensitive-browser-storage",
-                "title": "Frontend stores sensitive value in browser storage",
-                "message": "Token/session/secret-like values are written to localStorage, sessionStorage, IndexedDB, or window.name",
+                "title": "Sensitive value read from browser storage",
+                "message": "Frontend code reads token/secret/password-like data from localStorage or sessionStorage; avoid depending on XSS-readable browser storage for credentials",
             },
             {
                 "source": "web-assets",

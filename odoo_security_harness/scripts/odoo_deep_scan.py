@@ -3328,8 +3328,10 @@ _TAXONOMY_SHAPE_HINTS = (
             "odoo-web-sensitive-browser-storage",
             "web-sensitive-browser-storage",
             "frontend stores sensitive value in browser storage",
+            "sensitive value read from browser storage",
             "localstorage, sessionstorage, indexeddb, or window.name",
             "token/session/secret-like values in browser storage",
+            "xss-readable browser storage for credentials",
         ),
     ),
     (
