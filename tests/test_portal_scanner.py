@@ -130,6 +130,60 @@ class Portal(http.Controller):
     assert "odoo-portal-public-route" in rule_ids
 
 
+def test_flags_aliased_http_module_access_token_without_helper(tmp_path: Path) -> None:
+    """Aliased Odoo http module imports should still mark portal controllers as routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "portal.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Portal(odoo_http.Controller):
+    @odoo_http.route('/my/orders/<int:order_id>', auth='public', website=True)
+    def portal_order(self, order_id, access_token=None):
+        return request.render('sale.portal_order_page', {'order_id': order_id})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_portal_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-portal-access-token-without-helper" in rule_ids
+    assert "odoo-portal-public-route" in rule_ids
+
+
+def test_non_odoo_route_decorator_portal_route_is_ignored(tmp_path: Path) -> None:
+    """Local route-like decorators should not create Odoo route context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "portal.py").write_text(
+        """
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Portal:
+    @router.route('/my/orders/<int:order_id>', auth='public', website=True)
+    def portal_order(self, order_id, access_token=None):
+        return request.render('sale.portal_order_page', {'order_id': order_id})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_portal_routes(tmp_path)
+
+    assert not any(f.rule_id == "odoo-portal-public-route" for f in findings)
+    assert not any(f.rule_id == "odoo-portal-access-token-without-helper" for f in findings)
+
+
 def test_flags_static_unpack_public_portal_route_options(tmp_path: Path) -> None:
     """Static route option unpacking should preserve public portal context."""
     controllers = tmp_path / "module" / "controllers"
