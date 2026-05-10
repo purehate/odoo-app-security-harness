@@ -51,6 +51,7 @@ class AccessOverrideScanner(ast.NodeVisitor):
         self.model_stack: list[str] = []
         self.method_stack: list[MethodContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.model_base_names: set[str] = {"Model", "TransientModel", "AbstractModel"}
 
     def scan_file(self) -> list[AccessOverrideFinding]:
@@ -71,9 +72,11 @@ class AccessOverrideScanner(ast.NodeVisitor):
         if not _is_odoo_model(node, self.model_base_names):
             self.generic_visit(node)
             return
-        self.model_stack.append(_extract_model_name(node, self.constants))
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.model_stack.append(_extract_model_name(node, self._effective_constants()))
         self.generic_visit(node)
         self.model_stack.pop()
+        self.class_constants_stack.pop()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo.models":
@@ -119,7 +122,7 @@ class AccessOverrideScanner(ast.NodeVisitor):
         if "super" in sink:
             context.has_super = True
         if context.name in SEARCH_OVERRIDE_METHODS and _is_sudo_read_call(
-            node, sink, context.sudo_vars, self.constants
+            node, sink, context.sudo_vars, self._effective_constants()
         ):
             self._add(
                 "odoo-access-override-sudo-search",
@@ -136,7 +139,9 @@ class AccessOverrideScanner(ast.NodeVisitor):
             self.generic_visit(node)
             return
         context = self.method_stack[-1]
-        if context.name in {"check_access_rights", "check_access_rule"} and _returns_true(node, self.constants):
+        if context.name in {"check_access_rights", "check_access_rule"} and _returns_true(
+            node, self._effective_constants()
+        ):
             context.returns_true = True
             context.return_line = node.lineno
         elif context.name.startswith("_filter_access_rules") and _returns_self(node):
@@ -206,10 +211,18 @@ class AccessOverrideScanner(ast.NodeVisitor):
             return
         if not isinstance(target, ast.Name):
             return
-        if _is_sudo_expr(value, context.sudo_vars, self.constants):
+        if _is_sudo_expr(value, context.sudo_vars, self._effective_constants()):
             context.sudo_vars.add(target.id)
         else:
             context.sudo_vars.discard(target.id)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 @dataclass
@@ -380,8 +393,12 @@ def _call_name(node: ast.AST) -> str:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

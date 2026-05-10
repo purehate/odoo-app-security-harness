@@ -89,6 +89,35 @@ class Sale(models.Model):
     assert any(f.model == "sale.order" for f in findings)
 
 
+def test_flags_class_constant_alias_allow_all_access_override(tmp_path: Path) -> None:
+    """Class-scoped constant aliases should not hide model names or allow-all returns."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import models
+
+class Sale(models.Model):
+    SALE_MODEL_BASE = 'sale.order'
+    SALE_MODEL = SALE_MODEL_BASE
+    ALLOW_BASE = True
+    ALLOW_ALL = ALLOW_BASE
+    _inherit = SALE_MODEL
+
+    def check_access_rule(self, operation):
+        return ALLOW_ALL
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_access_overrides(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-access-override-missing-super" in rule_ids
+    assert "odoo-access-override-allow-all" in rule_ids
+    assert any(f.model == "sale.order" for f in findings)
+
+
 def test_flags_direct_model_base_access_override(tmp_path: Path) -> None:
     """Direct Model bases should not hide risky access overrides."""
     models = tmp_path / "module" / "models"
@@ -372,6 +401,35 @@ class Product(models.Model):
     findings = scan_access_overrides(tmp_path)
 
     assert any(f.rule_id == "odoo-access-override-sudo-search" for f in findings)
+
+
+def test_flags_class_constant_alias_with_user_superuser_search_override(tmp_path: Path) -> None:
+    """Class-scoped SUPERUSER_ID aliases should still be treated as elevated reads."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "product.py").write_text(
+        """
+from odoo import SUPERUSER_ID, models
+
+class Product(models.Model):
+    ROOT_BASE = SUPERUSER_ID
+    ROOT_UID = ROOT_BASE
+    MODEL_NAME = 'product.template'
+    _inherit = MODEL_NAME
+
+    def search_read(self, domain=None, fields=None, offset=0, limit=None, order=None):
+        Products = self.env['product.template'].with_user(ROOT_UID)
+        return Products.search([]).read(fields)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_access_overrides(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-access-override-sudo-search" and f.model == "product.template"
+        for f in findings
+    )
 
 
 def test_flags_env_ref_admin_search_override(tmp_path: Path) -> None:
