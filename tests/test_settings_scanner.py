@@ -164,6 +164,34 @@ class ResConfigSettings(models.TransientModel):
     assert "odoo-settings-config-field-public-groups" in rule_ids
 
 
+def test_flags_class_constant_backed_config_parameter_and_groups(tmp_path: Path) -> None:
+    """Class-level config_parameter and groups metadata should be scanned."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import fields, models
+
+class ResConfigSettings(models.TransientModel):
+    SETTINGS_MODEL = 'res.config.settings'
+    SECRET_KEY = 'payment.provider.api_secret'
+    PORTAL_GROUP = 'base.group_portal'
+    FIELD_OPTIONS = {'config_parameter': SECRET_KEY, 'groups': PORTAL_GROUP}
+
+    _inherit = SETTINGS_MODEL
+
+    api_secret = fields.Char(**FIELD_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_settings(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-settings-sensitive-config-field-no-admin-groups" in rule_ids
+    assert "odoo-settings-config-field-public-groups" in rule_ids
+
+
 def test_flags_constant_alias_settings_fields_and_config_model(tmp_path: Path) -> None:
     """Aliased settings metadata and ir.config_parameter model names should resolve."""
     models = tmp_path / "module" / "models"
@@ -455,6 +483,35 @@ ROOT_UID = 1
 SIGNUP_KEY = 'auth_oauth.allow_signup'
 
 class ResConfigSettings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    def set_values(self):
+        Config = self.env['ir.config_parameter'].with_user(ROOT_UID)
+        Config.set_param(SIGNUP_KEY, 'True')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_settings(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-settings-sudo-set-param" and f.field == "auth_oauth.allow_signup"
+        for f in findings
+    )
+
+
+def test_flags_class_constant_backed_with_user_root_set_param_in_settings_method(tmp_path: Path) -> None:
+    """Class-level superuser IDs and set_param keys should be recognized."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import models
+
+class ResConfigSettings(models.TransientModel):
+    ROOT_UID = 1
+    SIGNUP_KEY = 'auth_oauth.allow_signup'
+
     _inherit = 'res.config.settings'
 
     def set_values(self):

@@ -85,6 +85,7 @@ class SettingsScanner(ast.NodeVisitor):
         self.config_parameter_names: set[str] = set()
         self.sudo_config_parameter_names: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[SettingsFinding]:
         """Scan the file."""
@@ -101,8 +102,10 @@ class SettingsScanner(ast.NodeVisitor):
         return self.findings
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
-        is_settings = _is_res_config_settings(node, self.constants, self.model_base_names)
-        model_name = _extract_model_name(node, self.constants)
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        constants = self._effective_constants()
+        is_settings = _is_res_config_settings(node, constants, self.model_base_names)
+        model_name = _extract_model_name(node, constants)
         self.model_stack.append(model_name)
         self.settings_stack.append(is_settings)
         if is_settings:
@@ -110,6 +113,7 @@ class SettingsScanner(ast.NodeVisitor):
         self.generic_visit(node)
         self.settings_stack.pop()
         self.model_stack.pop()
+        self.class_constants_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_config_parameter_names = set(self.config_parameter_names)
@@ -147,7 +151,11 @@ class SettingsScanner(ast.NodeVisitor):
             return
         sink = _call_name(node.func)
         if sink.endswith(".set_param") and (
-            _is_elevated_config_parameter_expr(node.func, self.sudo_config_parameter_names, self.constants)
+            _is_elevated_config_parameter_expr(
+                node.func,
+                self.sudo_config_parameter_names,
+                self._effective_constants(),
+            )
         ):
             self._add(
                 "odoo-settings-sudo-set-param",
@@ -156,7 +164,7 @@ class SettingsScanner(ast.NodeVisitor):
                 node.lineno,
                 "res.config.settings method calls sudo()/with_user(SUPERUSER_ID).set_param; verify only admin settings flows can alter global security, mail, auth, or integration parameters",
                 self.model_stack[-1],
-                _literal_string(node.args[0] if node.args else None, self.constants),
+                _literal_string(node.args[0] if node.args else None, self._effective_constants()),
             )
         self.generic_visit(node)
 
@@ -172,9 +180,10 @@ class SettingsScanner(ast.NodeVisitor):
                 self._track_config_parameter_alias_target(child_target, child_value)
             return
 
-        is_config_parameter = _is_config_parameter_expr(value, self.config_parameter_names, self.constants)
+        constants = self._effective_constants()
+        is_config_parameter = _is_config_parameter_expr(value, self.config_parameter_names, constants)
         is_sudo_config_parameter = is_config_parameter and _is_elevated_config_parameter_expr(
-            value, self.sudo_config_parameter_names, self.constants
+            value, self.sudo_config_parameter_names, constants
         )
         for name in _target_names(target):
             if not is_config_parameter:
@@ -189,14 +198,15 @@ class SettingsScanner(ast.NodeVisitor):
 
     def _scan_settings_fields(self, node: ast.ClassDef, model_name: str) -> None:
         for item in node.body:
-            for field in _field_defs_from_assignment(item, self.constants):
+            for field in _field_defs_from_assignment(item, self._effective_constants()):
                 self._scan_field(field, model_name)
 
     def _scan_field(self, field: FieldDef, model_name: str) -> None:
-        config_key = _literal_string(field.keywords.get("config_parameter"), self.constants)
-        groups = _literal_string(field.keywords.get("groups"), self.constants)
-        implied_group = _literal_string(field.keywords.get("implied_group"), self.constants)
-        default_value = _literal_value(field.keywords.get("default"), self.constants)
+        constants = self._effective_constants()
+        config_key = _literal_string(field.keywords.get("config_parameter"), constants)
+        groups = _literal_string(field.keywords.get("groups"), constants)
+        implied_group = _literal_string(field.keywords.get("implied_group"), constants)
+        default_value = _literal_value(field.keywords.get("default"), constants)
 
         if config_key and _is_sensitive_value(f"{field.name} {config_key}") and not _has_admin_group(groups):
             self._add(
@@ -286,6 +296,14 @@ class SettingsScanner(ast.NodeVisitor):
                 field=field,
             )
         )
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 @dataclass
@@ -566,8 +584,12 @@ def _unpack_target_value_pairs(
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
