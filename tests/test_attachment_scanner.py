@@ -175,6 +175,49 @@ class Controller(http.Controller):
     )
 
 
+def test_class_constant_backed_public_attachment_create_is_reported(tmp_path: Path) -> None:
+    """Class-scoped public route metadata should not hide attachment mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "attachments.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    ATTACH_ROUTE = '/public/attach'
+    ATTACH_ROUTES = [ATTACH_ROUTE]
+    AUTH_BASE = 'public'
+    ATTACH_AUTH = AUTH_BASE
+    ATTACH_CSRF = False
+
+    @http.route(ATTACH_ROUTES, auth=ATTACH_AUTH, csrf=ATTACH_CSRF)
+    def attach(self, **kwargs):
+        return request.env['ir.attachment'].sudo().create({
+            'name': kwargs.get('name'),
+            'datas': kwargs.get('payload'),
+            'res_model': kwargs.get('model'),
+            'res_id': kwargs.get('id'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-attachment-public-route-mutation" in rule_ids
+    assert "odoo-attachment-sudo-mutation" in rule_ids
+    assert "odoo-attachment-tainted-res-model" in rule_ids
+    assert "odoo-attachment-tainted-res-id" in rule_ids
+    assert any(
+        f.rule_id == "odoo-attachment-tainted-res-model"
+        and f.severity == "critical"
+        and f.route == "/public/attach"
+        for f in findings
+    )
+
+
 def test_static_unpack_public_attachment_create_is_reported(tmp_path: Path) -> None:
     """Static **route options should keep public attachment mutations critical."""
     controllers = tmp_path / "module" / "controllers"
@@ -187,6 +230,46 @@ from odoo.http import request
 ATTACH_OPTIONS = {'route': '/public/attach/unpacked-options', 'auth': 'public', 'csrf': False}
 
 class Controller(http.Controller):
+    @http.route(**ATTACH_OPTIONS)
+    def attach(self, **kwargs):
+        return request.env['ir.attachment'].sudo().create({
+            'name': kwargs.get('name'),
+            'datas': kwargs.get('payload'),
+            'res_model': kwargs.get('model'),
+            'res_id': kwargs.get('id'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-attachment-public-route-mutation"
+        and f.severity == "critical"
+        and f.route == "/public/attach/unpacked-options"
+        for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-attachment-tainted-res-model"
+        and f.severity == "critical"
+        and f.route == "/public/attach/unpacked-options"
+        for f in findings
+    )
+
+
+def test_class_constant_static_unpack_public_attachment_create_is_reported(tmp_path: Path) -> None:
+    """Class-scoped static **route options should keep public attachment mutations critical."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "attachments.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    ATTACH_OPTIONS = {'route': '/public/attach/unpacked-options', 'auth': 'public', 'csrf': False}
+
     @http.route(**ATTACH_OPTIONS)
     def attach(self, **kwargs):
         return request.env['ir.attachment'].sudo().create({
