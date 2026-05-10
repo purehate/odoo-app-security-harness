@@ -81,6 +81,7 @@ class ButtonActionScanner(ast.NodeVisitor):
         self.model_stack: list[str] = []
         self.method_stack: list[MethodContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[ButtonActionFinding]:
         """Scan the file."""
@@ -100,9 +101,11 @@ class ButtonActionScanner(ast.NodeVisitor):
         if not _is_odoo_model(node):
             self.generic_visit(node)
             return
-        self.model_stack.append(_extract_model_name(node, self.constants))
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.model_stack.append(_extract_model_name(node, self._effective_constants()))
         self.generic_visit(node)
         self.model_stack.pop()
+        self.class_constants_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         if not self.model_stack or not _is_button_method(node.name):
@@ -144,7 +147,7 @@ class ButtonActionScanner(ast.NodeVisitor):
         sink = _call_name(node.func)
         if any(marker in sink for marker in ACCESS_CHECK_MARKERS):
             context.has_access_check = True
-        sensitive_model = _call_receiver_sensitive_model(node.func, self.constants)
+        sensitive_model = _call_receiver_sensitive_model(node.func, self._effective_constants())
         if sensitive_model and sink.rsplit(".", 1)[-1] in SENSITIVE_MODEL_MUTATION_METHODS:
             self._add(
                 "odoo-button-action-sensitive-model-mutation",
@@ -156,7 +159,7 @@ class ButtonActionScanner(ast.NodeVisitor):
             )
         if (sink.endswith(".write") or sink == "write") and node.args and isinstance(node.args[0], ast.Dict):
             context.has_write = True
-            if _dict_writes_sensitive_state(node.args[0], self.constants):
+            if _dict_writes_sensitive_state(node.args[0], self._effective_constants()):
                 context.has_sensitive_state_write = True
                 self._add(
                     "odoo-button-action-sensitive-state-write",
@@ -166,7 +169,7 @@ class ButtonActionScanner(ast.NodeVisitor):
                     "Button/action method writes approval/payment/posting-like state; verify ACLs, record rules, and groups enforce the workflow boundary",
                     context.name,
                 )
-        if _is_privileged_mutation(node.func, context.sudo_vars, self.constants):
+        if _is_privileged_mutation(node.func, context.sudo_vars, self._effective_constants()):
             context.has_sudo_mutation = True
             self._add(
                 "odoo-button-action-sudo-mutation",
@@ -216,10 +219,18 @@ class ButtonActionScanner(ast.NodeVisitor):
             return
         if not isinstance(target, ast.Name):
             return
-        if _is_sudo_expr(value, context.sudo_vars, self.constants):
+        if _is_sudo_expr(value, context.sudo_vars, self._effective_constants()):
             context.sudo_vars.add(target.id)
         else:
             context.sudo_vars.discard(target.id)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, method: str) -> None:
         self.findings.append(
@@ -442,8 +453,12 @@ def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

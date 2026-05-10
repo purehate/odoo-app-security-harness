@@ -223,6 +223,42 @@ class Sale(models.Model):
     assert any(f.model == "x.sale" for f in findings)
 
 
+def test_flags_class_constant_button_state_and_superuser_mutation(tmp_path: Path) -> None:
+    """Class-level state and superuser constants should still be recognized."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import models
+
+class Sale(models.Model):
+    SALE_MODEL = 'x.sale'
+    MODEL_ALIAS = SALE_MODEL
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+    STATE_FIELD = 'state'
+    STATE_ALIAS = STATE_FIELD
+    APPROVED = 'approved'
+    APPROVED_ALIAS = APPROVED
+
+    _name = MODEL_ALIAS
+
+    def action_approve(self):
+        orders = self.env['sale.order'].with_user(ADMIN_UID)
+        orders.write({STATE_ALIAS: APPROVED_ALIAS})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_button_actions(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-button-action-sudo-mutation" in rule_ids
+    assert "odoo-button-action-sensitive-state-write" in rule_ids
+    assert "odoo-button-action-mutation-no-access-check" in rule_ids
+    assert any(f.model == "x.sale" for f in findings)
+
+
 def test_flags_env_ref_admin_mutation_and_missing_access_check(tmp_path: Path) -> None:
     """Aliases elevated with base.user_admin should be treated like sudo aliases."""
     models = tmp_path / "module" / "models"
@@ -461,6 +497,31 @@ USERS_MODEL = 'res.users'
 TARGET_MODEL = USERS_MODEL
 
 class Settings(models.Model):
+    _name = 'x.settings'
+
+    def action_rotate_access(self):
+        self.env[TARGET_MODEL].write({'active': False})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_button_actions(tmp_path)
+
+    assert any(f.rule_id == "odoo-button-action-sensitive-model-mutation" for f in findings)
+
+
+def test_flags_class_constant_sensitive_model_mutation(tmp_path: Path) -> None:
+    """Class-level env model names should still flag sensitive mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import models
+
+class Settings(models.Model):
+    USERS_MODEL = 'res.users'
+    TARGET_MODEL = USERS_MODEL
+
     _name = 'x.settings'
 
     def action_rotate_access(self):
