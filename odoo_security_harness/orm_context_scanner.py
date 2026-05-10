@@ -64,6 +64,7 @@ class OrmContextScanner(ast.NodeVisitor):
         self.scope_stack: list[ContextScope] = []
         self.request_names: set[str] = {"request"}
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[OrmContextFinding]:
         """Scan the file."""
@@ -78,6 +79,11 @@ class OrmContextScanner(ast.NodeVisitor):
         self.constants = _module_constants(tree)
         self.visit(tree)
         return self.findings
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         """Track aliases for the Odoo HTTP request proxy."""
@@ -124,7 +130,7 @@ class OrmContextScanner(ast.NodeVisitor):
             node.func,
             scope.context_vars if scope else {},
             scope.context_dict_vars if scope else {},
-            self.constants,
+            self._effective_constants(),
         )
         if flags:
             if method in MUTATION_METHODS:
@@ -132,7 +138,7 @@ class OrmContextScanner(ast.NodeVisitor):
             elif (
                 method in READ_METHODS
                 and _flag_is_false(flags, "active_test")
-                and _is_sudo_expr(node.func, scope.sudo_vars if scope else set(), self.constants)
+                and _is_sudo_expr(node.func, scope.sudo_vars if scope else set(), self._effective_constants())
             ):
                 self._add(
                     "odoo-orm-context-sudo-active-test-read",
@@ -152,7 +158,7 @@ class OrmContextScanner(ast.NodeVisitor):
         self.reported_context_calls.add(id(node))
 
         scope = self.scope_stack[-1] if self.scope_stack else None
-        flags = _context_flags(node, scope.context_dict_vars if scope else {}, self.constants)
+        flags = _context_flags(node, scope.context_dict_vars if scope else {}, self._effective_constants())
         if _flag_is_false(flags, "active_test"):
             self._add(
                 "odoo-orm-context-active-test-disabled",
@@ -189,7 +195,7 @@ class OrmContextScanner(ast.NodeVisitor):
 
     def _scan_request_update_context_call(self, node: ast.Call, sink: str) -> None:
         scope = self.scope_stack[-1] if self.scope_stack else None
-        flags = _context_flags(node, scope.context_dict_vars if scope else {}, self.constants)
+        flags = _context_flags(node, scope.context_dict_vars if scope else {}, self._effective_constants())
         if not flags:
             return
 
@@ -315,11 +321,12 @@ class OrmContextScanner(ast.NodeVisitor):
 
     def _track_context_aliases(self, targets: list[ast.expr], value: ast.AST) -> None:
         scope = self.scope_stack[-1]
-        dict_flags = _dict_flags(value, self.constants)
+        constants = self._effective_constants()
+        dict_flags = _dict_flags(value, constants)
         if isinstance(value, ast.Name):
             dict_flags = scope.context_dict_vars.get(value.id, {})
-        flags = _context_flags_in_chain(value, scope.context_vars, scope.context_dict_vars, self.constants)
-        is_sudo = _is_sudo_expr(value, scope.sudo_vars, self.constants)
+        flags = _context_flags_in_chain(value, scope.context_vars, scope.context_dict_vars, constants)
+        is_sudo = _is_sudo_expr(value, scope.sudo_vars, constants)
         for target in targets:
             if not isinstance(target, ast.Name):
                 continue
@@ -335,6 +342,14 @@ class OrmContextScanner(ast.NodeVisitor):
                 scope.sudo_vars.add(target.id)
             else:
                 scope.sudo_vars.discard(target.id)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 @dataclass
@@ -516,8 +531,12 @@ def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

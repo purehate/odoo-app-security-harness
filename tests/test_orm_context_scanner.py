@@ -160,6 +160,35 @@ class Sale(models.Model):
     assert "odoo-orm-context-sudo-active-test-read" in rule_ids
 
 
+def test_flags_class_constant_with_user_active_test_read(tmp_path: Path) -> None:
+    """Class-level constants should not hide superuser active_test reads."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+    INCLUDE_ARCHIVED = False
+    ACTIVE_TEST = INCLUDE_ARCHIVED
+
+    def archived_orders(self):
+        return self.env['sale.order'].with_user(ADMIN_UID).with_context(active_test=ACTIVE_TEST).search([])
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-orm-context-active-test-disabled" in rule_ids
+    assert "odoo-orm-context-sudo-active-test-read" in rule_ids
+
+
 def test_flags_aliased_with_user_one_active_test_read(tmp_path: Path) -> None:
     """Aliased with_user(1) recordsets should preserve privileged read posture."""
     models = tmp_path / "module" / "models"
@@ -538,6 +567,42 @@ REQUEST_CONTEXT = {ACTIVE_ALIAS: DISABLED_ALIAS, MODULE_ALIAS: ENABLED_ALIAS}
 CONTEXT_ALIAS = REQUEST_CONTEXT
 
 class Controller(http.Controller):
+    @http.route('/quiet-admin', auth='user')
+    def quiet_admin(self):
+        request.update_context(CONTEXT_ALIAS)
+        return request.env['res.users'].create({'name': 'Admin'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-orm-context-request-active-test-disabled" in rule_ids
+    assert "odoo-orm-context-request-privileged-mode" in rule_ids
+
+
+def test_flags_request_update_context_class_constant_dict(tmp_path: Path) -> None:
+    """request.update_context should resolve recursive class-level context dictionaries."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    ACTIVE_KEY = 'active_test'
+    ACTIVE_ALIAS = ACTIVE_KEY
+    DISABLED = False
+    DISABLED_ALIAS = DISABLED
+    MODULE_KEY = 'module_uninstall'
+    MODULE_ALIAS = MODULE_KEY
+    ENABLED = True
+    ENABLED_ALIAS = ENABLED
+    REQUEST_CONTEXT = {ACTIVE_ALIAS: DISABLED_ALIAS, MODULE_ALIAS: ENABLED_ALIAS}
+    CONTEXT_ALIAS = REQUEST_CONTEXT
+
     @http.route('/quiet-admin', auth='user')
     def quiet_admin(self):
         request.update_context(CONTEXT_ALIAS)
