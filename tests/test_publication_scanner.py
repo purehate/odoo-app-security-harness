@@ -268,6 +268,37 @@ class Employee(models.Model):
     )
 
 
+def test_class_constant_alias_sensitive_model_default_publication_is_reported(tmp_path: Path) -> None:
+    """Class-scoped constants should not hide sensitive publication defaults."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "employee.py").write_text(
+        """
+from odoo import fields, models
+
+class Employee(models.Model):
+    EMPLOYEE_MODEL = 'hr.employee'
+    MODEL_NAME = EMPLOYEE_MODEL
+    PUBLISHED = True
+    DEFAULT_PUBLISHED = PUBLISHED
+
+    _name = MODEL_NAME
+
+    website_published = fields.Boolean(default=DEFAULT_PUBLISHED)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-publication-sensitive-default-published"
+        and f.model == "hr.employee"
+        and f.record_id == "website_published"
+        for f in findings
+    )
+
+
 def test_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
     """Public routes should not publish sensitive records from path values."""
     controllers = tmp_path / "module" / "controllers"
@@ -383,6 +414,39 @@ class Publish(http.Controller):
     )
 
 
+def test_class_constant_backed_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
+    """Class-scoped public auth should still flag public publication writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "publish.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Publish(http.Controller):
+    PUBLISH_AUTH_BASE = 'public'
+    PUBLISH_AUTH = PUBLISH_AUTH_BASE
+
+    @http.route('/public/orders/<int:order_id>/publish/<int:is_published>', auth=PUBLISH_AUTH)
+    def publish_order(self, order_id, is_published):
+        return request.env['sale.order'].sudo().browse(order_id).write({
+            'website_published': is_published,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-publication-public-route-mutation" in rule_ids
+    assert "odoo-publication-sensitive-runtime-published" in rule_ids
+    assert "odoo-publication-tainted-runtime-published" in rule_ids
+    assert any(
+        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
+    )
+
+
 def test_static_unpack_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
     """Static **route options should keep publication writes public/critical."""
     controllers = tmp_path / "module" / "controllers"
@@ -399,6 +463,41 @@ PUBLISH_OPTIONS = {
 }
 
 class Publish(http.Controller):
+    @http.route(**PUBLISH_OPTIONS)
+    def publish_order(self, order_id, **kwargs):
+        return request.env['sale.order'].sudo().browse(order_id).write({
+            'website_published': kwargs.get('published'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
+    )
+
+
+def test_class_constant_static_unpack_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
+    """Class-scoped static **route options should keep publication writes public/critical."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "publish.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Publish(http.Controller):
+    PUBLISH_OPTIONS = {
+        'route': '/public/orders/<int:order_id>/publish',
+        'auth': 'public',
+        'csrf': False,
+    }
+
     @http.route(**PUBLISH_OPTIONS)
     def publish_order(self, order_id, **kwargs):
         return request.env['sale.order'].sudo().browse(order_id).write({

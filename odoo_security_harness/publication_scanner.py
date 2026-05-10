@@ -236,6 +236,7 @@ class PublicationModelScanner(ast.NodeVisitor):
         self.request_names: set[str] = {"request"}
         self.route_names: set[str] = {"route"}
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[PublicationFinding]:
@@ -257,7 +258,9 @@ class PublicationModelScanner(ast.NodeVisitor):
         previous_dict_aliases = dict(self.dict_aliases)
         previous_local_constants = self.local_constants
         self.local_constants = {}
-        self.route_stack.append(_route_info(node, self.constants, self.route_names) or RouteContext(is_route=False))
+        self.route_stack.append(
+            _route_info(node, self._effective_constants(), self.route_names) or RouteContext(is_route=False)
+        )
 
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in TAINTED_ARG_NAMES or self._current_route().is_route:
@@ -286,10 +289,12 @@ class PublicationModelScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
-        model = _class_model_name(node, self.constants)
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        model = _class_model_name(node, self._effective_constants())
         self.model_stack.append(model)
         self.generic_visit(node)
         self.model_stack.pop()
+        self.class_constants_stack.pop()
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         model = self.model_stack[-1] if self.model_stack else ""
@@ -573,9 +578,13 @@ class PublicationModelScanner(ast.NodeVisitor):
             self._discard_local_constant_target(target.value)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.local_constants:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
-        return {**self.constants, **self.local_constants}
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        constants.update(self.local_constants)
+        return constants
 
     def _discard_dict_alias_target(self, target: ast.AST) -> None:
         if isinstance(target, ast.Name):
@@ -675,8 +684,12 @@ def _is_http_route(node: ast.AST, route_names: set[str] | None = None) -> bool:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
