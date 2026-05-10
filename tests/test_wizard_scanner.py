@@ -119,6 +119,32 @@ class RetentionWizard(models.TransientModel):
     assert any(f.rule_id == "odoo-wizard-long-transient-retention" for f in findings)
 
 
+def test_flags_class_constant_backed_disabled_transient_age_retention(tmp_path: Path) -> None:
+    """Class-scoped unlimited age retention constants should not hide wizard review leads."""
+    wizards = tmp_path / "module" / "wizards"
+    wizards.mkdir(parents=True)
+    (wizards / "retention.py").write_text(
+        """
+from odoo import models
+
+class RetentionWizard(models.TransientModel):
+    MODEL_NAME = 'retention.wizard'
+    DISABLED_RETENTION = 0
+    RETENTION_HOURS = DISABLED_RETENTION
+    _name = MODEL_NAME
+    _transient_max_hours = RETENTION_HOURS
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_wizards(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-wizard-long-transient-retention" and f.model == "retention.wizard"
+        for f in findings
+    )
+
+
 def test_flags_constant_backed_disabled_transient_count_retention(tmp_path: Path) -> None:
     """Constant-backed unlimited count retention should not hide wizard review leads."""
     wizards = tmp_path / "module" / "wizards"
@@ -494,6 +520,38 @@ class ApproveWizard(models.TransientModel):
     assert "odoo-wizard-mutation-no-access-check" in rule_ids
 
 
+def test_flags_class_constant_superuser_mutation(tmp_path: Path) -> None:
+    """Class-scoped superuser ID constants should count as privileged wizard mutations."""
+    wizards = tmp_path / "module" / "wizards"
+    wizards.mkdir(parents=True)
+    (wizards / "approve_alias_superuser.py").write_text(
+        """
+from odoo import models
+
+class ApproveWizard(models.TransientModel):
+    MODEL_NAME = 'approve.alias.superuser.wizard'
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+    _name = MODEL_NAME
+
+    def action_apply(self):
+        active_ids = self.env.context.get('active_ids')
+        records = self.env['sale.order'].browse(active_ids)
+        elevated = records.with_user(ADMIN_UID)
+        return elevated.write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_wizards(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-wizard-sudo-mutation" in rule_ids
+    assert "odoo-wizard-active-ids-bulk-mutation" in rule_ids
+    assert "odoo-wizard-mutation-no-access-check" in rule_ids
+    assert any(f.model == "approve.alias.superuser.wizard" for f in findings)
+
+
 def test_flags_starred_rest_sudo_alias_mutation(tmp_path: Path) -> None:
     """Starred-rest sudo record aliases should count as privileged wizard mutations."""
     wizards = tmp_path / "module" / "wizards"
@@ -626,6 +684,34 @@ class ConfigWizard(models.TransientModel):
 
     assert "odoo-wizard-sensitive-model-mutation" in rule_ids
     assert "odoo-wizard-mutation-no-access-check" in rule_ids
+
+
+def test_flags_class_constant_backed_sensitive_model_mutation(tmp_path: Path) -> None:
+    """Class-scoped env model-name constants should still reveal sensitive wizard mutations."""
+    wizards = tmp_path / "module" / "wizards"
+    wizards.mkdir(parents=True)
+    (wizards / "config.py").write_text(
+        """
+from odoo import models
+
+class ConfigWizard(models.TransientModel):
+    MODEL_NAME = 'config.wizard'
+    USERS_MODEL = 'res.users'
+    TARGET_MODEL = USERS_MODEL
+    _name = MODEL_NAME
+
+    def action_apply(self):
+        self.env[TARGET_MODEL].write({'active': False})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_wizards(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-wizard-sensitive-model-mutation" in rule_ids
+    assert "odoo-wizard-mutation-no-access-check" in rule_ids
+    assert any(f.model == "config.wizard" for f in findings)
 
 
 def test_flags_upload_parser_aliases(tmp_path: Path) -> None:

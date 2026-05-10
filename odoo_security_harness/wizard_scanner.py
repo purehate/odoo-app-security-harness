@@ -78,6 +78,7 @@ class WizardScanner(ast.NodeVisitor):
         self.module_aliases: dict[str, str] = {}
         self.function_aliases: dict[str, str] = {}
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[WizardFinding]:
         """Scan the file."""
@@ -110,10 +111,11 @@ class WizardScanner(ast.NodeVisitor):
         if not _is_transient_model(node):
             self.generic_visit(node)
             return
-        context = WizardContext(model=_extract_model_name(node))
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        context = WizardContext(model=_extract_model_name(node, self._effective_constants()))
         self.model_stack.append(context)
-        retention_hours = _numeric_class_attr(node, "_transient_max_hours", self.constants)
-        retention_count = _numeric_class_attr(node, "_transient_max_count", self.constants)
+        retention_hours = _numeric_class_attr(node, "_transient_max_hours", self._effective_constants())
+        retention_count = _numeric_class_attr(node, "_transient_max_count", self._effective_constants())
         if _has_long_transient_retention(retention_hours, retention_count):
             self._add(
                 "odoo-wizard-long-transient-retention",
@@ -135,6 +137,7 @@ class WizardScanner(ast.NodeVisitor):
                 )
         self.generic_visit(node)
         self.model_stack.pop()
+        self.class_constants_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         if not self.model_stack:
@@ -228,7 +231,7 @@ class WizardScanner(ast.NodeVisitor):
             context.uses_active_ids = True
         if "active_model" in text:
             context.uses_active_model = True
-        sensitive_model = _call_receiver_sensitive_model(node.func, self.constants)
+        sensitive_model = _call_receiver_sensitive_model(node.func, self._effective_constants())
         if sensitive_model and sink.rsplit(".", 1)[-1] in SENSITIVE_MODEL_MUTATION_METHODS:
             context.has_mutation = True
             self._add(
@@ -245,7 +248,7 @@ class WizardScanner(ast.NodeVisitor):
             if (
                 "sudo" in sink.split(".")[:-1]
                 or _uses_name(receiver, context.sudo_vars)
-                or _is_elevated_expr(receiver, self.constants)
+                or _is_elevated_expr(receiver, self._effective_constants())
             ):
                 self._add(
                     "odoo-wizard-sudo-mutation",
@@ -338,10 +341,18 @@ class WizardScanner(ast.NodeVisitor):
             return
         if not isinstance(target, ast.Name):
             return
-        if _is_elevated_expr(value, self.constants) or _uses_name(value, context.sudo_vars):
+        if _is_elevated_expr(value, self._effective_constants()) or _uses_name(value, context.sudo_vars):
             context.sudo_vars.add(target.id)
         else:
             context.sudo_vars.discard(target.id)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, method: str) -> None:
         self.findings.append(
@@ -403,14 +414,15 @@ def _is_transient_model(node: ast.ClassDef) -> bool:
     )
 
 
-def _extract_model_name(node: ast.ClassDef) -> str:
+def _extract_model_name(node: ast.ClassDef, constants: dict[str, ast.AST] | None = None) -> str:
     for item in node.body:
         if not isinstance(item, ast.Assign):
             continue
         for target in item.targets:
             if isinstance(target, ast.Name) and target.id in {"_name", "_inherit"}:
-                if isinstance(item.value, ast.Constant) and isinstance(item.value.value, str):
-                    return item.value.value
+                value = _resolve_constant(item.value, constants or {})
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    return value.value
     return node.name
 
 
@@ -628,8 +640,12 @@ def _unpack_target_value_pairs(
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
