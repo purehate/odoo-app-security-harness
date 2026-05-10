@@ -463,6 +463,42 @@ class TestOdooMapRuntime:
 class TestOdooMapRunnerHints:
     """Test main-runner OdooMap runtime handoff artifacts."""
 
+    def test_runner_extracts_aliased_constant_route_metadata(self, tmp_path: Path) -> None:
+        """Route inventory should feed runtime probes from aliased decorators and constants."""
+        namespace = runpy.run_path(str(RUN_SCRIPT), run_name="__test_odoo_run__")
+        module_dir = tmp_path / "demo"
+        controller_dir = module_dir / "controllers"
+        controller_dir.mkdir(parents=True)
+        controller = controller_dir / "main.py"
+        controller.write_text(
+            """
+from odoo import http as odoo_http
+from odoo.http import route as odoo_route
+
+AUTH = 'public'
+METHODS = ['GET']
+ROUTE_OPTIONS = {'auth': AUTH, 'methods': METHODS, 'type': 'http', 'csrf': True}
+
+class Demo(odoo_http.Controller):
+    LOCAL_ROUTE = '/demo/local'
+
+    @odoo_route(LOCAL_ROUTE, **ROUTE_OPTIONS)
+    def local(self):
+        return 'ok'
+""",
+            encoding="utf-8",
+        )
+        manifests = [{"module": "demo", "dir": "demo"}]
+
+        routes = namespace["extract_routes"](tmp_path, manifests)
+
+        assert len(routes) == 1
+        assert routes[0]["paths"] == ["/demo/local"]
+        assert routes[0]["auth"] == "'public'"
+        assert routes[0]["methods"] == "['GET']"
+        assert routes[0]["type"] == "'http'"
+        assert routes[0]["csrf"] == "True"
+
     def test_runtime_probe_readme_includes_odoomap_target(self, tmp_path: Path) -> None:
         """The generated replay command should carry the requested OdooMap target."""
         namespace = runpy.run_path(str(RUN_SCRIPT), run_name="__test_odoo_run__")

@@ -600,27 +600,231 @@ def extract_routes(repo: Path, manifests: list[dict]) -> list[dict]:
             if should_skip(path) or not path.exists() or path.is_dir():
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
-            for match in ROUTE_RE.finditer(text):
-                line = text.count("\n", 0, match.start()) + 1
-                tail = text[match.end() : match.end() + 500]
-                def_match = re.search(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", tail)
-                kwargs = {m.group("key"): m.group("value").strip() for m in KW_RE.finditer(match.group("args"))}
-                paths = extract_route_paths(match.group("args"))
-                routes.append(
-                    {
-                        "module": module,
-                        "file": rel(path, repo),
-                        "line": line,
-                        "function": def_match.group(1) if def_match else None,
-                        "route_args": " ".join(match.group("args").split())[:500],
-                        "paths": paths,
-                        "auth": kwargs.get("auth", "user(default)"),
-                        "csrf": kwargs.get("csrf", "True(default)"),
-                        "type": kwargs.get("type", "http(default)"),
-                        "methods": kwargs.get("methods"),
-                    }
-                )
+            try:
+                tree = ast.parse(text)
+            except SyntaxError:
+                routes.extend(_regex_extract_routes(text, module, path, repo))
+                continue
+            visitor = _RouteExtractor(module, path, repo, _static_constants_from_body(tree.body))
+            visitor.visit(tree)
+            routes.extend(visitor.routes)
     return routes
+
+
+def _regex_extract_routes(text: str, module: str, path: Path, repo: Path) -> list[dict]:
+    """Fallback route extraction for syntactically invalid files."""
+    routes = []
+    for match in ROUTE_RE.finditer(text):
+        line = text.count("\n", 0, match.start()) + 1
+        tail = text[match.end() : match.end() + 500]
+        def_match = re.search(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", tail)
+        kwargs = {m.group("key"): m.group("value").strip() for m in KW_RE.finditer(match.group("args"))}
+        paths = extract_route_paths(match.group("args"))
+        routes.append(
+            {
+                "module": module,
+                "file": rel(path, repo),
+                "line": line,
+                "function": def_match.group(1) if def_match else None,
+                "route_args": " ".join(match.group("args").split())[:500],
+                "paths": paths,
+                "auth": kwargs.get("auth", "user(default)"),
+                "csrf": kwargs.get("csrf", "True(default)"),
+                "type": kwargs.get("type", "http(default)"),
+                "methods": kwargs.get("methods"),
+            }
+        )
+    return routes
+
+
+class _RouteExtractor(ast.NodeVisitor):
+    def __init__(self, module: str, path: Path, repo: Path, module_constants: dict[str, ast.AST]) -> None:
+        self.module = module
+        self.path = path
+        self.repo = repo
+        self.module_constants = module_constants
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.http_module_names = {"http"}
+        self.route_decorator_names: set[str] = set()
+        self.routes: list[dict] = []
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.http_module_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.http":
+            for alias in node.names:
+                if alias.name == "route":
+                    self.route_decorator_names.add(alias.asname or alias.name)
+        self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node)
+        self.generic_visit(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
+        self.generic_visit(node)
+
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        constants = self._effective_constants()
+        for decorator in node.decorator_list:
+            if not self._is_http_route(decorator):
+                continue
+            kwargs = _route_kwargs_from_decorator(decorator, constants)
+            self.routes.append(
+                {
+                    "module": self.module,
+                    "file": rel(self.path, self.repo),
+                    "line": getattr(decorator, "lineno", node.lineno),
+                    "function": node.name,
+                    "route_args": _route_args_text(decorator, constants),
+                    "paths": _route_paths_from_decorator(decorator, constants),
+                    "auth": kwargs.get("auth", "user(default)"),
+                    "csrf": kwargs.get("csrf", "True(default)"),
+                    "type": kwargs.get("type", "http(default)"),
+                    "methods": kwargs.get("methods"),
+                }
+            )
+
+    def _is_http_route(self, node: ast.AST) -> bool:
+        target = node.func if isinstance(node, ast.Call) else node
+        if isinstance(target, ast.Attribute):
+            return (
+                target.attr == "route"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in self.http_module_names
+            )
+        if isinstance(target, ast.Name):
+            return target.id in self.route_decorator_names
+        return False
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.module_constants
+        constants = dict(self.module_constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
+
+
+def _route_args_text(node: ast.AST, constants: dict[str, ast.AST]) -> str:
+    if not isinstance(node, ast.Call):
+        return ""
+    parts = [ast.unparse(_resolve_constant(arg, constants)) for arg in node.args]
+    for keyword in node.keywords:
+        if keyword.arg is None:
+            parts.append(f"**{ast.unparse(_resolve_constant(keyword.value, constants))}")
+        else:
+            parts.append(f"{keyword.arg}={ast.unparse(_resolve_constant(keyword.value, constants))}")
+    return " ".join(" ".join(parts).split())[:500]
+
+
+def _route_kwargs_from_decorator(node: ast.AST, constants: dict[str, ast.AST]) -> dict[str, str]:
+    kwargs: dict[str, str] = {}
+    if not isinstance(node, ast.Call):
+        return kwargs
+    for keyword in node.keywords:
+        if keyword.arg in {"auth", "csrf", "type", "methods"}:
+            kwargs[keyword.arg] = ast.unparse(_resolve_constant(keyword.value, constants))
+        elif keyword.arg is None:
+            expanded = _static_dict_items(_resolve_constant(keyword.value, constants), constants)
+            for key, value in expanded.items():
+                if key in {"auth", "csrf", "type", "methods"}:
+                    kwargs[key] = ast.unparse(_resolve_constant(value, constants))
+    return kwargs
+
+
+def _route_paths_from_decorator(node: ast.AST, constants: dict[str, ast.AST]) -> list[str]:
+    if not isinstance(node, ast.Call):
+        return []
+    candidates = list(node.args[:1])
+    for keyword in node.keywords:
+        if keyword.arg in {"route", "routes"}:
+            candidates.append(keyword.value)
+        elif keyword.arg is None:
+            expanded = _static_dict_items(_resolve_constant(keyword.value, constants), constants)
+            for key in ("route", "routes"):
+                if key in expanded:
+                    candidates.append(expanded[key])
+    values: list[str] = []
+    for candidate in candidates:
+        values.extend(_literal_route_values(candidate, constants))
+    return values
+
+
+def _literal_route_values(node: ast.AST, constants: dict[str, ast.AST]) -> list[str]:
+    node = _resolve_constant(node, constants)
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        values = []
+        for item in node.elts:
+            resolved = _resolve_constant(item, constants)
+            if isinstance(resolved, ast.Constant) and isinstance(resolved.value, str):
+                values.append(resolved.value)
+        return values
+    return []
+
+
+def _static_dict_items(node: ast.AST, constants: dict[str, ast.AST]) -> dict[str, ast.AST]:
+    node = _resolve_constant(node, constants)
+    if not isinstance(node, ast.Dict):
+        return {}
+    values: dict[str, ast.AST] = {}
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            values[resolved_key.value] = value
+    return values
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
+    constants: dict[str, ast.AST] = {}
+    for statement in statements:
+        if isinstance(statement, ast.Assign):
+            for target in statement.targets:
+                if isinstance(target, ast.Name) and _is_static_literal(statement.value):
+                    constants[target.id] = statement.value
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and statement.value is not None
+            and _is_static_literal(statement.value)
+        ):
+            constants[statement.target.id] = statement.value
+    return constants
+
+
+def _is_static_literal(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.Name):
+        return True
+    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        return all(_is_static_literal(item) for item in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(
+            key is not None and _is_static_literal(key) and _is_static_literal(value)
+            for key, value in zip(node.keys, node.values, strict=False)
+        )
+    return False
+
+
+def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.AST:
+    if seen is None:
+        seen = set()
+    if isinstance(node, ast.Name) and node.id in constants and node.id not in seen:
+        return _resolve_constant(constants[node.id], constants, seen | {node.id})
+    return node
 
 
 def extract_route_paths(args_text: str) -> list[str]:
