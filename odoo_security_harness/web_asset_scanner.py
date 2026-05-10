@@ -728,6 +728,16 @@ class WebAssetScanner:
                     "postMessage",
                 )
 
+            if postmessage_match and _looks_sensitive_postmessage_payload(postmessage_match.group("args")):
+                self._add(
+                    "odoo-web-sensitive-postmessage-payload",
+                    "Sensitive frontend value sent with postMessage",
+                    "medium",
+                    line_number,
+                    "Frontend code sends token/session/secret-like values through postMessage; avoid exposing credentials across frame or window boundaries",
+                    "postMessage",
+                )
+
             for sink, pattern in OBJECT_MERGE_PATTERNS.items():
                 if pattern.search(line) and OBJECT_MERGE_TAINT_RE.search(line):
                     self._add(
@@ -1141,6 +1151,20 @@ def _looks_risky_postmessage_target_origin(args: str) -> bool:
         or SENSITIVE_URL_DYNAMIC_VALUE_RE.search(target_origin)
         or re.search(r"\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?\b", target_origin)
     )
+
+
+def _looks_sensitive_postmessage_payload(args: str) -> bool:
+    values = _split_js_args(args)
+    if len(values) < 2:
+        return False
+    payload = values[0].strip()
+    if not (SENSITIVE_URL_PARAM_NAME_RE.search(payload) and SENSITIVE_URL_DYNAMIC_VALUE_RE.search(payload)):
+        return False
+    target_origin = values[1].strip()
+    literal = _strip_js_string(target_origin)
+    if literal != target_origin:
+        return literal == "*" or _is_external_url(literal)
+    return _looks_risky_postmessage_target_origin(args)
 
 
 def _looks_risky_dynamic_import_target(target: str) -> bool:

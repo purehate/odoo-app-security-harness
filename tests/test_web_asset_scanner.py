@@ -1076,6 +1076,31 @@ def test_postmessage_same_origin_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-web-postmessage-dynamic-origin" for f in findings)
 
 
+def test_postmessage_sensitive_payload_detected(tmp_path: Path) -> None:
+    """postMessage should not carry credentials across frame/window boundaries."""
+    path = tmp_path / "widget.js"
+    path.write_text("window.parent.postMessage({access_token: response.token}, 'https://portal.example.com');\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-sensitive-postmessage-payload"
+        and f.sink == "postMessage"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_postmessage_non_sensitive_payload_ignored(tmp_path: Path) -> None:
+    """Routine frame messages without credential-shaped data should stay quiet."""
+    path = tmp_path / "widget.js"
+    path.write_text("window.parent.postMessage({event: 'invoice-ready'}, 'https://portal.example.com');\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-sensitive-postmessage-payload" for f in findings)
+
+
 def test_prototype_pollution_object_merge_detected(tmp_path: Path) -> None:
     """Frontend object merges should not consume request/RPC data without key filtering."""
     path = tmp_path / "widget.js"

@@ -1110,6 +1110,12 @@ def test_taxonomy_coverage_classifies_frontend_message_origin_validation() -> No
                 "source": "web-assets",
                 "title": "postMessage uses dynamic target origin",
                 "message": "postMessage uses a nonliteral or request-derived target origin",
+            },
+            {
+                "rule_id": "odoo-web-sensitive-postmessage-payload",
+                "source": "web-assets",
+                "title": "Sensitive frontend value sent with postMessage",
+                "message": "Frontend code sends token/session/secret-like values through postMessage across frame or window boundaries",
             }
         ]
     )
