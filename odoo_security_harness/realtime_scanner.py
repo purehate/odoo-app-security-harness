@@ -78,6 +78,7 @@ class RealtimeScanner(ast.NodeVisitor):
         self.route_names: set[str] = {"route"}
         self.route_stack: list[RouteContext] = []
         self.function_stack: list[str] = []
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[RealtimeFinding]:
         """Scan the file."""
@@ -96,7 +97,7 @@ class RealtimeScanner(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
         previous_sudo = set(self.sudo_names)
-        route = _route_info(node, self.constants, self.route_names) or RouteContext(is_route=False)
+        route = _route_info(node, self._effective_constants(), self.route_names) or RouteContext(is_route=False)
         self.route_stack.append(route)
         self.function_stack.append(node.name)
         for arg in [*node.args.args, *node.args.kwonlyargs]:
@@ -115,6 +116,11 @@ class RealtimeScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo.http":
@@ -166,7 +172,8 @@ class RealtimeScanner(ast.NodeVisitor):
         channel_arg = _channel_subscription_arg(node)
         if channel_arg is None:
             return
-        if not self._expr_is_tainted(channel_arg) and not _has_public_channel_hint(channel_arg, self.constants):
+        constants = self._effective_constants()
+        if not self._expr_is_tainted(channel_arg) and not _has_public_channel_hint(channel_arg, constants):
             return
         route = self._current_route()
         severity = "high" if route.auth in {"public", "none"} or self._current_function() == "_poll" else "medium"
@@ -181,6 +188,7 @@ class RealtimeScanner(ast.NodeVisitor):
 
     def _scan_bus_send(self, node: ast.Call, sink: str) -> None:
         route = self._current_route()
+        constants = self._effective_constants()
         if route.auth in {"public", "none"}:
             self._add(
                 "odoo-realtime-public-route-bus-send",
@@ -191,7 +199,7 @@ class RealtimeScanner(ast.NodeVisitor):
                 sink,
             )
 
-        if _is_sudo_expr(node.func, self.sudo_names, self.constants):
+        if _is_sudo_expr(node.func, self.sudo_names, constants):
             self._add(
                 "odoo-realtime-bus-send-sudo",
                 "Bus notification is sent through an elevated environment",
@@ -204,7 +212,7 @@ class RealtimeScanner(ast.NodeVisitor):
         channel_arg = node.args[0] if node.args else _keyword_value(node, "channel")
         payload_arg = _payload_arg(node)
         if channel_arg is not None and (
-            self._expr_is_tainted(channel_arg) or _has_public_channel_hint(channel_arg, self.constants)
+            self._expr_is_tainted(channel_arg) or _has_public_channel_hint(channel_arg, constants)
         ):
             self._add(
                 "odoo-realtime-broad-or-tainted-channel",
@@ -215,7 +223,7 @@ class RealtimeScanner(ast.NodeVisitor):
                 sink,
             )
         if payload_arg is not None and (
-            self._expr_is_tainted(payload_arg) or _contains_sensitive_hint(payload_arg, self.constants)
+            self._expr_is_tainted(payload_arg) or _contains_sensitive_hint(payload_arg, constants)
         ):
             self._add(
                 "odoo-realtime-sensitive-payload",
@@ -226,7 +234,7 @@ class RealtimeScanner(ast.NodeVisitor):
                 sink,
             )
         for channel_item, payload_item in _sendmany_items(node):
-            if self._expr_is_tainted(channel_item) or _has_public_channel_hint(channel_item, self.constants):
+            if self._expr_is_tainted(channel_item) or _has_public_channel_hint(channel_item, constants):
                 self._add(
                     "odoo-realtime-broad-or-tainted-channel",
                     "Bus notification targets broad or request-controlled channel",
@@ -235,7 +243,7 @@ class RealtimeScanner(ast.NodeVisitor):
                     "Realtime bus channel is broad or request-derived; verify tenant/user scoping and channel entropy",
                     sink,
                 )
-            if self._expr_is_tainted(payload_item) or _contains_sensitive_hint(payload_item, self.constants):
+            if self._expr_is_tainted(payload_item) or _contains_sensitive_hint(payload_item, constants):
                 self._add(
                     "odoo-realtime-sensitive-payload",
                     "Bus notification may expose sensitive payload data",
@@ -246,7 +254,7 @@ class RealtimeScanner(ast.NodeVisitor):
                 )
 
     def _scan_notify(self, node: ast.Call, sink: str) -> None:
-        if _is_sudo_expr(node.func, self.sudo_names, self.constants):
+        if _is_sudo_expr(node.func, self.sudo_names, self._effective_constants()):
             self._add(
                 "odoo-realtime-notification-sudo",
                 "Notification is sent through an elevated environment",
@@ -366,7 +374,7 @@ class RealtimeScanner(ast.NodeVisitor):
             return
         if not isinstance(target, ast.Name):
             return
-        if _is_sudo_expr(value, self.sudo_names, self.constants):
+        if _is_sudo_expr(value, self.sudo_names, self._effective_constants()):
             self.sudo_names.add(target.id)
         else:
             self.sudo_names.discard(target.id)
@@ -394,6 +402,14 @@ class RealtimeScanner(ast.NodeVisitor):
 
     def _current_function(self) -> str:
         return self.function_stack[-1] if self.function_stack else ""
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, sink: str) -> None:
         self.findings.append(
@@ -457,8 +473,12 @@ def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[tu
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

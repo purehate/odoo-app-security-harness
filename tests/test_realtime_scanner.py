@@ -142,6 +142,63 @@ class BusController(http.Controller):
     assert "odoo-realtime-sensitive-payload" in rule_ids
 
 
+def test_class_constant_backed_public_bus_send_with_sensitive_payload(tmp_path: Path) -> None:
+    """Class-scoped public route constants should still expose bus sends."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "bus.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class BusController(http.Controller):
+    BUS_ROUTES = ['/public/bus', '/public/bus/alt']
+    BUS_AUTH = 'public'
+
+    @http.route(BUS_ROUTES, auth=BUS_AUTH)
+    def bus(self, **kwargs):
+        payload = {'email': kwargs.get('email'), 'access_token': kwargs.get('token')}
+        request.env['bus.bus']._sendone('public_notifications', payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-realtime-public-route-bus-send" in rule_ids
+    assert "odoo-realtime-broad-or-tainted-channel" in rule_ids
+    assert "odoo-realtime-sensitive-payload" in rule_ids
+
+
+def test_class_constant_static_unpack_public_bus_send_with_sensitive_payload(tmp_path: Path) -> None:
+    """Class-scoped static **route options should not hide public bus sends."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "bus.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class BusController(http.Controller):
+    BUS_OPTIONS = {'route': '/public/bus', 'auth': 'public'}
+
+    @http.route(**BUS_OPTIONS)
+    def bus(self, **kwargs):
+        payload = {'email': kwargs.get('email'), 'access_token': kwargs.get('token')}
+        request.env['bus.bus']._sendone('public_notifications', payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-realtime-public-route-bus-send" in rule_ids
+    assert "odoo-realtime-broad-or-tainted-channel" in rule_ids
+    assert "odoo-realtime-sensitive-payload" in rule_ids
+
+
 def test_recursive_constant_backed_public_bus_send_with_sensitive_payload(tmp_path: Path) -> None:
     """Chained public route auth constants should still expose bus sends."""
     controllers = tmp_path / "module" / "controllers"
@@ -590,6 +647,28 @@ def notify(self):
     assert any(f.rule_id == "odoo-realtime-bus-send-sudo" for f in findings)
 
 
+def test_flags_class_constant_with_user_bus_send(tmp_path: Path) -> None:
+    """Class-scoped superuser constants should keep bus send sudo posture visible."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+class Sync:
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+
+    def notify(self):
+        Bus = self.env['bus.bus'].with_user(ADMIN_UID)
+        Bus._sendmany([('global', {'message': 'done'})])
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+
+    assert any(f.rule_id == "odoo-realtime-bus-send-sudo" for f in findings)
+
+
 def test_flags_env_ref_root_bus_send(tmp_path: Path) -> None:
     """Root XML-ID with_user calls should count as elevated bus sends."""
     models = tmp_path / "module" / "models"
@@ -763,6 +842,31 @@ PAYLOAD = SECRET_PAYLOAD
 
 def notify(self):
     self.env['bus.bus']._sendone(CHANNEL, PAYLOAD)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-realtime-broad-or-tainted-channel" in rule_ids
+    assert "odoo-realtime-sensitive-payload" in rule_ids
+
+
+def test_flags_class_constant_backed_broad_channel_and_sensitive_payload(tmp_path: Path) -> None:
+    """Class-scoped channel and payload shapes should still be inspected."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+class Sync:
+    PUBLIC_CHANNEL = 'public_notifications'
+    CHANNEL = PUBLIC_CHANNEL
+    SECRET_PAYLOAD = {'access_token': 'redacted', 'email': 'a@example.com'}
+    PAYLOAD = SECRET_PAYLOAD
+
+    def notify(self):
+        self.env['bus.bus']._sendone(CHANNEL, PAYLOAD)
 """,
         encoding="utf-8",
     )
