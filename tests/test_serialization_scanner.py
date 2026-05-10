@@ -746,6 +746,60 @@ class ImportController(http.Controller):
     assert any(f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical" for f in findings)
 
 
+def test_aliased_http_module_route_path_payload_is_tainted_for_deserialization(tmp_path: Path) -> None:
+    """Aliased odoo.http route decorators should still taint route arguments."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import pickle
+from odoo import http as odoo_http
+
+class ImportController(odoo_http.Controller):
+    @odoo_http.route('/public/import/<string:serialized_blob>', auth='public', csrf=False)
+    def import_blob(self, serialized_blob):
+        return pickle.loads(serialized_blob)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical" for f in findings)
+
+
+def test_non_odoo_route_decorator_does_not_taint_deserialization_path_parameter(tmp_path: Path) -> None:
+    """Local route decorators should not make arbitrary path parameters tainted."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import pickle
+from odoo import http
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class ImportController(http.Controller):
+    @router.route('/public/import/<string:serialized_blob>', auth='public', csrf=False)
+    def import_blob(self, serialized_blob):
+        return pickle.loads(serialized_blob)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert not any(
+        f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "high" for f in findings)
+
+
 def test_tainted_xml_fromstring_is_reported(tmp_path: Path) -> None:
     """Request/attachment-derived XML parsing deserves parser hardening review."""
     py = tmp_path / "importer.py"

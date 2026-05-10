@@ -87,7 +87,8 @@ class SerializationScanner(ast.NodeVisitor):
         self.module_aliases: dict[str, str] = {}
         self.function_aliases: dict[str, str] = {}
         self.request_names: set[str] = {"request"}
-        self.route_decorator_names: set[str] = {"route"}
+        self.http_module_names: set[str] = {"http"}
+        self.route_decorator_names: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.size_guard_stack: list[bool] = []
@@ -114,7 +115,7 @@ class SerializationScanner(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous = set(self.tainted_names)
         self.size_guard_stack.append(_function_has_size_guard(node))
-        is_route = _function_is_http_route(node, self.route_decorator_names)
+        is_route = _function_is_http_route(node, self.route_decorator_names, self.http_module_names)
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in TAINTED_ARG_NAMES or (is_route and arg.arg not in {"self", "cls"}):
                 self.tainted_names.add(arg.arg)
@@ -184,6 +185,10 @@ class SerializationScanner(ast.NodeVisitor):
         elif node.module == "lxml.etree":
             for alias in node.names:
                 self.function_aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+        elif node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.http_module_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -549,15 +554,27 @@ def _function_has_size_guard(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bo
 
 
 def _function_is_http_route(
-    node: ast.FunctionDef | ast.AsyncFunctionDef, route_decorator_names: set[str] | None = None
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    route_decorator_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
 ) -> bool:
-    return any(_is_http_route(decorator, route_decorator_names) for decorator in node.decorator_list)
+    return any(_is_http_route(decorator, route_decorator_names, http_module_names) for decorator in node.decorator_list)
 
 
-def _is_http_route(node: ast.AST, route_decorator_names: set[str] | None = None) -> bool:
-    route_decorator_names = route_decorator_names or {"route"}
+def _is_http_route(
+    node: ast.AST,
+    route_decorator_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
+) -> bool:
+    route_decorator_names = route_decorator_names or set()
+    http_module_names = http_module_names or {"http"}
     target = node.func if isinstance(node, ast.Call) else node
-    return _call_name(target) in {"http.route", *route_decorator_names}
+    return (
+        isinstance(target, ast.Attribute)
+        and target.attr == "route"
+        and isinstance(target.value, ast.Name)
+        and target.value.id in http_module_names
+    ) or (isinstance(target, ast.Name) and target.id in route_decorator_names)
 
 
 def _keyword_value_is(keyword: ast.keyword, expected: bool, constants: dict[str, ast.AST] | None = None) -> bool:
