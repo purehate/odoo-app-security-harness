@@ -84,6 +84,7 @@ class IntegrationScanner(ast.NodeVisitor):
         self.request_names: set[str] = {"request"}
         self.constants: dict[str, ast.AST] = {}
         self.local_constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[IntegrationFinding]:
         """Scan the file."""
@@ -98,6 +99,11 @@ class IntegrationScanner(ast.NodeVisitor):
         self.constants = _module_constants(tree)
         self.visit(tree)
         return self.findings
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
@@ -450,9 +456,14 @@ class IntegrationScanner(ast.NodeVisitor):
             self._mark_local_constant_target(target.value, value)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.local_constants:
-            return self.constants
-        return {**self.constants, **self.local_constants}
+        constants = self.constants
+        if self.class_constants_stack:
+            constants = dict(constants)
+            for class_constants in self.class_constants_stack:
+                constants.update(class_constants)
+        if self.local_constants:
+            constants = {**constants, **self.local_constants}
+        return constants
 
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
@@ -663,8 +674,12 @@ def _keyword_value_is(keyword: ast.keyword, expected: bool, constants: dict[str,
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

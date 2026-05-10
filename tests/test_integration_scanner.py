@@ -84,6 +84,28 @@ def sync():
     assert any(f.rule_id == "odoo-integration-tls-verify-disabled" for f in findings)
 
 
+def test_tls_verification_disabled_class_constant_is_reported(tmp_path: Path) -> None:
+    """Class-scoped verify constants should not hide disabled TLS verification."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+class SyncClient:
+    TLS_VERIFY_BASE = False
+    TLS_VERIFY = TLS_VERIFY_BASE
+
+    def sync(self):
+        return requests.get('https://api.example.test', timeout=10, verify=TLS_VERIFY)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-tls-verify-disabled" for f in findings)
+
+
 def test_tls_verification_disabled_local_constant_is_reported(tmp_path: Path) -> None:
     """Function-local verify constants should not hide disabled TLS verification."""
     py = tmp_path / "integration.py"
@@ -469,6 +491,32 @@ def sync(**kwargs):
     assert any(f.rule_id == "odoo-integration-tainted-auth-header" for f in findings)
 
 
+def test_class_constant_authorization_header_name_is_reported(tmp_path: Path) -> None:
+    """Class-scoped sensitive header names should still expose tainted credentials."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+class SyncClient:
+    AUTH_HEADER_BASE = 'Authorization'
+    AUTH_HEADER = AUTH_HEADER_BASE
+
+    def sync(self, **kwargs):
+        return requests.post(
+            'https://api.example.test/sync',
+            headers={AUTH_HEADER: 'Bearer %s' % kwargs.get('access_token')},
+            timeout=5,
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-tainted-auth-header" for f in findings)
+
+
 def test_local_authorization_header_name_is_reported(tmp_path: Path) -> None:
     """Function-local sensitive header names should still expose tainted credentials."""
     py = tmp_path / "integration.py"
@@ -662,6 +710,29 @@ USE_SHELL = USE_SHELL_BASE
 def run(**kwargs):
     cmd = kwargs.get('cmd')
     return subprocess.run(cmd, shell=USE_SHELL)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-subprocess-shell-true" and f.severity == "high" for f in findings)
+
+
+def test_shell_true_class_constant_with_tainted_command_is_high_severity(tmp_path: Path) -> None:
+    """Class-scoped shell constants should not hide shell=True subprocess review findings."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import subprocess
+
+class Runner:
+    USE_SHELL_BASE = True
+    USE_SHELL = USE_SHELL_BASE
+
+    def run(self, **kwargs):
+        cmd = kwargs.get('cmd')
+        return subprocess.run(cmd, shell=USE_SHELL)
 """,
         encoding="utf-8",
     )
