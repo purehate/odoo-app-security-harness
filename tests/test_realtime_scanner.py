@@ -85,6 +85,66 @@ class BusController(http.Controller):
     assert "odoo-realtime-sensitive-payload" in rule_ids
 
 
+def test_aliased_http_module_route_public_bus_send_with_sensitive_payload(tmp_path: Path) -> None:
+    """Aliased odoo.http module route decorators should remain recognized."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "bus.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class BusController(odoo_http.Controller):
+    @odoo_http.route('/public/bus', auth='public')
+    def bus(self, **kwargs):
+        payload = {'email': kwargs.get('email'), 'access_token': kwargs.get('token')}
+        request.env['bus.bus']._sendone('public_notifications', payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-realtime-public-route-bus-send" in rule_ids
+    assert "odoo-realtime-broad-or-tainted-channel" in rule_ids
+    assert "odoo-realtime-sensitive-payload" in rule_ids
+
+
+def test_non_odoo_route_decorator_bus_send_is_not_public_route(tmp_path: Path) -> None:
+    """Local route decorators should not make bus sends public routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "bus.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class BusController(http.Controller):
+    @router.route('/public/bus', auth='public')
+    def bus(self, **kwargs):
+        payload = {'email': kwargs.get('email'), 'access_token': kwargs.get('token')}
+        request.env['bus.bus']._sendone('public_notifications', payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-realtime-public-route-bus-send" not in rule_ids
+    assert "odoo-realtime-broad-or-tainted-channel" in rule_ids
+    assert "odoo-realtime-sensitive-payload" in rule_ids
+
+
 def test_constant_backed_public_bus_send_with_sensitive_payload(tmp_path: Path) -> None:
     """Constant-backed public route auth should still expose bus sends."""
     controllers = tmp_path / "module" / "controllers"
