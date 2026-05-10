@@ -57,6 +57,7 @@ class FileUploadScanner(ast.NodeVisitor):
         self.request_names: set[str] = {"request"}
         self.route_names: set[str] = {"route"}
         self.constants: dict[str, ast.AST] = {}
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[FileUploadFinding]:
         """Scan the file."""
@@ -79,6 +80,8 @@ class FileUploadScanner(ast.NodeVisitor):
         previous_attachment_values = dict(self.attachment_value_names)
         previous_archives = set(self.tainted_archive_names)
         previous_secure_filenames = set(self.secure_filename_names)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         is_route = _function_is_http_route(node, self.route_names)
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in TAINTED_ARG_NAMES or (is_route and arg.arg not in {"self", "cls"}):
@@ -95,6 +98,7 @@ class FileUploadScanner(ast.NodeVisitor):
         self.attachment_value_names = previous_attachment_values
         self.tainted_archive_names = previous_archives
         self.secure_filename_names = previous_secure_filenames
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -121,7 +125,9 @@ class FileUploadScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> Any:
-        is_attachment = _attachment_model_in_expr(node.value, self.attachment_names)
+        for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
+        is_attachment = _attachment_model_in_expr(node.value, self.attachment_names, self._effective_constants())
         is_decoded_upload = self._is_base64_decode(node.value) and _call_has_tainted_input(
             node.value, self._expr_is_tainted
         )
@@ -138,12 +144,15 @@ class FileUploadScanner(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_tainted_target(node.target, node.value)
             self._mark_decoded_upload_target(
                 node.target,
                 self._is_base64_decode(node.value) and _call_has_tainted_input(node.value, self._expr_is_tainted),
             )
-            self._mark_attachment_target(node.target, _attachment_model_in_expr(node.value, self.attachment_names))
+            self._mark_attachment_target(
+                node.target, _attachment_model_in_expr(node.value, self.attachment_names, self._effective_constants())
+            )
             self._mark_attachment_value_target(node.target, node.value)
             self._mark_archive_target_from_value(node.target, node.value, self._is_tainted_archive_open(node.value))
             self._mark_secure_filename_target(node.target, self._expr_uses_secure_filename(node.value))
@@ -160,7 +169,8 @@ class FileUploadScanner(ast.NodeVisitor):
         self.visit_For(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
-        is_attachment = _attachment_model_in_expr(node.value, self.attachment_names)
+        self._mark_local_constant_target(node.target, node.value)
+        is_attachment = _attachment_model_in_expr(node.value, self.attachment_names, self._effective_constants())
         is_decoded_upload = self._is_base64_decode(node.value) and _call_has_tainted_input(
             node.value, self._expr_is_tainted
         )
@@ -182,7 +192,7 @@ class FileUploadScanner(ast.NodeVisitor):
             self._scan_shutil_write(node, sink)
         elif _is_path_write(node):
             self._scan_path_write(node, sink)
-        elif _is_attachment_create(node, self.attachment_names):
+        elif _is_attachment_create(node, self.attachment_names, self._effective_constants()):
             self._scan_attachment_create(node)
         elif self._is_archive_extract(node, sink):
             self._scan_archive_extract(node, sink)
@@ -202,7 +212,7 @@ class FileUploadScanner(ast.NodeVisitor):
     def _scan_open(self, node: ast.Call) -> None:
         if not node.args:
             return
-        mode = _open_mode(node, self.constants)
+        mode = _open_mode(node, self._effective_constants())
         if not any(flag in mode for flag in ("w", "a", "x", "+")):
             return
         if self._expr_is_tainted(node.args[0]):
@@ -262,7 +272,7 @@ class FileUploadScanner(ast.NodeVisitor):
                 "ir.attachment.create",
             )
         public_value = dict_values.get("public")
-        if public_value and _is_true_constant(public_value, self.constants):
+        if public_value and _is_true_constant(public_value, self._effective_constants()):
             self._add(
                 "odoo-file-upload-public-attachment-create",
                 "Uploaded attachment is created public",
@@ -410,6 +420,40 @@ class FileUploadScanner(ast.NodeVisitor):
         elif isinstance(target, ast.Tuple | ast.List):
             for element in target.elts:
                 self._discard_name_target(element, names)
+
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target, value):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+
+        if isinstance(target, ast.Tuple | ast.List):
+            self._discard_local_constant_target(target)
+
+    def _discard_local_constant_target(self, target: ast.AST) -> None:
+        if isinstance(target, ast.Name):
+            self.local_constants.pop(target.id, None)
+        elif isinstance(target, ast.Starred):
+            self._discard_local_constant_target(target.value)
+        elif isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.local_constants:
+            return self.constants
+        return {**self.constants, **self.local_constants}
 
     def _mark_decoded_upload_target(self, target: ast.AST, is_decoded_upload: bool) -> None:
         if is_decoded_upload:
@@ -662,11 +706,15 @@ def _is_path_write(node: ast.Call) -> bool:
     return isinstance(node.func, ast.Attribute) and node.func.attr in FILE_WRITE_METHODS
 
 
-def _is_attachment_create(node: ast.Call, attachment_names: set[str]) -> bool:
+def _is_attachment_create(
+    node: ast.Call,
+    attachment_names: set[str],
+    constants: dict[str, ast.AST] | None = None,
+) -> bool:
     return (
         isinstance(node.func, ast.Attribute)
         and node.func.attr == "create"
-        and _attachment_model_in_expr(node.func.value, attachment_names)
+        and _attachment_model_in_expr(node.func.value, attachment_names, constants)
     )
 
 
@@ -677,21 +725,31 @@ def _dict_mentions_attachment_create_values(node: ast.Dict) -> bool:
     return False
 
 
-def _attachment_model_in_expr(node: ast.AST, attachment_names: set[str]) -> bool:
+def _attachment_model_in_expr(
+    node: ast.AST,
+    attachment_names: set[str],
+    constants: dict[str, ast.AST] | None = None,
+) -> bool:
+    constants = constants or {}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _attachment_model_in_expr(resolved, attachment_names, constants)
     if "ir.attachment" in _safe_unparse(node):
         return True
+    if any(_literal_string(child, constants) == "ir.attachment" for child in ast.walk(node)):
+        return True
     if isinstance(node, ast.Starred):
-        return _attachment_model_in_expr(node.value, attachment_names)
+        return _attachment_model_in_expr(node.value, attachment_names, constants)
     if isinstance(node, ast.Name):
         return node.id in attachment_names
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return any(_attachment_model_in_expr(element, attachment_names) for element in node.elts)
+        return any(_attachment_model_in_expr(element, attachment_names, constants) for element in node.elts)
     if isinstance(node, ast.Attribute):
-        return _attachment_model_in_expr(node.value, attachment_names)
+        return _attachment_model_in_expr(node.value, attachment_names, constants)
     if isinstance(node, ast.Call):
-        return _attachment_model_in_expr(node.func, attachment_names)
+        return _attachment_model_in_expr(node.func, attachment_names, constants)
     if isinstance(node, ast.Subscript):
-        return _attachment_model_in_expr(node.value, attachment_names)
+        return _attachment_model_in_expr(node.value, attachment_names, constants)
     return False
 
 

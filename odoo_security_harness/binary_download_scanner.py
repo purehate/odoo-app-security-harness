@@ -60,6 +60,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         self.sudo_names: set[str] = set()
         self.model_names: dict[str, str] = {}
         self.route_stack: list[RouteContext] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[BinaryDownloadFinding]:
         """Scan the file."""
@@ -90,6 +91,8 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         previous_binary = set(self.binary_names)
         previous_sudo = set(self.sudo_names)
         previous_models = dict(self.model_names)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         route = _route_info(node, self.constants, self.route_names) or RouteContext(is_route=False)
         self.route_stack.append(route)
 
@@ -108,6 +111,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         self.binary_names = previous_binary
         self.sudo_names = previous_sudo
         self.model_names = previous_models
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -117,8 +121,9 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         previous_sudo_names = set(self.sudo_names)
         previous_model_names = dict(self.model_names)
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_tainted_target(target, node.value)
-        if _is_attachment_lookup(node.value, self.model_names, self.constants):
+        if _is_attachment_lookup(node.value, self.model_names, self._effective_constants()):
             for target in node.targets:
                 self._mark_name_target(target, self.attachment_names)
         for target in node.targets:
@@ -133,8 +138,9 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             previous_attachment_names = set(self.attachment_names)
             previous_sudo_names = set(self.sudo_names)
             previous_model_names = dict(self.model_names)
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_tainted_target(node.target, node.value)
-            if _is_attachment_lookup(node.value, self.model_names, self.constants):
+            if _is_attachment_lookup(node.value, self.model_names, self._effective_constants()):
                 self._mark_name_target(node.target, self.attachment_names)
             self._mark_binary_target(node.target, node.value)
             self._track_aliases(
@@ -164,8 +170,9 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         previous_attachment_names = set(self.attachment_names)
         previous_sudo_names = set(self.sudo_names)
         previous_model_names = dict(self.model_names)
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_tainted_target(node.target, node.value)
-        if _is_attachment_lookup(node.value, self.model_names, self.constants):
+        if _is_attachment_lookup(node.value, self.model_names, self._effective_constants()):
             self._mark_name_target(node.target, self.attachment_names)
         self._mark_binary_target(node.target, node.value)
         self._track_aliases(
@@ -204,7 +211,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _scan_binary_content(self, node: ast.Call, sink: str) -> None:
-        if _is_sudo_expr(node.func, self.sudo_names, self.constants):
+        if _is_sudo_expr(node.func, self.sudo_names, self._effective_constants()):
             self._add(
                 "odoo-binary-ir-http-binary-content-sudo",
                 "ir.http binary_content is called with an elevated environment",
@@ -229,7 +236,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         location = _redirect_location_arg(node)
         if (
             location is not None
-            and _contains_web_content(location, self.constants)
+            and _contains_web_content(location, self._effective_constants())
             and self._expr_is_tainted(location)
         ):
             self._add(
@@ -380,8 +387,9 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         if not isinstance(target, ast.Name):
             return
 
-        model_name = _model_name_in_expr(value, model_names, self.constants)
-        if _is_sudo_expr(value, sudo_names, self.constants):
+        constants = self._effective_constants()
+        model_name = _model_name_in_expr(value, model_names, constants)
+        if _is_sudo_expr(value, sudo_names, constants):
             self.sudo_names.add(target.id)
         else:
             self.sudo_names.discard(target.id)
@@ -389,7 +397,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             self.model_names[target.id] = model_name
         else:
             self.model_names.pop(target.id, None)
-        if _is_attachment_lookup(value, model_names, self.constants) or (
+        if _is_attachment_lookup(value, model_names, constants) or (
             isinstance(value, ast.Name) and value.id in attachment_names
         ):
             self.attachment_names.add(target.id)
@@ -418,6 +426,43 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             self._mark_name_target(target, self.binary_names)
         else:
             self._discard_name_target(target, self.binary_names)
+
+    def _mark_local_constant_target(self, target: ast.expr, value: ast.AST) -> None:
+        if not self.route_stack:
+            return
+
+        if isinstance(target, ast.List | ast.Tuple) and isinstance(value, ast.List | ast.Tuple):
+            for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(child_target, child_value)
+            return
+
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+
+        if isinstance(target, ast.List | ast.Tuple):
+            self._discard_local_constant_target(target)
+
+    def _discard_local_constant_target(self, target: ast.expr) -> None:
+        if isinstance(target, ast.Name):
+            self.local_constants.pop(target.id, None)
+        elif isinstance(target, ast.List | ast.Tuple):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+        elif isinstance(target, ast.Starred):
+            self._discard_local_constant_target(target.value)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.local_constants:
+            return self.constants
+        return {**self.constants, **self.local_constants}
 
     def _mark_name_target(self, target: ast.expr, names: set[str]) -> None:
         if isinstance(target, ast.Name):

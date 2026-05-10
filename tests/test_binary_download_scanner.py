@@ -204,6 +204,35 @@ class Download(http.Controller):
     )
 
 
+def test_local_constant_alias_attachment_model_response(tmp_path: Path) -> None:
+    """Function-local model constants should expose attachment downloads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Download(http.Controller):
+    @http.route('/public/download', auth='public')
+    def download(self, **kwargs):
+        attachment_model = 'ir.attachment'
+        attachment = request.env[attachment_model].sudo().browse(int(kwargs.get('id')))
+        return request.make_response(attachment.datas)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-attachment-data-response"
+        and f.severity == "high"
+        and f.sink == "request.make_response"
+        for f in findings
+    )
+
+
 def test_flags_aliased_public_attachment_datas_response(tmp_path: Path) -> None:
     """Attachment aliases should not hide binary response payloads."""
     controllers = tmp_path / "module" / "controllers"
@@ -719,6 +748,35 @@ class Binary(http.Controller):
     assert "odoo-binary-tainted-binary-content-args" in rule_ids
 
 
+def test_flags_local_constant_alias_superuser_binary_content_with_tainted_arguments(tmp_path: Path) -> None:
+    """Function-local superuser aliases should keep with_user binary_content elevated."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "binary.py").write_text(
+        """
+from odoo import SUPERUSER_ID, http
+from odoo.http import request
+
+class Binary(http.Controller):
+    @http.route('/public/binary', auth='public')
+    def binary(self, **kwargs):
+        root_user = SUPERUSER_ID
+        return request.env['ir.http'].with_user(root_user).binary_content(
+            model=kwargs.get('model'),
+            id=kwargs.get('id'),
+            field='datas',
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-binary-ir-http-binary-content-sudo" in rule_ids
+    assert "odoo-binary-tainted-binary-content-args" in rule_ids
+
+
 def test_flags_env_ref_root_binary_content_with_tainted_arguments(tmp_path: Path) -> None:
     """with_user(env.ref('base.user_root')) binary_content calls are elevated."""
     controllers = tmp_path / "module" / "controllers"
@@ -989,6 +1047,29 @@ class Redirect(http.Controller):
     @http.route('/public/content', auth='public')
     def content(self, **kwargs):
         return request.redirect(DOWNLOAD_URL % kwargs.get('id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(f.rule_id == "odoo-binary-tainted-web-content-redirect" for f in findings)
+
+
+def test_flags_local_constant_alias_tainted_web_content_redirect(tmp_path: Path) -> None:
+    """Function-local constants should not hide /web/content redirect targets."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "redirect.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Redirect(http.Controller):
+    @http.route('/public/content', auth='public')
+    def content(self, **kwargs):
+        download_url = '/web/content/%s?download=1'
+        return request.redirect(download_url % kwargs.get('id'))
 """,
         encoding="utf-8",
     )

@@ -66,6 +66,25 @@ def upload(**kwargs):
     assert any(f.rule_id == "odoo-file-upload-tainted-path-write" for f in findings)
 
 
+def test_tainted_open_local_constant_write_mode_is_reported(tmp_path: Path) -> None:
+    """Function-local write-mode constants should not hide request-controlled path writes."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def upload(**kwargs):
+    write_mode = 'wb'
+    filename = kwargs.get('filename')
+    with open(filename, write_mode) as handle:
+        handle.write(b'data')
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-tainted-path-write" for f in findings)
+
+
 def test_request_alias_tainted_open_write_path_is_reported(tmp_path: Path) -> None:
     """Aliased Odoo request params should taint upload filesystem paths."""
     py = tmp_path / "controller.py"
@@ -357,6 +376,42 @@ def upload(self, **kwargs):
     findings = FileUploadScanner(py).scan_file()
 
     assert any(f.rule_id == "odoo-file-upload-public-attachment-create" for f in findings)
+
+
+def test_public_attachment_create_local_constant_is_reported(tmp_path: Path) -> None:
+    """Function-local public=True constants should not hide public attachment creation."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def upload(self, **kwargs):
+    public_attachment = True
+    payload = kwargs.get('payload')
+    return self.env['ir.attachment'].create({'name': 'x.bin', 'datas': payload, 'public': public_attachment})
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-public-attachment-create" for f in findings)
+
+
+def test_attachment_create_local_constant_model_is_reported(tmp_path: Path) -> None:
+    """Function-local model constants should not hide attachment creates."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def upload(self, **kwargs):
+    attachment_model = 'ir.attachment'
+    payload = kwargs.get('payload')
+    return self.env[attachment_model].create({'name': 'x.bin', 'datas': payload})
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-attachment-from-request" for f in findings)
 
 
 def test_aliased_attachment_values_from_request_are_reported(tmp_path: Path) -> None:
