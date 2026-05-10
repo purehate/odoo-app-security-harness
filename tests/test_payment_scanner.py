@@ -69,6 +69,50 @@ class PaymentController(http.Controller):
     assert any(f.rule_id == "odoo-payment-public-callback-no-signature" for f in findings)
 
 
+def test_aliased_http_module_payment_callback_without_signature_is_reported(tmp_path: Path) -> None:
+    """Aliased Odoo http modules should still expose public payment callbacks."""
+    py = tmp_path / "controllers.py"
+    py.write_text(
+        """
+from odoo import http as odoo_http
+
+class PaymentController(odoo_http.Controller):
+    @odoo_http.route('/payment/provider/webhook', auth='public', csrf=False)
+    def webhook(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-payment-public-callback-no-signature" for f in findings)
+
+
+def test_non_odoo_route_decorator_payment_callback_is_ignored(tmp_path: Path) -> None:
+    """Arbitrary .route decorators should not be treated as Odoo payment callbacks."""
+    py = tmp_path / "controllers.py"
+    py.write_text(
+        """
+class Bus:
+    def route(self, path, **kwargs):
+        return lambda func: func
+
+bus = Bus()
+
+class PaymentController:
+    @bus.route('/payment/provider/webhook', auth='public', csrf=False)
+    def webhook(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-payment-public-callback-no-signature" for f in findings)
+
+
 def test_signed_payment_callback_is_not_reported(tmp_path: Path) -> None:
     """Visible signature validation should suppress the route-level callback finding."""
     py = tmp_path / "controllers.py"
