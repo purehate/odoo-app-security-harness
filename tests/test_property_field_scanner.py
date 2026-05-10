@@ -444,6 +444,72 @@ class Properties(http.Controller):
     assert "odoo-property-runtime-sensitive-value" in rule_ids
 
 
+def test_aliased_http_module_route_public_sudo_runtime_property_create(tmp_path: Path) -> None:
+    """Aliased odoo.http module route decorators should remain recognized."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "properties.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Properties(odoo_http.Controller):
+    @odoo_http.route('/properties/account', auth='public', csrf=False)
+    def set_property(self, **kwargs):
+        return request.env['ir.property'].sudo().create({
+            'fields_id': 'account.field_res_partner__property_account_receivable_id',
+            'value_reference': kwargs.get('account'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-property-public-route-mutation" in rule_ids
+    assert "odoo-property-sudo-mutation" in rule_ids
+    assert "odoo-property-request-derived-mutation" in rule_ids
+    assert "odoo-property-runtime-sensitive-value" in rule_ids
+
+
+def test_non_odoo_route_decorator_runtime_property_create_is_not_public(tmp_path: Path) -> None:
+    """Local route decorators should not make property mutations public routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "properties.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Properties(http.Controller):
+    @router.route('/properties/account', auth='public', csrf=False)
+    def set_property(self, **kwargs):
+        return request.env['ir.property'].sudo().create({
+            'fields_id': 'account.field_res_partner__property_account_receivable_id',
+            'value_reference': kwargs.get('account'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-property-public-route-mutation" not in rule_ids
+    assert "odoo-property-sudo-mutation" in rule_ids
+    assert "odoo-property-request-derived-mutation" in rule_ids
+    assert "odoo-property-runtime-sensitive-value" in rule_ids
+
+
 def test_static_unpack_public_route_options_property_create(tmp_path: Path) -> None:
     """Static route option unpacking should preserve public property-mutation context."""
     controllers = tmp_path / "module" / "controllers"
