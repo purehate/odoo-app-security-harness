@@ -423,6 +423,122 @@ class Controller(http.Controller):
     )
 
 
+def test_flags_class_constant_alias_api_key_model_superuser_route_and_config_key(tmp_path: Path) -> None:
+    """Class-scoped API-key route, model, superuser, and config aliases should resolve."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    API_ROUTE = '/public/apikey/class-aliased'
+    API_AUTH = 'public'
+    API_MODEL = 'res.users.apikeys'
+    CONFIG_MODEL = 'ir.config_parameter'
+    ROOT = 1
+    SECRET_KEY = 'payment.provider.api_key'
+
+    @http.route(API_ROUTE, auth=API_AUTH, csrf=False)
+    def create_key(self, **kwargs):
+        keys = request.env[API_MODEL].with_user(ROOT)
+        config = request.env[CONFIG_MODEL].sudo()
+        config.set_param(SECRET_KEY, kwargs.get('api_key'))
+        return keys.create({'name': kwargs.get('name')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-api-key-public-route-mutation" in rule_ids
+    assert "odoo-api-key-sudo-mutation" in rule_ids
+    assert "odoo-api-key-request-derived-mutation" in rule_ids
+    assert "odoo-api-key-config-parameter-request-secret" in rule_ids
+    assert any(
+        f.rule_id == "odoo-api-key-config-parameter-request-secret"
+        and f.severity == "critical"
+        and f.route == "/public/apikey/class-aliased"
+        for f in findings
+    )
+
+
+def test_flags_class_constant_static_unpack_route_options_api_key_create(tmp_path: Path) -> None:
+    """Class-scoped static ** route options should not hide public API-key mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    API_KEY_OPTIONS = {
+        'routes': ['/public/apikey/class-options', '/public/apikey/class-options/v2'],
+        'auth': 'public',
+    }
+    MODEL = 'res.users.apikeys'
+
+    @http.route(**API_KEY_OPTIONS)
+    def create_key(self, **kwargs):
+        return request.env[MODEL].sudo().create({
+            'name': kwargs.get('name'),
+            'user_id': kwargs.get('user_id'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-api-key-public-route-mutation" in rule_ids
+    assert "odoo-api-key-sudo-mutation" in rule_ids
+    assert "odoo-api-key-request-derived-mutation" in rule_ids
+    assert any(f.route == "/public/apikey/class-options,/public/apikey/class-options/v2" for f in findings)
+
+
+def test_flags_local_constant_alias_api_key_model_superuser_and_config_key(tmp_path: Path) -> None:
+    """Function-scoped API-key model, superuser, and config key aliases should resolve."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/apikey/local-aliased', auth='public', csrf=False)
+    def create_key(self, **kwargs):
+        api_model = 'res.users.apikeys'
+        config_model = 'ir.config_parameter'
+        root_uid = 1
+        secret_key = 'payment.provider.api_key'
+        keys = request.env[api_model].with_user(root_uid)
+        config = request.env[config_model].sudo()
+        config.set_param(secret_key, kwargs.get('api_key'))
+        return keys.create({'name': kwargs.get('name')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-api-key-public-route-mutation" in rule_ids
+    assert "odoo-api-key-sudo-mutation" in rule_ids
+    assert "odoo-api-key-request-derived-mutation" in rule_ids
+    assert "odoo-api-key-config-parameter-request-secret" in rule_ids
+    assert any(
+        f.rule_id == "odoo-api-key-config-parameter-request-secret"
+        and f.severity == "critical"
+        and f.route == "/public/apikey/local-aliased"
+        for f in findings
+    )
+
+
 def test_flags_keyword_with_user_superuser_api_key_mutation(tmp_path: Path) -> None:
     """Keyword with_user(user=SUPERUSER_ID) API-key mutations are elevated."""
     models = tmp_path / "module" / "models"

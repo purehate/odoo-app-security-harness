@@ -67,6 +67,8 @@ class ApiKeyScanner(ast.NodeVisitor):
         self.key_response_vars: set[str] = set()
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
         self.route_decorator_names: set[str] = {"route"}
 
     def scan_python_file(self) -> list[ApiKeyFinding]:
@@ -91,6 +93,11 @@ class ApiKeyScanner(ast.NodeVisitor):
                 elif alias.name == "route":
                     self.route_decorator_names.add(alias.asname or alias.name)
         self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def scan_xml_file(self) -> list[ApiKeyFinding]:
         """Scan XML records for committed API-key records."""
@@ -120,7 +127,11 @@ class ApiKeyScanner(ast.NodeVisitor):
         previous_config_parameter_vars = set(self.config_parameter_vars)
         previous_tainted = set(self.tainted_names)
         previous_key_response_vars = set(self.key_response_vars)
-        route = _route_info(node, self.constants, self.route_decorator_names) or RouteContext(is_route=False)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
+        route = _route_info(node, self._effective_constants(), self.route_decorator_names) or RouteContext(
+            is_route=False
+        )
         self.route_stack.append(route)
 
         for arg in [*node.args.args, *node.args.kwonlyargs]:
@@ -138,12 +149,14 @@ class ApiKeyScanner(ast.NodeVisitor):
         self.config_parameter_vars = previous_config_parameter_vars
         self.tainted_names = previous_tainted
         self.key_response_vars = previous_key_response_vars
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_api_key_model_target(target, node.value)
             self._mark_config_parameter_target(target, node.value)
             self._mark_tainted_target(target, node.value)
@@ -152,6 +165,7 @@ class ApiKeyScanner(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_api_key_model_target(node.target, node.value)
             self._mark_config_parameter_target(node.target, node.value)
             self._mark_tainted_target(node.target, node.value)
@@ -169,6 +183,7 @@ class ApiKeyScanner(ast.NodeVisitor):
         self.visit_For(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_api_key_model_target(node.target, node.value)
         self._mark_config_parameter_target(node.target, node.value)
         self._mark_tainted_target(node.target, node.value)
@@ -178,7 +193,8 @@ class ApiKeyScanner(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
         method = sink.rsplit(".", 1)[-1]
-        model = _api_key_model_in_expr(node.func, self.api_key_vars, self.constants)
+        constants = self._effective_constants()
+        model = _api_key_model_in_expr(node.func, self.api_key_vars, constants)
         route = self._current_route()
 
         if model and method in MUTATION_METHODS:
@@ -192,7 +208,7 @@ class ApiKeyScanner(ast.NodeVisitor):
                     route=route.display_path(),
                     sink=sink,
                 )
-            if _is_elevated_expr(node.func, self.sudo_api_key_vars, self.constants):
+            if _is_elevated_expr(node.func, self.sudo_api_key_vars, constants):
                 self._add(
                     "odoo-api-key-sudo-mutation",
                     "API key mutation runs with elevated environment",
@@ -227,11 +243,11 @@ class ApiKeyScanner(ast.NodeVisitor):
         if _is_config_parameter_set_param(
             node.func,
             self.config_parameter_vars,
-            self.constants,
+            constants,
         ) and _set_param_stores_request_api_key(
             node,
             self._expr_is_tainted,
-            self.constants,
+            constants,
         ):
             self._add(
                 "odoo-api-key-config-parameter-request-secret",
@@ -352,8 +368,9 @@ class ApiKeyScanner(ast.NodeVisitor):
                 self._discard_name_target(target, self.tainted_names)
 
     def _mark_api_key_model_target(self, target: ast.AST, value: ast.AST) -> None:
-        model = _api_key_model_in_expr(value, self.api_key_vars, self.constants)
-        is_sudo_api_key = _is_elevated_expr(value, self.sudo_api_key_vars, self.constants)
+        constants = self._effective_constants()
+        model = _api_key_model_in_expr(value, self.api_key_vars, constants)
+        is_sudo_api_key = _is_elevated_expr(value, self.sudo_api_key_vars, constants)
         if isinstance(target, ast.Name):
             if model:
                 self.api_key_vars.add(target.id)
@@ -383,7 +400,11 @@ class ApiKeyScanner(ast.NodeVisitor):
                 self._discard_name_target(target, self.sudo_api_key_vars)
 
     def _mark_config_parameter_target(self, target: ast.AST, value: ast.AST) -> None:
-        is_config_parameter = _is_config_parameter_expr(value, self.config_parameter_vars, self.constants)
+        is_config_parameter = _is_config_parameter_expr(
+            value,
+            self.config_parameter_vars,
+            self._effective_constants(),
+        )
         if isinstance(target, ast.Name):
             if is_config_parameter:
                 self.config_parameter_vars.add(target.id)
@@ -445,6 +466,44 @@ class ApiKeyScanner(ast.NodeVisitor):
 
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
+
+    def _mark_local_constant_target(self, target: ast.expr, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            self._discard_local_constant_target(target)
+            return
+        if not isinstance(target, ast.Name):
+            return
+        if _is_static_literal(value):
+            self.local_constants[target.id] = value
+        else:
+            self.local_constants.pop(target.id, None)
+
+    def _discard_local_constant_target(self, target: ast.expr) -> None:
+        if isinstance(target, ast.Name):
+            self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Starred):
+            self._discard_local_constant_target(target.value)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.local_constants and not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        constants.update(self.local_constants)
+        return constants
 
     def _line_for_record(self, record: ElementTree.Element) -> int:
         record_id = record.get("id")
@@ -572,8 +631,12 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
