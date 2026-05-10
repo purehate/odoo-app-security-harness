@@ -307,6 +307,7 @@ class WebsiteFormFieldScanner(ast.NodeVisitor):
         self.findings: list[WebsiteFormFinding] = []
         self.model_stack: list[str] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[WebsiteFormFinding]:
         """Scan Python model declarations."""
@@ -325,11 +326,13 @@ class WebsiteFormFieldScanner(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
         model = _class_model_name(node)
         self.model_stack.append(model)
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
         self.generic_visit(node)
+        self.class_constants_stack.pop()
         self.model_stack.pop()
 
     def visit_Assign(self, node: ast.Assign) -> Any:
-        if _is_website_form_allowed_field(node.value, self.constants):
+        if _is_website_form_allowed_field(node.value, self._effective_constants()):
             model = self.model_stack[-1] if self.model_stack else ""
             for target in node.targets:
                 field = _assigned_field_name(target)
@@ -337,7 +340,7 @@ class WebsiteFormFieldScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
-        if _is_website_form_allowed_field(node.value, self.constants):
+        if _is_website_form_allowed_field(node.value, self._effective_constants()):
             model = self.model_stack[-1] if self.model_stack else ""
             self._add_exposed_field(model, _assigned_field_name(node.target), node.lineno)
         self.generic_visit(node)
@@ -361,6 +364,14 @@ class WebsiteFormFieldScanner(ast.NodeVisitor):
             )
         )
 
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
+
 
 class WebsiteFormRouteScanner(ast.NodeVisitor):
     """Scanner for custom website form routes that weaken CSRF protection."""
@@ -369,6 +380,8 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
         self.path = path
         self.findings: list[WebsiteFormFinding] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[WebsiteFormFinding]:
         """Scan Python controller declarations."""
@@ -384,8 +397,13 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
         self.visit(tree)
         return self.findings
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
-        route = _website_form_route_with_csrf_disabled(node, self.constants)
+        route = _website_form_route_with_csrf_disabled(node, self._effective_constants())
         if route:
             self.findings.append(
                 WebsiteFormFinding(
@@ -402,13 +420,30 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
                     field="csrf",
                 )
             )
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         self.generic_visit(node)
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
 
+    def visit_Assign(self, node: ast.Assign) -> Any:
+        for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
+        if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
+        self.generic_visit(node)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
+        self.generic_visit(node)
+
     def visit_Call(self, node: ast.Call) -> Any:
-        if _call_disables_sanitize_form(node, self.constants):
+        if _call_disables_sanitize_form(node, self._effective_constants()):
             self.findings.append(
                 WebsiteFormFinding(
                     rule_id="odoo-website-form-sanitize-disabled",
@@ -422,6 +457,40 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
                 )
             )
         self.generic_visit(node)
+
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
+    def _discard_local_constant_target(self, target: ast.AST) -> None:
+        if isinstance(target, ast.Name):
+            self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Starred):
+            self._discard_local_constant_target(target.value)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack and not self.local_constants:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        constants.update(self.local_constants)
+        return constants
 
 
 def _field_name(element: ElementTree.Element) -> str:
@@ -597,8 +666,12 @@ def _constant_string(node: ast.AST) -> str:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
