@@ -2264,6 +2264,12 @@
       "capec": ["CAPEC-103"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "controller_weak_referrer_policy": {
+      "label": "Controller sets a weak Referrer-Policy header",
+      "cwe": ["CWE-200", "CWE-359", "CWE-693"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
     "controller_tainted_html_response": {
       "label": "Controller returns request-derived data as an HTML response",
       "cwe": ["CWE-79", "CWE-116"],

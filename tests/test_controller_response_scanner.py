@@ -1757,6 +1757,55 @@ class Controller(http.Controller):
     assert scan_controller_responses(tmp_path) == []
 
 
+def test_flags_weak_referrer_policy_header(tmp_path: Path) -> None:
+    """Controllers should not explicitly leak full URLs in referrers."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/tokenized', auth='public')
+    def tokenized(self):
+        return request.make_response('ok', headers={'Referrer-Policy': 'unsafe-url'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-weak-referrer-policy"
+        and f.severity == "medium"
+        and "unsafe-url" in f.message
+        for f in findings
+    )
+
+
+def test_strong_referrer_policy_header_is_ignored(tmp_path: Path) -> None:
+    """Strict referrer policies should avoid referrer leakage noise."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/tokenized', auth='public')
+    def tokenized(self):
+        response = request.make_response('ok')
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_controller_responses(tmp_path) == []
+
+
 def test_sensitive_cookie_with_security_flags_is_ignored(tmp_path: Path) -> None:
     """Explicit HttpOnly/Secure/SameSite flags suppress the cookie posture warning."""
     controllers = tmp_path / "module" / "controllers"

@@ -433,6 +433,17 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 f"Controller sets X-Frame-Options to {weak_frame_options!r}; use DENY/SAMEORIGIN or CSP frame-ancestors to reduce clickjacking exposure",
                 sink,
             )
+        weak_referrer_policy = _weak_referrer_policy_value(lowered_header, value, self._effective_constants())
+        if weak_referrer_policy:
+            route = self._current_route()
+            self._add(
+                "odoo-controller-weak-referrer-policy",
+                "Controller sets weak Referrer-Policy",
+                "medium" if route.auth in {"public", "none"} else "low",
+                line,
+                f"Controller sets Referrer-Policy to {weak_referrer_policy!r}; use no-referrer or strict-origin-when-cross-origin to reduce tokenized URL leakage",
+                sink,
+            )
         if lowered_header == "access-control-allow-credentials" and _truthy_header_value(
             value, self._effective_constants()
         ):
@@ -1028,6 +1039,15 @@ def _weak_x_frame_options_value(header_name: str, value: ast.AST, constants: dic
     if frame_options.lower() in {"deny", "sameorigin"}:
         return ""
     return frame_options
+
+
+def _weak_referrer_policy_value(header_name: str, value: ast.AST, constants: dict[str, ast.AST]) -> str:
+    if header_name != "referrer-policy":
+        return ""
+    policy = _constant_string(value, constants).strip()
+    if policy.lower() in {"unsafe-url", "no-referrer-when-downgrade"}:
+        return policy
+    return ""
 
 
 def _cookie_name_node(node: ast.Call) -> ast.AST | None:

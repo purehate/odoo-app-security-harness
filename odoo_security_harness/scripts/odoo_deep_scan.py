@@ -3809,6 +3809,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "controller_weak_referrer_policy",
+        (
+            "odoo-controller-weak-referrer-policy",
+            "controller sets weak referrer-policy",
+            "referrer-policy to 'unsafe-url'",
+            "referrer-policy to 'no-referrer-when-downgrade'",
+            "tokenized url leakage",
+        ),
+    ),
+    (
         "controller_tainted_html_response",
         (
             "controller-tainted-html-response",

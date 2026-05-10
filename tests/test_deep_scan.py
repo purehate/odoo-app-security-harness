@@ -6649,6 +6649,24 @@ def test_taxonomy_coverage_classifies_controller_weak_frame_options() -> None:
     assert "CWE-1021" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_controller_weak_referrer_policy() -> None:
+    """Weak referrer policy headers should map to sensitive URL leakage taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "source": "controller-responses",
+                "rule_id": "odoo-controller-weak-referrer-policy",
+                "title": "Controller sets weak Referrer-Policy",
+                "message": "Controller sets Referrer-Policy to 'unsafe-url'; use no-referrer or strict-origin-when-cross-origin to reduce tokenized URL leakage",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "controller_weak_referrer_policy"
+    assert "CWE-200" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_controller_tainted_html_response() -> None:
     """Request-derived HTML responses should map to XSS taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(
@@ -7878,6 +7896,7 @@ class TestController(http.Controller):
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'unsafe-inline'"
         response.headers['X-Frame-Options'] = 'ALLOW-FROM https://partner.example'
+        response.headers['Referrer-Policy'] = 'unsafe-url'
         response.headers['X-Accel-Redirect'] = kwargs.get('path')
         response.set_cookie('session_token', kwargs.get('token'))
         return response
@@ -8881,6 +8900,7 @@ msgstr "<a href=\\"javascript:alert(1)\\">Ouvrir %(name)s</a>"
     assert "odoo-controller-cors-credentials-enabled" in rule_ids
     assert "odoo-controller-weak-csp-header" in rule_ids
     assert "odoo-controller-weak-frame-options" in rule_ids
+    assert "odoo-controller-weak-referrer-policy" in rule_ids
     assert "odoo-controller-tainted-file-read" in rule_ids
     assert sum(1 for finding in findings if finding["rule_id"] == "odoo-controller-tainted-file-read") >= 2
     assert "odoo-controller-tainted-file-offload-header" in rule_ids
