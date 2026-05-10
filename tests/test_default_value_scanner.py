@@ -85,6 +85,62 @@ class Defaults(http.Controller):
     assert "odoo-default-sensitive-field-set" in rule_ids
 
 
+def test_aliased_http_module_public_sudo_default_set_from_request(tmp_path: Path) -> None:
+    """Aliased Odoo http module imports should not hide public ir.default writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "defaults.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Defaults(odoo_http.Controller):
+    @odoo_http.route('/defaults/group', auth='public')
+    def set_group(self, **kwargs):
+        return request.env['ir.default'].sudo().set('res.users', 'groups_id', kwargs.get('groups_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-default-public-route-set" in rule_ids
+    assert "odoo-default-sudo-set" in rule_ids
+    assert "odoo-default-request-derived-set" in rule_ids
+    assert "odoo-default-sensitive-field-set" in rule_ids
+
+
+def test_non_odoo_route_decorator_public_default_set_is_ignored(tmp_path: Path) -> None:
+    """Local route-like decorators should not create Odoo route context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "defaults.py").write_text(
+        """
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Defaults:
+    @router.route('/defaults/group', auth='public')
+    def set_group(self, **kwargs):
+        return request.env['ir.default'].sudo().set('res.users', 'groups_id', kwargs.get('groups_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+
+    assert not any(f.rule_id == "odoo-default-public-route-set" for f in findings)
+    assert any(f.rule_id == "odoo-default-sudo-set" for f in findings)
+
+
 def test_constant_backed_public_sudo_default_set_from_request(tmp_path: Path) -> None:
     """Constant-backed public auth should still expose ir.default writes."""
     controllers = tmp_path / "module" / "controllers"
