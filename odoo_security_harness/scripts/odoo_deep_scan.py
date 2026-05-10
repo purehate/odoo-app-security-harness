@@ -8575,8 +8575,21 @@ class _RouteInventoryVisitor(ast.NodeVisitor):
         self.repo = repo
         self.path = path
         self.module_constants = module_constants
+        self.http_module_names: set[str] = {"http"}
+        self.route_decorator_names: set[str] = set()
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.routes: list[dict[str, str | int]] = []
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.http_module_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.http":
+            for alias in node.names:
+                if alias.name == "route":
+                    self.route_decorator_names.add(alias.asname or alias.name)
+        self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self.class_constants_stack.append(_static_constants_from_body(node.body))
@@ -8594,7 +8607,12 @@ class _RouteInventoryVisitor(ast.NodeVisitor):
     def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         constants = self._effective_constants()
         for decorator in node.decorator_list:
-            route = _route_from_decorator(decorator, constants)
+            route = _route_from_decorator(
+                decorator,
+                constants,
+                http_module_names=self.http_module_names,
+                route_decorator_names=self.route_decorator_names,
+            )
             if route is None:
                 continue
             self.routes.append(
@@ -8602,8 +8620,12 @@ class _RouteInventoryVisitor(ast.NodeVisitor):
                     "file": str(self.path.relative_to(self.repo)),
                     "line": getattr(decorator, "lineno", node.lineno),
                     "end_line": getattr(node, "end_lineno", node.lineno),
+                    "function": node.name,
                     "route": route["route"],
                     "auth": route["auth"],
+                    "csrf": route["csrf"],
+                    "type": route["type"],
+                    "methods": route["methods"],
                 }
             )
 
@@ -8616,30 +8638,75 @@ class _RouteInventoryVisitor(ast.NodeVisitor):
         return constants
 
 
-def _route_from_decorator(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> dict[str, str] | None:
-    if not _is_http_route(node):
+def _route_from_decorator(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    *,
+    http_module_names: set[str] | None = None,
+    route_decorator_names: set[str] | None = None,
+) -> dict[str, str] | None:
+    if not _is_http_route(
+        node,
+        http_module_names=http_module_names,
+        route_decorator_names=route_decorator_names,
+    ):
         return None
     constants = constants or {}
     auth = "user"
+    csrf = "True"
+    route_type = "http"
+    methods = ""
     route = "<unknown>"
     if isinstance(node, ast.Call):
         if node.args:
             route = _route_text(node.args[0], constants)
         for keyword in node.keywords:
-            value = _resolve_constant(keyword.value, constants)
-            if keyword.arg == "auth" and isinstance(value, ast.Constant):
-                auth = str(value.value)
-            elif keyword.arg in {"route", "routes"}:
-                route = _route_text(value, constants)
-    return {"route": route, "auth": auth}
+            for key, value in _route_keyword_items(keyword, constants).items():
+                if key == "auth" and isinstance(value, ast.Constant):
+                    auth = str(value.value)
+                elif key == "csrf" and isinstance(value, ast.Constant):
+                    csrf = str(value.value)
+                elif key == "type" and isinstance(value, ast.Constant):
+                    route_type = str(value.value)
+                elif key == "methods":
+                    methods = _route_text(value, constants)
+                elif key in {"route", "routes"}:
+                    route = _route_text(value, constants)
+    return {"route": route, "auth": auth, "csrf": csrf, "type": route_type, "methods": methods}
 
 
-def _is_http_route(node: ast.AST) -> bool:
+def _route_keyword_items(keyword: ast.keyword, constants: dict[str, ast.AST]) -> dict[str, ast.AST]:
+    if keyword.arg is not None:
+        return {keyword.arg: _resolve_constant(keyword.value, constants)}
+    value = _resolve_constant(keyword.value, constants)
+    if not isinstance(value, ast.Dict):
+        return {}
+    items: dict[str, ast.AST] = {}
+    for raw_key, raw_value in zip(value.keys, value.values, strict=True):
+        key = _resolve_constant(raw_key, constants) if raw_key is not None else raw_key
+        if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+            continue
+        items[key.value] = _resolve_constant(raw_value, constants)
+    return items
+
+
+def _is_http_route(
+    node: ast.AST,
+    *,
+    http_module_names: set[str] | None = None,
+    route_decorator_names: set[str] | None = None,
+) -> bool:
+    http_module_names = http_module_names or {"http"}
+    route_decorator_names = route_decorator_names or set()
     target = node.func if isinstance(node, ast.Call) else node
     if isinstance(target, ast.Attribute):
-        return target.attr == "route"
+        return (
+            target.attr == "route"
+            and isinstance(target.value, ast.Name)
+            and target.value.id in http_module_names
+        )
     if isinstance(target, ast.Name):
-        return target.id == "route"
+        return target.id in route_decorator_names
     return False
 
 
@@ -8697,6 +8764,18 @@ def _is_static_literal(node: ast.AST) -> bool:
         return isinstance(node.value, str | bool | int | float | type(None))
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
         return all(isinstance(element, ast.Constant | ast.Name) for element in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(
+            (
+                key is None
+                or (
+                    isinstance(key, ast.Constant)
+                    and isinstance(key.value, str)
+                    and _is_static_literal(value)
+                )
+            )
+            for key, value in zip(node.keys, node.values, strict=True)
+        )
     if isinstance(node, ast.Name):
         return True
     return False

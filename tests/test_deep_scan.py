@@ -7379,15 +7379,23 @@ class TestController(http.Controller):
             "file": "test_module/controllers/main.py",
             "line": 9,
             "end_line": 11,
+            "function": "first",
             "route": "/public/constant",
             "auth": "public",
+            "csrf": "True",
+            "type": "http",
+            "methods": "",
         },
         {
             "file": "test_module/controllers/main.py",
             "line": 13,
             "end_line": 15,
+            "function": "second",
             "route": "/public/a,/public/b",
             "auth": "public",
+            "csrf": "True",
+            "type": "http",
+            "methods": "",
         },
     ]
 
@@ -7424,6 +7432,72 @@ class TestController(http.Controller):
 
     assert ("/public/class", "public") in route_metadata
     assert ("/public/class,/public/class-b", "public") in route_metadata
+
+
+def test_route_inventory_resolves_aliased_route_kwargs_metadata(tmp_path: Path) -> None:
+    """Route inventory should preserve aliased Odoo route decorator metadata."""
+    controllers = tmp_path / "test_module" / "controllers"
+    controllers.mkdir(parents=True)
+    controller = controllers / "main.py"
+    controller.write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import route as odoo_route
+
+PUBLIC_AUTH = 'public'
+ROUTE_OPTIONS = {'auth': PUBLIC_AUTH, 'methods': ['GET', 'POST'], 'type': 'json', 'csrf': False}
+
+class TestController(odoo_http.Controller):
+    PUBLIC_ROUTE = '/public/alias'
+
+    @odoo_route(PUBLIC_ROUTE, **ROUTE_OPTIONS)
+    def alias(self):
+        return {}
+""",
+        encoding="utf-8",
+    )
+
+    routes = odoo_deep_scan._route_inventory(tmp_path, [controller])
+
+    assert routes == [
+        {
+            "file": "test_module/controllers/main.py",
+            "line": 11,
+            "end_line": 13,
+            "function": "alias",
+            "route": "/public/alias",
+            "auth": "public",
+            "csrf": "False",
+            "type": "json",
+            "methods": "GET,POST",
+        }
+    ]
+
+
+def test_route_inventory_ignores_non_odoo_route_decorators(tmp_path: Path) -> None:
+    """Route inventory should not count arbitrary non-Odoo route decorators."""
+    controllers = tmp_path / "test_module" / "controllers"
+    controllers.mkdir(parents=True)
+    controller = controllers / "main.py"
+    controller.write_text(
+        """
+class Bus:
+    def route(self, path):
+        return lambda func: func
+
+bus = Bus()
+
+class TestController:
+    @bus.route('/not/odoo')
+    def not_odoo(self):
+        return {}
+""",
+        encoding="utf-8",
+    )
+
+    routes = odoo_deep_scan._route_inventory(tmp_path, [controller])
+
+    assert routes == []
 
 
 def test_deep_scan_writes_findings_report_and_pocs(tmp_path: Path, monkeypatch) -> None:
