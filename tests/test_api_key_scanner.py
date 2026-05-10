@@ -93,6 +93,64 @@ class Controller(http.Controller):
     assert "odoo-api-key-request-derived-mutation" in rule_ids
 
 
+def test_aliased_http_module_api_key_create_is_reported(tmp_path: Path) -> None:
+    """Aliased Odoo http modules should still expose public API-key mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/public/apikey', auth='public', csrf=False)
+    def create_key(self, **kwargs):
+        return request.env['res.users.apikeys'].sudo().create({
+            'name': kwargs.get('name'),
+            'user_id': kwargs.get('user_id'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-api-key-public-route-mutation" in rule_ids
+    assert "odoo-api-key-sudo-mutation" in rule_ids
+    assert "odoo-api-key-request-derived-mutation" in rule_ids
+
+
+def test_non_odoo_route_decorator_api_key_create_is_not_public_route(tmp_path: Path) -> None:
+    """Arbitrary .route decorators should not make API-key mutations look public."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+from odoo.http import request
+
+class Bus:
+    def route(self, path, **kwargs):
+        return lambda func: func
+
+bus = Bus()
+
+class Controller:
+    @bus.route('/public/apikey', auth='public', csrf=False)
+    def create_key(self, **kwargs):
+        return request.env['res.users.apikeys'].sudo().create({
+            'name': kwargs.get('name'),
+            'user_id': kwargs.get('user_id'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+
+    assert not any(f.rule_id == "odoo-api-key-public-route-mutation" for f in findings)
+
+
 def test_constant_backed_public_route_api_key_create_is_reported(tmp_path: Path) -> None:
     """Constant-backed public route metadata should not hide API-key mutations."""
     controllers = tmp_path / "module" / "controllers"
