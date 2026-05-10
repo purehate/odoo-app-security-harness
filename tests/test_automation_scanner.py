@@ -138,6 +138,53 @@ records.write({'active': False})
     assert any(f.rule_id == "odoo-automation-sudo-mutation" for f in findings)
 
 
+def test_recursive_constant_backed_with_user_mutation_in_automation_is_reported(tmp_path: Path) -> None:
+    """Automation code should resolve chained constants used for superuser aliases."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_with_user_recursive_constant" model="base.automation">
+    <field name="code"><![CDATA[
+ROOT_UID = 1
+ADMIN_UID = ROOT_UID
+records = record.with_user(ADMIN_UID)
+records.write({'active': False})
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-sudo-mutation" for f in findings)
+
+
+def test_class_constant_backed_with_user_mutation_in_automation_is_reported(tmp_path: Path) -> None:
+    """Class-scoped constants in automation helper code should resolve."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_with_user_class_constant" model="base.automation">
+    <field name="code"><![CDATA[
+class Helper:
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+
+    def run(self):
+        records = record.with_user(ADMIN_UID)
+        records.write({'active': False})
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-sudo-mutation" for f in findings)
+
+
 def test_aliased_with_user_one_mutation_in_automation_is_reported(tmp_path: Path) -> None:
     """Aliased with_user(1) automated action recordsets should be recognized."""
     xml = tmp_path / "automation.xml"
@@ -332,6 +379,56 @@ env[CONFIG_MODEL].set_param('auth.signup.allow_uninvited', 'False')
     findings = AutomationScanner(xml).scan_file()
 
     assert sum(f.rule_id == "odoo-automation-sensitive-model-mutation" for f in findings) == 1
+
+
+def test_recursive_constant_backed_sensitive_model_mutation_in_automation_is_reported(
+    tmp_path: Path,
+) -> None:
+    """Sensitive model detection should resolve chained env[...] constants."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_identity_recursive_constant" model="base.automation">
+    <field name="code"><![CDATA[
+USERS_MODEL = 'res.users'
+TARGET_MODEL = USERS_MODEL
+env[TARGET_MODEL].write({'active': False})
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-sensitive-model-mutation" for f in findings)
+
+
+def test_class_constant_backed_sensitive_model_mutation_in_automation_is_reported(tmp_path: Path) -> None:
+    """Class-scoped env model aliases in automation helper code should resolve."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_identity_class_constant" model="base.automation">
+    <field name="code"><![CDATA[
+class Helper:
+    USERS_MODEL = 'res.users'
+    TARGET_MODEL = USERS_MODEL
+    PARAMS_MODEL = 'ir.config_parameter'
+    CONFIG_MODEL = PARAMS_MODEL
+
+    def run(self):
+        env[TARGET_MODEL].write({'active': False})
+        env[CONFIG_MODEL].set_param('auth.signup.allow_uninvited', 'False')
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-sensitive-model-mutation" for f in findings)
 
 
 def test_http_without_timeout_in_automation_is_reported(tmp_path: Path) -> None:

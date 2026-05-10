@@ -210,6 +210,7 @@ class _AutomationCodeScanner(ast.NodeVisitor):
     def __init__(self) -> None:
         self.risks: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.sudo_vars: set[str] = set()
         self.http_module_aliases: set[str] = {"requests", "httpx"}
         self.http_function_aliases: set[str] = set()
@@ -239,6 +240,11 @@ class _AutomationCodeScanner(ast.NodeVisitor):
                     self.http_function_aliases.add(alias.asname or alias.name)
         self.generic_visit(node)
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
+
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
             self._record_alias_target(target, node.value)
@@ -255,12 +261,13 @@ class _AutomationCodeScanner(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
+        constants = self._effective_constants()
         if _is_dynamic_eval(sink):
             self.risks.add("dynamic_eval")
-        if _is_sudo_mutation(node.func, self.sudo_vars, self.constants):
+        if _is_sudo_mutation(node.func, self.sudo_vars, constants):
             self.risks.add("sudo_mutation")
         if sink.rsplit(".", 1)[-1] in SENSITIVE_MODEL_MUTATION_METHODS and _call_receiver_sensitive_model(
-            node, self.constants
+            node, constants
         ):
             self.risks.add("sensitive_model_mutation")
         if _is_http_call(
@@ -274,7 +281,7 @@ class _AutomationCodeScanner(ast.NodeVisitor):
             target,
             value,
             self.sudo_vars,
-            lambda node: _is_sudo_expr(node, self.sudo_vars, self.constants),
+            lambda node: _is_sudo_expr(node, self.sudo_vars, self._effective_constants()),
         )
         self._track_alias(
             target,
@@ -323,6 +330,14 @@ class _AutomationCodeScanner(ast.NodeVisitor):
         if re.search(r"requests\.(get|post|put|patch|delete)\s*\(", code) and "timeout" not in code:
             risks.add("http_no_timeout")
         return risks
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 def _is_dynamic_eval(sink: str) -> bool:
@@ -509,8 +524,12 @@ def _regex_sensitive_model_mutation(code: str) -> bool:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
@@ -525,14 +544,31 @@ def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
     return constants
 
 
-def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
+def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.AST:
     if isinstance(node, ast.Name):
-        return constants.get(node.id, node)
+        seen = seen or set()
+        if node.id in seen or node.id not in constants:
+            return node
+        seen.add(node.id)
+        return _resolve_constant(constants[node.id], constants, seen)
     return node
 
 
 def _is_static_literal(node: ast.AST) -> bool:
-    return isinstance(node, ast.Constant) and isinstance(node.value, str | bool | int | float | type(None))
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str | bool | int | float | type(None))
+    if isinstance(node, ast.Name):
+        return True
+    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+        return all(_is_static_literal(element) for element in node.elts)
+    if isinstance(node, ast.Dict):
+        keys = [key for key in node.keys if key is not None]
+        return all(_is_static_literal(key) for key in keys) and all(
+            _is_static_literal(value) for value in node.values
+        )
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
+        return _is_static_literal(node.operand)
+    return False
 
 
 def _has_keyword(node: ast.Call, name: str) -> bool:
