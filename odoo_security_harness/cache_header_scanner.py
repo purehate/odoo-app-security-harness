@@ -68,6 +68,7 @@ class CacheHeaderScanner(ast.NodeVisitor):
         self.path = path
         self.findings: list[CacheHeaderFinding] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
         self.route_stack: list[RouteContext] = []
         self.tainted_names: set[str] = set()
@@ -111,7 +112,9 @@ class CacheHeaderScanner(ast.NodeVisitor):
         previous_assigned_response_call_ids = set(self.assigned_response_call_ids)
         previous_local_constants = dict(self.local_constants)
         self.local_constants = {}
-        route = _route_info(node, self.constants, self.route_decorator_names) or RouteContext(is_route=False)
+        route = _route_info(node, self._effective_constants(), self.route_decorator_names) or RouteContext(
+            is_route=False
+        )
         self.route_stack.append(route)
 
         for arg in [*node.args.args, *node.args.kwonlyargs]:
@@ -134,6 +137,11 @@ class CacheHeaderScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         previous_responses = set(self.response_names)
@@ -482,7 +490,11 @@ class CacheHeaderScanner(ast.NodeVisitor):
                     self._mark_local_constant_target(element, value)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        return {**self.constants, **self.local_constants}
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        constants.update(self.local_constants)
+        return constants
 
     def _discard_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
@@ -617,8 +629,12 @@ def _apply_route_keyword(
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

@@ -480,6 +480,39 @@ class Controller(http.Controller):
     )
 
 
+def test_class_constant_backed_public_sensitive_response_is_reported(tmp_path: Path) -> None:
+    """Class-scoped route constants should still expose public token responses."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "token.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    TOKEN_BASE = '/public/token'
+    TOKEN_ROUTE = TOKEN_BASE
+    TOKEN_ROUTES = [TOKEN_ROUTE]
+    AUTH_BASE = 'public'
+    TOKEN_AUTH = AUTH_BASE
+
+    @http.route(TOKEN_ROUTES, auth=TOKEN_AUTH)
+    def token(self, **kwargs):
+        return request.make_response({'access_token': kwargs.get('token')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_cache_headers(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-cache-public-sensitive-response"
+        and f.severity == "high"
+        and f.route == "/public/token"
+        for f in findings
+    )
+
+
 def test_static_unpack_route_options_sensitive_response_is_reported(tmp_path: Path) -> None:
     """Static ** route options should not hide public cache-sensitive responses."""
     controllers = tmp_path / "module" / "controllers"
@@ -495,6 +528,38 @@ TOKEN_OPTIONS = {
 }
 
 class Controller(http.Controller):
+    @http.route(**TOKEN_OPTIONS)
+    def token(self, **kwargs):
+        return request.make_response({'access_token': kwargs.get('token')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_cache_headers(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-cache-public-sensitive-response"
+        and f.severity == "high"
+        and f.route == "/public/token,/public/token/alt"
+        for f in findings
+    )
+
+
+def test_class_constant_static_unpack_route_options_sensitive_response_is_reported(tmp_path: Path) -> None:
+    """Class-scoped static ** route options should not hide public cache-sensitive responses."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "token.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    TOKEN_OPTIONS = {
+        'routes': ['/public/token', '/public/token/alt'],
+        'auth': 'public',
+    }
+
     @http.route(**TOKEN_OPTIONS)
     def token(self, **kwargs):
         return request.make_response({'access_token': kwargs.get('token')})
