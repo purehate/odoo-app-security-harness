@@ -158,6 +158,32 @@ class SaleJob(models.Model):
     assert "odoo-queue-job-sudo-mutation" in rule_ids
 
 
+def test_flags_queue_job_class_constant_with_user_mutation(tmp_path: Path) -> None:
+    """Class-scoped superuser aliases should not hide elevated queue mutations."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+
+class SaleJob(models.Model):
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+
+    @job
+    def sync_queue(self, record):
+        orders = record.with_user(ADMIN_UID)
+        orders.write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-queue-job-sudo-mutation" in rule_ids
+
+
 def test_flags_queue_job_env_ref_root_mutation(tmp_path: Path) -> None:
     """Queue jobs should track with_user(base.user_root) aliases as elevated."""
     module = tmp_path / "module" / "models"
@@ -335,6 +361,30 @@ class IdentityJob(models.Model):
     assert any(f.rule_id == "odoo-queue-job-sensitive-model-mutation" for f in findings)
 
 
+def test_flags_class_constant_backed_sensitive_model_queue_mutation(tmp_path: Path) -> None:
+    """Class-scoped env model names should still flag sensitive queue mutations."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+
+class IdentityJob(models.Model):
+    USERS_MODEL = 'res.users'
+    TARGET_MODEL = USERS_MODEL
+
+    @job
+    def sync_queue(self, payload):
+        self.env[TARGET_MODEL].write({'active': False})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-queue-job-sensitive-model-mutation" for f in findings)
+
+
 def test_flags_public_route_enqueue_without_identity_key(tmp_path: Path) -> None:
     """Public route enqueue sites need idempotency and abuse review."""
     controllers = tmp_path / "module" / "controllers"
@@ -397,6 +447,33 @@ SYNC_AUTH = PUBLIC_AUTH
 
 class Controller(http.Controller):
     @http.route('/sync', auth=SYNC_AUTH, csrf=False)
+    def sync(self, **kwargs):
+        self.env['sale.order'].with_delay().sync_order(kwargs.get('id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-queue-job-missing-identity-key" in rule_ids
+    assert "odoo-queue-job-public-enqueue" in rule_ids
+
+
+def test_class_constant_static_unpack_public_route_enqueue_without_identity_key(tmp_path: Path) -> None:
+    """Class-scoped route option unpacking should keep public queue enqueue context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+
+class Controller(http.Controller):
+    SYNC_ROUTE = '/sync'
+    SYNC_AUTH = 'public'
+    ROUTE_OPTIONS = {'route': SYNC_ROUTE, 'auth': SYNC_AUTH, 'csrf': False}
+
+    @http.route(**ROUTE_OPTIONS)
     def sync(self, **kwargs):
         self.env['sale.order'].with_delay().sync_order(kwargs.get('id'))
 """,

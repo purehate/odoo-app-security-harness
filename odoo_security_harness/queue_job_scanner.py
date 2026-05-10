@@ -60,6 +60,7 @@ class QueueJobScanner(ast.NodeVisitor):
         self.http_module_aliases: set[str] = {"requests", "httpx", "urllib.request"}
         self.http_function_aliases: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[QueueJobFinding]:
         """Scan the file."""
@@ -94,7 +95,7 @@ class QueueJobScanner(ast.NodeVisitor):
         context = FunctionContext(
             name=node.name,
             is_job=_is_job_function(node),
-            route_auth=_route_auth(node, self.constants),
+            route_auth=_route_auth(node, self._effective_constants()),
         )
         self.function_stack.append(context)
         self.generic_visit(node)
@@ -102,6 +103,11 @@ class QueueJobScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         current = self.function_stack[-1] if self.function_stack else None
@@ -147,7 +153,8 @@ class QueueJobScanner(ast.NodeVisitor):
                 )
 
         if current and current.is_job:
-            if _is_sudo_mutation(node.func, current.sudo_vars, self.constants):
+            constants = self._effective_constants()
+            if _is_sudo_mutation(node.func, current.sudo_vars, constants):
                 self._add(
                     "odoo-queue-job-sudo-mutation",
                     "Queue job performs elevated mutation",
@@ -157,7 +164,7 @@ class QueueJobScanner(ast.NodeVisitor):
                     current.name,
                 )
             elif sink.rsplit(".", 1)[-1] in SENSITIVE_MODEL_MUTATION_METHODS:
-                sensitive_model = _call_receiver_sensitive_model(node, self.constants)
+                sensitive_model = _call_receiver_sensitive_model(node, constants)
                 if sensitive_model:
                     self._add(
                         "odoo-queue-job-sensitive-model-mutation",
@@ -195,7 +202,7 @@ class QueueJobScanner(ast.NodeVisitor):
             target,
             value,
             context.sudo_vars,
-            lambda node: _is_sudo_expr(node, context.sudo_vars, self.constants),
+            lambda node: _is_sudo_expr(node, context.sudo_vars, self._effective_constants()),
         )
         self._track_alias(
             target,
@@ -229,6 +236,14 @@ class QueueJobScanner(ast.NodeVisitor):
             aliases.add(target.id)
         else:
             aliases.discard(target.id)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, job: str) -> None:
         self.findings.append(
@@ -274,22 +289,27 @@ def _route_auth(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     constants: dict[str, ast.AST] | None = None,
 ) -> str:
+    constants = constants or {}
     for decorator in node.decorator_list:
         if not _decorator_name(decorator).endswith("route"):
             continue
         call = decorator if isinstance(decorator, ast.Call) else None
         if not call:
             continue
-        for keyword in call.keywords:
-            value = _resolve_constant(keyword.value, constants or {})
-            if keyword.arg == "auth" and isinstance(value, ast.Constant):
+        for name, keyword_value in _expanded_keywords(call, constants):
+            value = _resolve_constant(keyword_value, constants)
+            if name == "auth" and isinstance(value, ast.Constant):
                 return str(value.value)
     return ""
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
@@ -302,6 +322,22 @@ def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
         ):
             constants[statement.target.id] = statement.value
     return constants
+
+
+def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    keywords: list[tuple[str, ast.AST]] = []
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            keywords.append((keyword.arg, keyword.value))
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if not isinstance(value, ast.Dict):
+            continue
+        for key, item_value in zip(value.keys, value.values, strict=False):
+            resolved_key = _resolve_constant(key, constants) if key is not None else None
+            if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+                keywords.append((resolved_key.value, item_value))
+    return keywords
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.AST:
