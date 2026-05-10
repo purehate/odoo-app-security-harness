@@ -79,6 +79,62 @@ class Invite(http.Controller):
     assert "odoo-sequence-sensitive-code-use" in rule_ids
 
 
+def test_aliased_http_module_route_public_sensitive_sequence_use(tmp_path: Path) -> None:
+    """Aliased odoo.http module route decorators should remain recognized."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "invite.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Invite(odoo_http.Controller):
+    @odoo_http.route('/invite/code', auth='public')
+    def code(self):
+        return request.env['ir.sequence'].next_by_code('access.token.sequence')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-sequence-public-route-next" in rule_ids
+    assert "odoo-sequence-sensitive-code-use" in rule_ids
+
+
+def test_non_odoo_route_decorator_sequence_use_is_not_public_route(tmp_path: Path) -> None:
+    """Local route decorators should not make sequence use public."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "invite.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Invite(http.Controller):
+    @router.route('/invite/code', auth='public')
+    def code(self):
+        return request.env['ir.sequence'].next_by_code('access.token.sequence')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-sequence-public-route-next" not in rule_ids
+    assert "odoo-sequence-sensitive-code-use" in rule_ids
+
+
 def test_constant_backed_public_route_sensitive_sequence_use(tmp_path: Path) -> None:
     """Constant-backed route metadata should not hide public sequence issuance."""
     controllers = tmp_path / "module" / "controllers"
