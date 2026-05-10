@@ -79,6 +79,60 @@ class Config(http.Controller):
     assert "odoo-config-param-sudo-sensitive-read" in rule_ids
 
 
+def test_aliased_http_module_public_sensitive_config_read(tmp_path: Path) -> None:
+    """Aliased Odoo http module imports should still expose public config reads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "config.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Config(odoo_http.Controller):
+    @odoo_http.route('/public/config', auth='public')
+    def config(self):
+        return request.env['ir.config_parameter'].sudo().get_param('payment.provider.secret')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-config-param-public-sensitive-read" in rule_ids
+    assert "odoo-config-param-sudo-sensitive-read" in rule_ids
+
+
+def test_non_odoo_route_decorator_public_config_read_is_ignored(tmp_path: Path) -> None:
+    """Local route-like decorators should not create Odoo route context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "config.py").write_text(
+        """
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Config:
+    @router.route('/public/config', auth='public')
+    def config(self):
+        return request.env['ir.config_parameter'].sudo().get_param('payment.provider.secret')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+
+    assert not any(f.rule_id == "odoo-config-param-public-sensitive-read" for f in findings)
+    assert any(f.rule_id == "odoo-config-param-sudo-sensitive-read" for f in findings)
+
+
 def test_constant_backed_public_sensitive_config_read(tmp_path: Path) -> None:
     """Constant-backed public auth should still expose sensitive config reads."""
     controllers = tmp_path / "module" / "controllers"
