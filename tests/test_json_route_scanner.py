@@ -366,6 +366,33 @@ class Api(http.Controller):
     assert "odoo-json-route-mass-assignment" in rule_ids
 
 
+def test_flags_local_constant_json_with_user_superuser_mutation(tmp_path: Path) -> None:
+    """Function-local superuser aliases should still mark JSON ORM mutations as elevated."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "api.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Api(http.Controller):
+    @http.route('/api/order', auth='public', type='json')
+    def order(self):
+        admin_uid = 1
+        payload = request.jsonrequest
+        Orders = request.env['sale.order'].with_user(admin_uid)
+        return Orders.create(payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_json_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-json-route-sudo-mutation" in rule_ids
+    assert "odoo-json-route-mass-assignment" in rule_ids
+
+
 def test_flags_aliased_json_with_user_one_mutation_and_mass_assignment(tmp_path: Path) -> None:
     """Aliased with_user(1) JSON mutations should be treated like sudo mutations."""
     controllers = tmp_path / "module" / "controllers"
@@ -948,6 +975,33 @@ class Api(http.Controller):
     def search(self):
         domain = request.jsonrequest.get('domain')
         Partners = request.env['res.partner'].with_user(1)
+        return Partners.search_read(domain)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_json_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-json-route-public-sudo-read" in rule_ids
+    assert "odoo-json-route-tainted-domain" in rule_ids
+
+
+def test_flags_local_constant_public_json_with_user_read_and_tainted_domain(tmp_path: Path) -> None:
+    """Public JSON route reads should resolve local with_user superuser constants."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "api.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Api(http.Controller):
+    @http.route('/api/search', auth='none', type='json')
+    def search(self):
+        admin_xmlid = 'base.user_admin'
+        domain = request.jsonrequest.get('domain')
+        Partners = request.env['res.partner'].with_user(admin_xmlid)
         return Partners.search_read(domain)
 """,
         encoding="utf-8",
