@@ -75,6 +75,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.unsafe_sql_vars: set[str] = set()
         self.request_names: set[str] = {"request"}
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def analyze(self, source: str) -> list[Finding]:
         """Analyze Python source code and return findings."""
@@ -93,6 +94,12 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 if alias.name == "request":
                     self.request_names.add(alias.asname or alias.name)
         self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """Visit class definitions with class-scoped constants available."""
+        self.class_constants_stack.append(self._static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Visit function definitions to detect Odoo controllers."""
@@ -346,8 +353,11 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
     def _module_constants(self, tree: ast.Module) -> dict[str, ast.AST]:
         """Collect simple module-level constants used by route decorators."""
+        return self._static_constants_from_body(tree.body)
+
+    def _static_constants_from_body(self, statements: list[ast.stmt]) -> dict[str, ast.AST]:
         constants: dict[str, ast.AST] = {}
-        for statement in tree.body:
+        for statement in statements:
             if isinstance(statement, ast.Assign):
                 for target in statement.targets:
                     if isinstance(target, ast.Name) and self._is_static_literal(statement.value):
@@ -358,19 +368,37 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 and statement.value is not None
                 and self._is_static_literal(statement.value)
             ):
-                constants[statement.target.id] = statement.value
+                    constants[statement.target.id] = statement.value
         return constants
 
-    def _resolve_constant(self, node: ast.AST) -> ast.AST:
+    def _resolve_constant(self, node: ast.AST, seen: set[str] | None = None) -> ast.AST:
+        seen = seen or set()
         if isinstance(node, ast.Name):
-            return self.constants.get(node.id, node)
+            if node.id in seen:
+                return node
+            constants = self._effective_constants()
+            value = constants.get(node.id)
+            if value is None:
+                return node
+            seen.add(node.id)
+            return self._resolve_constant(value, seen)
         return node
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _is_static_literal(self, node: ast.AST) -> bool:
         if isinstance(node, ast.Constant):
             return isinstance(node.value, str | bool | int | float | type(None))
         if isinstance(node, ast.List | ast.Tuple | ast.Set):
-            return all(isinstance(element, ast.Constant) for element in node.elts)
+            return all(isinstance(element, ast.Constant | ast.Name) for element in node.elts)
+        if isinstance(node, ast.Name):
+            return True
         return False
 
     def _is_sudo_call(self, node: ast.Call) -> bool:
@@ -454,6 +482,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
     def _is_admin_user_arg(self, node: ast.AST) -> bool:
         """Check if an expression names Odoo's root/admin user."""
+        node = self._resolve_constant(node)
         if isinstance(node, ast.Constant):
             return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
         if isinstance(node, ast.Name):
@@ -480,6 +509,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
     def _is_empty_domain(self, node: ast.expr) -> bool:
         """Check for a literal empty ORM domain."""
+        node = self._resolve_constant(node)
         return isinstance(node, (ast.List, ast.Tuple)) and len(node.elts) == 0
 
     def _call_has_tainted_arg(self, node: ast.Call) -> bool:
@@ -578,12 +608,13 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         while isinstance(current, ast.Call) and isinstance(current.func, ast.Attribute):
             current = current.func.value
         if isinstance(current, ast.Subscript):
-            if isinstance(current.slice, ast.Constant) and isinstance(current.slice.value, str):
+            slice_node = self._resolve_constant(current.slice)
+            if isinstance(slice_node, ast.Constant) and isinstance(slice_node.value, str):
                 value = current.value
                 if isinstance(value, ast.Attribute) and value.attr == "env":
-                    return current.slice.value
+                    return slice_node.value
                 if isinstance(value, ast.Name) and value.id == "env":
-                    return current.slice.value
+                    return slice_node.value
         return ""
 
     def _check_sudo_context(self, node: ast.Call) -> None:
@@ -780,7 +811,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
     def _check_html_sanitize_options(self, node: ast.Call) -> None:
         """Check for relaxed HTML sanitizer options."""
         for kw in node.keywords:
-            if kw.arg == "strict" and isinstance(kw.value, ast.Constant) and kw.value.value is False:
+            value = self._resolve_constant(kw.value)
+            if kw.arg == "strict" and isinstance(value, ast.Constant) and value.value is False:
                 self._add_finding(
                     rule_id="odoo-deep-html-sanitize-strict-false",
                     title="HTML sanitizer uses non-strict mode",
@@ -791,8 +823,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 )
             if (
                 kw.arg in {"sanitize_tags", "sanitize_attributes"}
-                and isinstance(kw.value, ast.Constant)
-                and kw.value.value is False
+                and isinstance(value, ast.Constant)
+                and value.value is False
             ):
                 self._add_finding(
                     rule_id="odoo-deep-html-sanitize-relaxed-option",
@@ -825,11 +857,12 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
     def _check_field_options(self, node: ast.Call) -> None:
         """Check for risky Odoo field options."""
         for kw in node.keywords:
+            value = self._resolve_constant(kw.value)
             if (
                 self._is_fields_html_call(node)
                 and kw.arg == "sanitize"
-                and isinstance(kw.value, ast.Constant)
-                and kw.value.value is False
+                and isinstance(value, ast.Constant)
+                and value.value is False
             ):
                 self._add_finding(
                     rule_id="odoo-deep-html-sanitize-false",
@@ -839,7 +872,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                     column=node.col_offset,
                     message="fields.Html(sanitize=False) stores raw HTML; verify all writers are trusted",
                 )
-            if kw.arg == "compute_sudo" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+            if kw.arg == "compute_sudo" and isinstance(value, ast.Constant) and value.value is True:
                 self._add_finding(
                     rule_id="odoo-deep-field-compute-sudo",
                     title="Computed field runs with sudo",

@@ -52,6 +52,30 @@ class TestController(http.Controller):
         assert "odoo-deep-public-sudo" in rule_ids
         assert "odoo-deep-public-sudo-search" in rule_ids
 
+    def test_class_constant_backed_public_route_with_sudo(self) -> None:
+        """Class-scoped route auth constants should not hide public sudo searches."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+class TestController(http.Controller):
+    BASE_AUTH = 'public'
+    PUBLIC_AUTH = BASE_AUTH
+    BASE_ROUTE = '/test/public'
+    PUBLIC_ROUTE = BASE_ROUTE
+
+    @http.route(PUBLIC_ROUTE, auth=PUBLIC_AUTH)
+    def test_public(self):
+        users = request.env['res.users'].sudo().search([])
+        return {'count': len(users)}
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-public-sudo" in rule_ids
+        assert "odoo-deep-public-sudo-search" in rule_ids
+
     def test_constant_backed_auth_none_request_env(self) -> None:
         """Constant-backed auth='none' should still flag request.env usage."""
         source = """
@@ -339,6 +363,21 @@ class TestModel(models.Model):
         admin_findings = [f for f in findings if f.rule_id == "odoo-deep-with-user-admin"]
         assert len(admin_findings) >= 1
 
+    def test_class_constant_backed_with_user_superuser_keyword(self) -> None:
+        """Class-scoped superuser constants should preserve admin-root detection."""
+        source = """
+class TestModel(models.Model):
+    ROOT_BASE = 1
+    ROOT_UID = ROOT_BASE
+
+    def do_admin_thing(self):
+        return self.with_user(user=ROOT_UID).search([])
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-with-user-admin" for f in findings)
+
     def test_with_user_regular_user_is_not_admin(self) -> None:
         """Regular user context switches should not be labeled admin/root."""
         source = """
@@ -438,6 +477,23 @@ from odoo import SUPERUSER_ID
 class TestModel(models.Model):
     def get_everything(self):
         return self.env['sale.order'].with_user(SUPERUSER_ID).search([])
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-empty-search-sudo" for f in findings)
+
+    def test_class_constant_empty_domain_superuser_search(self) -> None:
+        """Class-scoped superuser and domain constants should expose unbounded reads."""
+        source = """
+class TestModel(models.Model):
+    ROOT_BASE = 1
+    ROOT_UID = ROOT_BASE
+    EMPTY_BASE = []
+    EMPTY_DOMAIN = EMPTY_BASE
+
+    def get_everything(self):
+        return self.env['sale.order'].with_user(ROOT_UID).search(EMPTY_DOMAIN)
 """
         analyzer = OdooDeepAnalyzer("test.py")
         findings = analyzer.analyze(source)
@@ -591,6 +647,20 @@ from odoo.fields import Html
 class TestModel(models.Model):
     _name = 'test.model'
     body = Html(sanitize=False)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-html-sanitize-false" for f in findings)
+
+    def test_class_constant_html_field_sanitize_false(self) -> None:
+        """Class-scoped sanitize constants should expose raw HTML fields."""
+        source = """
+class TestModel(models.Model):
+    _name = 'test.model'
+    SANITIZE_BASE = False
+    SANITIZE = SANITIZE_BASE
+    body = fields.Html(sanitize=SANITIZE)
 """
         analyzer = OdooDeepAnalyzer("test.py")
         findings = analyzer.analyze(source)
@@ -755,6 +825,22 @@ class PortalController(http.Controller):
 
         assert any(f.rule_id == "odoo-deep-attachment-sudo-access" for f in findings)
 
+    def test_class_constant_attachment_model_sudo_in_controller(self) -> None:
+        """Class-scoped env model constants should not hide sudo attachment reads."""
+        source = """
+class PortalController(http.Controller):
+    ATTACHMENT_BASE = 'ir.attachment'
+    ATTACHMENT_MODEL = ATTACHMENT_BASE
+
+    @http.route('/my/attachments', auth='user')
+    def attachments(self, order_id):
+        return request.env[ATTACHMENT_MODEL].sudo().search([('res_id', '=', order_id)])
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-attachment-sudo-access" for f in findings)
+
     def test_field_compute_sudo(self) -> None:
         """Test detecting computed fields that run as sudo."""
         source = """
@@ -775,6 +861,20 @@ from odoo.fields import Monetary
 class TestModel(models.Model):
     _name = 'test.model'
     secret_total = Monetary(compute='_compute_secret_total', compute_sudo=True)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-field-compute-sudo" for f in findings)
+
+    def test_class_constant_field_compute_sudo(self) -> None:
+        """Class-scoped compute_sudo constants should expose sudo projections."""
+        source = """
+class TestModel(models.Model):
+    _name = 'test.model'
+    COMPUTE_BASE = True
+    COMPUTE_SUDO = COMPUTE_BASE
+    secret_total = fields.Monetary(compute='_compute_secret_total', compute_sudo=COMPUTE_SUDO)
 """
         analyzer = OdooDeepAnalyzer("test.py")
         findings = analyzer.analyze(source)
