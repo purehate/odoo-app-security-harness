@@ -59,7 +59,8 @@ class SessionAuthScanner(ast.NodeVisitor):
         self.constants: dict[str, ast.AST] = {}
         self.route_stack: list[RouteContext] = []
         self.class_stack: list[ClassContext] = []
-        self.route_decorator_names: set[str] = {"route"}
+        self.http_module_names: set[str] = {"http"}
+        self.route_decorator_names: set[str] = set()
         self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[SessionAuthFinding]:
@@ -77,7 +78,11 @@ class SessionAuthScanner(ast.NodeVisitor):
         return self.findings
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        if node.module == "odoo.http":
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.http_module_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
                     self.request_names.add(alias.asname or alias.name)
@@ -100,7 +105,12 @@ class SessionAuthScanner(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
-        route = _route_info(node, self._effective_constants(), self.route_decorator_names)
+        route = _route_info(
+            node,
+            self._effective_constants(),
+            self.route_decorator_names,
+            self.http_module_names,
+        )
         self.route_stack.append(route or RouteContext(is_route=False))
         if self._current_class().is_ir_http and node.name in IR_HTTP_AUTH_METHODS:
             self._scan_ir_http_auth_method(node)
@@ -596,11 +606,13 @@ def _route_info(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     constants: dict[str, ast.AST] | None = None,
     route_decorator_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
 ) -> RouteContext | None:
     constants = constants or {}
-    route_decorator_names = route_decorator_names or {"route"}
+    route_decorator_names = route_decorator_names or set()
+    http_module_names = http_module_names or {"http"}
     for decorator in node.decorator_list:
-        if not _is_http_route(decorator, route_decorator_names):
+        if not _is_http_route(decorator, route_decorator_names, http_module_names):
             continue
         auth = "user"
         csrf = True
@@ -709,13 +721,23 @@ def _is_static_literal(node: ast.AST) -> bool:
     return False
 
 
-def _is_http_route(node: ast.AST, route_decorator_names: set[str] | None = None) -> bool:
-    route_decorator_names = route_decorator_names or {"route"}
+def _is_http_route(
+    node: ast.AST,
+    route_decorator_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
+) -> bool:
+    route_decorator_names = route_decorator_names or set()
+    http_module_names = http_module_names or {"http"}
     if isinstance(node, ast.Call):
-        return _is_http_route(node.func, route_decorator_names)
+        return _is_http_route(node.func, route_decorator_names, http_module_names)
     if isinstance(node, ast.Name):
         return node.id in route_decorator_names
-    return isinstance(node, ast.Attribute) and node.attr == "route"
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "route"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in http_module_names
+    )
 
 
 def _string_set(node: ast.AST) -> set[str]:

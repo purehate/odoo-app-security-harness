@@ -73,6 +73,55 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-session-public-authenticate" for f in findings)
 
 
+def test_aliased_http_module_public_authenticate_is_reported(tmp_path: Path) -> None:
+    """Aliased Odoo http modules should still expose public authentication routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "auth.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/login/token', auth='public', csrf=False)
+    def login(self, **kwargs):
+        return request.session.authenticate(request.db, kwargs.get('login'), kwargs.get('password'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-public-authenticate" for f in findings)
+
+
+def test_non_odoo_route_decorator_public_authenticate_is_ignored(tmp_path: Path) -> None:
+    """Arbitrary .route decorators should not make authenticate calls look public."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "auth.py").write_text(
+        """
+from odoo.http import request
+
+class Bus:
+    def route(self, path, **kwargs):
+        return lambda func: func
+
+bus = Bus()
+
+class Controller:
+    @bus.route('/login/token', auth='public', csrf=False)
+    def login(self, **kwargs):
+        return request.session.authenticate(request.db, kwargs.get('login'), kwargs.get('password'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert not any(f.rule_id == "odoo-session-public-authenticate" for f in findings)
+
+
 def test_constant_backed_public_authenticate_is_reported(tmp_path: Path) -> None:
     """Constant-backed public auth should still expose authentication routes."""
     controllers = tmp_path / "module" / "controllers"
