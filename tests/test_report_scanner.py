@@ -230,6 +230,64 @@ class Controller(http.Controller):
     assert "odoo-report-tainted-render-records" in rule_ids
 
 
+def test_aliased_http_module_route_public_report_render_is_reported(tmp_path: Path) -> None:
+    """Aliased odoo.http module route decorators should preserve public report context."""
+    controller = tmp_path / "module" / "controllers" / "report.py"
+    controller.parent.mkdir(parents=True)
+    controller.write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/public/invoice', auth='public')
+    def invoice(self, **kwargs):
+        report = request.env.ref('account.account_invoices')
+        return report._render_qweb_pdf([int(kwargs.get('id'))])
+""",
+        encoding="utf-8",
+    )
+
+    findings = ReportPythonScanner(controller).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-report-public-render-route" in rule_ids
+    assert "odoo-report-tainted-render-records" in rule_ids
+
+
+def test_non_odoo_route_decorator_report_render_is_not_public(tmp_path: Path) -> None:
+    """Local route decorators should not create public report route context."""
+    controller = tmp_path / "module" / "controllers" / "report.py"
+    controller.parent.mkdir(parents=True)
+    controller.write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Controller(http.Controller):
+    @router.route('/public/invoice', auth='public')
+    def invoice(self, **kwargs):
+        report = request.env.ref('account.account_invoices')
+        return report._render_qweb_pdf([int(kwargs.get('id'))])
+""",
+        encoding="utf-8",
+    )
+
+    findings = ReportPythonScanner(controller).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-report-public-render-route" not in rule_ids
+    assert "odoo-report-tainted-render-records" in rule_ids
+
+
 def test_static_unpack_public_report_render_is_reported(tmp_path: Path) -> None:
     """Static **route options should not hide public report rendering."""
     controller = tmp_path / "module" / "controllers" / "report.py"
