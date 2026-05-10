@@ -52,6 +52,52 @@ class TestModel(models.Model):
     assert any(f.rule_id == "odoo-mc-missing-check-company" for f in findings)
 
 
+def test_class_constant_backed_company_id_requires_check_company_auto(tmp_path: Path) -> None:
+    """Class-scoped constants should not hide company_id relation detection."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+class TestModel(models.Model):
+    MODEL_NAME = 'test.model'
+    COMPANY_BASE = 'res.company'
+    COMPANY_MODEL = COMPANY_BASE
+    _name = MODEL_NAME
+    company_id = fields.Many2one(COMPANY_MODEL)
+""",
+    )
+
+    findings = MultiCompanyChecker(str(model)).check_file()
+
+    assert any(
+        f.rule_id == "odoo-mc-missing-check-company" and f.model == "test.model"
+        for f in findings
+    )
+
+
+def test_class_constant_backed_check_company_auto_suppresses_missing_check(tmp_path: Path) -> None:
+    """Class-scoped true constants should preserve _check_company_auto handling."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+class TestModel(models.Model):
+    COMPANY_MODEL = 'res.company'
+    ENABLED_BASE = True
+    ENABLED = ENABLED_BASE
+    _name = 'test.model'
+    _check_company_auto = ENABLED
+    company_id = fields.Many2one(COMPANY_MODEL)
+""",
+    )
+
+    findings = MultiCompanyChecker(str(model)).check_file()
+
+    assert not any(f.rule_id == "odoo-mc-missing-check-company" for f in findings)
+
+
 def test_direct_many2one_constructor_company_id_requires_check_company_auto(tmp_path: Path) -> None:
     """Directly imported Many2one should still be treated as a company field."""
     model = _write_model(
@@ -118,6 +164,26 @@ from odoo import fields, models
 DISABLED = False
 
 class TestModel(models.Model):
+    _name = 'test.model'
+    warehouse_id = fields.Many2one('stock.warehouse', check_company=DISABLED)
+""",
+    )
+
+    findings = MultiCompanyChecker(str(model)).check_file()
+
+    assert any(f.rule_id == "odoo-mc-check-company-disabled" for f in findings)
+
+
+def test_class_constant_backed_check_company_false_is_reported(tmp_path: Path) -> None:
+    """Class-scoped constants should not hide disabled check_company settings."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+class TestModel(models.Model):
+    DISABLED_BASE = False
+    DISABLED = DISABLED_BASE
     _name = 'test.model'
     warehouse_id = fields.Many2one('stock.warehouse', check_company=DISABLED)
 """,
@@ -215,6 +281,29 @@ class TestModel(models.Model):
     findings = MultiCompanyChecker(str(model)).check_file()
 
     assert any(f.rule_id == "odoo-mc-sudo-search-no-company" for f in findings)
+
+
+def test_class_constant_backed_superuser_search_read_without_company_filter(tmp_path: Path) -> None:
+    """Class-scoped constants should not hide elevated reads on company models."""
+    model = _write_model(
+        tmp_path,
+        """
+class TestModel(models.Model):
+    ROOT_BASE = 1
+    ROOT_UID = ROOT_BASE
+    ORDER_BASE = 'sale.order'
+    ORDER_MODEL = ORDER_BASE
+
+    def leak_orders(self):
+        return self.env[ORDER_MODEL].with_user(ROOT_UID).search_read([])
+""",
+    )
+
+    findings = MultiCompanyChecker(str(model)).check_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mc-sudo-search-no-company" in rule_ids
+    assert "odoo-mc-search-no-company" in rule_ids
 
 
 def test_aliased_superuser_search_without_company_filter(tmp_path: Path) -> None:

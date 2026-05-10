@@ -55,6 +55,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
         self.elevated_record_vars: set[str] = set()
         self.request_names: set[str] = {"request"}
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def check_file(self) -> list[MultiCompanyFinding]:
         """Check a Python file for multi-company issues."""
@@ -88,7 +89,10 @@ class MultiCompanyChecker(ast.NodeVisitor):
             self.generic_visit(node)
             return
 
-        self.current_class = node.name
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        constants = self._effective_constants()
+        model_name = _extract_model_name(node, constants) or node.name
+        self.current_class = model_name
         self.has_company_id = False
         self.has_check_company = False
 
@@ -98,11 +102,11 @@ class MultiCompanyChecker(ast.NodeVisitor):
                 for target in item.targets:
                     if isinstance(target, ast.Name):
                         if target.id == "_check_company_auto":
-                            value = _resolve_constant(item.value, self.constants)
+                            value = _resolve_constant(item.value, constants)
                             if isinstance(value, ast.Constant) and value.value is True:
                                 self.has_check_company = True
                         elif target.id == "_check_company":
-                            value = _resolve_constant(item.value, self.constants)
+                            value = _resolve_constant(item.value, constants)
                             if isinstance(value, ast.Constant) and value.value is True:
                                 self.has_check_company = True
 
@@ -113,13 +117,14 @@ class MultiCompanyChecker(ast.NodeVisitor):
         if self.has_company_id and not self.has_check_company:
             self._add_finding(
                 rule_id="odoo-mc-missing-check-company",
-                title=f"Model {node.name} has company_id without _check_company_auto",
+                title=f"Model {model_name} has company_id without _check_company_auto",
                 severity="medium",
                 line=node.lineno,
-                message=f"Model '{node.name}' has company_id field but _check_company_auto=True is not set; cross-company access possible",
-                model=node.name,
+                message=f"Model '{model_name}' has company_id field but _check_company_auto=True is not set; cross-company access possible",
+                model=model_name,
             )
 
+        self.class_constants_stack.pop()
         self.current_class = old_class
         self.has_company_id = old_has_company_id
         self.has_check_company = old_has_check_company
@@ -166,14 +171,14 @@ class MultiCompanyChecker(ast.NodeVisitor):
                     if self._is_many2one_call(node.value.func):
                         # Check first argument
                         if target.id == "company_id" and node.value.args:
-                            first_arg = _resolve_constant(node.value.args[0], self.constants)
+                            first_arg = _resolve_constant(node.value.args[0], self._effective_constants())
                             if isinstance(first_arg, ast.Constant) and first_arg.value == "res.company":
                                 self.has_company_id = True
 
                         # Check for check_company=False on relational fields.
                         for kw in node.value.keywords:
                             if kw.arg == "check_company":
-                                value = _resolve_constant(kw.value, self.constants)
+                                value = _resolve_constant(kw.value, self._effective_constants())
                                 if isinstance(value, ast.Constant) and value.value is False:
                                     self._add_finding(
                                         rule_id="odoo-mc-check-company-disabled",
@@ -285,7 +290,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
             for item in node.elts:
                 if isinstance(item, ast.Tuple) and len(item.elts) >= 2:
                     first = item.elts[0]
-                    first = _resolve_constant(first, self.constants)
+                    first = _resolve_constant(first, self._effective_constants())
                     if isinstance(first, ast.Constant) and "company" in str(first.value).lower():
                         return True
                 elif isinstance(item, (ast.List, ast.Tuple)):
@@ -321,7 +326,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
         if not isinstance(node, ast.Dict):
             return False
         for key, value in zip(node.keys, node.values, strict=False):
-            key = _resolve_constant(key, self.constants)
+            key = _resolve_constant(key, self._effective_constants())
             if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
                 continue
             if key.value in {"force_company", "allowed_company_ids", "company_id"} and value is not None:
@@ -352,7 +357,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
             value = current.value
             if self._is_env_expr(value):
                 slice_node = current.slice
-                slice_node = _resolve_constant(slice_node, self.constants)
+                slice_node = _resolve_constant(slice_node, self._effective_constants())
                 if isinstance(slice_node, ast.Constant) and isinstance(slice_node.value, str):
                     return slice_node.value
         return ""
@@ -379,10 +384,21 @@ class MultiCompanyChecker(ast.NodeVisitor):
             if isinstance(node.func, ast.Attribute):
                 if node.func.attr == "sudo":
                     return True
-                if node.func.attr == "with_user" and _call_has_superuser_arg(node, self.constants):
+                if node.func.attr == "with_user" and _call_has_superuser_arg(
+                    node, self._effective_constants()
+                ):
                     return True
             return self._is_elevated_record_expr(node.func)
         return False
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        """Return module constants overlaid with constants from active classes."""
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
     def _is_request_controlled(self, node: ast.expr) -> bool:
         """Check whether an expression is derived from request-controlled data."""
@@ -558,8 +574,12 @@ def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):
@@ -575,13 +595,42 @@ def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
 
 
 def _resolve_constant(node: ast.AST | None, constants: dict[str, ast.AST]) -> ast.AST | None:
+    return _resolve_constant_seen(node, constants, set())
+
+
+def _resolve_constant_seen(
+    node: ast.AST | None, constants: dict[str, ast.AST], seen: set[str]
+) -> ast.AST | None:
     if isinstance(node, ast.Name):
-        return constants.get(node.id, node)
+        if node.id in seen:
+            return node
+        value = constants.get(node.id)
+        if value is None:
+            return node
+        seen.add(node.id)
+        return _resolve_constant_seen(value, constants, seen)
     return node
 
 
 def _is_static_literal(node: ast.AST) -> bool:
-    return isinstance(node, ast.Constant) and isinstance(node.value, str | bool | int | float | type(None))
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, str | bool | int | float | type(None))
+        or isinstance(node, ast.Name)
+    )
+
+
+def _extract_model_name(node: ast.ClassDef, constants: dict[str, ast.AST]) -> str:
+    for statement in node.body:
+        if not isinstance(statement, ast.Assign):
+            continue
+        for target in statement.targets:
+            if not (isinstance(target, ast.Name) and target.id == "_name"):
+                continue
+            value = _resolve_constant(statement.value, constants)
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                return value.value
+    return ""
 
 
 def findings_to_json(findings: list[MultiCompanyFinding]) -> list[dict[str, Any]]:
