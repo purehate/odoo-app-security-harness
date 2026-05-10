@@ -1041,6 +1041,41 @@ def test_postmessage_wildcard_origin_detected(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-web-postmessage-wildcard-origin" and f.severity == "medium" for f in findings)
 
 
+def test_postmessage_dynamic_origin_detected(tmp_path: Path) -> None:
+    """postMessage target origins should not be chosen from runtime data."""
+    path = tmp_path / "widget.js"
+    path.write_text("window.parent.postMessage({invoiceId, token}, event.origin);\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-postmessage-dynamic-origin"
+        and f.sink == "postMessage"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_postmessage_literal_origin_ignored(tmp_path: Path) -> None:
+    """Explicit literal target origins are reviewable allowlist entries."""
+    path = tmp_path / "widget.js"
+    path.write_text("window.parent.postMessage({invoiceId}, 'https://portal.example.com');\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-postmessage-dynamic-origin" for f in findings)
+
+
+def test_postmessage_same_origin_ignored(tmp_path: Path) -> None:
+    """Same-origin postMessage targets are not cross-origin dynamic allowlists."""
+    path = tmp_path / "widget.js"
+    path.write_text("window.parent.postMessage({ready: true}, window.location.origin);\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-postmessage-dynamic-origin" for f in findings)
+
+
 def test_prototype_pollution_object_merge_detected(tmp_path: Path) -> None:
     """Frontend object merges should not consume request/RPC data without key filtering."""
     path = tmp_path / "widget.js"

@@ -2967,7 +2967,10 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "frontend_message_origin_validation",
         (
+            "web-postmessage-dynamic-origin",
             "web-message-handler-missing-origin-check",
+            "postmessage uses dynamic target origin",
+            "nonliteral or request-derived target origin",
             "message handler lacks visible origin validation",
             "event.origin allowlist",
             "cross-window messages",

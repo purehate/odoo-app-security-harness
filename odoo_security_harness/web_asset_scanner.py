@@ -178,6 +178,7 @@ SENSITIVE_URL_DYNAMIC_VALUE_RE = re.compile(
     r"\$\{|(?:^|[^+\w])\+|encodeURIComponent\s*\(|\b(?:response|payload|data|props|params|token|secret|password|session|csrf)\b",
     re.IGNORECASE,
 )
+POSTMESSAGE_CALL_RE = re.compile(r"\.postMessage\s*\((?P<args>[^;\n]+)\)")
 POSTMESSAGE_WILDCARD_RE = re.compile(r"\.postMessage\s*\(.*,\s*['\"]\*['\"]")
 OBJECT_MERGE_PATTERNS = {
     "Object.assign": re.compile(r"\bObject\.assign\s*\("),
@@ -716,6 +717,17 @@ class WebAssetScanner:
                     "postMessage",
                 )
 
+            postmessage_match = POSTMESSAGE_CALL_RE.search(line)
+            if postmessage_match and _looks_risky_postmessage_target_origin(postmessage_match.group("args")):
+                self._add(
+                    "odoo-web-postmessage-dynamic-origin",
+                    "postMessage uses dynamic target origin",
+                    "medium",
+                    line_number,
+                    "postMessage uses a nonliteral or request-derived target origin; restrict cross-window messages to explicit trusted origins",
+                    "postMessage",
+                )
+
             for sink, pattern in OBJECT_MERGE_PATTERNS.items():
                 if pattern.search(line) and OBJECT_MERGE_TAINT_RE.search(line):
                     self._add(
@@ -1110,6 +1122,25 @@ def _looks_sensitive_history_state_url(args: str) -> bool:
     if literal != target:
         return bool(SENSITIVE_URL_QUERY_RE.search(literal) and "${" in target)
     return _looks_sensitive_url_exposure(target)
+
+
+def _looks_risky_postmessage_target_origin(args: str) -> bool:
+    values = _split_js_args(args)
+    if len(values) < 2:
+        return False
+    target_origin = values[1].strip()
+    literal = _strip_js_string(target_origin)
+    if literal != target_origin:
+        return False
+    if re.fullmatch(r"(?:window\.|self\.)?location\.origin", target_origin):
+        return False
+    if re.fullmatch(r"(?:globalThis\.)?origin", target_origin):
+        return False
+    return bool(
+        CLIENT_NAVIGATION_TAINT_RE.search(target_origin)
+        or SENSITIVE_URL_DYNAMIC_VALUE_RE.search(target_origin)
+        or re.search(r"\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?\b", target_origin)
+    )
 
 
 def _looks_risky_dynamic_import_target(target: str) -> bool:

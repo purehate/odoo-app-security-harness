@@ -1104,13 +1104,19 @@ def test_taxonomy_coverage_classifies_frontend_message_origin_validation() -> No
                 "source": "web-assets",
                 "title": "Message event handler lacks visible origin validation",
                 "message": "message event handler reads cross-window messages without a visible event.origin allowlist",
+            },
+            {
+                "rule_id": "odoo-web-postmessage-dynamic-origin",
+                "source": "web-assets",
+                "title": "postMessage uses dynamic target origin",
+                "message": "postMessage uses a nonliteral or request-derived target origin",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_message_origin_validation"
-    assert "CWE-346" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_message_origin_validation"}
+    assert all("CWE-346" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_frontend_dom_xss() -> None:
