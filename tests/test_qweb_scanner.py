@@ -782,6 +782,43 @@ def test_detects_sensitive_field_rendering(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-qweb-sensitive-field-render" for f in findings)
 
 
+def test_detects_sensitive_dynamic_attribute_rendering(tmp_path: Path) -> None:
+    """Hidden inputs and data attributes should not expose credential-like values."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x">
+<input type="hidden" name="token" t-att-value="record.access_token"/>
+<div t-att-data-api-key="object.api_key"/>
+</template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    sensitive_attrs = {
+        finding.attribute
+        for finding in findings
+        if finding.rule_id == "odoo-qweb-sensitive-field-render"
+    }
+    assert {"t-att-value", "t-att-data-api-key"}.issubset(sensitive_attrs)
+
+
+def test_sensitive_dynamic_attribute_static_value_ignored(tmp_path: Path) -> None:
+    """Static placeholder values in data attributes should not create sensitive-field noise."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><div t-att-data-state="'token-placeholder'"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(
+        finding.rule_id == "odoo-qweb-sensitive-field-render" and finding.attribute == "t-att-data-state"
+        for finding in findings
+    )
+
+
 def test_qweb_xml_entities_are_not_expanded(tmp_path: Path) -> None:
     """QWeb XML parsing should reject entities instead of expanding them into findings."""
     template = tmp_path / "template.xml"

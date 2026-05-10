@@ -262,6 +262,8 @@ class QWebScanner:
                 message=f"{attr}='{value}' writes dynamic CSS classes; verify untrusted data cannot hide controls, spoof status, or alter privileged UI affordances",
             )
             return
+        if self._looks_sensitive_attribute_render(base_attr, value):
+            self._check_sensitive_render(tag, attr, value)
         if base_attr in ("href", "src", "action"):
             self._add_finding(
                 rule_id="odoo-qweb-t-att-url",
@@ -296,6 +298,12 @@ class QWebScanner:
                 attribute=attr,
                 message=f"{attr}='{value}' maps dynamic CSS classes; verify untrusted data cannot hide controls, spoof status, or alter privileged UI affordances",
             )
+
+        for sensitive_attr in ("value", "content", "data-token", "data-secret", "data-access-token", "data-api-key"):
+            sensitive_value = self._mapped_attribute_value(value, sensitive_attr)
+            if sensitive_value is not None and self._looks_sensitive_attribute_render(sensitive_attr, sensitive_value):
+                self._check_sensitive_render(tag, attr, sensitive_value)
+                break
 
         if not re.search(r"['\"](?:href|src|action)['\"]", value):
             return
@@ -343,6 +351,8 @@ class QWebScanner:
                 message=f"{attr}='{value}' formats dynamic CSS classes; verify untrusted data cannot hide controls, spoof status, or alter privileged UI affordances",
             )
             return
+        if self._looks_sensitive_attribute_render(base_attr, value):
+            self._check_sensitive_render(tag, attr, value)
         if base_attr in ("href", "src", "action"):
             severity = "high" if self._has_dangerous_url_scheme(value) else "medium"
             self._add_finding(
@@ -451,6 +461,21 @@ class QWebScanner:
                 attribute=attr,
                 message=f"{attr}='{value}' renders token, secret, password, or API-key-like data; verify templates cannot expose credentials",
             )
+
+    def _looks_sensitive_attribute_render(self, attr: str, value: str) -> bool:
+        """Return True when dynamic attributes expose credential-shaped values."""
+        lowered_attr = attr.lower()
+        if not (
+            lowered_attr in {"value", "content"}
+            or lowered_attr.startswith("data-")
+            or any(marker in lowered_attr for marker in self.SENSITIVE_FIELD_MARKERS)
+        ):
+            return False
+        stripped = value.strip()
+        if re.fullmatch(r"""['"][^'"]*['"]""", stripped):
+            return False
+        lowered_value = value.lower()
+        return any(marker in lowered_value for marker in self.SENSITIVE_FIELD_MARKERS)
 
     def _check_url_attr(self, tag: str, attr: str, value: str) -> None:
         """Check href/src/action attributes for dangerous URL schemes."""
@@ -1059,6 +1084,27 @@ class QWebScanner:
                     element="",
                     attribute=match.group(1),
                     message=f"{match.group(1)}='{value}' renders token, secret, password, or API-key-like data",
+                )
+            )
+
+        sensitive_attr_re = re.compile(r'(t-attf?-(?:value|content|data-[\w:-]+))\s*=\s*(["\'])(.*?)\2', re.IGNORECASE)
+        for match in sensitive_attr_re.finditer(content):
+            attr = match.group(1)
+            value = match.group(3)
+            base_attr = re.sub(r"^t-attf?-", "", attr, flags=re.IGNORECASE)
+            if not self._looks_sensitive_attribute_render(base_attr, value):
+                continue
+            line = content[: match.start()].count("\n") + 1
+            findings.append(
+                QWebFinding(
+                    rule_id="odoo-qweb-sensitive-field-render",
+                    title="QWeb renders sensitive-looking field",
+                    severity="high",
+                    file=self.file_path,
+                    line=line,
+                    element="",
+                    attribute=attr,
+                    message=f"{attr}='{value}' renders token, secret, password, or API-key-like data",
                 )
             )
 
