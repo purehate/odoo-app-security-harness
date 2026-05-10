@@ -71,6 +71,7 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
         self.route_names: set[str] = {"route"}
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[ModuleLifecycleFinding]:
         """Scan the file."""
@@ -91,7 +92,9 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
         previous_sudo_module_vars = set(self.sudo_module_vars)
         previous_tainted = set(self.tainted_names)
         previous_tainted_module_vars = set(self.tainted_module_vars)
-        self.route_stack.append(_route_info(node, self.constants, self.route_names) or RouteContext(is_route=False))
+        self.route_stack.append(
+            _route_info(node, self._effective_constants(), self.route_names) or RouteContext(is_route=False)
+        )
 
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in TAINTED_ARG_NAMES:
@@ -110,6 +113,11 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo.http":
@@ -142,11 +150,12 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
         else:
             for name in target_names:
                 self.tainted_names.discard(name)
-        if _module_model_in_expr(node.iter, self.module_vars, self.constants):
+        constants = self._effective_constants()
+        if _module_model_in_expr(node.iter, self.module_vars, constants):
             for name in target_names:
                 self.module_vars.add(name)
                 if _uses_sudo_module_var(node.iter, self.sudo_module_vars) or _is_elevated_expr(
-                    node.iter, self.constants
+                    node.iter, constants
                 ):
                     self.sudo_module_vars.add(name)
                 else:
@@ -175,7 +184,8 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
         method = sink.rsplit(".", 1)[-1]
         if method not in MODULE_METHODS:
             return
-        if not _module_model_in_expr(node.func, self.module_vars, self.constants):
+        constants = self._effective_constants()
+        if not _module_model_in_expr(node.func, self.module_vars, constants):
             return
 
         route = self._current_route()
@@ -189,7 +199,7 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
                 route.display_path(),
                 sink,
             )
-        if _is_elevated_expr(node.func, self.constants) or _uses_sudo_module_var(node.func, self.sudo_module_vars):
+        if _is_elevated_expr(node.func, constants) or _uses_sudo_module_var(node.func, self.sudo_module_vars):
             self._add(
                 "odoo-module-sudo-lifecycle",
                 "Module lifecycle operation runs with an elevated environment",
@@ -244,12 +254,13 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
                 self._record_target_state(target_element, value_element)
             return
 
-        is_module_expr = _module_model_in_expr(value, self.module_vars, self.constants)
+        constants = self._effective_constants()
+        is_module_expr = _module_model_in_expr(value, self.module_vars, constants)
         is_tainted = self._expr_is_tainted(value)
         for name in _target_names(target):
             if is_module_expr:
                 self.module_vars.add(name)
-                if _is_elevated_expr(value, self.constants) or _uses_sudo_module_var(value, self.sudo_module_vars):
+                if _is_elevated_expr(value, constants) or _uses_sudo_module_var(value, self.sudo_module_vars):
                     self.sudo_module_vars.add(name)
                 else:
                     self.sudo_module_vars.discard(name)
@@ -344,6 +355,14 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
 
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
+
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, route: str, sink: str) -> None:
         self.findings.append(
             ModuleLifecycleFinding(
@@ -436,8 +455,12 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST]) -> list[str]:
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

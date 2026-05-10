@@ -229,6 +229,82 @@ class Controller(http.Controller):
     )
 
 
+def test_class_constant_public_route_immediate_install_from_request_is_reported(tmp_path: Path) -> None:
+    """Class-scoped route and module constants should not hide lifecycle calls."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "modules.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    ROUTE_ONE = '/public/install'
+    ROUTE_TWO = '/public/modules/install'
+    LIFECYCLE_ROUTES = [ROUTE_ONE, ROUTE_TWO]
+    AUTH_PUBLIC = 'public'
+    LIFECYCLE_AUTH = AUTH_PUBLIC
+    MODULE_MODEL = 'ir.module.module'
+    TARGET_MODEL = MODULE_MODEL
+
+    @http.route(routes=LIFECYCLE_ROUTES, auth=LIFECYCLE_AUTH, csrf=False)
+    def install(self, **kwargs):
+        module = request.env[TARGET_MODEL].sudo().search([('name', '=', kwargs.get('module'))])
+        return module.button_immediate_install()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_module_lifecycle(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-module-public-route-lifecycle"
+        and finding.route == "/public/install,/public/modules/install"
+        for finding in findings
+    )
+    assert any(finding.rule_id == "odoo-module-sudo-lifecycle" for finding in findings)
+    assert any(finding.rule_id == "odoo-module-immediate-lifecycle" for finding in findings)
+    assert any(finding.rule_id == "odoo-module-tainted-selection" for finding in findings)
+
+
+def test_class_constant_static_unpack_public_route_lifecycle_is_reported(tmp_path: Path) -> None:
+    """Class-scoped static **route options should preserve lifecycle route metadata."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "modules.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    INSTALL_ROUTE = '/public/install'
+    INSTALL_AUTH = 'public'
+    INSTALL_OPTIONS = {'route': INSTALL_ROUTE, 'auth': INSTALL_AUTH, 'csrf': False}
+
+    @http.route(**INSTALL_OPTIONS)
+    def install(self, **kwargs):
+        module = request.env['ir.module.module'].sudo().search([('name', '=', kwargs.get('module'))])
+        return module.button_immediate_install()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_module_lifecycle(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-module-public-route-lifecycle"
+        and finding.severity == "critical"
+        and finding.route == "/public/install"
+        for finding in findings
+    )
+    assert any(
+        finding.rule_id == "odoo-module-tainted-selection"
+        and finding.severity == "critical"
+        and finding.route == "/public/install"
+        for finding in findings
+    )
+
+
 def test_request_alias_immediate_install_from_request_is_reported(tmp_path: Path) -> None:
     """Aliased request imports should still taint module lifecycle selection."""
     controllers = tmp_path / "module" / "controllers"
@@ -358,6 +434,33 @@ MODULE_MODEL = 'ir.module.module'
 TARGET_MODEL = MODULE_MODEL
 
 class ModuleHelper:
+    def upgrade_sale(self):
+        return self.env[TARGET_MODEL].with_user(user=ADMIN_USER).search([('name', '=', 'sale')]).button_upgrade()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_module_lifecycle(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-module-sudo-lifecycle" in rule_ids
+    assert "odoo-module-public-route-lifecycle" not in rule_ids
+
+
+def test_class_constant_superuser_upgrade_on_module_model_is_reported(tmp_path: Path) -> None:
+    """Class-scoped superuser and module-model aliases should count as elevated lifecycle."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "modules.py").write_text(
+        """
+from odoo import SUPERUSER_ID
+
+class ModuleHelper:
+    ROOT_USER = SUPERUSER_ID
+    ADMIN_USER = ROOT_USER
+    MODULE_MODEL = 'ir.module.module'
+    TARGET_MODEL = MODULE_MODEL
+
     def upgrade_sale(self):
         return self.env[TARGET_MODEL].with_user(user=ADMIN_USER).search([('name', '=', 'sale')]).button_upgrade()
 """,
