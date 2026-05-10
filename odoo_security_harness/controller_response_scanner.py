@@ -1027,6 +1027,8 @@ def _weak_csp_reason(header_name: str, value: ast.AST, constants: dict[str, ast.
         for token in ("'unsafe-inline'", "'unsafe-eval'")
         if token in csp
     ]
+    if re.search(r"(?:^|;)\s*frame-ancestors\s+[^;]*\*", csp):
+        weaknesses.append("frame-ancestors *")
     return " and ".join(weaknesses)
 
 

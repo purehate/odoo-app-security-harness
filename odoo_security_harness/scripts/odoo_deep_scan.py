@@ -3796,6 +3796,7 @@ _TAXONOMY_SHAPE_HINTS = (
             "controller sets weak content-security-policy",
             "content-security-policy with 'unsafe-inline'",
             "content-security-policy with 'unsafe-eval'",
+            "content-security-policy with frame-ancestors *",
             "tighten script/style sources",
         ),
     ),
