@@ -69,7 +69,8 @@ class OrmDomainScanner(ast.NodeVisitor):
         self.tainted_names: set[str] = set()
         self.elevated_names: set[str] = set()
         self.request_names: set[str] = {"request"}
-        self.route_names: set[str] = {"route"}
+        self.http_module_names: set[str] = {"http"}
+        self.route_names: set[str] = set()
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
@@ -92,7 +93,8 @@ class OrmDomainScanner(ast.NodeVisitor):
         previous_tainted = set(self.tainted_names)
         previous_elevated = set(self.elevated_names)
         self.route_stack.append(
-            _route_info(node, self._effective_constants(), self.route_names) or RouteContext(is_route=False)
+            _route_info(node, self._effective_constants(), self.route_names, self.http_module_names)
+            or RouteContext(is_route=False)
         )
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in DOMAIN_ARG_NAMES:
@@ -114,7 +116,11 @@ class OrmDomainScanner(ast.NodeVisitor):
         self.class_constants_stack.pop()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        if node.module == "odoo.http":
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.http_module_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
                     self.request_names.add(alias.asname or alias.name)
@@ -337,11 +343,12 @@ def _route_info(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     constants: dict[str, ast.AST] | None = None,
     route_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
 ) -> RouteContext | None:
     constants = constants or {}
-    route_names = route_names or {"route"}
+    route_names = route_names or set()
     for decorator in node.decorator_list:
-        if not _is_http_route(decorator, route_names):
+        if not _is_http_route(decorator, route_names, http_module_names):
             continue
         auth = "user"
         if isinstance(decorator, ast.Call):
@@ -369,13 +376,23 @@ def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[tu
     return keywords
 
 
-def _is_http_route(node: ast.AST, route_names: set[str] | None = None) -> bool:
-    route_names = route_names or {"route"}
+def _is_http_route(
+    node: ast.AST,
+    route_names: set[str] | None = None,
+    http_module_names: set[str] | None = None,
+) -> bool:
+    route_names = route_names or set()
+    http_module_names = http_module_names or {"http"}
     if isinstance(node, ast.Call):
-        return _is_http_route(node.func, route_names)
+        return _is_http_route(node.func, route_names, http_module_names)
     if isinstance(node, ast.Name):
         return node.id in route_names
-    return isinstance(node, ast.Attribute) and node.attr == "route"
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "route"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in http_module_names
+    )
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
