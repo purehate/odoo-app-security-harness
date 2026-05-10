@@ -106,6 +106,63 @@ class Controller(http.Controller):
     assert "odoo-signup-token-exposed" in rule_ids
 
 
+def test_aliased_http_module_public_reset_token_lifecycle_risks_are_reported(tmp_path: Path) -> None:
+    """Aliased Odoo http module imports must not hide public reset token risks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+from odoo import http as odoo_http
+from odoo.http import request
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/web/reset_password', auth='public', csrf=False)
+    def reset_password(self, **kwargs):
+        partner = request.env['res.partner'].sudo().search([('signup_token', '=', kwargs.get('token'))], limit=1)
+        return request.render('auth_signup.reset_password', {'signup_token': partner.signup_token})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-signup-public-token-route" in rule_ids
+    assert "odoo-signup-tainted-token-lookup" in rule_ids
+    assert "odoo-signup-token-lookup-without-expiry" in rule_ids
+    assert "odoo-signup-token-exposed" in rule_ids
+
+
+def test_non_odoo_route_decorator_public_reset_token_route_is_ignored(tmp_path: Path) -> None:
+    """Local route-like decorators should not create Odoo route context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+from odoo.http import request
+
+class Router:
+    def route(self, *args, **kwargs):
+        def decorate(func):
+            return func
+        return decorate
+
+router = Router()
+
+class Controller:
+    @router.route('/web/reset_password', auth='public', csrf=False)
+    def reset_password(self, **kwargs):
+        partner = request.env['res.partner'].sudo().search([('signup_token', '=', kwargs.get('token'))], limit=1)
+        return request.render('auth_signup.reset_password', {'signup_token': partner.signup_token})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+
+    assert not any(f.rule_id == "odoo-signup-public-token-route" for f in findings)
+
+
 def test_constant_backed_public_reset_token_lifecycle_risks_are_reported(tmp_path: Path) -> None:
     """Constant-backed public reset route metadata must not hide token risks."""
     controllers = tmp_path / "module" / "controllers"
