@@ -68,6 +68,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
         self.http_module_aliases: set[str] = {"requests", "httpx", "urllib.request"}
         self.http_function_aliases: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
+        self.class_constants_stack: list[dict[str, ast.AST]] = []
 
     def scan_file(self) -> list[ScheduledJobFinding]:
         """Scan the file."""
@@ -97,6 +98,11 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 if alias.name in HTTP_METHODS:
                     self.http_function_aliases.add(alias.asname or alias.name)
         self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.class_constants_stack.append(_static_constants_from_body(node.body))
+        self.generic_visit(node)
+        self.class_constants_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         context = JobContext(name=node.name, is_scheduled=_is_scheduled_method(node.name, self.cron_methods))
@@ -134,8 +140,9 @@ class ScheduledJobScanner(ast.NodeVisitor):
 
         sink = _call_name(node.func)
         method = sink.rsplit(".", 1)[-1]
+        constants = self._effective_constants()
 
-        if _is_sudo_mutation(node.func, context.sudo_vars, self.constants):
+        if _is_sudo_mutation(node.func, context.sudo_vars, constants):
             self._add(
                 "odoo-scheduled-job-sudo-mutation",
                 "Scheduled job performs elevated mutation",
@@ -146,7 +153,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 sink,
             )
         elif method in SENSITIVE_MODEL_MUTATION_METHODS:
-            sensitive_model = _call_receiver_sensitive_model(node, self.constants)
+            sensitive_model = _call_receiver_sensitive_model(node, constants)
             if sensitive_model:
                 self._add(
                     "odoo-scheduled-job-sensitive-model-mutation",
@@ -178,7 +185,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 sink,
             )
         elif method in UNBOUNDED_READ_METHODS and _is_empty_domain_call(node):
-            severity = "medium" if _is_sudo_expr(node.func, context.sudo_vars, self.constants) else "low"
+            severity = "medium" if _is_sudo_expr(node.func, context.sudo_vars, constants) else "low"
             self._add(
                 "odoo-scheduled-job-unbounded-search",
                 "Scheduled job performs unbounded ORM search",
@@ -200,7 +207,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
                     context.name,
                     sink,
                 )
-            if _keyword_is_false(node, "verify", self.constants):
+            if _keyword_is_false(node, "verify", constants):
                 self._add(
                     "odoo-scheduled-job-tls-verify-disabled",
                     "Scheduled job disables TLS verification",
@@ -233,7 +240,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
             target,
             value,
             context.sudo_vars,
-            lambda node: _is_sudo_expr(node, context.sudo_vars, self.constants),
+            lambda node: _is_sudo_expr(node, context.sudo_vars, self._effective_constants()),
         )
         self._track_alias(
             target,
@@ -290,6 +297,14 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 sink=sink,
             )
         )
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.class_constants_stack:
+            return self.constants
+        constants = dict(self.constants)
+        for class_constants in self.class_constants_stack:
+            constants.update(class_constants)
+        return constants
 
 
 @dataclass
@@ -563,8 +578,12 @@ def _unpack_target_value_pairs(
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
     constants: dict[str, ast.AST] = {}
-    for statement in tree.body:
+    for statement in statements:
         if isinstance(statement, ast.Assign):
             for target in statement.targets:
                 if isinstance(target, ast.Name) and _is_static_literal(statement.value):

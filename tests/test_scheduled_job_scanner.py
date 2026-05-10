@@ -290,6 +290,33 @@ class Sale(models.Model):
     assert "odoo-scheduled-job-sudo-mutation" in rule_ids
 
 
+def test_flags_class_constant_backed_with_user_cron_mutation(tmp_path: Path) -> None:
+    """Class-scoped superuser ID aliases should not hide cron mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+    ROOT_UID = 1
+    ADMIN_UID = ROOT_UID
+
+    def _cron_close_orders(self):
+        orders = self.env['sale.order'].with_user(ADMIN_UID).search([])
+        orders.write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-scheduled-job-unbounded-search" in rule_ids
+    assert "odoo-scheduled-job-sudo-mutation" in rule_ids
+
+
 def test_flags_env_ref_admin_cron_mutation(tmp_path: Path) -> None:
     """Aliased with_user(base.user_admin) recordsets in cron methods are elevated."""
     models = tmp_path / "module" / "models"
@@ -424,6 +451,31 @@ TLS_VERIFY = VERIFY_FALSE
 
 class Sync(models.Model):
     _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        return requests.get(self.feed_url, timeout=10, verify=TLS_VERIFY)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-scheduled-job-tls-verify-disabled" for f in findings)
+
+
+def test_flags_class_constant_backed_tls_verification_disabled(tmp_path: Path) -> None:
+    """Class-scoped verify=False aliases should still flag recurring HTTP integrations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import requests
+
+class Sync(models.Model):
+    _name = 'x.sync'
+    VERIFY_FALSE = False
+    TLS_VERIFY = VERIFY_FALSE
 
     def _cron_sync_feed(self):
         return requests.get(self.feed_url, timeout=10, verify=TLS_VERIFY)
@@ -638,6 +690,36 @@ class Identity(models.Model):
     findings = scan_scheduled_jobs(tmp_path)
 
     assert any(f.rule_id == "odoo-scheduled-job-sensitive-model-mutation" for f in findings)
+
+
+def test_flags_class_constant_backed_sensitive_model_cron_mutation(tmp_path: Path) -> None:
+    """Class-scoped env model-name aliases should still flag sensitive cron mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "identity.py").write_text(
+        """
+from odoo import models
+
+class Identity(models.Model):
+    _name = 'x.identity'
+    USERS_MODEL = 'res.users'
+    TARGET_MODEL = USERS_MODEL
+    PARAMS_MODEL = 'ir.config_parameter'
+    CONFIG_MODEL = PARAMS_MODEL
+
+    def _cron_rotate_identity_state(self):
+        self.env[TARGET_MODEL].write({'active': False})
+        self.env[CONFIG_MODEL].set_param('auth.signup.allow_uninvited', 'False')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+    sensitive_mutations = [
+        finding for finding in findings if finding.rule_id == "odoo-scheduled-job-sensitive-model-mutation"
+    ]
+
+    assert len(sensitive_mutations) == 2
 
 
 def test_does_not_overtaint_mixed_tuple_cron_aliases(tmp_path: Path) -> None:
