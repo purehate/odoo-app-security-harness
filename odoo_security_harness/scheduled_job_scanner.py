@@ -5,7 +5,9 @@ from __future__ import annotations
 import ast
 import re
 from collections.abc import Callable
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -362,6 +364,20 @@ def _collect_cron_methods(repo_path: Path) -> set[str]:
                     methods.add(value)
             code = fields.get("code", "")
             methods.update(re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(", code))
+    for path in repo_path.rglob("*.csv"):
+        if _should_skip(path) or _csv_model_name(path) != "ir.cron":
+            continue
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: S112
+            continue
+        for fields in _csv_dict_rows(content):
+            for name in ("function", "method_direct_trigger"):
+                value = fields.get(name, "")
+                if _is_identifier(value):
+                    methods.add(value)
+            code = fields.get("code", "")
+            methods.update(re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(", code))
     return methods
 
 
@@ -373,6 +389,41 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("ref") or field.get("eval") or (field.text or "").strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    aliases = {
+        "ir_cron": "ir.cron",
+        "ir.cron": "ir.cron",
+    }
+    return aliases.get(stem, stem.replace("_", "."))
+
+
+def _csv_dict_rows(content: str) -> list[dict[str, str]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[dict[str, str]] = []
+    try:
+        for row in reader:
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+            rows.append(normalized)
+    except Exception:
+        return []
+    return rows
 
 
 def _is_scheduled_method(name: str, cron_methods: set[str]) -> bool:
