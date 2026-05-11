@@ -370,6 +370,45 @@ class Controller(http.Controller):
     assert "odoo-mail-tainted-recipients" in rule_ids
 
 
+def test_updated_static_unpack_public_route_message_post_is_reported(tmp_path: Path) -> None:
+    """Updated **route options should not hide public chatter endpoints."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+ROUTE_OPTIONS = {
+    'auth': 'user',
+    'route': '/internal/comment',
+}
+ROUTE_OPTIONS.update({
+    'auth': 'none',
+    'route': '/ticket/comment',
+})
+
+class Controller(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def comment(self, **kwargs):
+        ticket = request.env['helpdesk.ticket'].sudo().browse(kwargs.get('id'))
+        return ticket.sudo().message_post(
+            body=kwargs.get('body'),
+            partner_ids=kwargs.get('partner_ids'),
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-chatter-public-route-send" in rule_ids
+    assert "odoo-mail-chatter-sudo-post" in rule_ids
+    assert "odoo-mail-tainted-body" in rule_ids
+    assert "odoo-mail-tainted-recipients" in rule_ids
+
+
 def test_class_constant_backed_public_route_message_post_is_reported(tmp_path: Path) -> None:
     """Class-scoped public route auth should not hide chatter endpoints."""
     controllers = tmp_path / "module" / "controllers"

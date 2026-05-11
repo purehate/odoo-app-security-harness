@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -258,7 +259,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Public route posts chatter/mail notification",
                 "high",
                 node.lineno,
-                "Public/unauthenticated route posts chatter or mail notifications; verify authorization, anti-spam controls, and recipient scoping",
+                "Public/unauthenticated route posts chatter or mail notifications; "
+                "verify authorization, anti-spam controls, and recipient scoping",
                 sink,
             )
         constants = self._effective_constants()
@@ -268,7 +270,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Chatter post is performed through elevated environment",
                 "high",
                 node.lineno,
-                "message_post/message_notify uses sudo()/with_user(SUPERUSER_ID); verify followers and recipients cannot receive record data outside normal access rules",
+                "message_post/message_notify uses sudo()/with_user(SUPERUSER_ID); "
+                "verify followers and recipients cannot receive record data outside normal access rules",
                 sink,
             )
         if sink.rsplit(".", 1)[-1] in FOLLOWER_METHODS:
@@ -283,7 +286,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Public route sends email",
                 "high",
                 node.lineno,
-                "Public/unauthenticated route sends email; verify authentication, CSRF, rate limiting, and recipient restrictions",
+                "Public/unauthenticated route sends email; "
+                "verify authentication, CSRF, rate limiting, and recipient restrictions",
                 sink,
             )
         constants = self._effective_constants()
@@ -293,7 +297,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Email send uses elevated environment",
                 "medium",
                 node.lineno,
-                "Mail send uses sudo()/with_user(SUPERUSER_ID); verify rendered content and recipients do not bypass record rules",
+                "Mail send uses sudo()/with_user(SUPERUSER_ID); "
+                "verify rendered content and recipients do not bypass record rules",
                 sink,
             )
         if _keyword_is_true(node, "force_send", constants):
@@ -302,7 +307,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Email is force-sent synchronously",
                 "low",
                 node.lineno,
-                "send_mail(..., force_send=True) bypasses normal mail queue timing; verify request latency, retries, and spam/rate controls",
+                "send_mail(..., force_send=True) bypasses normal mail queue timing; "
+                "verify request latency, retries, and spam/rate controls",
                 sink,
             )
         self._scan_message_fields(node, sink)
@@ -315,7 +321,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Public route creates outbound mail",
                 "high",
                 node.lineno,
-                "Public/unauthenticated route creates mail.mail records; verify anti-spam controls and recipient restrictions",
+                "Public/unauthenticated route creates mail.mail records; "
+                "verify anti-spam controls and recipient restrictions",
                 sink,
             )
         self._scan_message_fields(node, sink)
@@ -329,7 +336,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Follower subscription targets sensitive model",
                 "high",
                 node.lineno,
-                f"Follower subscription targets sensitive model '{sensitive_model}'; verify subscribers cannot receive private record updates outside normal access rules",
+                f"Follower subscription targets sensitive model '{sensitive_model}'; "
+                "verify subscribers cannot receive private record updates outside normal access rules",
                 sink,
             )
         if route.auth in {"public", "none"}:
@@ -338,7 +346,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Public route changes record followers",
                 "high",
                 node.lineno,
-                "Public/unauthenticated route subscribes followers to a record; verify users cannot subscribe arbitrary partners to private chatter or notifications",
+                "Public/unauthenticated route subscribes followers to a record; "
+                "verify users cannot subscribe arbitrary partners to private chatter or notifications",
                 sink,
             )
         if _call_has_tainted_input(node, self._expr_is_tainted):
@@ -347,7 +356,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Follower subscription uses request-controlled values",
                 "high",
                 node.lineno,
-                "message_subscribe receives request-derived partner/subtype values; verify subscribers are constrained to authorized recipients",
+                "message_subscribe receives request-derived partner/subtype values; "
+                "verify subscribers are constrained to authorized recipients",
                 sink,
             )
 
@@ -361,7 +371,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "mail.followers mutation targets sensitive model",
                 "high",
                 node.lineno,
-                f"mail.followers mutation targets sensitive model '{sensitive_model}'; verify recipients cannot receive private record updates outside normal access rules",
+                f"mail.followers mutation targets sensitive model '{sensitive_model}'; "
+                "verify recipients cannot receive private record updates outside normal access rules",
                 sink,
             )
         if route.auth in {"public", "none"}:
@@ -370,7 +381,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "Public route mutates mail.followers",
                 "critical",
                 node.lineno,
-                "Public/unauthenticated route creates or changes mail.followers records; verify attackers cannot subscribe recipients to private records",
+                "Public/unauthenticated route creates or changes mail.followers records; "
+                "verify attackers cannot subscribe recipients to private records",
                 sink,
             )
         if _is_sudo_expr(node.func, self.sudo_names, constants, self.superuser_names):
@@ -379,7 +391,8 @@ class MailChatterScanner(ast.NodeVisitor):
                 "mail.followers mutation uses elevated environment",
                 "high",
                 node.lineno,
-                "mail.followers mutation uses sudo()/with_user(SUPERUSER_ID); verify follower changes cannot bypass record rules or company boundaries",
+                "mail.followers mutation uses sudo()/with_user(SUPERUSER_ID); "
+                "verify follower changes cannot bypass record rules or company boundaries",
                 sink,
             )
         for value in _field_values(node, FOLLOWER_FIELDS, constants):
@@ -389,7 +402,8 @@ class MailChatterScanner(ast.NodeVisitor):
                     "mail.followers mutation uses request-controlled values",
                     "critical" if route.auth in {"public", "none"} else "high",
                     node.lineno,
-                    "Request-derived values reach mail.followers fields; constrain model, record, partner, and subtype inputs before mutating subscriptions",
+                    "Request-derived values reach mail.followers fields; "
+                    "constrain model, record, partner, and subtype inputs before mutating subscriptions",
                     sink,
                 )
                 break
@@ -407,7 +421,8 @@ class MailChatterScanner(ast.NodeVisitor):
                     "Chatter/mail body includes sensitive values",
                     "high",
                     node.lineno,
-                    "Chatter/mail body or subject references token/password/secret-like data; verify every recipient is authorized and links expire appropriately",
+                    "Chatter/mail body or subject references token/password/secret-like data; "
+                    "verify every recipient is authorized and links expire appropriately",
                     sink,
                 )
             if value is not None and self._expr_is_tainted(value) and not reported_tainted_body:
@@ -417,7 +432,8 @@ class MailChatterScanner(ast.NodeVisitor):
                     "Chatter/mail body uses request-controlled content",
                     "medium",
                     node.lineno,
-                    "Chatter/mail body or subject includes request-derived data; verify escaping, spam controls, and recipient authorization",
+                    "Chatter/mail body or subject includes request-derived data; "
+                    "verify escaping, spam controls, and recipient authorization",
                     sink,
                 )
         for value in _field_values(node, RECIPIENT_FIELDS, constants):
@@ -428,7 +444,8 @@ class MailChatterScanner(ast.NodeVisitor):
                     "Chatter/mail recipients are request-controlled",
                     "high",
                     node.lineno,
-                    "Chatter/mail recipient fields are request-derived; verify users cannot redirect private record notifications or send arbitrary email",
+                    "Chatter/mail recipient fields are request-derived; "
+                    "verify users cannot redirect private record notifications or send arbitrary email",
                     sink,
                 )
 
@@ -638,7 +655,50 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for keyword in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for expanded in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, expanded.arg, expanded.value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str | None, value: ast.AST) -> ast.Dict:
+    if key is None:
+        return values_node
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.AST:
