@@ -44,6 +44,51 @@ def test_xml_entities_are_not_expanded_into_automation_findings(tmp_path: Path) 
     assert AutomationScanner(xml).scan_file() == []
 
 
+def test_broad_sensitive_automation_in_csv_is_reported(tmp_path: Path) -> None:
+    """CSV automated actions on sensitive models should have a narrowing domain."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "base_automation.csv").write_text(
+        "id,name,model_id/id,trigger\n"
+        "auto_sale,Sale,sale.model_sale_order,on_create_or_write\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_automations(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-automation-broad-sensitive-trigger" and f.record_id == "auto_sale" for f in findings
+    )
+
+
+def test_automation_csv_code_risks_are_reported(tmp_path: Path) -> None:
+    """CSV automated action code should use the same sink checks as XML."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "base.automation.csv").write_text(
+        "id,name,code\n"
+        "auto_eval,Eval,safe_eval(record.expression)\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_automations(tmp_path)
+
+    assert any(f.rule_id == "odoo-automation-dynamic-eval" for f in findings)
+
+
+def test_filtered_sensitive_csv_automation_is_ignored(tmp_path: Path) -> None:
+    """CSV automated actions with an explicit domain should not be broad-trigger findings."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "base_automation.csv").write_text(
+        "id,name,model_id/id,trigger,filter_domain\n"
+        "auto_sale,Sale,sale.model_sale_order,on_create_or_write,\"[('state','=','draft')]\"\n",
+        encoding="utf-8",
+    )
+
+    assert scan_automations(tmp_path) == []
+
+
 def test_dynamic_eval_in_automation_is_reported(tmp_path: Path) -> None:
     """Automated actions should not evaluate record-controlled expressions."""
     xml = tmp_path / "automation.xml"
