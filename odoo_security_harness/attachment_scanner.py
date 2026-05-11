@@ -90,6 +90,7 @@ class AttachmentScanner(ast.NodeVisitor):
         self.request_names: set[str] = {"request"}
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.route_names: set[str] = set()
         self.tainted_names: set[str] = set()
         self.route_stack: list[RouteContext] = []
@@ -123,6 +124,8 @@ class AttachmentScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -221,7 +224,7 @@ class AttachmentScanner(ast.NodeVisitor):
                     route.display_path(),
                     sink,
                 )
-            if _is_elevated_attachment_expr(node.func, self.sudo_attachment_vars, constants):
+            if _is_elevated_attachment_expr(node.func, self.sudo_attachment_vars, constants, self.superuser_names):
                 self._add(
                     "odoo-attachment-sudo-mutation",
                     "Attachment mutation runs with elevated environment",
@@ -419,7 +422,7 @@ class AttachmentScanner(ast.NodeVisitor):
     def _mark_attachment_target(self, target: ast.AST, value: ast.AST) -> None:
         constants = self._effective_constants()
         is_attachment = _attachment_model_in_expr(value, self.attachment_vars, constants)
-        is_sudo = _is_elevated_attachment_expr(value, self.sudo_attachment_vars, constants)
+        is_sudo = _is_elevated_attachment_expr(value, self.sudo_attachment_vars, constants, self.superuser_names)
         if isinstance(target, ast.Name):
             if is_attachment:
                 self.attachment_vars.add(target.id)
@@ -782,20 +785,17 @@ def _is_elevated_attachment_expr(
     node: ast.AST,
     sudo_attachment_vars: set[str],
     constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
     return (
         _call_chain_has_attr(node, "sudo")
-        or _call_chain_has_superuser_with_user(node, constants)
+        or _call_chain_has_superuser_with_user(node, constants, superuser_names)
         or _uses_sudo_attachment_var(node, sudo_attachment_vars)
     )
 
 
 def _dict_mentions_attachment_values(node: ast.Dict) -> bool:
-    return any(
-        isinstance(key, ast.Constant)
-        and key.value in ATTACHMENT_VALUE_KEYS
-        for key in node.keys
-    )
+    return any(isinstance(key, ast.Constant) and key.value in ATTACHMENT_VALUE_KEYS for key in node.keys)
 
 
 def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
@@ -842,11 +842,15 @@ def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     return False
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return any(_call_chain_has_superuser_with_user(element, constants) for element in node.elts)
+        return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     if isinstance(node, ast.Starred):
-        return _call_chain_has_superuser_with_user(node.value, constants)
+        return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
     current: ast.AST | None = node
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
         if isinstance(current, ast.Call):
@@ -854,11 +858,11 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
                 isinstance(current.func, ast.Attribute)
                 and current.func.attr == "with_user"
                 and (
-                    any(_is_superuser_arg(arg, constants) for arg in current.args)
+                    any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args)
                     or any(
                         keyword.arg in {"user", "uid"}
                         and keyword.value is not None
-                        and _is_superuser_arg(keyword.value, constants)
+                        and _is_superuser_arg(keyword.value, constants, superuser_names)
                         for keyword in current.keywords
                     )
                 )
@@ -872,16 +876,25 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
     return False
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
-    node = _resolve_constant(node, constants or {})
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    constants = constants or {}
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _is_superuser_arg(resolved, constants, superuser_names)
+    node = resolved
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 

@@ -70,10 +70,7 @@ class TestModel(models.Model):
 
     findings = MultiCompanyChecker(str(model)).check_file()
 
-    assert any(
-        f.rule_id == "odoo-mc-missing-check-company" and f.model == "test.model"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-mc-missing-check-company" and f.model == "test.model" for f in findings)
 
 
 def test_class_constant_backed_check_company_auto_suppresses_missing_check(tmp_path: Path) -> None:
@@ -256,6 +253,24 @@ from odoo import SUPERUSER_ID
 class TestModel(models.Model):
     def leak_orders(self):
         return self.env['sale.order'].with_user(SUPERUSER_ID).search_read([])
+""",
+    )
+
+    findings = MultiCompanyChecker(str(model)).check_file()
+
+    assert any(f.rule_id == "odoo-mc-sudo-search-no-company" for f in findings)
+
+
+def test_import_aliased_superuser_search_read_without_company_filter(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases need the same company scoping as sudo()."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import SUPERUSER_ID as ROOT_UID
+
+class TestModel(models.Model):
+    def leak_orders(self):
+        return self.env['sale.order'].with_user(ROOT_UID).search_read([])
 """,
     )
 

@@ -56,6 +56,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
         self.request_names: set[str] = {"request"}
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
 
@@ -137,6 +138,8 @@ class MultiCompanyChecker(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -400,7 +403,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
                 if node.func.attr == "sudo":
                     return True
                 if node.func.attr == "with_user" and _call_has_superuser_arg(
-                    node, self._effective_constants()
+                    node, self._effective_constants(), self.superuser_names
                 ):
                     return True
             return self._is_elevated_record_expr(node.func)
@@ -449,11 +452,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
         """Check whether a node is the imported Odoo request proxy name."""
         if isinstance(node, ast.Name):
             return node.id in self.request_names
-        return (
-            isinstance(node, ast.Attribute)
-            and node.attr == "request"
-            and self._is_http_module_expr(node.value)
-        )
+        return isinstance(node, ast.Attribute) and node.attr == "request" and self._is_http_module_expr(node.value)
 
     def _is_http_module_expr(self, node: ast.AST) -> bool:
         if isinstance(node, ast.Name):
@@ -584,23 +583,36 @@ def _should_skip_python_file(path: Path) -> bool:
     return bool(parts & {"tests", "__pycache__", ".venv", "venv", ".git"})
 
 
-def _call_has_superuser_arg(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
-    return any(_is_superuser_arg(arg, constants) for arg in node.args) or any(
-        keyword.value is not None and _is_superuser_arg(keyword.value, constants) for keyword in node.keywords
+def _call_has_superuser_arg(
+    node: ast.Call,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args) or any(
+        keyword.value is not None and _is_superuser_arg(keyword.value, constants, superuser_names)
+        for keyword in node.keywords
     )
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
-    if constants:
-        node = _resolve_constant(node, constants)
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    constants = constants or {}
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _is_superuser_arg(resolved, constants, superuser_names)
+    node = resolved
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 
@@ -629,9 +641,7 @@ def _resolve_constant(node: ast.AST | None, constants: dict[str, ast.AST]) -> as
     return _resolve_constant_seen(node, constants, set())
 
 
-def _resolve_constant_seen(
-    node: ast.AST | None, constants: dict[str, ast.AST], seen: set[str]
-) -> ast.AST | None:
+def _resolve_constant_seen(node: ast.AST | None, constants: dict[str, ast.AST], seen: set[str]) -> ast.AST | None:
     if isinstance(node, ast.Name):
         if node.id in seen:
             return node

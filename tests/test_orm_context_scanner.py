@@ -104,6 +104,30 @@ class Sale(models.Model):
     assert "odoo-orm-context-sudo-active-test-read" in rule_ids
 
 
+def test_flags_import_aliased_with_user_superuser_active_test_read(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should be treated like sudo active_test reads."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    def archived_orders(self):
+        return self.env['sale.order'].with_user(ROOT_UID).with_context(active_test=False).search([])
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-orm-context-active-test-disabled" in rule_ids
+    assert "odoo-orm-context-sudo-active-test-read" in rule_ids
+
+
 def test_flags_constant_backed_with_user_active_test_read(tmp_path: Path) -> None:
     """Constants should not hide superuser active_test reads."""
     models = tmp_path / "module" / "models"

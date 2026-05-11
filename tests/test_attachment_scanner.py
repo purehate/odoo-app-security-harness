@@ -300,9 +300,7 @@ class Controller(http.Controller):
     assert "odoo-attachment-tainted-res-model" in rule_ids
     assert "odoo-attachment-tainted-res-id" in rule_ids
     assert any(
-        f.rule_id == "odoo-attachment-tainted-res-model"
-        and f.severity == "critical"
-        and f.route == "/public/attach"
+        f.rule_id == "odoo-attachment-tainted-res-model" and f.severity == "critical" and f.route == "/public/attach"
         for f in findings
     )
 
@@ -343,9 +341,7 @@ class Controller(http.Controller):
     assert "odoo-attachment-tainted-res-model" in rule_ids
     assert "odoo-attachment-tainted-res-id" in rule_ids
     assert any(
-        f.rule_id == "odoo-attachment-tainted-res-model"
-        and f.severity == "critical"
-        and f.route == "/public/attach"
+        f.rule_id == "odoo-attachment-tainted-res-model" and f.severity == "critical" and f.route == "/public/attach"
         for f in findings
     )
 
@@ -499,9 +495,7 @@ class Controller(http.Controller):
     findings = scan_attachments(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-attachment-public-write"
-        and f.severity == "critical"
-        and f.route == "/public/attach/update"
+        f.rule_id == "odoo-attachment-public-write" and f.severity == "critical" and f.route == "/public/attach/update"
         for f in findings
     )
     assert any(
@@ -731,9 +725,7 @@ class Controller(http.Controller):
     findings = scan_attachments(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-attachment-tainted-lookup"
-        and f.severity == "high"
-        and f.sink.endswith("search_count")
+        f.rule_id == "odoo-attachment-tainted-lookup" and f.severity == "high" and f.sink.endswith("search_count")
         for f in findings
     )
 
@@ -780,6 +772,27 @@ from odoo import SUPERUSER_ID
 class AttachmentHelper:
     def create_attachment(self, values):
         return self.env['ir.attachment'].with_user(SUPERUSER_ID).create(values)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-attachment-sudo-mutation" in rule_ids
+
+
+def test_import_aliased_superuser_attachment_mutation_is_reported(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should keep attachment mutations elevated."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachments.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID
+
+class AttachmentHelper:
+    def create_attachment(self, values):
+        return self.env['ir.attachment'].with_user(ROOT_UID).create(values)
 """,
         encoding="utf-8",
     )
@@ -1047,9 +1060,7 @@ class Controller(http.Controller):
     findings = scan_attachments(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-attachment-tainted-lookup"
-        and f.severity == "high"
-        and f.sink.endswith(".read_group")
+        f.rule_id == "odoo-attachment-tainted-lookup" and f.severity == "high" and f.sink.endswith(".read_group")
         for f in findings
     )
 

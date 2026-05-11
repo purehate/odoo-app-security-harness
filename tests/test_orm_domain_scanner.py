@@ -50,10 +50,7 @@ class Search(http.Controller):
 
     findings = scan_orm_domains(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
 
 
 def test_constant_backed_public_route_tainted_sudo_search_domain_is_critical(tmp_path: Path) -> None:
@@ -79,10 +76,7 @@ class Search(http.Controller):
 
     findings = scan_orm_domains(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
 
 
 def test_recursive_constant_backed_public_route_tainted_sudo_search_domain_is_critical(tmp_path: Path) -> None:
@@ -110,10 +104,7 @@ class Search(http.Controller):
 
     findings = scan_orm_domains(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
 
 
 def test_keyword_constant_backed_none_route_tainted_search_domain_is_high(tmp_path: Path) -> None:
@@ -208,9 +199,7 @@ class Search(http.Controller):
 
     findings = scan_orm_domains(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
 
 
 def test_aliased_http_module_route_public_tainted_sudo_search_domain(tmp_path: Path) -> None:
@@ -233,9 +222,7 @@ class Search(odoo_http.Controller):
 
     findings = scan_orm_domains(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
 
 
 def test_imported_odoo_http_module_route_public_tainted_sudo_search_domain(tmp_path: Path) -> None:
@@ -257,9 +244,7 @@ class Search(odoo_http.Controller):
 
     findings = scan_orm_domains(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
 
 
 def test_imported_odoo_module_route_public_tainted_sudo_search_domain(tmp_path: Path) -> None:
@@ -281,9 +266,7 @@ class Search(od.http.Controller):
 
     findings = scan_orm_domains(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
 
 
 def test_non_odoo_route_decorator_tainted_sudo_search_domain_is_not_public(tmp_path: Path) -> None:
@@ -314,9 +297,7 @@ class Search(http.Controller):
 
     findings = scan_orm_domains(tmp_path)
 
-    assert not any(
-        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings
-    )
+    assert not any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
     assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "high" for f in findings)
 
 
@@ -342,9 +323,7 @@ class Search(http.Controller):
 
     findings = scan_orm_domains(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
 
 
 def test_class_constant_static_unpack_public_route_options_tainted_search_is_high(tmp_path: Path) -> None:
@@ -468,6 +447,29 @@ class Search(http.Controller):
     assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" for f in findings)
 
 
+def test_flags_public_route_tainted_import_aliased_superuser_search_domain(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should keep public tainted domains privileged."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, http
+from odoo.http import request
+
+class Search(http.Controller):
+    @http.route('/public/search', auth='public')
+    def search(self, **kwargs):
+        domain = kwargs.get('domain')
+        return request.env['res.partner'].with_user(ROOT_UID).search(domain)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_domains(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" for f in findings)
+
+
 def test_flags_constant_backed_public_route_tainted_superuser_search_domain(tmp_path: Path) -> None:
     """Superuser constants should keep tainted domains classified as privileged."""
     controllers = tmp_path / "module" / "controllers"
@@ -544,10 +546,7 @@ class Search(http.Controller):
 
     findings = scan_orm_domains(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
 
 
 def test_flags_aliased_superuser_tainted_search_domain(tmp_path: Path) -> None:

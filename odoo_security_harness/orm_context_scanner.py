@@ -65,6 +65,7 @@ class OrmContextScanner(ast.NodeVisitor):
         self.request_names: set[str] = {"request"}
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
 
@@ -102,6 +103,8 @@ class OrmContextScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -138,9 +141,7 @@ class OrmContextScanner(ast.NodeVisitor):
 
         if _is_with_context_call(node):
             self._scan_with_context_call(node, sink)
-        elif _is_request_update_context_call(
-            node, self.request_names, self.http_module_names, self.odoo_module_names
-        ):
+        elif _is_request_update_context_call(node, self.request_names, self.http_module_names, self.odoo_module_names):
             self._scan_request_update_context_call(node, sink)
 
         flags = _context_flags_in_chain(
@@ -155,7 +156,12 @@ class OrmContextScanner(ast.NodeVisitor):
             elif (
                 method in READ_METHODS
                 and _flag_is_false(flags, "active_test")
-                and _is_sudo_expr(node.func, scope.sudo_vars if scope else set(), self._effective_constants())
+                and _is_sudo_expr(
+                    node.func,
+                    scope.sudo_vars if scope else set(),
+                    self._effective_constants(),
+                    self.superuser_names,
+                )
             ):
                 self._add(
                     "odoo-orm-context-sudo-active-test-read",
@@ -343,7 +349,7 @@ class OrmContextScanner(ast.NodeVisitor):
         if isinstance(value, ast.Name):
             dict_flags = scope.context_dict_vars.get(value.id, {})
         flags = _context_flags_in_chain(value, scope.context_vars, scope.context_dict_vars, constants)
-        is_sudo = _is_sudo_expr(value, scope.sudo_vars, constants)
+        is_sudo = _is_sudo_expr(value, scope.sudo_vars, constants, self.superuser_names)
         for target in targets:
             if not isinstance(target, ast.Name):
                 continue
@@ -542,21 +548,30 @@ def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     return False
 
 
-def _is_sudo_expr(node: ast.AST, sudo_vars: set[str], constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_sudo_expr(
+    node: ast.AST,
+    sudo_vars: set[str],
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     return (
         _call_chain_has_attr(node, "sudo")
-        or _call_chain_has_superuser_with_user(node, constants)
+        or _call_chain_has_superuser_with_user(node, constants, superuser_names)
         or _call_root_name(node) in sudo_vars
     )
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     current: ast.AST | None = node
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
         if isinstance(current, ast.Call):
             if isinstance(current.func, ast.Attribute) and current.func.attr == "with_user":
-                return any(_is_superuser_arg(arg, constants) for arg in current.args) or any(
-                    keyword.value is not None and _is_superuser_arg(keyword.value, constants)
+                return any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args) or any(
+                    keyword.value is not None and _is_superuser_arg(keyword.value, constants, superuser_names)
                     for keyword in current.keywords
                 )
             current = current.func
@@ -567,16 +582,25 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
     return False
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
-    node = _resolve_constant(node, constants or {})
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    constants = constants or {}
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _is_superuser_arg(resolved, constants, superuser_names)
+    node = resolved
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 
