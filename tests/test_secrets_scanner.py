@@ -44,6 +44,7 @@ def test_common_integration_key_assignments_are_reported(tmp_path: Path) -> None
         """
 access_key = 'ak_live_abcdef1234567890'
 license_key = 'lic_live_abcdef1234567890'
+reset_password_url = 'https://odoo.example/reset?token=abcdef1234567890'
 webhook_secret = 'whsec_abcdef1234567890'
 """,
         encoding="utf-8",
@@ -52,7 +53,7 @@ webhook_secret = 'whsec_abcdef1234567890'
     findings = SecretScanner(path).scan_file()
     kinds = {finding.secret_kind for finding in findings if finding.rule_id == "odoo-secret-hardcoded-value"}
 
-    assert {"access_key", "license_key", "webhook_secret"} <= kinds
+    assert {"access_key", "license_key", "reset_password_url", "webhook_secret"} <= kinds
 
 
 def test_set_param_secret_in_python_is_reported(tmp_path: Path) -> None:
@@ -79,6 +80,7 @@ def test_set_param_integration_key_in_python_is_reported(tmp_path: Path) -> None
 def configure(env):
     env['ir.config_parameter'].sudo().set_param('connector.access_key', 'ak_live_abcdef1234567890')
     env['ir.config_parameter'].sudo().set_param('connector.license_key', 'lic_live_abcdef1234567890')
+    env['ir.config_parameter'].sudo().set_param('connector.reset_password_url', 'https://odoo.example/reset?token=abcdef1234567890')
 """,
         encoding="utf-8",
     )
@@ -86,7 +88,7 @@ def configure(env):
     findings = SecretScanner(path).scan_file()
     keys = {finding.secret_kind for finding in findings if finding.rule_id == "odoo-secret-config-parameter-set-param"}
 
-    assert {"connector.access_key", "connector.license_key"} <= keys
+    assert {"connector.access_key", "connector.license_key", "connector.reset_password_url"} <= keys
 
 
 def test_set_param_placeholder_is_ignored(tmp_path: Path) -> None:
@@ -127,6 +129,10 @@ def test_ir_config_parameter_integration_key_in_xml(tmp_path: Path) -> None:
     <field name="key">connector.access_key</field>
     <field name="value">ak_live_abcdef1234567890</field>
   </record>
+  <record id="connector_reset_url" model="ir.config_parameter">
+    <field name="key">connector.reset_password_url</field>
+    <field name="value">https://odoo.example/reset?token=abcdef1234567890</field>
+  </record>
 </odoo>""",
         encoding="utf-8",
     )
@@ -135,6 +141,10 @@ def test_ir_config_parameter_integration_key_in_xml(tmp_path: Path) -> None:
 
     assert any(
         f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "access_key"
+        for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "reset_password_url"
         for f in findings
     )
 
@@ -226,7 +236,9 @@ def test_ir_config_parameter_integration_key_in_csv(tmp_path: Path) -> None:
     """CSV data should report key-shaped integration secrets."""
     path = tmp_path / "ir.config_parameter.csv"
     path.write_text(
-        "id,key,value\nconnector_license,connector.license_key,lic_live_abcdef1234567890\n",
+        "id,key,value\n"
+        "connector_license,connector.license_key,lic_live_abcdef1234567890\n"
+        "connector_reset,connector.reset_password_url,https://odoo.example/reset?token=abcdef1234567890\n",
         encoding="utf-8",
     )
 
@@ -234,6 +246,10 @@ def test_ir_config_parameter_integration_key_in_csv(tmp_path: Path) -> None:
 
     assert any(
         f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "license_key"
+        for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "reset_password_url"
         for f in findings
     )
 
@@ -290,12 +306,21 @@ def test_weak_admin_passwd_in_config(tmp_path: Path) -> None:
 def test_integration_key_in_config_file_is_reported(tmp_path: Path) -> None:
     """Config files should report key-shaped integration secrets."""
     path = tmp_path / "odoo.conf"
-    path.write_text("[options]\nconnector_access_key = ak_live_abcdef1234567890\n", encoding="utf-8")
+    path.write_text(
+        "[options]\n"
+        "connector_access_key = ak_live_abcdef1234567890\n"
+        "connector_reset_password_url = https://odoo.example/reset?token=abcdef1234567890\n",
+        encoding="utf-8",
+    )
 
     findings = SecretScanner(path).scan_file()
 
     assert any(
         f.rule_id == "odoo-secret-config-file-value" and f.secret_kind == "connector_" + "access_key"
+        for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-secret-config-file-value" and f.secret_kind == "connector_" + "reset_password_url"
         for f in findings
     )
 
