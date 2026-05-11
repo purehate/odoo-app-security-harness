@@ -2026,6 +2026,25 @@ this.$preview.attr('poster', target);
     assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "jquery.attr-url") == 3
 
 
+def test_dynamic_anchor_ping_url_attribute_detected(tmp_path: Path) -> None:
+    """Anchor ping URLs can leak click and token data through browser beacons."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """const beacon = response.tracking_url;
+this.el.querySelector('a').ping = beacon;
+this.el.querySelector('a').setAttribute('ping', beacon);
+this.$link.attr('ping', beacon);
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "element.href") == 1
+    assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "setAttribute-url") == 1
+    assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "jquery.attr-url") == 1
+
+
 def test_static_dom_url_attribute_ignored(tmp_path: Path) -> None:
     """Static DOM URL attributes should not be reported as dynamic redirects."""
     path = tmp_path / "widget.js"

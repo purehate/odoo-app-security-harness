@@ -254,7 +254,7 @@ DOM_LINK_CREATE_RE = re.compile(
     r"\b(?:const|let|var)?\s*(?P<name>[A-Za-z_$][\w$]*)\s*=\s*document\.createElement\s*\(\s*['\"]link['\"]\s*\)",
     re.IGNORECASE,
 )
-DOM_URL_ATTRIBUTE_NAMES_RE = r"(?:href|src|action|formAction|poster|srcset|xlink:href)"
+DOM_URL_ATTRIBUTE_NAMES_RE = r"(?:href|src|action|formAction|poster|srcset|ping|xlink:href)"
 DOM_URL_ATTRIBUTE_PATTERNS = {
     "element.href": re.compile(rf"\.{DOM_URL_ATTRIBUTE_NAMES_RE}\s*=", re.IGNORECASE),
     "setAttribute-url": re.compile(
