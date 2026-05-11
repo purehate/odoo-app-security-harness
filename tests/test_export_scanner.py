@@ -415,6 +415,40 @@ def export(self, domain, **kwargs):
     assert "odoo-export-sensitive-fields" in rule_ids
 
 
+def test_flags_dict_union_search_read_sensitive_fields(tmp_path: Path) -> None:
+    """Dict-union search_read **kwargs should not hide sensitive export fields."""
+    py = tmp_path / "export.py"
+    py.write_text(
+        """
+def export(self):
+    options = {'fields': ['name']} | {'fields': ['login', 'groups_id']}
+    return self.env['res.users'].search_read([], **options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = ExportScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-export-sensitive-fields" and f.sink == "search_read" for f in findings)
+
+
+def test_flags_dict_union_search_read_request_fields(tmp_path: Path) -> None:
+    """Dict-union search_read **kwargs should expose request-controlled fields."""
+    py = tmp_path / "export.py"
+    py.write_text(
+        """
+def export(self, **kwargs):
+    options = {'fields': ['name']} | {'fields': kwargs.get('fields')}
+    return self.env['res.users'].search_read([], **options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = ExportScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-export-request-controlled-fields" for f in findings)
+
+
 def test_flags_read_sensitive_or_request_fields(tmp_path: Path) -> None:
     """read() receives its export field list as the first positional argument."""
     py = tmp_path / "export.py"

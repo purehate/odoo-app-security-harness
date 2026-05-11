@@ -100,6 +100,8 @@ class ExportScanner(ast.NodeVisitor):
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
+        self.constants: dict[str, ast.AST] = {}
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[ExportFinding]:
         """Scan the file."""
@@ -111,6 +113,7 @@ class ExportScanner(ast.NodeVisitor):
         except Exception:
             return []
 
+        self.constants = _module_constants(tree)
         self.visit(tree)
         return self.findings
 
@@ -138,6 +141,8 @@ class ExportScanner(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
         previous_sanitized = set(self.sanitized_names)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         is_route = _function_is_http_route(
             node,
             self.route_decorator_names,
@@ -155,21 +160,25 @@ class ExportScanner(ast.NodeVisitor):
         self.generic_visit(node)
         self.tainted_names = previous_tainted
         self.sanitized_names = previous_sanitized
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._track_assignment_target(target, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._track_assignment_target(node.target, node.value)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._track_assignment_target(node.target, node.value)
         self.generic_visit(node)
 
@@ -204,7 +213,7 @@ class ExportScanner(ast.NodeVisitor):
                 "XLSX export writes request/record-derived data without visible formula escaping; force strings or neutralize formula prefixes",
                 attr,
             )
-        elif attr in FORMULA_SINKS and _call_has_tainted_input(node, self._expr_is_tainted):
+        elif attr in FORMULA_SINKS and _call_has_tainted_input(node, self._expr_is_tainted, self._effective_constants()):
             self._add(
                 "odoo-export-tainted-formula",
                 "XLSX formula uses request/record data",
@@ -218,7 +227,7 @@ class ExportScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _scan_orm_export_fields(self, node: ast.Call, sink: str) -> None:
-        fields_arg = _orm_export_fields_arg(node, sink)
+        fields_arg = _orm_export_fields_arg(node, sink, self._effective_constants())
         if fields_arg is None:
             if sink in {"read", "search_read"}:
                 model = _call_receiver_sensitive_model(node)
@@ -241,7 +250,7 @@ class ExportScanner(ast.NodeVisitor):
                 "ORM export/read field list is request-derived; restrict exported fields to a server-side allowlist before returning data",
                 sink,
             )
-        sensitive_fields = sorted(_literal_sensitive_fields(fields_arg))
+        sensitive_fields = sorted(_literal_sensitive_fields(fields_arg, self._effective_constants()))
         if sensitive_fields:
             self._add(
                 "odoo-export-sensitive-fields",
@@ -272,7 +281,10 @@ class ExportScanner(ast.NodeVisitor):
                 self._is_request_or_record_derived(node)
                 or self._expr_is_tainted(node.func)
                 or any(self._expr_is_tainted(arg) for arg in node.args)
-                or any(keyword.value is not None and self._expr_is_tainted(keyword.value) for keyword in node.keywords)
+                or any(
+                    keyword.value is not None and self._expr_is_tainted(keyword.value)
+                    for keyword in _expanded_keywords(node, self._effective_constants())
+                )
             )
         if isinstance(node, ast.List | ast.Tuple | ast.Set):
             return any(self._expr_is_tainted(element) for element in node.elts)
@@ -315,7 +327,7 @@ class ExportScanner(ast.NodeVisitor):
         return False
 
     def _call_or_receiver_has_tainted_input(self, node: ast.Call) -> bool:
-        if _call_has_tainted_input(node, self._expr_is_tainted):
+        if _call_has_tainted_input(node, self._expr_is_tainted, self._effective_constants()):
             return True
         return isinstance(node.func, ast.Attribute) and self._expr_is_tainted(node.func.value)
 
@@ -345,6 +357,38 @@ class ExportScanner(ast.NodeVisitor):
             return
         self.tainted_names.difference_update(target_names)
         self.sanitized_names.difference_update(target_names)
+
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(child_target, child_value)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
+    def _discard_local_constant_target(self, target: ast.AST) -> None:
+        if isinstance(target, ast.Name):
+            self.local_constants.pop(target.id, None)
+        elif isinstance(target, ast.Starred):
+            self._discard_local_constant_target(target.value)
+        elif isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.local_constants:
+            return self.constants
+        return {**self.constants, **self.local_constants}
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, sink: str) -> None:
         self.findings.append(
@@ -435,14 +479,22 @@ def _is_sanitized(node: ast.AST) -> bool:
     return any(hint in text for hint in SANITIZER_HINTS)
 
 
-def _call_has_tainted_input(node: ast.Call, is_tainted: Any) -> bool:
+def _call_has_tainted_input(
+    node: ast.Call,
+    is_tainted: Any,
+    constants: dict[str, ast.AST] | None = None,
+) -> bool:
     return any(is_tainted(arg) for arg in node.args) or any(
-        keyword.value is not None and is_tainted(keyword.value) for keyword in node.keywords
+        keyword.value is not None and is_tainted(keyword.value) for keyword in _expanded_keywords(node, constants)
     )
 
 
-def _orm_export_fields_arg(node: ast.Call, sink: str) -> ast.AST | None:
-    for keyword in node.keywords:
+def _orm_export_fields_arg(
+    node: ast.Call,
+    sink: str,
+    constants: dict[str, ast.AST] | None = None,
+) -> ast.AST | None:
+    for keyword in _expanded_keywords(node, constants):
         if keyword.arg in ORM_EXPORT_FIELD_KEYWORDS:
             return keyword.value
     if sink == "export_data" and node.args:
@@ -454,7 +506,10 @@ def _orm_export_fields_arg(node: ast.Call, sink: str) -> ast.AST | None:
     return None
 
 
-def _literal_sensitive_fields(node: ast.AST) -> set[str]:
+def _literal_sensitive_fields(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> set[str]:
+    resolved = _resolve_constant(node, constants or {})
+    if resolved is not node:
+        return _literal_sensitive_fields(resolved, constants)
     fields: set[str] = set()
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         if node.value in SENSITIVE_EXPORT_FIELDS:
@@ -462,15 +517,131 @@ def _literal_sensitive_fields(node: ast.AST) -> set[str]:
         return fields
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
         for element in node.elts:
-            fields.update(_literal_sensitive_fields(element))
+            fields.update(_literal_sensitive_fields(element, constants))
         return fields
     if isinstance(node, ast.Dict):
         for key in node.keys:
             if key is not None:
-                fields.update(_literal_sensitive_fields(key))
+                fields.update(_literal_sensitive_fields(key, constants))
         for value in node.values:
-            fields.update(_literal_sensitive_fields(value))
+            fields.update(_literal_sensitive_fields(value, constants))
     return fields
+
+
+def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
+    constants: dict[str, ast.AST] = {}
+    for statement in statements:
+        if isinstance(statement, ast.Assign):
+            for target in statement.targets:
+                if isinstance(target, ast.Name) and _is_static_literal(statement.value):
+                    constants[target.id] = statement.value
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and statement.value is not None
+            and _is_static_literal(statement.value)
+        ):
+            constants[statement.target.id] = statement.value
+    return constants
+
+
+def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
+    return _resolve_constant_seen(node, constants, set())
+
+
+def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: set[str]) -> ast.AST:
+    if isinstance(node, ast.Name):
+        if node.id in seen:
+            return node
+        value = constants.get(node.id)
+        if value is None:
+            return node
+        return _resolve_constant_seen(value, constants, {*seen, node.id})
+    return node
+
+
+def _is_static_literal(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return True
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str | bool | int | float | type(None))
+    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+        return all(_is_static_literal(element) for element in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(key is None or _is_static_literal(key) for key in node.keys)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_literal(node.left) and _is_static_literal(node.right)
+    return False
+
+
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> ast.Dict | None:
+    constants = constants or {}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _resolve_static_dict(resolved, constants)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants)
+        right = _resolve_static_dict(node.right, constants)
+        if left is not None and right is not None:
+            return _merge_static_dicts(left, right)
+    return None
+
+
+def _merge_static_dicts(left: ast.Dict, right: ast.Dict) -> ast.Dict:
+    merged = left
+    for key, value in zip(right.keys, right.values, strict=False):
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            merged = _dict_with_field(merged, key.value, value)
+        else:
+            merged = ast.Dict(keys=[*merged.keys, key], values=[*merged.values, value])
+    return merged
+
+
+def _dict_with_field(values: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values.keys)
+    values_list = list(values.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values_list[index] = value
+            return ast.Dict(keys=keys, values=values_list)
+    keys.append(ast.Constant(value=key))
+    values_list.append(value)
+    return ast.Dict(keys=keys, values=values_list)
+
+
+def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> list[ast.keyword]:
+    expanded: list[ast.keyword] = []
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            expanded.append(keyword)
+            continue
+        expanded.extend(_expanded_dict_keywords(keyword.value, constants))
+    return expanded
+
+
+def _expanded_dict_keywords(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> list[ast.keyword]:
+    resolved = _resolve_static_dict(node, constants)
+    if resolved is None:
+        return []
+    keywords: list[ast.keyword] = []
+    for key, value in zip(resolved.keys, resolved.values, strict=False):
+        literal_key = _literal_string(key, constants) if key is not None else ""
+        if literal_key:
+            keywords.append(ast.keyword(arg=literal_key, value=value))
+    return keywords
+
+
+def _literal_string(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:
+    value = _resolve_constant(node, constants or {})
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        return value.value
+    return ""
 
 
 def _call_receiver_sensitive_model(node: ast.Call) -> str:
