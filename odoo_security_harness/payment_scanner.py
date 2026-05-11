@@ -62,6 +62,7 @@ class PaymentScanner(ast.NodeVisitor):
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
 
     def scan_file(self) -> list[PaymentFinding]:
@@ -78,6 +79,14 @@ class PaymentScanner(ast.NodeVisitor):
         self.visit(tree)
         return self.findings
 
+    def visit_Import(self, node: ast.Import) -> Any:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
+        self.generic_visit(node)
+
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo":
             for alias in node.names:
@@ -91,7 +100,13 @@ class PaymentScanner(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         constants = self._effective_constants()
-        route = _route_info(node, constants, self.route_decorator_names, self.http_module_names)
+        route = _route_info(
+            node,
+            constants,
+            self.route_decorator_names,
+            self.http_module_names,
+            self.odoo_module_names,
+        )
         has_signature_check = _has_signature_check(node)
         has_weak_signature_compare = _has_weak_signature_compare(node)
         has_any_signature_check = has_signature_check or has_weak_signature_compare
@@ -206,12 +221,14 @@ def _route_info(
     constants: dict[str, ast.AST] | None = None,
     route_decorator_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> dict[str, Any] | None:
     constants = constants or {}
     route_decorator_names = route_decorator_names or set()
     http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     for decorator in node.decorator_list:
-        if not _is_http_route(decorator, route_decorator_names, http_module_names):
+        if not _is_http_route(decorator, route_decorator_names, http_module_names, odoo_module_names):
             continue
         info: dict[str, Any] = {"paths": [], "auth": "user", "csrf": True}
         if isinstance(decorator, ast.Call):
@@ -272,18 +289,34 @@ def _is_http_route(
     node: ast.AST,
     route_decorator_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> bool:
     route_decorator_names = route_decorator_names or set()
     http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     if isinstance(node, ast.Call):
-        return _is_http_route(node.func, route_decorator_names, http_module_names)
+        return _is_http_route(node.func, route_decorator_names, http_module_names, odoo_module_names)
     if isinstance(node, ast.Name):
         return node.id in route_decorator_names
     return (
         isinstance(node, ast.Attribute)
         and node.attr == "route"
+        and _is_http_module_expr(node.value, http_module_names, odoo_module_names)
+    )
+
+
+def _is_http_module_expr(
+    node: ast.AST,
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in http_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "http"
         and isinstance(node.value, ast.Name)
-        and node.value.id in http_module_names
+        and node.value.id in odoo_module_names
     )
 
 
