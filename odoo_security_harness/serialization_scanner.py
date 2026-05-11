@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -255,6 +256,7 @@ class SerializationScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
+        _mark_static_dict_update(node, self.local_constants)
         sink = self._canonical_call_name(node.func)
         if sink in UNSAFE_DESERIALIZATION_SINKS:
             severity = "critical" if _call_has_tainted_input(node, self._expr_is_tainted) else "high"
@@ -263,7 +265,8 @@ class SerializationScanner(ast.NodeVisitor):
                 "Unsafe deserialization sink",
                 severity,
                 node.lineno,
-                f"{sink} can execute code or instantiate attacker-controlled objects; never use it on request, attachment, or integration data",
+                f"{sink} can execute code or instantiate attacker-controlled objects; never use "
+                "it on request, attachment, or integration data",
                 sink,
             )
         elif sink in YAML_LOAD_SINKS and not _has_safe_yaml_loader(node, self._effective_constants()):
@@ -273,7 +276,8 @@ class SerializationScanner(ast.NodeVisitor):
                 "Unsafe YAML load",
                 severity,
                 node.lineno,
-                "yaml.load()/load_all() without SafeLoader can construct arbitrary Python objects; use safe_load()/safe_load_all() or SafeLoader",
+                "yaml.load()/load_all() without SafeLoader can construct arbitrary Python "
+                "objects; use safe_load()/safe_load_all() or SafeLoader",
                 sink,
             )
         elif sink in YAML_UNSAFE_LOAD_SINKS:
@@ -283,7 +287,8 @@ class SerializationScanner(ast.NodeVisitor):
                 "Unsafe YAML load",
                 severity,
                 node.lineno,
-                "yaml.unsafe_load() can construct arbitrary Python objects; never use it on request, attachment, or integration data",
+                "yaml.unsafe_load() can construct arbitrary Python objects; never use it on "
+                "request, attachment, or integration data",
                 sink,
             )
         elif sink in YAML_FULL_LOAD_SINKS:
@@ -293,7 +298,8 @@ class SerializationScanner(ast.NodeVisitor):
                 "YAML full_load on addon data",
                 severity,
                 node.lineno,
-                "yaml.full_load() accepts a broader YAML type set than safe_load(); prefer safe_load() for request, attachment, or integration data",
+                "yaml.full_load() accepts a broader YAML type set than safe_load(); "
+                "prefer safe_load() for request, attachment, or integration data",
                 sink,
             )
         elif sink in LITERAL_EVAL_SINKS and _call_has_tainted_input(node, self._expr_is_tainted):
@@ -302,7 +308,8 @@ class SerializationScanner(ast.NodeVisitor):
                 "Tainted data parsed with literal_eval",
                 "medium",
                 node.lineno,
-                "ast.literal_eval() parses request, attachment, or integration data; prefer JSON/schema validation and enforce size/depth limits",
+                "ast.literal_eval() parses request, attachment, or integration data; "
+                "prefer JSON/schema validation and enforce size/depth limits",
                 sink,
             )
         elif (
@@ -315,7 +322,8 @@ class SerializationScanner(ast.NodeVisitor):
                 "Tainted JSON parsed without visible size check",
                 "medium",
                 node.lineno,
-                "json.load()/loads() parses request, attachment, or integration data without a visible size guard; enforce byte limits before parsing",
+                "json.load()/loads() parses request, attachment, or integration data without "
+                "a visible size guard; enforce byte limits before parsing",
                 sink,
             )
         elif sink in NUMPY_LOAD_SINKS and _numpy_load_allows_pickle(node, self._effective_constants()):
@@ -325,7 +333,8 @@ class SerializationScanner(ast.NodeVisitor):
                 "Unsafe deserialization sink",
                 severity,
                 node.lineno,
-                "numpy.load(..., allow_pickle=True) can load pickle object arrays; never use it on request, attachment, or integration data",
+                "numpy.load(..., allow_pickle=True) can load pickle object arrays; never use "
+                "it on request, attachment, or integration data",
                 sink,
             )
         elif sink in XML_TAINTED_PARSE_SINKS and _call_has_tainted_input(node, self._expr_is_tainted):
@@ -334,7 +343,8 @@ class SerializationScanner(ast.NodeVisitor):
                 "Tainted XML parsed without hardened parser",
                 "medium",
                 node.lineno,
-                "Request/attachment-derived XML is parsed without a hardened parser; review entity expansion, parser hardening, and size limits",
+                "Request/attachment-derived XML is parsed without a hardened parser; "
+                "review entity expansion, parser hardening, and size limits",
                 sink,
             )
         elif sink in {"lxml.etree.XMLParser", "etree.XMLParser"} and _has_unsafe_xml_parser_option(
@@ -345,7 +355,9 @@ class SerializationScanner(ast.NodeVisitor):
                 "XML parser enables unsafe options",
                 "high",
                 node.lineno,
-                "lxml XMLParser enables DTD/entity/network/huge-tree behavior; disable entity resolution, network access, and unbounded trees for imports, integrations, and attachments",
+                "lxml XMLParser enables DTD/entity/network/huge-tree behavior; disable entity "
+                "resolution, network access, and unbounded trees for imports, integrations, "
+                "and attachments",
                 sink,
             )
         self.generic_visit(node)
@@ -473,7 +485,9 @@ class SerializationScanner(ast.NodeVisitor):
         sink = _call_name(node)
         if sink in self.function_aliases:
             return self.function_aliases[sink]
-        for local_name, canonical_name in sorted(self.module_aliases.items(), key=lambda item: len(item[0]), reverse=True):
+        for local_name, canonical_name in sorted(
+            self.module_aliases.items(), key=lambda item: len(item[0]), reverse=True
+        ):
             if sink == local_name or sink.startswith(f"{local_name}."):
                 return f"{canonical_name}{sink[len(local_name):]}"
         return sink
@@ -528,10 +542,15 @@ def _is_request_or_attachment_derived(
     if isinstance(node, ast.Call):
         return (
             _is_request_or_attachment_derived(node.func, request_names, http_module_names, odoo_module_names)
-            or any(_is_request_or_attachment_derived(arg, request_names, http_module_names, odoo_module_names) for arg in node.args)
+            or any(
+                _is_request_or_attachment_derived(arg, request_names, http_module_names, odoo_module_names)
+                for arg in node.args
+            )
             or any(
                 keyword.value is not None
-                and _is_request_or_attachment_derived(keyword.value, request_names, http_module_names, odoo_module_names)
+                and _is_request_or_attachment_derived(
+                    keyword.value, request_names, http_module_names, odoo_module_names
+                )
                 for keyword in node.keywords
             )
         )
@@ -716,6 +735,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_constant(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -769,6 +790,59 @@ def _resolve_static_dict(
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            items.append((resolved_key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_constant(node: ast.AST) -> bool:
