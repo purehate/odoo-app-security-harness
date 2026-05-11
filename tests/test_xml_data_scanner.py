@@ -555,6 +555,30 @@ def test_xml_mail_server_without_tls_is_reported(tmp_path: Path) -> None:
     )
 
 
+def test_xml_mail_server_hardcoded_credential_is_reported(tmp_path: Path) -> None:
+    """Module XML data should not commit SMTP credentials."""
+    xml = tmp_path / "mail_server.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="mail_server_secret" model="ir.mail_server">
+    <field name="smtp_host">smtp.partner.example</field>
+    <field name="smtp_user">alerts@example.com</field>
+    <field name="smtp_pass">super-secret-token</field>
+    <field name="smtp_encryption">starttls</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(
+        finding.rule_id == "odoo-xml-mail-server-hardcoded-credential"
+        and finding.record_id == "mail_server_secret"
+        for finding in findings
+    )
+
+
 def test_csv_mail_server_starttls_is_not_reported(tmp_path: Path) -> None:
     """TLS-protected mail server CSV records should stay quiet."""
     csv_file = tmp_path / "ir.mail_server.csv"
@@ -574,6 +598,24 @@ def test_csv_mail_server_starttls_is_not_reported(tmp_path: Path) -> None:
     )
     assert not any(
         finding.rule_id == "odoo-xml-mail-server-no-tls" and finding.record_id == "mail_server_tls"
+        for finding in findings
+    )
+
+
+def test_csv_mail_server_hardcoded_credential_is_reported(tmp_path: Path) -> None:
+    """CSV mail server exports can also commit deployable SMTP passwords."""
+    csv_file = tmp_path / "ir.mail_server.csv"
+    csv_file.write_text(
+        "id,smtp_host,smtp_user,smtp_pass,smtp_encryption\n"
+        "mail_server_secret,smtp.partner.example,alerts@example.com,super-secret-token,starttls\n",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(csv_file).scan_csv_file()
+
+    assert any(
+        finding.rule_id == "odoo-xml-mail-server-hardcoded-credential"
+        and finding.record_id == "mail_server_secret"
         for finding in findings
     )
 

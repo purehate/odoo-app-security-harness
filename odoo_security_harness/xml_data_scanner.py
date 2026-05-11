@@ -483,8 +483,19 @@ class XmlDataScanner:
 
     def _scan_mail_server_fields(self, fields: dict[str, str], line: int, record_id: str) -> None:
         host = fields.get("smtp_host", "").strip().strip("'\"")
+        password = fields.get("smtp_pass", fields.get("smtp_password", "")).strip().strip("'\"")
         encryption = fields.get("smtp_encryption", "").strip().strip("'\"").lower()
         port = fields.get("smtp_port", "").strip().strip("'\"")
+        if password:
+            self._add(
+                "odoo-xml-mail-server-hardcoded-credential",
+                "XML mail server commits SMTP credentials",
+                "high",
+                line,
+                "ir.mail_server data includes a literal SMTP password; move outbound mail credentials to deployment secrets or administrator-managed configuration",
+                "ir.mail_server",
+                record_id,
+            )
         if _mail_server_tls_disabled(host, encryption, port):
             self._add(
                 "odoo-xml-mail-server-no-tls",

@@ -1460,6 +1460,14 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "xml_data_mail_server_hardcoded_credential",
+        (
+            "odoo-xml-mail-server-hardcoded-credential",
+            "xml mail server commits smtp credentials",
+            "ir.mail_server data includes a literal smtp password",
+        ),
+    ),
+    (
         "xml_cron_admin_user",
         (
             "odoo-xml-cron-admin-user",

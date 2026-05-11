@@ -86,7 +86,7 @@ Lane outputs are leads only. Nothing ships until Claude's 6-gate validation conf
 - Reviews deployment posture across Odoo config, XML/CSV parameters, Docker, Compose, Kubernetes, Helm, Ansible-style YAML, and Terraform env declarations.
 - Scores per-module risk (`module-risk.md` + `inventory/module-risk.json`) so hunters hit highest-risk modules first.
 - Emits a risk-prioritized Phase 1.7 breadth plan for Claude Agent subagents, capped by `--breadth-budget` / `--breadth-max-chunks`.
-- Seeds hunters with `inventory/cwe-map.json` (583 Odoo bug-shape → CWE/CAPEC/OWASP mappings).
+- Seeds hunters with `inventory/cwe-map.json` (584 Odoo bug-shape → CWE/CAPEC/OWASP mappings).
 - Runs repeatable scanner setup for Semgrep, Bandit, Ruff, pylint-odoo, CodeQL, dependency tools, and optional Joern.
 - Runs local Qwen advisory notes through Ollama.
 - Launches or prepares Codex hunter tasks.
@@ -471,7 +471,7 @@ Important artifacts:
 - `inventory/acl-index.json`
 - `inventory/sharp-edge-index.json`
 - `inventory/module-risk.json` — machine-readable risk score
-- `inventory/cwe-map.json` — 583 Odoo bug-shape → CWE/CAPEC/OWASP mappings (seeds hunters)
+- `inventory/cwe-map.json` — 584 Odoo bug-shape → CWE/CAPEC/OWASP mappings (seeds hunters)
 - `inventory/scope.json` — applied scope.yml + computed inclusions/exclusions
 - `local-qwen/module-notes.md`
 - `scans/*`
