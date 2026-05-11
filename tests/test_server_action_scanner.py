@@ -195,6 +195,25 @@ safe_eval(record.expression, mode=MODE, nocopy=True)
     assert any(f.rule_id == "odoo-loose-python-safe-eval" and f.severity == "critical" for f in findings)
 
 
+def test_server_action_safe_eval_local_exec_mode_is_critical(tmp_path: Path) -> None:
+    """Function-local safe_eval mode constants should keep exec-mode severity."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+from odoo.tools.safe_eval import safe_eval
+
+def run(record):
+    mode = 'exec'
+    safe_eval(record.expression, mode=mode, nocopy=True)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-safe-eval" and f.severity == "critical" for f in findings)
+
+
 def test_server_action_detects_sudo_write_and_manual_commit(tmp_path: Path) -> None:
     """Privileged mutation and manual transactions are review leads."""
     script = tmp_path / "action.py"
@@ -548,6 +567,28 @@ class ActionHelper:
     assert len(sensitive_mutations) == 2
 
 
+def test_server_action_detects_local_constant_sensitive_model_mutation(tmp_path: Path) -> None:
+    """Sensitive model mutation should resolve function-local env[...] constants."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+def run(env):
+    users_model = 'res.users'
+    config_model = 'ir.config_parameter'
+    env[users_model].write({'active': False})
+    env[config_model].set_param('auth.signup.allow_uninvited', 'False')
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+    sensitive_mutations = [
+        finding for finding in findings if finding.rule_id == "odoo-loose-python-sensitive-model-mutation"
+    ]
+
+    assert len(sensitive_mutations) == 2
+
+
 def test_server_action_detects_http_without_timeout(tmp_path: Path) -> None:
     """Outbound HTTP in loose Python should set explicit timeouts."""
     script = tmp_path / "action.py"
@@ -783,6 +824,25 @@ import requests
 HTTP_OPTIONS = {'timeout': 10, 'verify': False}
 
 requests.post(record.callback_url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-tls-verify-disabled" for f in findings)
+
+
+def test_server_action_local_static_kwargs_tls_verify_disabled(tmp_path: Path) -> None:
+    """Function-local static **kwargs should expose verify=False."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+import requests
+
+def run(record):
+    http_options = {'timeout': 10, 'verify': False}
+    requests.post(record.callback_url, **http_options)
 """,
         encoding="utf-8",
     )

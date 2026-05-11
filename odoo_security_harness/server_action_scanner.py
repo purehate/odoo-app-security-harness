@@ -81,6 +81,7 @@ class LoosePythonScanner(ast.NodeVisitor):
         self.function_aliases: dict[str, str] = {}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[LoosePythonFinding]:
         """Scan one Python file."""
@@ -133,9 +134,19 @@ class LoosePythonScanner(ast.NodeVisitor):
         self.generic_visit(node)
         self.class_constants_stack.pop()
 
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
+        self.generic_visit(node)
+        self.local_constants = previous_local_constants
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self.visit_FunctionDef(node)
+
     def visit_Assign(self, node: ast.Assign) -> None:
         """Track query variables built through string interpolation."""
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_unsafe_sql_target(target, node.value)
             self._mark_http_client_target(target, node.value)
             self._mark_elevated_record_target(target, node.value)
@@ -144,6 +155,7 @@ class LoosePythonScanner(ast.NodeVisitor):
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """Track annotated aliases for loose Python sinks."""
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_unsafe_sql_target(node.target, node.value)
             self._mark_http_client_target(node.target, node.value)
             self._mark_elevated_record_target(node.target, node.value)
@@ -151,6 +163,7 @@ class LoosePythonScanner(ast.NodeVisitor):
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
         """Track assignment-expression aliases for loose Python sinks."""
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_unsafe_sql_target(node.target, node.value)
         self._mark_http_client_target(node.target, node.value)
         self._mark_elevated_record_target(node.target, node.value)
@@ -449,6 +462,25 @@ class LoosePythonScanner(ast.NodeVisitor):
         else:
             self._discard_name_target(target, self.elevated_record_names)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target, value):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                if isinstance(element, ast.Name):
+                    self.local_constants.pop(element.id, None)
+
     def _expr_has_elevated_record(self, node: ast.AST) -> bool:
         if isinstance(node, ast.Starred):
             return self._expr_has_elevated_record(node.value)
@@ -497,11 +529,12 @@ class LoosePythonScanner(ast.NodeVisitor):
         return sink
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
 
