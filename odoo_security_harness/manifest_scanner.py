@@ -20,7 +20,7 @@ KNOWN_ODOO_LICENSES = {
     "Other proprietary",
 }
 SECURITY_DATA_HINTS = ("security/", "ir.model.access.csv", "ir_rule", "groups.xml", "access.xml")
-LIFECYCLE_HOOK_FIELDS = ("pre_init_hook", "post_init_hook", "uninstall_hook")
+LIFECYCLE_HOOK_FIELDS = ("pre_init_hook", "post_init_hook", "uninstall_hook", "post_load")
 
 
 @dataclass

@@ -176,6 +176,23 @@ def test_lifecycle_hooks_are_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-manifest-lifecycle-hook" and f.severity == "medium" for f in findings)
 
 
+def test_post_load_lifecycle_hook_is_reported(tmp_path: Path) -> None:
+    """post_load hooks run module lifecycle code and deserve review."""
+    module = tmp_path / "post_load"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Post Load',
+    'license': 'LGPL-3',
+    'post_load': 'patch_registry',
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(f.rule_id == "odoo-manifest-lifecycle-hook" and "post_load" in f.message for f in findings)
+
+
 def test_suspicious_data_paths_are_reported(tmp_path: Path) -> None:
     """Manifest data/demo paths should not escape the module tree."""
     module = tmp_path / "suspicious_paths"
