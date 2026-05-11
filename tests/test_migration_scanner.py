@@ -357,6 +357,24 @@ def migrate(cr, version):
     assert len([finding for finding in findings if finding.rule_id == "odoo-migration-http-no-timeout"]) == 1
 
 
+def test_urllib_request_import_alias_without_timeout_is_reported(tmp_path: Path) -> None:
+    """from urllib import request aliases should count as migration outbound HTTP."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+from urllib import request as urlreq
+
+def migrate(cr, version):
+    urlreq.urlopen("https://example.test/upgrade")
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(finding.rule_id == "odoo-migration-http-no-timeout" for finding in findings)
+
+
 def test_aiohttp_request_without_timeout_is_reported(tmp_path: Path) -> None:
     """aiohttp module calls in migrations should require a timeout."""
     py = tmp_path / "post-migrate.py"

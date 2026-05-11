@@ -112,12 +112,14 @@ class ModelMethodScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        if node.module not in {"aiohttp", "requests", "httpx", "urllib.request"}:
-            self.generic_visit(node)
-            return
-        for alias in node.names:
-            if alias.name in HTTP_METHODS:
-                self.http_functions.add(alias.asname or alias.name)
+        if node.module in {"aiohttp", "requests", "httpx", "urllib.request"}:
+            for alias in node.names:
+                if alias.name in HTTP_METHODS:
+                    self.http_functions.add(alias.asname or alias.name)
+        elif node.module == "urllib":
+            for alias in node.names:
+                if alias.name == "request":
+                    self.http_modules.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:

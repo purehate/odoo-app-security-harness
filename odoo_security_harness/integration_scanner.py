@@ -155,6 +155,10 @@ class IntegrationScanner(ast.NodeVisitor):
                     self.http_function_names[alias.asname or alias.name] = f"{node.module}.{alias.name}"
                 elif alias.name in HTTP_CLIENT_FACTORIES:
                     self.http_function_names[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+        elif node.module == "urllib":
+            for alias in node.names:
+                if alias.name == "request":
+                    self.http_module_names[alias.asname or alias.name] = "urllib.request"
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":

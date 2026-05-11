@@ -468,6 +468,30 @@ class Feed(models.Model):
     assert len([f for f in findings if f.rule_id == "odoo-model-method-compute-http-no-timeout"]) == 1
 
 
+def test_flags_urllib_request_import_alias_without_timeout(tmp_path: Path) -> None:
+    """from urllib import request aliases should count as outbound HTTP in model methods."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "compute.py").write_text(
+        """
+from odoo import api, models
+from urllib import request as urlreq
+
+class Feed(models.Model):
+    _name = 'x.feed'
+
+    @api.depends('url')
+    def _compute_payload(self):
+        urlreq.urlopen(self.url)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-compute-http-no-timeout" for f in findings)
+
+
 def test_flags_http_client_without_timeout(tmp_path: Path) -> None:
     """Session/client objects inside model methods can block workers too."""
     models = tmp_path / "module" / "models"
