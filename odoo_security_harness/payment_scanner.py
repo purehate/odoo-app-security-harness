@@ -228,6 +228,9 @@ def _apply_route_keyword(info: dict[str, Any], keyword: ast.keyword, constants: 
         options = _resolve_constant(keyword.value, constants)
         if isinstance(options, ast.Dict):
             for key_node, value_node in zip(options.keys, options.values, strict=False):
+                if key_node is None:
+                    _apply_route_keyword(info, ast.keyword(arg=None, value=value_node), constants)
+                    continue
                 key = _literal_string(_resolve_constant(key_node, constants)) if key_node is not None else ""
                 _apply_route_option(info, key, value_node, constants)
         return
