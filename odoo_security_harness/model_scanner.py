@@ -340,7 +340,7 @@ class ModelStructureScanner(ast.NodeVisitor):
             if keyword.arg is not None:
                 keywords[keyword.arg] = keyword.value
                 continue
-            value = self._resolve_constant(keyword.value)
+            value = self._resolve_static_dict(keyword.value)
             if isinstance(value, ast.Dict):
                 keywords.update(self._dict_keywords(value))
         return keywords
@@ -349,7 +349,7 @@ class ModelStructureScanner(ast.NodeVisitor):
         keywords: dict[str, ast.AST] = {}
         for key, value in zip(node.keys, node.values, strict=False):
             if key is None:
-                resolved_value = self._resolve_constant(value)
+                resolved_value = self._resolve_static_dict(value)
                 if isinstance(resolved_value, ast.Dict):
                     keywords.update(self._dict_keywords(resolved_value))
                 continue
@@ -390,7 +390,7 @@ class ModelStructureScanner(ast.NodeVisitor):
                 continue
             for target in item.targets:
                 if isinstance(target, ast.Name) and target.id == "_inherits":
-                    return self._string_dict(self._resolve_constant(item.value))
+                    return self._string_dict(self._resolve_static_dict(item.value))
         return {}
 
     def _extract_string_attr(self, node: ast.ClassDef, attr: str) -> str:
@@ -507,6 +507,21 @@ class ModelStructureScanner(ast.NodeVisitor):
             return self._resolve_constant(constants[node.id], seen)
         return node
 
+    def _resolve_static_dict(self, node: ast.AST | None, seen: set[str] | None = None) -> ast.Dict | None:
+        if node is None:
+            return None
+        seen = seen or set()
+        node = self._resolve_constant(node, seen)
+        if isinstance(node, ast.Dict):
+            return node
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            left = self._resolve_static_dict(node.left, set(seen))
+            right = self._resolve_static_dict(node.right, set(seen))
+            if left is None or right is None:
+                return None
+            return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
+        return None
+
     def _effective_constants(self) -> dict[str, ast.AST]:
         if not self.class_constants_stack:
             return self.constants
@@ -529,6 +544,8 @@ class ModelStructureScanner(ast.NodeVisitor):
             ) and all(
                 self._is_static_literal(value) for value in node.values
             )
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            return self._is_static_literal(node.left) and self._is_static_literal(node.right)
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
             return self._is_static_literal(node.operand)
         return False

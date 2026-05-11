@@ -241,6 +241,27 @@ class Thing(models.Model):
     assert not any(f.rule_id == "odoo-model-secret-copyable" for f in findings)
 
 
+def test_dict_union_static_unpack_copy_false_suppresses_secret_copyable(tmp_path: Path) -> None:
+    """Dict-union field option dictionaries should drive copy checks."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+BASE_OPTIONS = {'copy': True}
+FIELD_OPTIONS = BASE_OPTIONS | {'copy': False}
+
+class Thing(models.Model):
+    _name = 'x.thing'
+    access_token = fields.Char(**FIELD_OPTIONS)
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+
+    assert not any(f.rule_id == "odoo-model-secret-copyable" for f in findings)
+
+
 def test_log_access_disabled_is_reported(tmp_path: Path) -> None:
     """Persistent models should not silently disable Odoo audit metadata."""
     model = _write_model(
@@ -594,6 +615,27 @@ class Thing(models.Model):
     assert any(f.rule_id == "odoo-model-identifier-missing-unique" for f in findings)
 
 
+def test_dict_union_static_required_identifier_without_unique_constraint(tmp_path: Path) -> None:
+    """Dict-union required=True options should keep identifier uniqueness review visible."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+BASE_OPTIONS = {'index': True}
+FIELD_OPTIONS = BASE_OPTIONS | {'required': True}
+
+class Thing(models.Model):
+    _name = 'x.thing'
+    code = fields.Char(**FIELD_OPTIONS)
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+
+    assert any(f.rule_id == "odoo-model-identifier-missing-unique" for f in findings)
+
+
 def test_monetary_field_without_currency(tmp_path: Path) -> None:
     """Monetary fields need an obvious currency source."""
     model = _write_model(
@@ -671,6 +713,32 @@ class PartnerWrapper(models.Model):
     _name = 'x.partner.wrapper'
     _inherits = INHERITS
 
+    partner_id = fields.Many2one('res.partner', ondelete='set null')
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-model-delegated-sensitive-inherits" in rule_ids
+    assert "odoo-model-delegated-link-not-required" in rule_ids
+
+
+def test_dict_union_delegated_inheritance_to_sensitive_model(tmp_path: Path) -> None:
+    """Dict-union _inherits constants should still reveal sensitive delegation."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+BASE_INHERITS = {'x.audit.mixin': 'audit_id'}
+INHERITS = BASE_INHERITS | {'res.partner': 'partner_id'}
+
+class PartnerWrapper(models.Model):
+    _name = 'x.partner.wrapper'
+    _inherits = INHERITS
+
+    audit_id = fields.Many2one('x.audit.mixin', required=True, ondelete='cascade')
     partner_id = fields.Many2one('res.partner', ondelete='set null')
 """,
     )
