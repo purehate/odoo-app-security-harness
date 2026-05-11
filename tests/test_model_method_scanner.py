@@ -199,6 +199,29 @@ class Sale(models.Model):
     assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" for f in findings)
 
 
+def test_flags_import_aliased_superuser_onchange_mutation(tmp_path: Path) -> None:
+    """Aliased SUPERUSER_ID imports inside onchange methods should be elevated."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, api, models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    @api.onchange('partner_id')
+    def _onchange_partner_id(self):
+        self.env['sale.order'].with_user(ROOT_UID).write({'note': 'x'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" for f in findings)
+
+
 def test_flags_keyword_with_user_superuser_onchange_mutation(tmp_path: Path) -> None:
     """Keyword with_user(user=SUPERUSER_ID) onchange mutations are elevated."""
     models = tmp_path / "module" / "models"
@@ -270,10 +293,7 @@ class Sale(models.Model):
 
     findings = scan_model_methods(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-model-method-onchange-sudo-mutation" and f.model == "x.sale"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" and f.model == "x.sale" for f in findings)
 
 
 def test_flags_constant_alias_with_user_onchange_mutation_and_model_name(tmp_path: Path) -> None:
@@ -302,10 +322,7 @@ class Sale(models.Model):
 
     findings = scan_model_methods(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-model-method-onchange-sudo-mutation" and f.model == "x.sale"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" and f.model == "x.sale" for f in findings)
 
 
 def test_flags_class_constant_alias_with_user_onchange_mutation_and_model_name(tmp_path: Path) -> None:
@@ -333,10 +350,7 @@ class Sale(models.Model):
 
     findings = scan_model_methods(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-model-method-onchange-sudo-mutation" and f.model == "x.sale"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" and f.model == "x.sale" for f in findings)
 
 
 def test_flags_env_ref_admin_onchange_mutation(tmp_path: Path) -> None:
@@ -1017,8 +1031,7 @@ class SideEffects(models.Model):
     findings = scan_model_methods(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-model-method-onchange-sensitive-model-mutation"
-        and f.model == "x.side.effects"
+        f.rule_id == "odoo-model-method-onchange-sensitive-model-mutation" and f.model == "x.side.effects"
         for f in findings
     )
 

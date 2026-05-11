@@ -152,6 +152,29 @@ class SaleJob(models.Model):
     assert "odoo-queue-job-sudo-mutation" in rule_ids
 
 
+def test_flags_queue_job_import_aliased_superuser_mutation(tmp_path: Path) -> None:
+    """Queue jobs should treat imported SUPERUSER_ID aliases as elevated."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID
+from odoo.addons.queue_job.job import job
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        record.with_user(ROOT_UID).write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-queue-job-sudo-mutation" in rule_ids
+
+
 def test_flags_queue_job_keyword_with_user_superuser_mutation(tmp_path: Path) -> None:
     """Queue jobs should treat keyword with_user(uid=SUPERUSER_ID) as elevated."""
     module = tmp_path / "module" / "models"

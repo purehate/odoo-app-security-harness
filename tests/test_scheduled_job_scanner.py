@@ -88,8 +88,7 @@ def test_flags_csv_linked_cron_method_risks(tmp_path: Path) -> None:
     data.mkdir(parents=True)
     models.mkdir(parents=True)
     (data / "ir_cron.csv").write_text(
-        "id,name,function\n"
-        "cron_sync,Partner Sync,fetch_partner_feed\n",
+        "id,name,function\ncron_sync,Partner Sync,fetch_partner_feed\n",
         encoding="utf-8",
     )
     (models / "partner.py").write_text(
@@ -135,9 +134,7 @@ class Sale(models.Model):
 
     findings = scan_scheduled_jobs(tmp_path)
     unbounded = [finding for finding in findings if finding.rule_id == "odoo-scheduled-job-unbounded-search"]
-    sync_without_limit = [
-        finding for finding in findings if finding.rule_id == "odoo-scheduled-job-sync-without-limit"
-    ]
+    sync_without_limit = [finding for finding in findings if finding.rule_id == "odoo-scheduled-job-sync-without-limit"]
 
     assert any(finding.severity == "medium" for finding in unbounded)
     assert sync_without_limit
@@ -162,9 +159,7 @@ class Sale(models.Model):
 
     findings = scan_scheduled_jobs(tmp_path)
     unbounded = [finding for finding in findings if finding.rule_id == "odoo-scheduled-job-unbounded-search"]
-    sync_without_limit = [
-        finding for finding in findings if finding.rule_id == "odoo-scheduled-job-sync-without-limit"
-    ]
+    sync_without_limit = [finding for finding in findings if finding.rule_id == "odoo-scheduled-job-sync-without-limit"]
 
     assert any(finding.severity == "medium" and finding.sink.endswith(".read_group") for finding in unbounded)
     assert any(finding.sink.endswith(".read_group") for finding in sync_without_limit)
@@ -208,6 +203,31 @@ class Sale(models.Model):
 
     def _cron_close_orders(self):
         self.env['sale.order'].with_user(SUPERUSER_ID).search([]).write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+    unbounded = [finding for finding in findings if finding.rule_id == "odoo-scheduled-job-unbounded-search"]
+
+    assert "odoo-scheduled-job-sudo-mutation" in rule_ids
+    assert any(finding.severity == "medium" for finding in unbounded)
+
+
+def test_flags_import_aliased_superuser_cron_mutation(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases in cron methods should be recognized."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    def _cron_close_orders(self):
+        self.env['sale.order'].with_user(ROOT_UID).search([]).write({'state': 'done'})
 """,
         encoding="utf-8",
     )
@@ -889,9 +909,9 @@ class Identity(models.Model):
 
     findings = scan_scheduled_jobs(tmp_path)
 
-    assert len(
-        [finding for finding in findings if finding.rule_id == "odoo-scheduled-job-sensitive-model-mutation"]
-    ) == 2
+    assert (
+        len([finding for finding in findings if finding.rule_id == "odoo-scheduled-job-sensitive-model-mutation"]) == 2
+    )
 
 
 def test_flags_recursive_constant_backed_sensitive_model_cron_mutation(tmp_path: Path) -> None:
@@ -1016,8 +1036,7 @@ def test_csv_code_field_method_reference_is_collected(tmp_path: Path) -> None:
     data.mkdir(parents=True)
     models.mkdir(parents=True)
     (data / "ir.cron.csv").write_text(
-        "id,name,state,code\n"
-        "cron_sync,Sync,code,model.sync_now()\n",
+        "id,name,state,code\ncron_sync,Sync,code,model.sync_now()\n",
         encoding="utf-8",
     )
     (models / "sync.py").write_text(

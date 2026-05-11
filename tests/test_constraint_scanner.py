@@ -326,6 +326,33 @@ class Code(models.Model):
     assert "odoo-constraint-unbounded-search" in rule_ids
 
 
+def test_flags_import_aliased_superuser_search_in_constraint(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases in constraints should be treated like sudo."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "code.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, api, models
+
+class Code(models.Model):
+    _name = 'x.code'
+
+    @api.constrains('code')
+    def _check_code_unique(self):
+        duplicates = self.env['x.code'].with_user(ROOT_UID).search([('code', '=', self.code)])
+        if duplicates:
+            raise ValidationError('duplicate')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_constraints(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-constraint-sudo-search" in rule_ids
+    assert "odoo-constraint-unbounded-search" in rule_ids
+
+
 def test_flags_sudo_search_count_in_constraint(tmp_path: Path) -> None:
     """search_count() in constraints has the same sudo and unbounded-query risk as search()."""
     models = tmp_path / "module" / "models"

@@ -73,6 +73,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
         self.dynamic_eval_names: set[str] = {"eval", "exec", "safe_eval"}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_file(self) -> list[ScheduledJobFinding]:
         """Scan the file."""
@@ -105,6 +106,10 @@ class ScheduledJobScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "request":
                     self.http_module_aliases.add(alias.asname or alias.name)
+        elif node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.tools.safe_eval":
             for alias in node.names:
                 if alias.name == "safe_eval":
@@ -153,8 +158,10 @@ class ScheduledJobScanner(ast.NodeVisitor):
                         item.optional_vars,
                         item.context_expr,
                         context.http_client_vars,
-                        lambda value: _is_http_client_expr(value, self.http_module_aliases)
-                        or _call_root_name(value) in context.http_client_vars,
+                        lambda value: (
+                            _is_http_client_expr(value, self.http_module_aliases)
+                            or _call_root_name(value) in context.http_client_vars
+                        ),
                     )
         self.generic_visit(node)
 
@@ -171,7 +178,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
         method = sink.rsplit(".", 1)[-1]
         constants = self._effective_constants()
 
-        if _is_sudo_mutation(node.func, context.sudo_vars, constants):
+        if _is_sudo_mutation(node.func, context.sudo_vars, constants, self.superuser_names):
             self._add(
                 "odoo-scheduled-job-sudo-mutation",
                 "Scheduled job performs elevated mutation",
@@ -214,7 +221,9 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 sink,
             )
         elif method in UNBOUNDED_READ_METHODS and _is_empty_domain_call(node):
-            severity = "medium" if _is_sudo_expr(node.func, context.sudo_vars, constants) else "low"
+            severity = (
+                "medium" if _is_sudo_expr(node.func, context.sudo_vars, constants, self.superuser_names) else "low"
+            )
             self._add(
                 "odoo-scheduled-job-unbounded-search",
                 "Scheduled job performs unbounded ORM search",
@@ -247,11 +256,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
                     sink,
                 )
 
-        if (
-            method in UNBOUNDED_READ_METHODS
-            and SYNC_NAME_RE.search(context.name)
-            and not _has_keyword(node, "limit")
-        ):
+        if method in UNBOUNDED_READ_METHODS and SYNC_NAME_RE.search(context.name) and not _has_keyword(node, "limit"):
             self._add(
                 "odoo-scheduled-job-sync-without-limit",
                 "External-sync scheduled job lacks visible batch limit",
@@ -269,14 +274,16 @@ class ScheduledJobScanner(ast.NodeVisitor):
             target,
             value,
             context.sudo_vars,
-            lambda node: _is_sudo_expr(node, context.sudo_vars, self._effective_constants()),
+            lambda node: _is_sudo_expr(node, context.sudo_vars, self._effective_constants(), self.superuser_names),
         )
         self._track_alias(
             target,
             value,
             context.http_client_vars,
-            lambda node: _is_http_client_expr(node, self.http_module_aliases)
-            or _call_root_name(node) in context.http_client_vars,
+            lambda node: (
+                _is_http_client_expr(node, self.http_module_aliases)
+                or _call_root_name(node) in context.http_client_vars
+            ),
         )
 
     def _track_alias(
@@ -444,38 +451,48 @@ def _is_sudo_mutation(
     node: ast.AST,
     sudo_vars: set[str],
     constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
     sink = _call_name(node)
     if sink.rsplit(".", 1)[-1] not in MUTATION_METHODS:
         return False
-    return _is_sudo_expr(node, sudo_vars, constants)
+    return _is_sudo_expr(node, sudo_vars, constants, superuser_names)
 
 
-def _is_sudo_expr(node: ast.AST, sudo_vars: set[str], constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_sudo_expr(
+    node: ast.AST,
+    sudo_vars: set[str],
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
     if isinstance(node, ast.Starred):
-        return _is_sudo_expr(node.value, sudo_vars, constants)
+        return _is_sudo_expr(node.value, sudo_vars, constants, superuser_names)
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return any(_is_sudo_expr(element, sudo_vars, constants) for element in node.elts)
+        return any(_is_sudo_expr(element, sudo_vars, constants, superuser_names) for element in node.elts)
     return (
         _call_chain_has_attr(node, "sudo")
-        or _call_chain_has_superuser_with_user(node, constants)
+        or _call_chain_has_superuser_with_user(node, constants, superuser_names)
         or _call_root_name(node) in sudo_vars
     )
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
     if isinstance(node, ast.Starred):
-        return _call_chain_has_superuser_with_user(node.value, constants)
+        return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return any(_call_chain_has_superuser_with_user(element, constants) for element in node.elts)
+        return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     current: ast.AST | None = node
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
         if isinstance(current, ast.Call):
             if isinstance(current.func, ast.Attribute) and current.func.attr == "with_user":
-                return any(_is_superuser_arg(arg, constants) for arg in current.args) or any(
-                    keyword.value is not None and _is_superuser_arg(keyword.value, constants)
+                return any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args) or any(
+                    keyword.value is not None and _is_superuser_arg(keyword.value, constants, superuser_names)
                     for keyword in current.keywords
                 )
             current = current.func
@@ -486,16 +503,21 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
     return False
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
     node = _resolve_constant(node, constants or {})
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 
@@ -734,9 +756,7 @@ def _is_static_literal(node: ast.AST) -> bool:
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         keys = [key for key in node.keys if key is not None]
-        return all(_is_static_literal(key) for key in keys) and all(
-            _is_static_literal(value) for value in node.values
-        )
+        return all(_is_static_literal(key) for key in keys) and all(_is_static_literal(value) for value in node.values)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
         return _is_static_literal(node.operand)
     return False
