@@ -856,7 +856,7 @@ def _http_call_without_timeout(code: str) -> bool:
     return any(
         "timeout" not in match.group("args")
         for match in re.finditer(
-            r"(?:(?:aiohttp|requests|httpx)\.(?:get|post|put|patch|delete|head|request)|(?:urllib\.request\.)?urlopen)"
+            r"(?:(?:aiohttp|requests|httpx)\.(?:get|post|put|patch|delete|head|request)|(?:[\w.]+\.)?urlopen)"
             r"\s*\((?P<args>[^)]*)\)",
             code,
         )

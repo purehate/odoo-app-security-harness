@@ -109,6 +109,27 @@ aiohttp.request("GET", record.status_url)
     assert len([f for f in findings if f.rule_id == "odoo-xml-server-action-http-no-timeout"]) == 1
 
 
+def test_server_action_aliased_urllib_urlopen_without_timeout(tmp_path: Path) -> None:
+    """Executable server actions should catch aliased urllib urlopen calls."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_url_fetch" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+import urllib.request as urlreq
+urlreq.urlopen(record.callback_url)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-server-action-http-no-timeout" for f in findings)
+
+
 def test_server_action_tls_verification_disabled(tmp_path: Path) -> None:
     """Executable server actions should surface disabled HTTP TLS verification."""
     xml = tmp_path / "actions.xml"
@@ -357,6 +378,27 @@ def test_cron_urllib_without_timeout(tmp_path: Path) -> None:
   <record id="cron_url_fetch" model="ir.cron">
     <field name="state">code</field>
     <field name="code">urllib.request.urlopen(record.url)</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
+
+
+def test_cron_aliased_urllib_urlopen_without_timeout(tmp_path: Path) -> None:
+    """Cron inline Python should catch aliased urllib URL fetches without timeouts."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_url_fetch" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+import urllib.request as urlreq
+urlreq.urlopen(record.url)
+    ]]></field>
   </record>
 </odoo>""",
         encoding="utf-8",
