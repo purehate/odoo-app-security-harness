@@ -141,6 +141,26 @@ def test_flags_portal_scope_inside_multi_group_csv_rule(tmp_path: Path) -> None:
     )
 
 
+def test_flags_portal_company_only_scope_on_sensitive_model(tmp_path: Path) -> None:
+    """Company-only portal domains can expose unrelated same-company records."""
+    security = tmp_path / "module" / "security"
+    security.mkdir(parents=True)
+    (security / "rules.xml").write_text(
+        """<odoo>
+  <record id="portal_company_sales" model="ir.rule">
+    <field name="model_id" ref="sale.model_sale_order"/>
+    <field name="groups" eval="[(4, ref('base.group_portal'))]"/>
+    <field name="domain_force">[('company_id', 'in', user.company_ids.ids)]</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_record_rules(tmp_path)
+
+    assert any(f.rule_id == "odoo-record-rule-public-sensitive-company-only-scope" for f in findings)
+
+
 def test_flags_record_rule_domain_logic_in_csv(tmp_path: Path) -> None:
     """CSV domains should still surface group, context, hierarchy, and disabled-perm risks."""
     security = tmp_path / "module" / "security"

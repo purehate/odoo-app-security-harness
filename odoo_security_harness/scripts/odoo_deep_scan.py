@@ -2085,6 +2085,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "record_rule_public_company_only_scope",
+        (
+            "record-rule-public-sensitive-company-only-scope",
+            "public/portal rule relies only on company scope",
+            "by company only",
+            "cannot list unrelated records from the same company",
+        ),
+    ),
+    (
         "record_rule_global_sensitive_mutation",
         (
             "record-rule-global-sensitive-mutation",

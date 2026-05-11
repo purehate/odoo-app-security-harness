@@ -5396,6 +5396,12 @@ def test_taxonomy_coverage_classifies_record_rule_sensitive_exposure() -> None:
             },
             {
                 "source": "record-rules",
+                "rule_id": "odoo-record-rule-public-sensitive-company-only-scope",
+                "title": "Public/portal rule relies only on company scope",
+                "message": "Record rule 'portal_company_sales' scopes sensitive/security model 'sale.order' for public/portal users by company only; verify portal users cannot list unrelated records from the same company",
+            },
+            {
+                "source": "record-rules",
                 "rule_id": "odoo-record-rule-portal-write-sensitive",
                 "title": "Public/portal rule enables mutation on sensitive/security model",
                 "message": "Record rule 'portal_invoice_write' enables write/create/delete on sensitive/security model 'account.move' for public/portal users",
@@ -5413,6 +5419,9 @@ def test_taxonomy_coverage_classifies_record_rule_sensitive_exposure() -> None:
     shapes = {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]}
     assert shapes["odoo-record-rule-universal-domain"] == "record_rule_universal_sensitive_domain"
     assert shapes["odoo-record-rule-public-sensitive-no-owner-scope"] == ("record_rule_public_sensitive_no_owner_scope")
+    assert shapes["odoo-record-rule-public-sensitive-company-only-scope"] == (
+        "record_rule_public_company_only_scope"
+    )
     assert shapes["odoo-record-rule-portal-write-sensitive"] == "record_rule_portal_sensitive_mutation"
     assert shapes["odoo-record-rule-global-sensitive-mutation"] == "record_rule_global_sensitive_mutation"
 

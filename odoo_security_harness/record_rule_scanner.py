@@ -83,6 +83,15 @@ OWNER_SCOPE_MARKERS = (
     "company_id",
     "company_ids",
 )
+SUBJECT_SCOPE_MARKERS = (
+    "user.id",
+    "user.partner_id",
+    "partner_id",
+    "message_partner_ids",
+    "commercial_partner_id",
+    "access_token",
+)
+COMPANY_SCOPE_MARKERS = ("company_id", "company_ids")
 
 
 def scan_record_rules(repo_path: Path) -> list[RecordRuleFinding]:
@@ -171,6 +180,26 @@ class RecordRuleScanner:
                 (
                     f"Record rule '{record_id}' targets sensitive/security model '{model}' for public/portal users "
                     "without an obvious owner, token, or company scope"
+                ),
+                model,
+                record_id,
+                group_text,
+            )
+
+        if (
+            broadly_sensitive
+            and _has_explicit_public_group(groups)
+            and _has_company_scope(domain)
+            and not _has_subject_or_token_scope(domain)
+        ):
+            self._add(
+                "odoo-record-rule-public-sensitive-company-only-scope",
+                "Public/portal rule relies only on company scope",
+                "medium",
+                line,
+                (
+                    f"Record rule '{record_id}' scopes sensitive/security model '{model}' for public/portal users "
+                    "by company only; verify portal users cannot list unrelated records from the same company"
                 ),
                 model,
                 record_id,
@@ -361,9 +390,23 @@ def _has_public_scope(groups: list[str]) -> bool:
     return not groups or any(group in PUBLIC_GROUPS for group in groups)
 
 
+def _has_explicit_public_group(groups: list[str]) -> bool:
+    return any(group in PUBLIC_GROUPS for group in groups)
+
+
 def _has_owner_scope(domain: str) -> bool:
     compact = re.sub(r"\s+", "", domain)
     return any(marker in compact for marker in OWNER_SCOPE_MARKERS)
+
+
+def _has_subject_or_token_scope(domain: str) -> bool:
+    compact = re.sub(r"\s+", "", domain)
+    return any(marker in compact for marker in SUBJECT_SCOPE_MARKERS)
+
+
+def _has_company_scope(domain: str) -> bool:
+    compact = re.sub(r"\s+", "", domain)
+    return any(marker in compact for marker in COMPANY_SCOPE_MARKERS)
 
 
 def _is_universal_domain(domain: str) -> bool:

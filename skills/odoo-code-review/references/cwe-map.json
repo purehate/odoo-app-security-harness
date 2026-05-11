@@ -972,6 +972,12 @@
       "capec": ["CAPEC-21"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "record_rule_public_company_only_scope": {
+      "label": "Odoo public or portal record rule on a sensitive model relies only on company scope",
+      "cwe": ["CWE-862", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "record_rule_portal_sensitive_mutation": {
       "label": "Odoo public or portal record rule allows write, create, or delete on a sensitive model",
       "cwe": ["CWE-269", "CWE-732", "CWE-863"],
