@@ -246,6 +246,33 @@ class Defaults(http.Controller):
     assert "odoo-default-request-derived-set" in rule_ids
 
 
+def test_dict_union_public_sudo_default_set_from_request(tmp_path: Path) -> None:
+    """Dict-union route option dictionaries should not hide public ir.default writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "defaults.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public'}
+DEFAULT_OPTIONS = BASE_OPTIONS | {'csrf': False}
+
+class Defaults(http.Controller):
+    @http.route('/defaults/group', **DEFAULT_OPTIONS)
+    def set_group(self, **kwargs):
+        return request.env['ir.default'].sudo().set('res.users', 'groups_id', kwargs.get('groups_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-default-public-route-set" in rule_ids
+    assert "odoo-default-request-derived-set" in rule_ids
+
+
 def test_class_constant_backed_public_sudo_default_set_from_request(tmp_path: Path) -> None:
     """Class-scoped public auth constants should still expose ir.default writes."""
     controllers = tmp_path / "module" / "controllers"
@@ -346,6 +373,32 @@ OPTIONS_ALIAS = DEFAULT_OPTIONS
 
 class Defaults(http.Controller):
     @http.route('/defaults/group', **OPTIONS_ALIAS)
+    def set_group(self, **kwargs):
+        return request.env['ir.default'].sudo().set('res.users', 'groups_id', kwargs.get('groups_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+
+    assert any(f.rule_id == "odoo-default-public-route-set" and f.severity == "critical" for f in findings)
+    assert any(f.rule_id == "odoo-default-request-derived-set" and f.severity == "critical" for f in findings)
+
+
+def test_dict_union_static_unpack_none_default_value_is_critical(tmp_path: Path) -> None:
+    """Dict-union route option aliases should keep auth='none' default writes critical."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "defaults.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'none'}
+DEFAULT_OPTIONS = BASE_OPTIONS | {'csrf': False}
+
+class Defaults(http.Controller):
+    @http.route('/defaults/group', **DEFAULT_OPTIONS)
     def set_group(self, **kwargs):
         return request.env['ir.default'].sudo().set('res.users', 'groups_id', kwargs.get('groups_id'))
 """,
