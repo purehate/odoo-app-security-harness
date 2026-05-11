@@ -360,7 +360,7 @@ odoo-review-runtime .audit-YYYYMMDD-HHMM \
   --odoomap-cve
 ```
 
-The OdooMap integration is lead material only and intentionally exposes reconnaissance/module/CVE/authenticated-enumeration options without database, credential, user, master-password, or model-name brute-force switches. Authenticated enumeration is skipped unless database, username, and password are all supplied. Output is written under `runtime/odoomap/`; generated command artifacts redact the OdooMap password.
+The OdooMap integration is lead material only and intentionally exposes reconnaissance/module/CVE/authenticated-enumeration options without database, credential, user, master-password, or model-name brute-force switches. Authenticated enumeration is skipped unless database, username, and password are all supplied; partial credentials are ignored instead of being passed to OdooMap. Output is written under `runtime/odoomap/`; generated command artifacts redact the OdooMap password.
 
 When the runner is invoked with `--runtime` or `-ks`, it also generates a route-derived probe plan under `runtime/probes/`. Literal public `GET`-only routes are listed in `runtime/probes/safe-pocs.txt` and can be replayed automatically:
 

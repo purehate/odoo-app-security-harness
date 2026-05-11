@@ -86,17 +86,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--odoomap-database",
         default=os.environ.get("ODOOMAP_DB"),
-        help="OdooMap database name for authenticated enumeration. Default: $ODOOMAP_DB.",
+        help=(
+            "OdooMap database name for authenticated enumeration. Used only when username and password are also "
+            "supplied. Default: $ODOOMAP_DB."
+        ),
     )
     parser.add_argument(
         "--odoomap-username",
         default=os.environ.get("ODOOMAP_USERNAME"),
-        help="OdooMap username for authenticated enumeration. Default: $ODOOMAP_USERNAME.",
+        help=(
+            "OdooMap username for authenticated enumeration. Used only when database and password are also "
+            "supplied. Default: $ODOOMAP_USERNAME."
+        ),
     )
     parser.add_argument(
         "--odoomap-password",
         default=os.environ.get("ODOOMAP_PASSWORD"),
-        help="OdooMap password for authenticated enumeration. Default: $ODOOMAP_PASSWORD.",
+        help=(
+            "OdooMap password for authenticated enumeration. Used only when database and username are also "
+            "supplied. Default: $ODOOMAP_PASSWORD."
+        ),
     )
     parser.add_argument(
         "--odoomap-modules",
@@ -109,7 +118,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--odoomap-enumerate",
         action="store_true",
-        help="Run authenticated model and CRUD-permission enumeration when OdooMap credentials are supplied. Does not enable brute force.",
+        help=(
+            "Run authenticated model and CRUD-permission enumeration when complete OdooMap credentials are "
+            "supplied. Does not enable brute force."
+        ),
     )
     parser.add_argument("--odoomap-limit", type=int, default=200, help="OdooMap enumeration limit. Default: 200.")
     parser.add_argument(
@@ -195,7 +207,8 @@ def write_plan(runtime_dir: Path, args: argparse.Namespace, repo: Path, cmd: lis
                 "## OdooMap",
                 "",
                 "OdooMap is run as opt-in runtime lead generation only against the explicitly authorized target.",
-                "The generated command intentionally excludes brute-force database, credential, user-enumeration, master-password, and model-name brute-force flags.",
+                "The generated command intentionally excludes brute-force database, credential, user-enumeration, "
+                "master-password, and model-name brute-force flags.",
                 "",
                 f"- Target: `{args.odoomap_target}`",
                 f"- Output: `{odoomap_output}`",
@@ -255,22 +268,25 @@ def build_odoomap_cmd(args: argparse.Namespace, base_url: str, output_path: Path
     if not target:
         return []
     cmd = [args.odoomap_bin, "-u", target, "-r", "-o", str(output_path)]
-    if args.odoomap_database:
+    has_auth = has_complete_odoomap_auth(args)
+    if has_auth:
         cmd.extend(["-D", args.odoomap_database])
-    if args.odoomap_username:
         cmd.extend(["-U", args.odoomap_username])
-    if args.odoomap_password:
         cmd.extend(["-P", args.odoomap_password])
     if args.odoomap_modules:
         cmd.append("--modules")
     if args.odoomap_cve:
         cmd.extend(["--plugin", "cve-scanner"])
-    has_auth = bool(args.odoomap_database and args.odoomap_username and args.odoomap_password)
     if args.odoomap_enumerate and has_auth:
         if args.odoomap_limit < 1:
             raise ValueError("OdooMap enumeration limit must be a positive integer")
         cmd.extend(["-e", "-pe", "-l", str(args.odoomap_limit)])
     return cmd
+
+
+def has_complete_odoomap_auth(args: argparse.Namespace) -> bool:
+    """Return whether OdooMap has the complete credential set needed for authenticated modes."""
+    return bool(args.odoomap_database and args.odoomap_username and args.odoomap_password)
 
 
 def redact_odoomap_cmd(cmd: list[str]) -> list[str]:
@@ -300,8 +316,10 @@ def run_odoomap(args: argparse.Namespace, base_url: str, runtime_dir: Path) -> d
         "log": str(log_path),
         "lead_material_only": True,
         "bruteforce_enabled": False,
-        "enumeration_enabled": bool(
-            args.odoomap_enumerate and args.odoomap_database and args.odoomap_username and args.odoomap_password
+        "enumeration_enabled": bool(args.odoomap_enumerate and has_complete_odoomap_auth(args)),
+        "incomplete_credentials_ignored": bool(
+            any((args.odoomap_database, args.odoomap_username, args.odoomap_password))
+            and not has_complete_odoomap_auth(args)
         ),
     }
     try:

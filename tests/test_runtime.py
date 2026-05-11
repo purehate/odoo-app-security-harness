@@ -325,7 +325,7 @@ class TestOdooMapRuntime:
             namespace["build_odoomap_cmd"](args, "http://127.0.0.1:8069", tmp_path / "odoomap.txt")
 
     def test_build_odoomap_cmd_requires_complete_auth_for_enumeration(self, tmp_path: Path) -> None:
-        """Authenticated enumeration should not be requested with partial credentials."""
+        """Authenticated enumeration and partial credentials should not be requested together."""
         namespace = runpy.run_path(str(RUNTIME_SCRIPT), run_name="__test_odoo_runtime__")
         args = Namespace(
             odoomap_target="https://qa.example.com",
@@ -341,9 +341,33 @@ class TestOdooMapRuntime:
 
         cmd = namespace["build_odoomap_cmd"](args, "http://127.0.0.1:8069", tmp_path / "odoomap.txt")
 
+        assert "-D" not in cmd
+        assert "-U" not in cmd
+        assert "-P" not in cmd
         assert "-e" not in cmd
         assert "-pe" not in cmd
         assert "-l" not in cmd
+
+    def test_build_odoomap_cmd_ignores_partial_password(self, tmp_path: Path) -> None:
+        """A stray password should never be passed to OdooMap without complete auth context."""
+        namespace = runpy.run_path(str(RUNTIME_SCRIPT), run_name="__test_odoo_runtime__")
+        args = Namespace(
+            odoomap_target="https://qa.example.com",
+            odoomap_bin="odoomap",
+            odoomap_database=None,
+            odoomap_username=None,
+            odoomap_password="test-password",  # noqa: S106 - command construction fixture only
+            odoomap_modules=True,
+            odoomap_cve=False,
+            odoomap_enumerate=False,
+            odoomap_limit=25,
+        )
+
+        cmd = namespace["build_odoomap_cmd"](args, "http://127.0.0.1:8069", tmp_path / "odoomap.txt")
+
+        assert "-P" not in cmd
+        assert "test-password" not in cmd
+        assert "--modules" in cmd
 
     def test_build_odoomap_cmd_rejects_non_positive_enumeration_limit(self, tmp_path: Path) -> None:
         """Authenticated enumeration limits should not pass invalid values to OdooMap."""
@@ -458,6 +482,36 @@ class TestOdooMapRuntime:
         assert result["cmd"][result["cmd"].index("-P") + 1] == "[REDACTED]"
         assert "test-password" not in json.dumps(result)
         assert "odoomap output" in Path(result["log"]).read_text(encoding="utf-8")
+
+    def test_run_odoomap_reports_ignored_partial_credentials(self, tmp_path: Path, monkeypatch) -> None:
+        """Runtime status should disclose when partial OdooMap credentials were ignored."""
+        namespace = runpy.run_path(str(RUNTIME_SCRIPT), run_name="__test_odoo_runtime__")
+        args = Namespace(
+            odoomap_target="https://qa.example.com",
+            odoomap_bin="odoomap",
+            odoomap_database="review",
+            odoomap_username=None,
+            odoomap_password="test-password",  # noqa: S106 - redaction fixture only
+            odoomap_modules=False,
+            odoomap_cve=False,
+            odoomap_enumerate=True,
+            odoomap_limit=25,
+            odoomap_timeout=30,
+        )
+        captured: dict[str, list[str]] = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            return SimpleNamespace(returncode=0, stdout="odoomap output\n")
+
+        monkeypatch.setattr(namespace["subprocess"], "run", fake_run)
+
+        result = namespace["run_odoomap"](args, "http://127.0.0.1:8069", tmp_path / "runtime")
+
+        assert "-P" not in captured["cmd"]
+        assert "test-password" not in json.dumps(result)
+        assert result["enumeration_enabled"] is False
+        assert result["incomplete_credentials_ignored"] is True
 
 
 class TestOdooMapRunnerHints:
