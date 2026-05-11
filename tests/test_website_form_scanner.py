@@ -155,6 +155,27 @@ def test_flags_qweb_mapped_file_upload_accept(tmp_path: Path) -> None:
     )
 
 
+def test_flags_qweb_mapped_multipart_enctype(tmp_path: Path) -> None:
+    """Generic QWeb t-att mappings can mark website forms as multipart uploads."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "upload.xml").write_text(
+        """<odoo>
+  <template id="upload">
+    <form action="/website/form/helpdesk.ticket" t-att="{'enctype': 'multipart/form-data'}">
+      <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+      <input name="description"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-file-upload" for f in findings)
+
+
 def test_flags_missing_csrf_token_on_post_form(tmp_path: Path) -> None:
     """Public website model-create forms should carry a CSRF token."""
     views = tmp_path / "module" / "views"
@@ -183,6 +204,32 @@ def test_flags_get_method_website_form_submission(tmp_path: Path) -> None:
         """<odoo>
   <template id="contact">
     <form action="/website/form/crm.lead" method="get">
+      <input name="name"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-website-form-get-method"
+        and f.severity == "high"
+        and f.field == "method"
+        for f in findings
+    )
+    assert not any(f.rule_id == "odoo-website-form-missing-csrf-token" for f in findings)
+
+
+def test_flags_qweb_mapped_get_method_submission(tmp_path: Path) -> None:
+    """QWeb-mapped method attributes can expose model submissions over GET."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "forms.xml").write_text(
+        """<odoo>
+  <template id="contact">
+    <form action="/website/form/crm.lead" t-att="{'method': 'get'}">
       <input name="name"/>
     </form>
   </template>

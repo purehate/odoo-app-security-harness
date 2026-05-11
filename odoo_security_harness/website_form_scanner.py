@@ -212,7 +212,7 @@ class WebsiteFormScanner:
                 "method",
             )
 
-        if form.get("enctype", "").lower() == "multipart/form-data" or self._has_file_input(form):
+        if _element_attribute(form, "enctype").lower() == "multipart/form-data" or self._has_file_input(form):
             self._add(
                 "odoo-website-form-file-upload",
                 "Website form accepts file uploads",
@@ -346,10 +346,10 @@ class WebsiteFormScanner:
         return fields
 
     def _is_post_form(self, form: ElementTree.Element) -> bool:
-        return form.get("method", "post").strip().lower() == "post"
+        return (_element_attribute(form, "method") or "post").lower() == "post"
 
     def _is_get_form(self, form: ElementTree.Element) -> bool:
-        return form.get("method", "post").strip().lower() == "get"
+        return (_element_attribute(form, "method") or "post").lower() == "get"
 
     def _success_page(self, form: ElementTree.Element) -> str:
         for attr in SUCCESS_PAGE_ATTRS:
