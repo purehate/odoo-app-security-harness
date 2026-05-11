@@ -127,6 +127,46 @@ def upload():
     assert any(f.rule_id == "odoo-file-upload-tainted-path-write" for f in findings)
 
 
+def test_imported_odoo_http_module_tainted_open_write_path_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http request params should taint upload filesystem paths."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import odoo.http as odoo_http
+
+def upload():
+    filename = odoo_http.request.params.get('filename')
+    with open(filename, 'wb') as handle:
+        handle.write(b'data')
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-tainted-path-write" for f in findings)
+
+
+def test_imported_odoo_module_tainted_open_write_path_is_reported(tmp_path: Path) -> None:
+    """Direct odoo module request params should taint upload filesystem paths."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import odoo as od
+
+def upload():
+    filename = od.http.request.params.get('filename')
+    with open(filename, 'wb') as handle:
+        handle.write(b'data')
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-tainted-path-write" for f in findings)
+
+
 def test_base64_upload_decode_is_reported(tmp_path: Path) -> None:
     """Decoded request-derived base64 payloads need size/type review."""
     py = tmp_path / "controller.py"
@@ -1094,6 +1134,48 @@ from odoo import http as odoo_http
 
 class UploadController(odoo_http.Controller):
     @odoo_http.route('/public/upload/<path:destination>', auth='public', csrf=False)
+    def upload_to_path(self, destination):
+        with open(destination, 'wb') as handle:
+            handle.write(b'data')
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-tainted-path-write" for f in findings)
+
+
+def test_imported_odoo_http_module_route_path_parameter_is_tainted_for_upload_write(tmp_path: Path) -> None:
+    """Direct odoo.http route decorators should make path parameters request-controlled."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import odoo.http as odoo_http
+
+class UploadController(odoo_http.Controller):
+    @odoo_http.route('/public/upload/<path:destination>', auth='public', csrf=False)
+    def upload_to_path(self, destination):
+        with open(destination, 'wb') as handle:
+            handle.write(b'data')
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-tainted-path-write" for f in findings)
+
+
+def test_imported_odoo_module_route_path_parameter_is_tainted_for_upload_write(tmp_path: Path) -> None:
+    """Direct odoo module route decorators should make path parameters request-controlled."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import odoo as od
+
+class UploadController(od.http.Controller):
+    @od.http.route('/public/upload/<path:destination>', auth='public', csrf=False)
     def upload_to_path(self, destination):
         with open(destination, 'wb') as handle:
             handle.write(b'data')
