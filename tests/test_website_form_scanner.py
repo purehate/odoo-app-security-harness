@@ -713,6 +713,48 @@ class WebsiteForm(odoo_http.Controller):
     assert any(f.rule_id == "odoo-website-form-route-csrf-disabled" for f in findings)
 
 
+def test_flags_imported_odoo_http_module_website_form_csrf_disabled(tmp_path: Path) -> None:
+    """Direct odoo.http imports should not hide website form CSRF disablement."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class WebsiteForm(odoo_http.Controller):
+    @odoo_http.route('/website/form/crm.lead', type='http', auth='public', methods=['POST'], csrf=False)
+    def website_form(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-route-csrf-disabled" for f in findings)
+
+
+def test_flags_imported_odoo_module_website_form_csrf_disabled(tmp_path: Path) -> None:
+    """Direct odoo imports should not hide website form CSRF disablement."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo as od
+
+class WebsiteForm(od.http.Controller):
+    @od.http.route('/website/form/crm.lead', type='http', auth='public', methods=['POST'], csrf=False)
+    def website_form(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-route-csrf-disabled" for f in findings)
+
+
 def test_non_odoo_route_website_form_csrf_disabled_is_ignored(tmp_path: Path) -> None:
     """Local route decorators should not be treated as Odoo website form routes."""
     controllers = tmp_path / "module" / "controllers"

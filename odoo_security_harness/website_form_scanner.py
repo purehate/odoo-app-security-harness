@@ -428,6 +428,7 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
         self.http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.route_names: set[str] = set()
 
     def scan_file(self) -> list[WebsiteFormFinding]:
@@ -449,6 +450,14 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
         self.generic_visit(node)
         self.class_constants_stack.pop()
 
+    def visit_Import(self, node: ast.Import) -> Any:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
+        self.generic_visit(node)
+
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo":
             for alias in node.names:
@@ -466,6 +475,7 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
             self._effective_constants(),
             self.route_names,
             self.http_module_names,
+            self.odoo_module_names,
         )
         if route:
             self.findings.append(
@@ -687,9 +697,10 @@ def _website_form_route_with_csrf_disabled(
     constants: dict[str, ast.AST] | None = None,
     route_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> str:
     for decorator in node.decorator_list:
-        route = _http_route_path(decorator, constants, route_names, http_module_names)
+        route = _http_route_path(decorator, constants, route_names, http_module_names, odoo_module_names)
         if route and "/website/form" in route and _route_csrf_disabled(decorator, constants):
             return route
     return ""
@@ -700,9 +711,10 @@ def _http_route_path(
     constants: dict[str, ast.AST] | None = None,
     route_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> str:
     if isinstance(node, ast.Call):
-        if not _is_http_route(node.func, route_names, http_module_names):
+        if not _is_http_route(node.func, route_names, http_module_names, odoo_module_names):
             return ""
         if node.args:
             return _route_path_from_arg(node.args[0], constants)
@@ -710,7 +722,7 @@ def _http_route_path(
             if keyword.arg == "route":
                 return _route_path_from_arg(keyword.value, constants)
         return ""
-    if _is_http_route(node, route_names, http_module_names):
+    if _is_http_route(node, route_names, http_module_names, odoo_module_names):
         return ""
     return ""
 
@@ -744,14 +756,31 @@ def _is_http_route(
     node: ast.AST,
     route_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> bool:
     route_names = route_names or set()
     http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     if isinstance(node, ast.Attribute):
-        return node.attr == "route" and isinstance(node.value, ast.Name) and node.value.id in http_module_names
+        return node.attr == "route" and _is_http_module_expr(node.value, http_module_names, odoo_module_names)
     if isinstance(node, ast.Name):
         return node.id in route_names
     return False
+
+
+def _is_http_module_expr(
+    node: ast.AST,
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in http_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "http"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in odoo_module_names
+    )
 
 
 def _assigned_field_name(node: ast.AST) -> str:
