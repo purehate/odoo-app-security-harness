@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -227,7 +228,8 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
                 "Public route changes module lifecycle",
                 "critical",
                 node.lineno,
-                f"Public/unauthenticated route calls {method}; verify attackers cannot install, upgrade, or uninstall Odoo modules",
+                f"Public/unauthenticated route calls {method}; "
+                "verify attackers cannot install, upgrade, or uninstall Odoo modules",
                 route.display_path(),
                 sink,
             )
@@ -239,7 +241,8 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
                 "Module lifecycle operation runs with an elevated environment",
                 "high",
                 node.lineno,
-                f"Module lifecycle method {method} runs through sudo()/with_user(SUPERUSER_ID); verify only system administrators can alter installed code and data",
+                f"Module lifecycle method {method} runs through sudo()/with_user(SUPERUSER_ID); "
+                "verify only system administrators can alter installed code and data",
                 route.display_path(),
                 sink,
             )
@@ -249,7 +252,8 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
                 "Immediate module lifecycle operation",
                 "high",
                 node.lineno,
-                f"{method} executes module lifecycle work immediately; verify transactional impact, migrations, access rules, and registry reload behavior",
+                f"{method} executes module lifecycle work immediately; "
+                "verify transactional impact, migrations, access rules, and registry reload behavior",
                 route.display_path(),
                 sink,
             )
@@ -260,7 +264,8 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
                 "Request-derived module selection",
                 severity,
                 node.lineno,
-                "Request-derived data selects an ir.module.module record before a lifecycle operation; restrict to an explicit allowlist and admin-only flow",
+                "Request-derived data selects an ir.module.module record before a lifecycle operation; "
+                "restrict to an explicit allowlist and admin-only flow",
                 route.display_path(),
                 sink,
             )
@@ -550,7 +555,50 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str | None, value: ast.AST) -> ast.Dict:
+    if key is None:
+        return values_node
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:

@@ -421,6 +421,51 @@ class Controller(http.Controller):
     )
 
 
+def test_updated_static_unpack_public_route_immediate_install_from_request_is_reported(tmp_path: Path) -> None:
+    """Updated **route options should not hide public module lifecycle calls."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "modules.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+INSTALL_OPTIONS = {
+    'route': '/internal/install',
+    'auth': 'user',
+    'csrf': True,
+}
+INSTALL_OPTIONS.update({
+    'route': '/public/install',
+    'auth': 'none',
+    'csrf': False,
+})
+
+class Controller(http.Controller):
+    @http.route(**INSTALL_OPTIONS)
+    def install(self, **kwargs):
+        module = request.env['ir.module.module'].sudo().search([('name', '=', kwargs.get('module'))])
+        return module.button_immediate_install()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_module_lifecycle(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-module-public-route-lifecycle"
+        and finding.severity == "critical"
+        and finding.route == "/public/install"
+        for finding in findings
+    )
+    assert any(
+        finding.rule_id == "odoo-module-tainted-selection"
+        and finding.severity == "critical"
+        and finding.route == "/public/install"
+        for finding in findings
+    )
+
+
 def test_class_constant_public_route_immediate_install_from_request_is_reported(tmp_path: Path) -> None:
     """Class-scoped route and module constants should not hide lifecycle calls."""
     controllers = tmp_path / "module" / "controllers"
@@ -650,7 +695,8 @@ from odoo import SUPERUSER_ID
 
 class ModuleHelper:
     def upgrade_sale(self):
-        return self.env['ir.module.module'].with_user(user=SUPERUSER_ID).search([('name', '=', 'sale')]).button_upgrade()
+        module = self.env['ir.module.module'].with_user(user=SUPERUSER_ID)
+        return module.search([('name', '=', 'sale')]).button_upgrade()
 """,
         encoding="utf-8",
     )
@@ -748,7 +794,8 @@ def test_env_ref_admin_upgrade_on_module_model_is_reported(tmp_path: Path) -> No
         """
 class ModuleHelper:
     def upgrade_sale(self):
-        return self.env['ir.module.module'].with_user(self.env.ref('base.user_admin')).search([('name', '=', 'sale')]).button_upgrade()
+        module = self.env['ir.module.module'].with_user(self.env.ref('base.user_admin'))
+        return module.search([('name', '=', 'sale')]).button_upgrade()
 """,
         encoding="utf-8",
     )
@@ -1003,7 +1050,8 @@ def test_starred_rest_sudo_module_alias_is_reported(tmp_path: Path) -> None:
         """
 class ModuleHelper:
     def upgrade_sale(self):
-        marker, *items, tail = 'x', self.env['ir.module.module'].sudo().search([('name', '=', 'sale')]), self.env.user.partner_id, 'end'
+        module = self.env['ir.module.module'].sudo().search([('name', '=', 'sale')])
+        marker, *items, tail = 'x', module, self.env.user.partner_id, 'end'
         module = items[0]
         return module.button_upgrade()
 """,
