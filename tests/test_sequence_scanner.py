@@ -103,6 +103,52 @@ class Invite(odoo_http.Controller):
     assert "odoo-sequence-sensitive-code-use" in rule_ids
 
 
+def test_imported_odoo_http_module_public_sensitive_sequence_use(tmp_path: Path) -> None:
+    """Direct odoo.http imports should not hide public sequence issuance."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "invite.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Invite(odoo_http.Controller):
+    @odoo_http.route('/invite/code', auth='public')
+    def code(self):
+        return odoo_http.request.env['ir.sequence'].next_by_code('access.token.sequence')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-sequence-public-route-next" in rule_ids
+    assert "odoo-sequence-sensitive-code-use" in rule_ids
+
+
+def test_imported_odoo_module_public_sensitive_sequence_use(tmp_path: Path) -> None:
+    """Direct odoo module imports should not hide public sequence issuance."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "invite.py").write_text(
+        """
+import odoo as od
+
+class Invite(od.http.Controller):
+    @od.http.route('/invite/code', auth='public')
+    def code(self):
+        return od.http.request.env['ir.sequence'].next_by_code('access.token.sequence')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-sequence-public-route-next" in rule_ids
+    assert "odoo-sequence-sensitive-code-use" in rule_ids
+
+
 def test_non_odoo_route_decorator_sequence_use_is_not_public_route(tmp_path: Path) -> None:
     """Local route decorators should not make sequence use public."""
     controllers = tmp_path / "module" / "controllers"
@@ -453,6 +499,48 @@ class Sequence(http.Controller):
     @http.route('/sequence/next', auth='user')
     def next(self):
         return req.env['ir.sequence'].next_by_code(req.params.get('code'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+
+    assert any(f.rule_id == "odoo-sequence-tainted-code" for f in findings)
+
+
+def test_imported_odoo_http_module_direct_sequence_code(tmp_path: Path) -> None:
+    """Direct odoo.http request params should taint next_by_code calls."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "sequence.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Sequence(odoo_http.Controller):
+    @odoo_http.route('/sequence/next', auth='user')
+    def next(self):
+        return odoo_http.request.env['ir.sequence'].next_by_code(odoo_http.request.params.get('code'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+
+    assert any(f.rule_id == "odoo-sequence-tainted-code" for f in findings)
+
+
+def test_imported_odoo_module_direct_sequence_code(tmp_path: Path) -> None:
+    """Direct odoo module request params should taint next_by_code calls."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "sequence.py").write_text(
+        """
+import odoo as od
+
+class Sequence(od.http.Controller):
+    @od.http.route('/sequence/next', auth='user')
+    def next(self):
+        return od.http.request.env['ir.sequence'].next_by_code(od.http.request.params.get('code'))
 """,
         encoding="utf-8",
     )
