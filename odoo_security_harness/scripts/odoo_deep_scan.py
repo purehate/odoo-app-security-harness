@@ -3298,8 +3298,10 @@ _TAXONOMY_SHAPE_HINTS = (
         (
             "qweb-sensitive-url-token",
             "web-sensitive-url-token",
+            "web-owl-qweb-sensitive-url-token",
             "sensitive frontend value placed in url",
             "qweb url exposes sensitive-looking parameter",
+            "owl inline template url exposes sensitive-looking parameter",
             "token/secret/password-like data in a url",
             "token, secret, password, or api-key-like data in a url",
             "query string, or fragment",

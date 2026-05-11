@@ -1283,6 +1283,15 @@ class WebAssetScanner:
                     "OWL xml template binds a dynamic href, src, action, or similar URL attribute; reject scriptable schemes and restrict redirects, embeds, and form targets to trusted locations",
                     "owl-template",
                 )
+            if _owl_template_has_sensitive_url_token(body):
+                self._add(
+                    "odoo-web-owl-qweb-sensitive-url-token",
+                    "OWL inline template URL exposes sensitive-looking parameter",
+                    "medium",
+                    line,
+                    "OWL xml template places token, secret, password, or API-key-like data in a URL attribute; verify it cannot leak through logs, referrers, browser history, or shared links",
+                    "owl-template",
+                )
             if OWL_TEMPLATE_SENSITIVE_RENDER_RE.search(body):
                 self._add(
                     "odoo-web-owl-qweb-sensitive-field-render",
@@ -1493,6 +1502,25 @@ def _owl_template_has_dangerous_static_url(body: str) -> bool:
             if _is_dangerous_url_value(attr_match.group("value")):
                 return True
     return False
+
+
+def _owl_template_has_sensitive_url_token(body: str) -> bool:
+    for tag_match in OWL_TEMPLATE_ANY_TAG_RE.finditer(body):
+        attrs = tag_match.group("attrs")
+        if not SENSITIVE_URL_QUERY_RE.search(attrs):
+            continue
+        if not _owl_template_has_dynamic_marker(attrs):
+            continue
+        if OWL_TEMPLATE_STATIC_URL_ATTR_RE.search(attrs) or OWL_TEMPLATE_DYNAMIC_URL_ATTR_RE.search(attrs):
+            return True
+    return False
+
+
+def _owl_template_has_dynamic_marker(value: str) -> bool:
+    return bool(
+        SENSITIVE_URL_DYNAMIC_VALUE_RE.search(value)
+        or re.search(r"#\{|\bt-(?:att|attf)-|\b(?:record|state|env|this)\.", value, re.IGNORECASE)
+    )
 
 
 def _looks_risky_css_text(css_text: str) -> bool:

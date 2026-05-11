@@ -1725,6 +1725,47 @@ def test_owl_inline_template_safe_static_url_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-web-owl-qweb-dangerous-url-scheme" for f in findings)
 
 
+def test_owl_inline_template_sensitive_url_token_detected(tmp_path: Path) -> None:
+    """OWL inline template URLs should not expose dynamic credential parameters."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "export const template = xml`<a t-attf-href=\"/portal/pay?access_token=#{props.accessToken}\">Pay</a>`;\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-sensitive-url-token"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_sensitive_url_mapping_detected(tmp_path: Path) -> None:
+    """OWL t-att mappings can also leak dynamic token-bearing URLs."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "export const template = xml`<a t-att=\"{'href': '/portal/pay?access_token=' + props.accessToken}\">Pay</a>`;\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-owl-qweb-sensitive-url-token" for f in findings)
+
+
+def test_owl_inline_template_static_sensitive_url_example_ignored(tmp_path: Path) -> None:
+    """Static examples/defaults should not create OWL sensitive URL noise."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<a href=\"/docs?access_token=example\">Docs</a>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-sensitive-url-token" for f in findings)
+
+
 def test_owl_inline_template_sensitive_field_render_detected(tmp_path: Path) -> None:
     """OWL inline templates should not expose credential-shaped values."""
     path = tmp_path / "widget.js"

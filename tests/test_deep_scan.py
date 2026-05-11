@@ -1347,6 +1347,24 @@ def test_taxonomy_coverage_classifies_frontend_sensitive_url_exposure() -> None:
     assert "CWE-598" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_owl_sensitive_url_exposure() -> None:
+    """Sensitive OWL inline template URLs should map to disclosure taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-web-owl-qweb-sensitive-url-token",
+                "source": "web-assets",
+                "title": "OWL inline template URL exposes sensitive-looking parameter",
+                "message": "OWL xml template places token, secret, password, or API-key-like data in a URL attribute",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "frontend_sensitive_url_exposure"
+    assert "CWE-598" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_web_dangerous_url_scheme() -> None:
     """Executable frontend URL schemes should map to XSS/navigation taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(
