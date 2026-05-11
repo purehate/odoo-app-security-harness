@@ -158,11 +158,11 @@ RAW_HTTP_REQUEST_RE = re.compile(
     re.IGNORECASE,
 )
 XMLHTTPREQUEST_CREATE_RE = re.compile(
-    r"\b(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\s*=\s*new\s+XMLHttpRequest\s*\(",
+    r"\b(?:(?:const|let|var)\s+)?(?P<name>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*=\s*new\s+(?:window\.)?XMLHttpRequest\s*\(",
     re.IGNORECASE,
 )
 XMLHTTPREQUEST_OPEN_RE = re.compile(
-    r"\b(?P<name>[A-Za-z_$][\w$]*)\.open\s*\(\s*['\"](?P<method>GET|POST|PUT|PATCH|DELETE|HEAD)['\"]\s*,\s*(?P<url>[^,\)\n]+)",
+    r"\b(?P<name>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\.open\s*\(\s*['\"](?P<method>GET|POST|PUT|PATCH|DELETE|HEAD)['\"]\s*,\s*(?P<url>[^,\)\n]+)",
     re.IGNORECASE,
 )
 HTTP_URL_LITERAL_RE = re.compile(r"['\"]http://", re.IGNORECASE)

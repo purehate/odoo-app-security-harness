@@ -885,6 +885,27 @@ xhr.send(JSON.stringify(payload));
     )
 
 
+def test_xmlhttprequest_member_post_without_visible_csrf_detected(tmp_path: Path) -> None:
+    """XHR handles stored on widgets should still be tracked for CSRF review."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """this.xhr = new window.XMLHttpRequest();
+this.xhr.open('POST', '/portal/pay');
+this.xhr.send(JSON.stringify(payload));
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-unsafe-request-without-csrf"
+        and f.sink == "XMLHttpRequest.open"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
 def test_xmlhttprequest_post_with_visible_csrf_ignored(tmp_path: Path) -> None:
     """A visible X-CSRF token header suppresses the XHR CSRF lead."""
     path = tmp_path / "widget.js"
@@ -941,6 +962,27 @@ def test_xmlhttprequest_insecure_http_url_detected(tmp_path: Path) -> None:
         """const xhr = new XMLHttpRequest();
 xhr.open('GET', 'http://api.example.com/orders');
 xhr.send();
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-insecure-http-request-url"
+        and f.sink == "XMLHttpRequest.open"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_xmlhttprequest_member_insecure_http_url_detected(tmp_path: Path) -> None:
+    """XHR handles stored on widget members should keep cleartext URL coverage."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """this.xhr = new XMLHttpRequest();
+this.xhr.open('GET', 'http://api.example.com/orders');
+this.xhr.send();
 """,
         encoding="utf-8",
     )
