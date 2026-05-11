@@ -336,26 +336,29 @@ class CacheHeaderScanner(ast.NodeVisitor):
     def _scan_header_mutation(self, node: ast.Call, sink: str) -> None:
         if not _is_headers_call(node.func):
             return
+        constants = self._effective_constants()
         if (
             isinstance(node.func, ast.Attribute)
             and node.func.attr in {"add", "set", "setdefault"}
             and len(node.args) >= 2
-            and _is_cache_header_key(node.args[0], self._effective_constants())
+            and _is_cache_header_key(node.args[0], constants)
         ):
             self._scan_cache_header_value(node.args[1], node.lineno, sink)
-            if _is_no_store_value(node.args[1], self._effective_constants()):
+            if _is_no_store_value(node.args[1], constants):
                 self._mark_no_store_header_response(node.func)
         for arg in node.args:
-            if isinstance(arg, ast.Dict):
-                for key, value in zip(arg.keys, arg.values):
-                    if _is_cache_header_key(key, self._effective_constants()):
-                        self._scan_cache_header_value(value, node.lineno, sink)
-                        if _is_no_store_value(value, self._effective_constants()):
-                            self._mark_no_store_header_response(node.func)
-        for keyword in node.keywords:
-            if keyword.arg and keyword.arg.lower().replace("_", "-") == "cache-control":
-                self._scan_cache_header_value(keyword.value, node.lineno, sink)
-                if _is_no_store_value(keyword.value, self._effective_constants()):
+            header_map = _resolve_static_dict(arg, constants)
+            if header_map is None:
+                continue
+            for key, value in zip(header_map.keys, header_map.values, strict=False):
+                if _is_cache_header_key(key, constants):
+                    self._scan_cache_header_value(value, node.lineno, sink)
+                    if _is_no_store_value(value, constants):
+                        self._mark_no_store_header_response(node.func)
+        for key, keyword_value in _expanded_keywords(node, constants):
+            if key.lower().replace("_", "-") == "cache-control":
+                self._scan_cache_header_value(keyword_value, node.lineno, sink)
+                if _is_no_store_value(keyword_value, constants):
                     self._mark_no_store_header_response(node.func)
 
     def _scan_cache_header_value(self, value: ast.AST, line: int, sink: str) -> None:
@@ -727,6 +730,22 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
             return node
         return _resolve_constant_seen(resolved, constants, {*seen, node.id})
     return node
+
+
+def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    keywords: list[tuple[str, ast.AST]] = []
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            keywords.append((keyword.arg, keyword.value))
+            continue
+        value = _resolve_static_dict(keyword.value, constants)
+        if value is None:
+            continue
+        for key, item_value in zip(value.keys, value.values, strict=False):
+            resolved_key = _resolve_constant(key, constants) if key is not None else None
+            if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+                keywords.append((resolved_key.value, item_value))
+    return keywords
 
 
 def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:

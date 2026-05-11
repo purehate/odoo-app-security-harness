@@ -1013,6 +1013,31 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-cache-public-cacheable-sensitive-route" for f in findings)
 
 
+def test_aliased_header_update_public_sensitive_cacheable_header_is_reported(tmp_path: Path) -> None:
+    """Aliased header update maps should still expose cacheable sensitive routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "invoice.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/my/invoice/<int:invoice_id>', auth='public')
+    def invoice(self, invoice_id, access_token=None):
+        response = request.make_response('invoice')
+        headers = {'Cache-Control': 'public, max-age=3600'}
+        response.headers.update(headers)
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_cache_headers(tmp_path)
+
+    assert any(f.rule_id == "odoo-cache-public-cacheable-sensitive-route" for f in findings)
+
+
 def test_public_sensitive_send_file_without_cache_disable_is_reported(tmp_path: Path) -> None:
     """Public downloads should disable file response caching unless deliberately public."""
     controllers = tmp_path / "module" / "controllers"
@@ -1239,6 +1264,29 @@ class Controller(http.Controller):
     def token(self, **kwargs):
         response = request.make_response({'access_token': kwargs.get('token')})
         response.headers.update({'Cache-Control': 'no-store, private'})
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_cache_headers(tmp_path) == []
+
+
+def test_aliased_no_store_header_update_sensitive_response_is_ignored(tmp_path: Path) -> None:
+    """Aliased header update maps should mark returned response objects as no-store protected."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "token.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/token', auth='public')
+    def token(self, **kwargs):
+        response = request.make_response({'access_token': kwargs.get('token')})
+        headers = {'Cache-Control': 'no-store, private'}
+        response.headers.update(headers)
         return response
 """,
         encoding="utf-8",
