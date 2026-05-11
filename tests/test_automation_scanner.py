@@ -879,6 +879,28 @@ requests.post(record.callback_url, **HTTP_OPTIONS)
     assert not any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
 
 
+def test_http_updated_static_kwargs_timeout_in_automation_is_ignored(tmp_path: Path) -> None:
+    """Updated static **kwargs dictionaries should satisfy automation HTTP timeout checks."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_updated_kwargs_timeout" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+HTTP_OPTIONS = {}
+HTTP_OPTIONS.update({'timeout': 10})
+requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert not any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
+
+
 def test_http_local_constant_kwargs_timeout_in_automation_is_ignored(tmp_path: Path) -> None:
     """Function-local **kwargs dictionaries should satisfy automation HTTP timeout checks."""
     xml = tmp_path / "automation.xml"
@@ -971,6 +993,28 @@ def test_tls_verification_disabled_dict_union_kwargs_in_automation_is_reported(t
 import requests
 BASE_OPTIONS = {'timeout': 10}
 HTTP_OPTIONS = BASE_OPTIONS | {'verify': False}
+requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-tls-verify-disabled" for f in findings)
+
+
+def test_tls_verification_disabled_updated_kwargs_in_automation_is_reported(tmp_path: Path) -> None:
+    """Updated static **kwargs dictionaries should not hide disabled TLS verification."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_tls_updated_kwargs" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+HTTP_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS.update({'verify': False})
 requests.post(record.callback_url, **HTTP_OPTIONS)
     ]]></field>
   </record>

@@ -14,7 +14,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from defusedxml import ElementTree
-from odoo_security_harness.base_scanner import _line_for, _should_skip, _record_fields
+
+from odoo_security_harness.base_scanner import _line_for, _record_fields, _should_skip
 
 
 @dataclass
@@ -125,7 +126,8 @@ class AutomationScanner:
                 "Broad automated action on sensitive model",
                 "high",
                 line,
-                f"base.automation runs on '{trigger}' for sensitive model '{model}' without a filter_domain; verify it cannot mutate/expose every record",
+                f"base.automation runs on '{trigger}' for sensitive model '{model}' without a filter_domain; "
+                "verify it cannot mutate/expose every record",
                 model,
                 record_id,
             )
@@ -138,7 +140,8 @@ class AutomationScanner:
                 "Automated action performs dynamic evaluation",
                 "critical",
                 line,
-                "base.automation code contains eval/exec/safe_eval; verify no record or user-controlled expression reaches it",
+                "base.automation code contains eval/exec/safe_eval; verify no record or user-controlled "
+                "expression reaches it",
                 model,
                 record_id,
             )
@@ -149,7 +152,8 @@ class AutomationScanner:
                 "Automated action performs elevated mutation",
                 "high",
                 line,
-                "base.automation code chains sudo()/with_user(SUPERUSER_ID) into write/create/unlink; verify record rules and company isolation are not bypassed",
+                "base.automation code chains sudo()/with_user(SUPERUSER_ID) into write/create/unlink; "
+                "verify record rules and company isolation are not bypassed",
                 model,
                 record_id,
             )
@@ -160,7 +164,8 @@ class AutomationScanner:
                 "Automated action calls elevated business method",
                 "high",
                 line,
-                "base.automation code uses sudo()/with_user(SUPERUSER_ID) to call a business/action method; verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
+                "base.automation code uses sudo()/with_user(SUPERUSER_ID) to call a business/action method; "
+                "verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
                 model,
                 record_id,
             )
@@ -171,7 +176,8 @@ class AutomationScanner:
                 "Automated action mutates sensitive model",
                 "high",
                 line,
-                "base.automation code mutates a sensitive model; verify trigger scope, actor, idempotency, and audit trail",
+                "base.automation code mutates a sensitive model; verify trigger scope, actor, idempotency, "
+                "and audit trail",
                 model,
                 record_id,
             )
@@ -192,7 +198,8 @@ class AutomationScanner:
                 "Automated action disables TLS verification",
                 "high",
                 line,
-                "base.automation code passes verify=False to outbound HTTP; record-triggered integrations should not permit man-in-the-middle attacks",
+                "base.automation code passes verify=False to outbound HTTP; record-triggered integrations "
+                "should not permit man-in-the-middle attacks",
                 model,
                 record_id,
             )
@@ -202,7 +209,8 @@ class AutomationScanner:
                 "Automated action uses cleartext HTTP URL",
                 "medium",
                 line,
-                "base.automation code outbound HTTP targets a literal http:// URL; use HTTPS to protect record-triggered integration payloads and response data from interception or downgrade",
+                "base.automation code outbound HTTP targets a literal http:// URL; use HTTPS to protect "
+                "record-triggered integration payloads and response data from interception or downgrade",
                 model,
                 record_id,
             )
@@ -212,7 +220,8 @@ class AutomationScanner:
                 "Automated action URL embeds credentials",
                 "high",
                 line,
-                "base.automation code embeds username, password, or token material in an outbound HTTP URL authority; move credentials to server-side configuration",
+                "base.automation code embeds username, password, or token material in an outbound HTTP URL "
+                "authority; move credentials to server-side configuration",
                 model,
                 record_id,
             )
@@ -388,6 +397,7 @@ class _AutomationCodeScanner(ast.NodeVisitor):
         self.visit_With(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
+        _mark_static_dict_update(node, self.local_constants)
         sink = _call_name(node.func)
         constants = self._effective_constants()
         if _is_dynamic_eval(sink):
@@ -741,6 +751,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -867,6 +879,59 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            items.append((resolved_key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _mark_target_names(target: ast.AST, names: set[str]) -> None:
