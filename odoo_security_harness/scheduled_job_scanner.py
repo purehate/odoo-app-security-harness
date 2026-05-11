@@ -32,6 +32,7 @@ HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "request", "url
 HTTP_CLIENT_FACTORIES = {"AsyncClient", "Client", "ClientSession", "Session"}
 MUTATION_METHODS = {"create", "write", "unlink"}
 SENSITIVE_MODEL_MUTATION_METHODS = {*MUTATION_METHODS, "set", "set_param"}
+ELEVATED_BUSINESS_METHOD_PREFIXES = ("_action_", "_button_", "action_", "button_", "do_", "post_", "run_", "send_")
 UNBOUNDED_READ_METHODS = {"read_group", "search", "search_count", "search_read"}
 SYNC_NAME_RE = re.compile(r"(^|_)(fetch|sync|import|pull|callback|callbacks|webhook|feed|export)($|_)", re.IGNORECASE)
 SENSITIVE_MUTATION_MODELS = {
@@ -185,6 +186,16 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 "high",
                 node.lineno,
                 "Scheduled job mutates records through sudo()/with_user(SUPERUSER_ID); verify record rules, company isolation, input trust, and retry idempotency",
+                context.name,
+                sink,
+            )
+        elif _is_sudo_business_method_call(node.func, context.sudo_vars, constants, self.superuser_names):
+            self._add(
+                "odoo-scheduled-job-sudo-method-call",
+                "Scheduled job calls elevated business method",
+                "high",
+                node.lineno,
+                "Scheduled job uses sudo()/with_user(SUPERUSER_ID) to call a business/action method; verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
                 context.name,
                 sink,
             )
@@ -455,6 +466,18 @@ def _is_sudo_mutation(
 ) -> bool:
     sink = _call_name(node)
     if sink.rsplit(".", 1)[-1] not in MUTATION_METHODS:
+        return False
+    return _is_sudo_expr(node, sudo_vars, constants, superuser_names)
+
+
+def _is_sudo_business_method_call(
+    node: ast.AST,
+    sudo_vars: set[str],
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    sink = _call_name(node)
+    if not sink.rsplit(".", 1)[-1].startswith(ELEVATED_BUSINESS_METHOD_PREFIXES):
         return False
     return _is_sudo_expr(node, sudo_vars, constants, superuser_names)
 

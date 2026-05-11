@@ -215,6 +215,54 @@ class Sale(models.Model):
     assert any(finding.severity == "medium" for finding in unbounded)
 
 
+def test_flags_sudo_business_method_call_in_cron(tmp_path: Path) -> None:
+    """Workflow methods called through sudo in cron methods deserve review."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    def _cron_confirm_orders(self):
+        self.env['sale.order'].sudo().action_confirm()
+        self.env['sale.order'].sudo().mapped('name')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+    method_findings = [finding for finding in findings if finding.rule_id == "odoo-scheduled-job-sudo-method-call"]
+
+    assert len(method_findings) == 1
+    assert method_findings[0].sink.endswith(".action_confirm")
+
+
+def test_flags_aliased_with_user_business_method_call_in_cron(tmp_path: Path) -> None:
+    """Superuser aliases should flag elevated workflow methods in cron methods."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "stock.py").write_text(
+        """
+from odoo import SUPERUSER_ID, models
+
+class Picking(models.Model):
+    _name = 'x.picking'
+
+    def _cron_validate_pickings(self):
+        pickings = self.env['stock.picking'].with_user(SUPERUSER_ID).search([])
+        pickings.button_validate()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(finding.rule_id == "odoo-scheduled-job-sudo-method-call" for finding in findings)
+
+
 def test_flags_import_aliased_superuser_cron_mutation(tmp_path: Path) -> None:
     """Imported SUPERUSER_ID aliases in cron methods should be recognized."""
     models = tmp_path / "module" / "models"

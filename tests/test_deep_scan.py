@@ -6166,6 +6166,12 @@ def test_taxonomy_coverage_classifies_scheduled_job_mutation_and_eval_risks() ->
             },
             {
                 "source": "scheduled-jobs",
+                "rule_id": "odoo-scheduled-job-sudo-method-call",
+                "title": "Scheduled job calls elevated business method",
+                "message": "Scheduled job uses sudo()/with_user(SUPERUSER_ID) to call a business/action method; verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
+            },
+            {
+                "source": "scheduled-jobs",
                 "rule_id": "odoo-scheduled-job-sensitive-model-mutation",
                 "title": "Scheduled job mutates sensitive model",
                 "message": "Scheduled job mutates sensitive model 'ir.config_parameter'; verify the cron user, domain scope, idempotency, and audit trail",
@@ -6188,6 +6194,7 @@ def test_taxonomy_coverage_classifies_scheduled_job_mutation_and_eval_risks() ->
     assert coverage["unmapped_rule_ids"] == []
     shapes = {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]}
     assert shapes["odoo-scheduled-job-sudo-mutation"] == "scheduled_job_elevated_mutation"
+    assert shapes["odoo-scheduled-job-sudo-method-call"] == "scheduled_job_elevated_method_call"
     assert shapes["odoo-scheduled-job-sensitive-model-mutation"] == "scheduled_job_sensitive_model_mutation"
     assert shapes["odoo-scheduled-job-dynamic-eval"] == "scheduled_job_dynamic_evaluation"
     assert shapes["odoo-scheduled-job-manual-transaction"] == "scheduled_job_manual_transaction"

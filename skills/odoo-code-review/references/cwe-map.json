@@ -1352,6 +1352,12 @@
       "capec": ["CAPEC-122"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "scheduled_job_elevated_method_call": {
+      "label": "Odoo scheduled job calls workflow methods through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "scheduled_job_sensitive_model_mutation": {
       "label": "Odoo scheduled job mutates security, identity, payment, attachment, or runtime configuration models",
       "cwe": ["CWE-269", "CWE-284", "CWE-732"],
