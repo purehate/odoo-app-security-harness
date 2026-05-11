@@ -272,6 +272,37 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-session-public-authenticate" for f in findings)
 
 
+def test_updated_static_unpack_route_options_public_authenticate_is_reported(tmp_path: Path) -> None:
+    """Updated ** route options should not hide public authentication routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "auth.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+LOGIN_OPTIONS = {
+    'auth': 'user',
+    'csrf': True,
+}
+LOGIN_OPTIONS.update({
+    'auth': 'none',
+    'csrf': False,
+})
+
+class Controller(http.Controller):
+    @http.route('/login/token', **LOGIN_OPTIONS)
+    def login(self, **kwargs):
+        return request.session.authenticate(request.db, kwargs.get('login'), kwargs.get('password'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-public-authenticate" for f in findings)
+
+
 def test_class_constant_backed_public_authenticate_is_reported(tmp_path: Path) -> None:
     """Class-scoped public auth constants should still expose authentication routes."""
     controllers = tmp_path / "module" / "controllers"

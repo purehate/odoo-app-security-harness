@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -211,7 +212,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                     "Public route authenticates with request-controlled credentials",
                     "high",
                     node.lineno,
-                    "Public/unauthenticated controller calls request.session.authenticate with request-derived credentials; verify rate limiting, CSRF, MFA, and redirect handling",
+                    "Public/unauthenticated controller calls request.session.authenticate with request-derived "
+                    "credentials; verify rate limiting, CSRF, MFA, and redirect handling",
                     sink,
                 )
         elif self._is_request_method(node.func, "update_env") or sink.endswith(".update_env"):
@@ -227,7 +229,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                     "Logout route has weak method or CSRF posture",
                     "medium",
                     node.lineno,
-                    "Controller exposes logout/session reset through a public/GET/csrf=False route; verify cross-site logout and session disruption are acceptable",
+                    "Controller exposes logout/session reset through a public/GET/csrf=False route; verify "
+                    "cross-site logout and session disruption are acceptable",
                     sink,
                 )
         elif sink.endswith(".set_cookie") or sink == "set_cookie":
@@ -238,7 +241,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                     "Session or token cookie is set without hardened flags",
                     severity,
                     node.lineno,
-                    "Controller sets a session/token/CSRF-shaped cookie without secure=True, httponly=True, and SameSite=Lax/Strict; verify it cannot be stolen, sent cross-site, or overwritten",
+                    "Controller sets a session/token/CSRF-shaped cookie without secure=True, httponly=True, "
+                    "and SameSite=Lax/Strict; verify it cannot be stolen, sent cross-site, or overwritten",
                     sink,
                 )
 
@@ -255,7 +259,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "Public route looks up users from request data",
                 "medium",
                 node.lineno,
-                "Public/unauthenticated route queries res.users with request-derived input; verify login, reset, or token flows cannot enumerate accounts or create pre-auth timing side channels",
+                "Public/unauthenticated route queries res.users with request-derived input; verify login, "
+                "reset, or token flows cannot enumerate accounts or create pre-auth timing side channels",
                 sink,
             )
 
@@ -266,7 +271,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "Controller response exposes session or CSRF token",
                 severity,
                 node.lineno,
-                "Controller appears to return CSRF/session token material; verify it is not exposed cross-origin or to unauthenticated users",
+                "Controller appears to return CSRF/session token material; verify it is not exposed "
+                "cross-origin or to unauthenticated users",
                 sink or "response",
             )
 
@@ -286,7 +292,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "Controller switches request environment to superuser",
                 "critical",
                 node.lineno,
-                "request.update_env switches the current request to a superuser/admin identity; verify public or user-controlled requests cannot escalate privileges",
+                "request.update_env switches the current request to a superuser/admin identity; verify public "
+                "or user-controlled requests cannot escalate privileges",
                 sink,
             )
         if any(self._expr_is_tainted(value) for value in user_values):
@@ -295,7 +302,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "request.update_env uses request-controlled user",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "request.update_env receives a request-derived user/uid; verify attackers cannot switch the request environment to another account",
+                "request.update_env receives a request-derived user/uid; verify attackers cannot switch the "
+                "request environment to another account",
                 sink,
             )
         elif route.auth in {"public", "none"}:
@@ -304,7 +312,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "Public route switches request environment",
                 "high",
                 node.lineno,
-                "Public/unauthenticated route calls request.update_env(user=...); verify authorization and account binding happen before environment switching",
+                "Public/unauthenticated route calls request.update_env(user=...); verify authorization and "
+                "account binding happen before environment switching",
                 sink,
             )
 
@@ -319,7 +328,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "Manual Environment uses superuser",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "Manual Odoo Environment is constructed with a superuser/admin identity; verify it cannot bypass request user, record rules, or company scoping",
+                "Manual Odoo Environment is constructed with a superuser/admin identity; verify it cannot "
+                "bypass request user, record rules, or company scoping",
                 sink,
             )
         elif self._expr_is_tainted(uid_arg):
@@ -328,7 +338,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "Manual Environment uses request-controlled user",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "Manual Odoo Environment is constructed from request-derived uid; verify attackers cannot select another user's security context",
+                "Manual Odoo Environment is constructed from request-derived uid; verify attackers cannot "
+                "select another user's security context",
                 sink,
             )
 
@@ -360,7 +371,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "Controller directly updates request.session uid",
                 severity,
                 node.lineno,
-                "Controller updates request.session uid directly; use Odoo authentication APIs and verify no request-controlled uid can create session fixation or account switching",
+                "Controller updates request.session uid directly; use Odoo authentication APIs and verify no "
+                "request-controlled uid can create session fixation or account switching",
                 sink,
             )
             return
@@ -388,7 +400,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "Controller directly assigns request.session.uid",
                 severity,
                 line,
-                "Controller assigns request.session.uid directly; use Odoo authentication APIs and verify no request-controlled uid can create session fixation or account switching",
+                "Controller assigns request.session.uid directly; use Odoo authentication APIs and verify no "
+                "request-controlled uid can create session fixation or account switching",
                 "request.session.uid",
             )
         elif self._is_request_uid_target(target):
@@ -404,7 +417,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "Controller directly assigns request.uid",
                 severity,
                 line,
-                "Controller assigns request.uid directly; use Odoo authentication and environment-switching APIs only after explicit authorization checks",
+                "Controller assigns request.uid directly; use Odoo authentication and environment-switching "
+                "APIs only after explicit authorization checks",
                 "request.uid",
             )
 
@@ -417,7 +431,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "Controller response exposes session or CSRF token",
                 severity,
                 node.lineno,
-                "Controller returns CSRF/session token material; verify it is not exposed cross-origin or to unauthenticated users",
+                "Controller returns CSRF/session token material; verify it is not exposed cross-origin or to "
+                "unauthenticated users",
                 "return",
             )
         self.generic_visit(node)
@@ -674,7 +689,8 @@ class SessionAuthScanner(ast.NodeVisitor):
             "ir.http authentication boundary is overridden",
             "high",
             node.lineno,
-            f"ir.http method '{node.name}' participates in global request authentication; verify it preserves Odoo's session, API-key, public-user, and database-selection guarantees",
+            f"ir.http method '{node.name}' participates in global request authentication; verify it "
+            "preserves Odoo's session, API-key, public-user, and database-selection guarantees",
             node.name,
         )
         if _auth_method_grants_superuser(node, self._effective_constants(), self.superuser_names):
@@ -683,7 +699,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "ir.http authentication override grants elevated user",
                 "critical",
                 node.lineno,
-                f"ir.http method '{node.name}' appears to assign or return a superuser/admin identity; verify unauthenticated or public requests cannot become privileged",
+                f"ir.http method '{node.name}' appears to assign or return a superuser/admin identity; verify "
+                "unauthenticated or public requests cannot become privileged",
                 node.name,
             )
         if _auth_method_bypasses_checks(node):
@@ -692,7 +709,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "ir.http authentication override may bypass checks",
                 "critical",
                 node.lineno,
-                f"ir.http method '{node.name}' appears to return success without a visible parent authentication call; verify it cannot bypass login, API-key, or session validation",
+                f"ir.http method '{node.name}' appears to return success without a visible parent "
+                "authentication call; verify it cannot bypass login, API-key, or session validation",
                 node.name,
             )
 
@@ -893,6 +911,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -923,6 +943,59 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(values_node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(values_node.keys, values_node.values, strict=False):
+        key = _resolve_constant(key, constants) if key is not None else None
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            items.append((key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
