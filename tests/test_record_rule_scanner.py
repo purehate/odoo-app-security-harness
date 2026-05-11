@@ -106,6 +106,21 @@ def test_flags_public_sensitive_rule_without_owner_scope_in_csv(tmp_path: Path) 
     assert any(f.rule_id == "odoo-record-rule-public-sensitive-no-owner-scope" for f in findings)
 
 
+def test_flags_public_sensitive_rule_with_colon_csv_refs(tmp_path: Path) -> None:
+    """Colon-style CSV relation headers should normalize like slash-style headers."""
+    security = tmp_path / "module" / "security"
+    security.mkdir(parents=True)
+    (security / "ir_rule.csv").write_text(
+        "id,model_id:id,groups:id,domain_force\n"
+        "portal_sale_state,sale.model_sale_order,base.group_portal,\"[('state', '=', 'sale')]\"\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_record_rules(tmp_path)
+
+    assert any(f.rule_id == "odoo-record-rule-public-sensitive-no-owner-scope" for f in findings)
+
+
 def test_flags_portal_write_on_sensitive_model_in_csv(tmp_path: Path) -> None:
     """CSV record rules can grant public/portal mutation permissions."""
     security = tmp_path / "module" / "security"

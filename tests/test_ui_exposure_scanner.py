@@ -200,6 +200,23 @@ def test_sensitive_server_action_without_groups_in_csv_is_reported(tmp_path: Pat
     assert "odoo-ui-sensitive-action-no-groups" in rule_ids
 
 
+def test_sensitive_server_action_with_colon_csv_refs_is_reported(tmp_path: Path) -> None:
+    """Colon-style CSV relation columns should normalize model external IDs."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_server.csv").write_text(
+        "id,name,model_id:id,state\n"
+        "action_disable_users,Disable Users,base.model_res_users,code\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_ui_exposure(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-ui-sensitive-server-action-no-groups" in rule_ids
+    assert "odoo-ui-sensitive-action-no-groups" in rule_ids
+
+
 def test_sensitive_csv_action_with_groups_is_ignored(tmp_path: Path) -> None:
     """Grouped CSV actions should not produce broad-exposure findings."""
     data = tmp_path / "module" / "data"
