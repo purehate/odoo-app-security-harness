@@ -1270,8 +1270,8 @@ def _keyword_values(node: ast.Call, name: str, constants: dict[str, ast.AST] | N
             continue
         if keyword.arg is not None:
             continue
-        value = _resolve_constant(keyword.value, constants)
-        if isinstance(value, ast.Dict):
+        value = _resolve_static_dict(keyword.value, constants)
+        if value is not None:
             values.extend(_dict_keyword_values(value, name, constants))
     return values
 
@@ -1280,8 +1280,8 @@ def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST
     values: list[ast.AST] = []
     for key, item_value in zip(node.keys, node.values, strict=False):
         if key is None:
-            value = _resolve_constant(item_value, constants)
-            if isinstance(value, ast.Dict):
+            value = _resolve_static_dict(item_value, constants)
+            if value is not None:
                 values.extend(_dict_keyword_values(value, name, constants))
             continue
         resolved_key = _resolve_constant(key, constants)
