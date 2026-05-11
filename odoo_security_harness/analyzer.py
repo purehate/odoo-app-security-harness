@@ -329,21 +329,46 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         if decorator.args:
             route_paths.extend(self._extract_route_values(decorator.args[0]))
 
-        for kw in decorator.keywords:
-            value = self._resolve_constant(kw.value)
-            if kw.arg == "auth" and isinstance(value, ast.Constant):
+        for key, keyword_value in self._expanded_route_keywords(decorator):
+            value = self._resolve_constant(keyword_value)
+            if key == "auth" and isinstance(value, ast.Constant):
                 auth = str(value.value)
-            elif kw.arg == "csrf" and isinstance(value, ast.Constant):
+            elif key == "csrf" and isinstance(value, ast.Constant):
                 csrf = bool(value.value)
-            elif kw.arg == "methods" and isinstance(value, ast.List | ast.Tuple | ast.Set):
+            elif key == "methods" and isinstance(value, ast.List | ast.Tuple | ast.Set):
                 for elt in value.elts:
                     resolved = self._resolve_constant(elt)
                     if isinstance(resolved, ast.Constant):
                         methods.append(str(resolved.value))
-            elif kw.arg in {"route", "routes"}:
+            elif key in {"route", "routes"}:
                 route_paths.extend(self._extract_route_values(value))
 
         return auth, csrf, methods, route_paths
+
+    def _expanded_route_keywords(self, decorator: ast.Call) -> list[tuple[str, ast.AST]]:
+        """Expand direct and static **kwargs used by @http.route."""
+        keywords: list[tuple[str, ast.AST]] = []
+        for kw in decorator.keywords:
+            if kw.arg is not None:
+                keywords.append((kw.arg, kw.value))
+                continue
+            value = self._resolve_constant(kw.value)
+            if isinstance(value, ast.Dict):
+                keywords.extend(self._expanded_dict_keywords(value))
+        return keywords
+
+    def _expanded_dict_keywords(self, node: ast.Dict) -> list[tuple[str, ast.AST]]:
+        keywords: list[tuple[str, ast.AST]] = []
+        for key, value in zip(node.keys, node.values, strict=True):
+            if key is None:
+                resolved_value = self._resolve_constant(value)
+                if isinstance(resolved_value, ast.Dict):
+                    keywords.extend(self._expanded_dict_keywords(resolved_value))
+                continue
+            resolved_key = self._resolve_constant(key)
+            if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+                keywords.append((resolved_key.value, value))
+        return keywords
 
     def _extract_route_values(self, node: ast.expr) -> list[str]:
         """Extract literal route paths from a route decorator argument."""
@@ -404,7 +429,12 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         if isinstance(node, ast.Constant):
             return isinstance(node.value, str | bool | int | float | type(None))
         if isinstance(node, ast.List | ast.Tuple | ast.Set):
-            return all(isinstance(element, ast.Constant | ast.Name) for element in node.elts)
+            return all(self._is_static_literal(element) for element in node.elts)
+        if isinstance(node, ast.Dict):
+            return all(
+                (key is None or self._is_static_literal(key)) and self._is_static_literal(value)
+                for key, value in zip(node.keys, node.values, strict=True)
+            )
         if isinstance(node, ast.Name):
             return True
         return False
