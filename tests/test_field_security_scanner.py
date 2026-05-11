@@ -323,6 +323,30 @@ class Token(models.Model):
     assert any(f.rule_id == "odoo-field-sensitive-public-groups" for f in findings)
 
 
+def test_flags_dict_union_static_unpack_sensitive_field_with_public_groups(tmp_path: Path) -> None:
+    """Dict-union static field option dictionaries should still expose public groups."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "token.py").write_text(
+        """
+from odoo import fields, models
+
+BASE_OPTIONS = {'groups': 'base.group_portal'}
+FIELD_OPTIONS = BASE_OPTIONS | {'index': True}
+
+class Token(models.Model):
+    _name = 'x.token'
+
+    access_token = fields.Char(**FIELD_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert any(f.rule_id == "odoo-field-sensitive-public-groups" for f in findings)
+
+
 def test_flags_sensitive_indexed_field(tmp_path: Path) -> None:
     """Indexed credential-like fields deserve explicit DB exposure review."""
     models = tmp_path / "module" / "models"
@@ -405,6 +429,28 @@ class Credential(models.Model):
     _name = 'x.credential'
 
     refresh_token = fields.Char(groups=ADMIN_GROUPS, copy=NO_COPY)
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_field_security(tmp_path) == []
+
+
+def test_dict_union_static_copy_false_suppresses_sensitive_copyable(tmp_path: Path) -> None:
+    """Dict-union static copy=False should suppress sensitive copy findings."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "credential.py").write_text(
+        """
+from odoo import fields, models
+
+BASE_OPTIONS = {'groups': 'base.group_system'}
+FIELD_OPTIONS = BASE_OPTIONS | {'copy': False}
+
+class Credential(models.Model):
+    _name = 'x.credential'
+
+    refresh_token = fields.Char(**FIELD_OPTIONS)
 """,
         encoding="utf-8",
     )
@@ -600,6 +646,30 @@ class Page(models.Model):
     _name = 'x.page'
 
     raw_body = fields.Html(sanitize=SANITIZE)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert any(f.rule_id == "odoo-field-html-sanitizer-disabled" for f in findings)
+
+
+def test_flags_dict_union_static_html_field_sanitizer_disabled(tmp_path: Path) -> None:
+    """Dict-union static sanitizer flags should not hide unsafe HTML fields."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "page.py").write_text(
+        """
+from odoo import fields, models
+
+BASE_OPTIONS = {'sanitize': False}
+HTML_OPTIONS = BASE_OPTIONS | {'groups': 'base.group_system'}
+
+class Page(models.Model):
+    _name = 'x.page'
+
+    raw_body = fields.Html(**HTML_OPTIONS)
 """,
         encoding="utf-8",
     )
