@@ -1975,36 +1975,39 @@ def test_static_odoo_action_window_ignored(tmp_path: Path) -> None:
 
 
 def test_dynamic_dom_url_attribute_detected(tmp_path: Path) -> None:
-    """Dynamic href/src/action assignments should be reviewed in portal widgets."""
+    """Dynamic DOM URL attribute assignments should be reviewed in portal widgets."""
     path = tmp_path / "widget.js"
     path.write_text(
         """const checkout = response.redirect_url;
 this.el.querySelector('iframe').src = checkout;
+this.el.querySelector('button').formAction = checkout;
 this.el.querySelector('form').setAttribute('action', checkout);
+this.el.querySelector('img').setAttribute('srcset', checkout);
 """,
         encoding="utf-8",
     )
 
     findings = WebAssetScanner(path).scan_file()
 
-    assert any(f.rule_id == "odoo-web-client-side-redirect" and f.sink == "element.href" for f in findings)
-    assert any(f.rule_id == "odoo-web-client-side-redirect" and f.sink == "setAttribute-url" for f in findings)
+    assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "element.href") == 2
+    assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "setAttribute-url") == 2
 
 
 def test_dynamic_jquery_url_attribute_detected(tmp_path: Path) -> None:
-    """Dynamic jQuery href/src/action attributes should be reviewed in portal widgets."""
+    """Dynamic jQuery URL-bearing attributes should be reviewed in portal widgets."""
     path = tmp_path / "widget.js"
     path.write_text(
         """const target = response.redirect_url;
 this.$link.attr('href', target);
 this.$form.prop('action', target);
+this.$preview.attr('poster', target);
 """,
         encoding="utf-8",
     )
 
     findings = WebAssetScanner(path).scan_file()
 
-    assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "jquery.attr-url") == 2
+    assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "jquery.attr-url") == 3
 
 
 def test_static_dom_url_attribute_ignored(tmp_path: Path) -> None:
