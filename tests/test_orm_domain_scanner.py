@@ -549,6 +549,30 @@ class Search(http.Controller):
     assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
 
 
+def test_local_constant_public_route_tainted_superuser_search_domain_is_critical(tmp_path: Path) -> None:
+    """Function-local superuser constants should preserve elevated severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Search(http.Controller):
+    @http.route('/public/search', auth='public')
+    def search(self, **kwargs):
+        root_uid = 1
+        domain = kwargs.get('domain')
+        return request.env['res.partner'].with_user(root_uid).search(domain)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_domains(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings)
+
+
 def test_flags_aliased_superuser_tainted_search_domain(tmp_path: Path) -> None:
     """Superuser model aliases should still classify tainted domains as privileged."""
     controllers = tmp_path / "module" / "controllers"
@@ -616,6 +640,31 @@ class Search(http.Controller):
     def search(self, **kwargs):
         domain = kwargs.get('domain')
         Partners = request.env['res.partner'].with_user(ADMIN_UID)
+        return Partners.search(domain)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_domains(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" for f in findings)
+
+
+def test_local_constant_aliased_superuser_tainted_search_domain_is_reported(tmp_path: Path) -> None:
+    """Function-local with_user constants should preserve elevated alias tracking."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Search(http.Controller):
+    @http.route('/public/search', auth='public')
+    def search(self, **kwargs):
+        root_uid = 1
+        domain = kwargs.get('domain')
+        Partners = request.env['res.partner'].with_user(root_uid)
         return Partners.search(domain)
 """,
         encoding="utf-8",
