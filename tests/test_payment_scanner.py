@@ -178,6 +178,28 @@ class PaymentController(http.Controller):
     assert not any(f.rule_id == "odoo-payment-public-callback-no-signature" for f in findings)
 
 
+def test_hmac_digest_without_compare_is_not_signature_validation(tmp_path: Path) -> None:
+    """Computing a digest is not enough unless it is compared or verified."""
+    py = tmp_path / "controllers.py"
+    py.write_text(
+        """
+import hmac
+from odoo import http
+
+class PaymentController(http.Controller):
+    @http.route('/payment/provider/webhook', auth='public', csrf=False)
+    def webhook(self, **post):
+        digest = hmac.new(b'secret', post.get('payload', '').encode(), 'sha256').hexdigest()
+        return {'digest': digest}
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-payment-public-callback-no-signature" for f in findings)
+
+
 def test_weak_signature_compare_is_reported(tmp_path: Path) -> None:
     """Signature equality checks are visible validation, but should use constant-time comparison."""
     py = tmp_path / "controllers.py"

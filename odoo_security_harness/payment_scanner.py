@@ -23,7 +23,6 @@ class PaymentFinding:
 
 CALLBACK_PATH_HINTS = ("payment", "webhook", "notify", "notification", "callback", "return")
 SIGNATURE_MARKERS = (
-    "hmac",
     "signature",
     "sign",
     "verify",
@@ -345,7 +344,7 @@ def _has_signature_check(node: ast.FunctionDef) -> bool:
             continue
         sink = _call_name(child.func).lower()
         func_text = _safe_unparse(child.func).lower()
-        if "compare_digest" in sink or "hmac" in sink:
+        if "compare_digest" in sink:
             return True
         if any(marker in sink for marker in SIGNATURE_MARKERS) and any(
             marker in func_text for marker in ("signature", "sign", "verify", "validate", "hmac")
