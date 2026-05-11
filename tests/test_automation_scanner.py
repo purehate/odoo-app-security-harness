@@ -511,6 +511,45 @@ http_post(record.callback_url)
     assert any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
 
 
+def test_urllib_urlopen_without_timeout_in_automation_is_reported(tmp_path: Path) -> None:
+    """urllib.request.urlopen in automated actions should require a timeout."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_urllib" model="base.automation">
+    <field name="code"><![CDATA[
+from urllib.request import urlopen
+import urllib.request as urlreq
+urlopen(record.callback_url)
+urlreq.urlopen(record.status_url, timeout=10)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert len([f for f in findings if f.rule_id == "odoo-automation-http-no-timeout"]) == 1
+
+
+def test_regex_fallback_urllib_urlopen_without_timeout_in_automation_is_reported(tmp_path: Path) -> None:
+    """Malformed automation code should still catch urllib URL fetches."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_urllib_fallback" model="base.automation">
+    <field name="code">if broken: urllib.request.urlopen(record.callback_url)</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
+
+
 def test_http_client_with_timeout_in_automation_is_ignored(tmp_path: Path) -> None:
     """HTTP client aliases with visible timeout should not trigger timeout findings."""
     xml = tmp_path / "automation.xml"

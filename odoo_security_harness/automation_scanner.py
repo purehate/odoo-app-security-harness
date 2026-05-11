@@ -48,7 +48,7 @@ SENSITIVE_MODELS = {
     "stock.picking",
 }
 WRITE_TRIGGERS = {"on_create", "on_write", "on_create_or_write", "on_unlink"}
-HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request"}
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request", "urlopen"}
 MUTATION_METHODS = {"write", "create", "unlink"}
 SENSITIVE_MODEL_MUTATION_METHODS = {*MUTATION_METHODS, "set", "set_param"}
 
@@ -212,7 +212,7 @@ class _AutomationCodeScanner(ast.NodeVisitor):
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.sudo_vars: set[str] = set()
-        self.http_module_aliases: set[str] = {"requests", "httpx"}
+        self.http_module_aliases: set[str] = {"requests", "httpx", "urllib"}
         self.http_function_aliases: set[str] = set()
         self.http_client_vars: set[str] = set()
 
@@ -231,10 +231,12 @@ class _AutomationCodeScanner(ast.NodeVisitor):
         for alias in node.names:
             if alias.name in {"requests", "httpx"}:
                 self.http_module_aliases.add(alias.asname or alias.name)
+            elif alias.name == "urllib.request":
+                self.http_module_aliases.add(alias.asname or "urllib")
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        if node.module in {"requests", "httpx"}:
+        if node.module in {"requests", "httpx", "urllib.request"}:
             for alias in node.names:
                 if alias.name in HTTP_METHODS:
                     self.http_function_aliases.add(alias.asname or alias.name)
@@ -327,7 +329,10 @@ class _AutomationCodeScanner(ast.NodeVisitor):
             risks.add("sudo_mutation")
         if _regex_sensitive_model_mutation(code):
             risks.add("sensitive_model_mutation")
-        if re.search(r"requests\.(get|post|put|patch|delete)\s*\(", code) and "timeout" not in code:
+        if (
+            re.search(r"requests\.(get|post|put|patch|delete)\s*\(", code)
+            or re.search(r"(?:urllib\.request\.)?urlopen\s*\(", code)
+        ) and "timeout" not in code:
             risks.add("http_no_timeout")
         return risks
 
