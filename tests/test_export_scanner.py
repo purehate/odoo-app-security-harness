@@ -497,6 +497,46 @@ class ExportController(odoo_http.Controller):
     assert any(f.rule_id == "odoo-export-request-controlled-fields" for f in findings)
 
 
+def test_imported_odoo_http_route_path_controlled_search_read_fields(tmp_path: Path) -> None:
+    """Direct odoo.http imports should mark path parameters as export input."""
+    py = tmp_path / "export.py"
+    py.write_text(
+        """
+import odoo.http as odoo_http
+
+class ExportController(odoo_http.Controller):
+    @odoo_http.route('/public/export/<string:field_names>', auth='public')
+    def export(self, field_names):
+        return odoo_http.request.env['res.users'].sudo().search_read([], fields=field_names.split(','))
+""",
+        encoding="utf-8",
+    )
+
+    findings = ExportScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-export-request-controlled-fields" for f in findings)
+
+
+def test_imported_odoo_module_route_path_controlled_search_read_fields(tmp_path: Path) -> None:
+    """Direct odoo imports should mark path parameters as export input."""
+    py = tmp_path / "export.py"
+    py.write_text(
+        """
+import odoo as od
+
+class ExportController(od.http.Controller):
+    @od.http.route('/public/export/<string:field_names>', auth='public')
+    def export(self, field_names):
+        return od.http.request.env['res.users'].sudo().search_read([], fields=field_names.split(','))
+""",
+        encoding="utf-8",
+    )
+
+    findings = ExportScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-export-request-controlled-fields" for f in findings)
+
+
 def test_non_odoo_route_decorator_does_not_taint_export_path_parameter(tmp_path: Path) -> None:
     """Local route decorators should not make arbitrary path parameters export input."""
     py = tmp_path / "export.py"
