@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import suppress
 from pathlib import Path
 
-from odoo_security_harness import progress
+from odoo_security_harness.progress import progress
 
 
 def _set_memory_limit(max_memory_mb: int) -> None:
