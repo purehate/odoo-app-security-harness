@@ -51,6 +51,7 @@ REQUEST_MARKERS = (
 )
 OAUTH_ROUTE_MARKERS = ("oauth", "oidc", "openid", "sso", "signin", "callback")
 TOKEN_MARKERS = ("access_token", "id_token", "oauth", "openid", "jwt")
+OAUTH_IDENTITY_FIELDS = {"groups_id", "login", "oauth_uid"}
 
 
 def scan_oauth_flows(repo_path: Path) -> list[OAuthFinding]:
@@ -189,6 +190,7 @@ class OAuthScanner(ast.NodeVisitor):
             self._mark_tainted_target(target, node.value)
             self._mark_user_model_target(target, node.value)
             self._mark_oauth_identity_payload_target(target, node.value)
+            self._track_oauth_identity_payload_subscript_assignment(target, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
@@ -218,6 +220,7 @@ class OAuthScanner(ast.NodeVisitor):
         canonical_sink = self._canonical_http_sink(sink)
         route = self._current_route()
         constants = self._effective_constants()
+        self._track_oauth_identity_payload_update_call(node)
 
         if _is_oauth_http_call(node, canonical_sink) or (
             _is_oauth_route(route, "")
@@ -438,6 +441,34 @@ class OAuthScanner(ast.NodeVisitor):
         else:
             self._discard_name_target(target, self.oauth_identity_payload_names)
 
+    def _track_oauth_identity_payload_subscript_assignment(self, target: ast.AST, value: ast.AST) -> None:
+        if not isinstance(target, ast.Subscript):
+            return
+        key = _literal_subscript_key(target.slice, self._effective_constants())
+        if key not in OAUTH_IDENTITY_FIELDS:
+            return
+        root_name = _call_root_name(target)
+        if not root_name:
+            return
+        self.oauth_identity_payload_names.add(root_name)
+        if self._expr_is_tainted(value):
+            self.tainted_names.add(root_name)
+
+    def _track_oauth_identity_payload_update_call(self, node: ast.Call) -> None:
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+            return
+        root_name = _call_root_name(node.func.value)
+        if not root_name:
+            return
+        update_values = node.args[0] if node.args else None
+        if not isinstance(update_values, ast.Dict):
+            return
+        if not _dict_mentions_oauth_identity_field(update_values, self._effective_constants()):
+            return
+        self.oauth_identity_payload_names.add(root_name)
+        if any(value is not None and self._expr_is_tainted(value) for value in update_values.values):
+            self.tainted_names.add(root_name)
+
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
         if isinstance(target, ast.Name):
             if _is_static_literal(value):
@@ -653,6 +684,13 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
             return node
         return _resolve_constant_seen(resolved, constants, {*seen, node.id})
     return node
+
+
+def _literal_subscript_key(node: ast.AST, constants: dict[str, ast.AST]) -> str:
+    resolved = _resolve_constant(node, constants)
+    if isinstance(resolved, ast.Constant) and isinstance(resolved.value, str):
+        return resolved.value
+    return ""
 
 
 def _is_static_literal(node: ast.AST) -> bool:
@@ -929,16 +967,27 @@ def _expr_mentions_oauth_identity_payload(node: ast.AST, oauth_identity_payload_
     if isinstance(node, ast.Name):
         return node.id in oauth_identity_payload_names
     if isinstance(node, ast.Dict):
-        for key in node.keys:
-            if isinstance(key, ast.Constant) and str(key.value) in {"login", "oauth_uid", "groups_id"}:
-                return True
-        return False
+        return _dict_mentions_oauth_identity_field(node)
     if isinstance(node, ast.Call):
         return _expr_mentions_oauth_identity_payload(node.func, oauth_identity_payload_names) or any(
             _expr_mentions_oauth_identity_payload(arg, oauth_identity_payload_names) for arg in node.args
         )
     if isinstance(node, ast.Subscript):
         return _expr_mentions_oauth_identity_payload(node.value, oauth_identity_payload_names)
+    return False
+
+
+def _dict_mentions_oauth_identity_field(
+    node: ast.Dict,
+    constants: dict[str, ast.AST] | None = None,
+) -> bool:
+    constants = constants or {}
+    for key in node.keys:
+        if key is None:
+            continue
+        resolved = _resolve_constant(key, constants)
+        if isinstance(resolved, ast.Constant) and str(resolved.value) in OAUTH_IDENTITY_FIELDS:
+            return True
     return False
 
 
@@ -967,6 +1016,14 @@ def _call_name(node: ast.AST) -> str:
         return _call_name(node.func)
     if isinstance(node, ast.Subscript):
         return _call_name(node.value)
+    return ""
+
+
+def _call_root_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute | ast.Subscript | ast.Call):
+        return _call_root_name(node.value if not isinstance(node, ast.Call) else node.func)
     return ""
 
 

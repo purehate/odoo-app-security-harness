@@ -879,6 +879,59 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-oauth-tainted-identity-write" for f in findings)
 
 
+def test_incremental_oauth_identity_payload_is_reported(tmp_path: Path) -> None:
+    """Identity payload dictionaries populated in steps should not hide user mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        Users = request.env['res.users'].with_user(1)
+        vals = {}
+        vals['oauth_uid'] = kwargs.get('sub')
+        vals['login'] = kwargs.get('email')
+        return Users.write(vals)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(f.rule_id == "odoo-oauth-tainted-identity-write" for f in findings)
+
+
+def test_updated_oauth_identity_payload_is_reported(tmp_path: Path) -> None:
+    """dict.update calls should not hide OAuth identity payload writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+OAUTH_UID = 'oauth_uid'
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        Users = request.env['res.users'].with_user(1)
+        vals = {}
+        vals.update({OAUTH_UID: kwargs.get('sub'), 'login': kwargs.get('email')})
+        return Users.write(vals)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(f.rule_id == "odoo-oauth-tainted-identity-write" for f in findings)
+
+
 def test_walrus_oauth_identity_payload_is_reported(tmp_path: Path) -> None:
     """Assignment-expression identity payloads should not hide OAuth user mutations."""
     controllers = tmp_path / "module" / "controllers"
