@@ -955,6 +955,34 @@ class Controller(http.Controller):
     )
 
 
+def test_flags_integration_credential_json_response(tmp_path: Path) -> None:
+    """JSON responses should flag integration credential-shaped keys."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/account/connector-key', auth='user', type='json')
+    def connector_key(self):
+        access_key = request.env['ir.config_parameter'].sudo().get_param('connector.access_key')
+        return request.make_json_response({'access_key': access_key, 'license_key': 'redacted'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-sensitive-token-response"
+        and f.severity == "medium"
+        and f.sink == "request.make_json_response"
+        for f in findings
+    )
+
+
 def test_flags_sensitive_token_keyword_make_json_response(tmp_path: Path) -> None:
     """Keyword response bodies should receive the same token response review."""
     controllers = tmp_path / "module" / "controllers"

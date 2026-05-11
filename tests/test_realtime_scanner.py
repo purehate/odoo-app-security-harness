@@ -33,6 +33,29 @@ class BusController(http.Controller):
     assert "odoo-realtime-sensitive-payload" in rule_ids
 
 
+def test_flags_integration_credential_bus_payload(tmp_path: Path) -> None:
+    """Bus payloads containing integration credentials should be sensitive."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "bus.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class BusController(http.Controller):
+    @http.route('/public/bus-credentials', auth='public')
+    def bus(self, **kwargs):
+        payload = {'access_key': kwargs.get('access_key'), 'license_key': kwargs.get('license_key')}
+        request.env['bus.bus']._sendone('public_notifications', payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+
+    assert any(finding.rule_id == "odoo-realtime-sensitive-payload" for finding in findings)
+
+
 def test_imported_route_decorator_public_bus_send_with_sensitive_payload(tmp_path: Path) -> None:
     """Imported route decorators should not hide public bus sends."""
     controllers = tmp_path / "module" / "controllers"

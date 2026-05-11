@@ -38,6 +38,24 @@ class Controller(http.Controller):
     assert "odoo-mail-tainted-recipients" in rule_ids
 
 
+def test_flags_integration_credential_message_body(tmp_path: Path) -> None:
+    """Chatter bodies mentioning integration credentials should be sensitive."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "ticket.py").write_text(
+        """
+class Ticket:
+    def notify(self):
+        return self.message_post(body=f"Connector key {self.access_key} license {self.license_key}")
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+
+    assert any(finding.rule_id == "odoo-mail-sensitive-body" for finding in findings)
+
+
 def test_imported_route_decorator_public_sudo_message_post_is_reported(tmp_path: Path) -> None:
     """Imported route decorators should not hide public chatter endpoints."""
     controllers = tmp_path / "module" / "controllers"

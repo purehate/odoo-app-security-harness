@@ -67,20 +67,32 @@ RESPONSE_FACTORY_SINKS = {
 HEADER_MUTATION_METHODS = {"add", "setdefault", "update"}
 SENSITIVE_COOKIE_MARKERS = ("session", "sid", "token", "auth", "csrf")
 SENSITIVE_RESPONSE_MARKERS = (
+    "access_key",
     "access_token",
     "api_key",
     "apikey",
     "auth_token",
+    "bearer_token",
+    "client_secret",
     "csrf_token",
+    "hmac_secret",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
     "password",
     "private_key",
     "refresh_token",
     "reset_password_token",
     "secret",
+    "secret_key",
     "session_id",
     "session_token",
+    "signature_secret",
     "signup_token",
+    "signing_key",
     "token",
+    "totp_secret",
+    "webhook_secret",
 )
 FILE_OFFLOAD_HEADERS = {"x-accel-redirect", "x-sendfile"}
 MIN_HSTS_MAX_AGE_SECONDS = 15_552_000

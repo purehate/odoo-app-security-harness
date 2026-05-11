@@ -41,6 +41,23 @@ def test_sensitive_access_tokens_are_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-mail-template-sensitive-token" for f in findings)
 
 
+def test_integration_credential_fields_are_reported(tmp_path: Path) -> None:
+    """Templates that include integration credential fields should be review leads."""
+    xml = tmp_path / "mail.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="template_connector_credentials" model="mail.template">
+    <field name="body_html">${object.access_key} ${object.license_key} ${object.client_secret}</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = MailTemplateScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-mail-template-sensitive-token" for f in findings)
+
+
 def test_sensitive_access_tokens_in_csv_are_reported(tmp_path: Path) -> None:
     """CSV mail.template rows should be scanned like XML records."""
     data = tmp_path / "module" / "data"

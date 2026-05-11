@@ -36,17 +36,35 @@ NOTIFY_METHODS = {
 }
 TAINTED_ARG_NAMES = {"channel", "channels", "kwargs", "kw", "message", "options", "payload", "post", "user_id"}
 SENSITIVE_PAYLOAD_HINTS = {
+    "access_key",
     "access_token",
     "amount_total",
+    "api_key",
+    "apikey",
+    "auth_token",
     "bank",
+    "bearer_token",
+    "client_secret",
+    "csrf_token",
     "email",
+    "hmac_secret",
     "invoice",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
     "password",
     "partner_id",
     "phone",
+    "private_key",
     "secret",
+    "secret_key",
+    "session_token",
+    "signature_secret",
+    "signing_key",
     "ssn",
     "token",
+    "totp_secret",
+    "webhook_secret",
 }
 PUBLIC_CHANNEL_HINTS = {"broadcast", "global", "public", "website"}
 ROUTE_ID_ARG_RE = re.compile(r"(?:^id$|_ids?$)")
