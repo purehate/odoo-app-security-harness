@@ -1214,6 +1214,90 @@ class Settings(models.TransientModel):
     assert any(f.key == "jwt.signing_key" for f in findings)
 
 
+def test_local_constant_config_key_default_and_model_are_resolved(tmp_path: Path) -> None:
+    """Function-local constants should label config reads and hardcoded defaults."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import models
+
+class Settings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    def get_values(self):
+        config_model = 'ir.config_parameter'
+        secret_key = 'payment.provider.api_key'
+        fallback = 'sk_live_hardcoded_123456'
+        Config = self.env[config_model].sudo()
+        return Config.get_param(secret_key, fallback)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-config-param-sudo-sensitive-read" in rule_ids
+    assert "odoo-config-param-sensitive-default" in rule_ids
+    assert any(f.key == "payment.provider.api_key" for f in findings)
+
+
+def test_local_constant_config_write_key_and_value_are_resolved(tmp_path: Path) -> None:
+    """Function-local constants should label sensitive config writes."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import SUPERUSER_ID, models
+
+class Settings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    def set_values(self):
+        root = SUPERUSER_ID
+        config_model = 'ir.config_parameter'
+        secret_key = 'jwt.signing_key'
+        secret_value = 'dev-secret-token'
+        Config = self.env[config_model].with_user(root)
+        Config.set_param(secret_key, secret_value)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-config-param-sudo-write" in rule_ids
+    assert "odoo-config-param-hardcoded-sensitive-write" in rule_ids
+    assert any(f.key == "jwt.signing_key" for f in findings)
+
+
+def test_local_constant_security_toggle_write_is_resolved(tmp_path: Path) -> None:
+    """Function-local security toggle constants should still be reviewed."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import models
+
+class Settings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    def set_values(self):
+        toggle_key = 'auth.signup.allow_uninvited'
+        enabled = True
+        self.env['ir.config_parameter'].sudo().set_param(toggle_key, enabled)
+""",
+        encoding="utf-8",
+    )
+
+    assert any(
+        finding.rule_id == "odoo-config-param-security-toggle-enabled"
+        for finding in scan_config_parameters(tmp_path)
+    )
+
+
 def test_safe_internal_config_read_is_ignored(tmp_path: Path) -> None:
     """Non-sensitive internal config reads should not create noise."""
     models = tmp_path / "module" / "models"
