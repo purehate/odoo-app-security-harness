@@ -69,6 +69,11 @@ SECRET_ASSIGNMENT_RE = re.compile(
     rf"['\"]?(?P<name>{SECRET_KEY_PATTERN})(?P<suffix>[\w.-]*)['\"]?\s*[:=]\s*['\"](?P<value>[^'\"]{{8,}})['\"]",
     re.IGNORECASE,
 )
+YAML_SECRET_ASSIGNMENT_RE = re.compile(
+    rf"^\s*-?\s*['\"]?(?P<name>{SECRET_KEY_PATTERN})(?P<suffix>[\w.-]*)['\"]?\s*:\s*"
+    r"(?P<value>[^#\s'\"][^#\n]*)",
+    re.IGNORECASE,
+)
 CONFIG_PARAMETER_CALL_RE = re.compile(
     rf"\.set_param\(\s*['\"](?P<key>[^'\"]*(?:{SECRET_KEY_PATTERN})[^'\"]*)['\"]"
     r"\s*,\s*['\"](?P<value>[^'\"]{8,})['\"]",
@@ -114,6 +119,8 @@ class SecretScanner:
             return []
 
         self._scan_literal_assignments(content)
+        if self.path.suffix.lower() in {".yaml", ".yml"}:
+            self._scan_yaml_unquoted_assignments(content)
         self._scan_private_key_blocks(content)
         if self.path.suffix.lower() == ".xml":
             self._scan_config_parameter_xml(content)
@@ -156,6 +163,26 @@ class SecretScanner:
                     secret_kind=key,
                     redacted=_redact(value),
                 )
+
+    def _scan_yaml_unquoted_assignments(self, content: str) -> None:
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            match = YAML_SECRET_ASSIGNMENT_RE.search(line)
+            if not match:
+                continue
+            value = match.group("value").strip().rstrip(",")
+            if _looks_placeholder(value) or value.startswith(("$", "{{", "<")):
+                continue
+            if _entropy(value) < 3.0 and len(value) < 20:
+                continue
+            self._add(
+                "odoo-secret-hardcoded-value",
+                "Hardcoded secret-like value",
+                "high",
+                line_number,
+                f"Secret-like YAML assignment '{match.group('name')}' contains committed value {_redact(value)}; rotate and move to environment/config storage",
+                secret_kind=match.group("name").lower(),
+                redacted=_redact(value),
+            )
 
     def _scan_private_key_blocks(self, content: str) -> None:
         for line_number, line in enumerate(content.splitlines(), start=1):
