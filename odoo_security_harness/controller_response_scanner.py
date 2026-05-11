@@ -175,6 +175,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     self.route_names.add(alias.asname or alias.name)
                 elif alias.name in {"make_json_response", "make_response", "send_file"}:
                     self.function_aliases[alias.asname or alias.name] = alias.name
+                elif alias.name == "Response":
+                    self.function_aliases[alias.asname or alias.name] = "Response"
         elif node.module == "odoo.addons.web.controllers.main":
             for alias in node.names:
                 if alias.name == "send_file":
@@ -183,6 +185,10 @@ class ControllerResponseScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "redirect":
                     self.function_aliases[alias.asname or alias.name] = "werkzeug.utils.redirect"
+        elif node.module in {"werkzeug.wrappers", "werkzeug.wrappers.response"}:
+            for alias in node.names:
+                if alias.name == "Response":
+                    self.function_aliases[alias.asname or alias.name] = "Response"
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
