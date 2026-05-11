@@ -206,6 +206,17 @@ class MailTemplateScanner:
                 "body_html",
             )
 
+        if _contains_insecure_http_url(body):
+            self._add(
+                "odoo-mail-template-insecure-url",
+                "Mail template contains insecure HTTP URL",
+                "medium",
+                line,
+                "mail.template body_html contains a literal http:// URL; use HTTPS or same-origin links to avoid downgrade, interception, and referrer leakage risk",
+                template_id,
+                "body_html",
+            )
+
         token_text = _join_fields(fields, TOKEN_EXPRESSION_FIELDS)
         if _references_sensitive_value(token_text):
             token_field = _first_sensitive_field(fields, TOKEN_EXPRESSION_FIELDS) or "body_html"
@@ -392,6 +403,10 @@ def _contains_external_link(value: str) -> bool:
 
 def _contains_dangerous_url_scheme(value: str) -> bool:
     return bool(DANGEROUS_URL_SCHEME_RE.search(value))
+
+
+def _contains_insecure_http_url(value: str) -> bool:
+    return bool(re.search(r"\bhttp://", value, re.IGNORECASE))
 
 
 def _contains_privileged_expression(value: str) -> bool:

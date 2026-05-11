@@ -58,6 +58,45 @@ def test_integration_credential_fields_are_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-mail-template-sensitive-token" for f in findings)
 
 
+def test_insecure_http_url_is_reported(tmp_path: Path) -> None:
+    """Outbound email links should not downgrade users to cleartext HTTP."""
+    xml = tmp_path / "mail.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="template_http_link" model="mail.template">
+    <field name="body_html"><![CDATA[<a href="http://portal.example.com/pay">Pay</a>]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = MailTemplateScanner(xml).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-mail-template-insecure-url"
+        and f.field == "body_html"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_https_url_is_ignored_for_insecure_mail_url(tmp_path: Path) -> None:
+    """HTTPS outbound email links should not create cleartext URL findings."""
+    xml = tmp_path / "mail.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="template_https_link" model="mail.template">
+    <field name="body_html"><![CDATA[<a href="https://portal.example.com/pay">Pay</a>]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = MailTemplateScanner(xml).scan_file()
+
+    assert not any(f.rule_id == "odoo-mail-template-insecure-url" for f in findings)
+
+
 def test_sensitive_access_tokens_in_csv_are_reported(tmp_path: Path) -> None:
     """CSV mail.template rows should be scanned like XML records."""
     data = tmp_path / "module" / "data"
