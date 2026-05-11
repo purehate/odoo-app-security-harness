@@ -713,7 +713,15 @@ def _redirect_location_arg(node: ast.Call) -> ast.AST | None:
     if node.args:
         return node.args[0]
     for keyword in node.keywords:
-        if keyword.arg in {"location", "url", "redirect_url"}:
+        if keyword.arg in {
+            "location",
+            "next_url",
+            "redirect_url",
+            "return_url",
+            "success_url",
+            "target_url",
+            "url",
+        }:
             return keyword.value
     return None
 

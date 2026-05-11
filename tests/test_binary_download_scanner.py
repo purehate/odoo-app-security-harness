@@ -1228,6 +1228,32 @@ class Redirect(http.Controller):
     assert any(f.rule_id == "odoo-binary-tainted-web-content-redirect" for f in findings)
 
 
+def test_flags_alias_keyword_tainted_web_content_redirects(tmp_path: Path) -> None:
+    """Common redirect keyword aliases should still expose web content redirects."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "redirect.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Redirect(http.Controller):
+    @http.route('/public/content', auth='public')
+    def content(self, **kwargs):
+        if kwargs.get('mode') == 'target':
+            return request.redirect(target_url='/web/content/%s?download=1' % kwargs.get('id'))
+        if kwargs.get('mode') == 'next':
+            return request.redirect(next_url='/web/image/%s' % kwargs.get('image_id'))
+        return request.redirect(success_url='/web/content/%s?download=1' % kwargs.get('fallback_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert sum(1 for finding in findings if finding.rule_id == "odoo-binary-tainted-web-content-redirect") == 3
+
+
 def test_flags_route_path_id_web_content_redirect(tmp_path: Path) -> None:
     """Route path IDs should stay tainted when building /web/content redirects."""
     controllers = tmp_path / "module" / "controllers"
