@@ -271,6 +271,59 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
 
 
+def test_flags_common_redirect_parameter_aliases(tmp_path: Path) -> None:
+    """Common redirect parameter aliases should be treated as request-controlled."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/go', auth='public')
+    def go(self, target_url=None, next_url=None, success_url=None):
+        if target_url:
+            return request.redirect(target_url)
+        if next_url:
+            return request.redirect(url=next_url)
+        return request.redirect(location=success_url)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert sum(1 for finding in findings if finding.rule_id == "odoo-controller-open-redirect") == 3
+
+
+def test_flags_common_redirect_keyword_aliases(tmp_path: Path) -> None:
+    """Redirect keyword aliases should be inspected for request-derived values."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/go', auth='public')
+    def go(self, **kwargs):
+        target = kwargs.get('target')
+        if kwargs.get('mode') == 'next':
+            return request.redirect(next_url=target)
+        if kwargs.get('mode') == 'success':
+            return request.redirect(success_url=target)
+        return request.redirect(target_url=target)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert sum(1 for finding in findings if finding.rule_id == "odoo-controller-open-redirect") == 3
+
+
 def test_aliased_werkzeug_redirect_is_reported(tmp_path: Path) -> None:
     """Aliased Werkzeug redirect helpers should still scan tainted targets."""
     controllers = tmp_path / "module" / "controllers"

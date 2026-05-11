@@ -28,18 +28,31 @@ TAINTED_ARG_NAMES = {
     "download",
     "filename",
     "next",
+    "next_url",
     "path",
     "post",
     "redirect",
     "redirect_url",
     "return_url",
+    "success_url",
+    "target_url",
     "url",
     "kwargs",
     "kw",
 }
 ROUTE_ID_ARG_RE = re.compile(r"(?:^id$|_ids?$)")
 REDIRECT_SINKS = {"redirect", "request.redirect", "werkzeug.utils.redirect", "werkzeug.redirect"}
-REDIRECT_TARGET_KEYWORDS = {"url", "location", "redirect_url", "target"}
+REDIRECT_TARGET_KEYWORDS = {
+    "callback_url",
+    "location",
+    "next_url",
+    "redirect_url",
+    "return_url",
+    "success_url",
+    "target",
+    "target_url",
+    "url",
+}
 FILE_RESPONSE_SINKS = {"send_file", "http.send_file", "request.send_file"}
 FILE_RESPONSE_TARGET_KEYWORDS = {"filename", "file_path", "path", "src"}
 FILE_READ_METHODS = {"read_bytes", "read_text"}
