@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 ADMIN_GROUP_RE = re.compile(r"\bbase\.(group_system|group_erp_manager)\b")
@@ -179,7 +180,8 @@ class XmlDataScanner:
                 "Executable server action is broadly reachable",
                 "high",
                 self._line_for_record(record),
-                "ir.actions.server uses state='code' and is reachable by broad/no groups; verify buttons/menus cannot expose arbitrary Python execution",
+                "ir.actions.server uses state='code' and is reachable by broad/no groups; "
+                "verify buttons/menus cannot expose arbitrary Python execution",
                 "ir.actions.server",
                 record_id,
             )
@@ -190,7 +192,8 @@ class XmlDataScanner:
                 "Executable server action targets sensitive model",
                 "high",
                 self._line_for_record(record),
-                f"ir.actions.server uses state='code' on sensitive model '{target_model}'; verify action bindings, groups, and record-rule boundaries",
+                f"ir.actions.server uses state='code' on sensitive model '{target_model}'; "
+                "verify action bindings, groups, and record-rule boundaries",
                 "ir.actions.server",
                 record_id,
             )
@@ -203,7 +206,8 @@ class XmlDataScanner:
                 "Server action mutates sensitive model",
                 "high",
                 self._line_for_record(record),
-                f"ir.actions.server code mutates sensitive model '{sensitive_mutation_model}'; verify actor, groups, trigger scope, and audit trail",
+                f"ir.actions.server code mutates sensitive model '{sensitive_mutation_model}'; "
+                "verify actor, groups, trigger scope, and audit trail",
                 "ir.actions.server",
                 record_id,
             )
@@ -214,7 +218,8 @@ class XmlDataScanner:
                 "Server action code performs dynamic evaluation",
                 "critical",
                 self._line_for_record(record),
-                "ir.actions.server code contains eval/exec/safe_eval; verify no user-controlled expression can reach it",
+                "ir.actions.server code contains eval/exec/safe_eval; "
+                "verify no user-controlled expression can reach it",
                 "ir.actions.server",
                 record_id,
             )
@@ -225,7 +230,8 @@ class XmlDataScanner:
                 "Server action performs sudo mutation",
                 "high",
                 self._line_for_record(record),
-                "ir.actions.server code chains sudo()/with_user(SUPERUSER_ID) into write/create/unlink; verify record rules and company isolation are not bypassed",
+                "ir.actions.server code chains sudo()/with_user(SUPERUSER_ID) into write/create/unlink; "
+                "verify record rules and company isolation are not bypassed",
                 "ir.actions.server",
                 record_id,
             )
@@ -236,7 +242,8 @@ class XmlDataScanner:
                 "Server action performs HTTP request without timeout",
                 "medium",
                 self._line_for_record(record),
-                "ir.actions.server code performs outbound HTTP without timeout; review SSRF, retry, and worker exhaustion risk",
+                "ir.actions.server code performs outbound HTTP without timeout; "
+                "review SSRF, retry, and worker exhaustion risk",
                 "ir.actions.server",
                 record_id,
             )
@@ -247,7 +254,8 @@ class XmlDataScanner:
                 "Server action disables TLS verification",
                 "high",
                 self._line_for_record(record),
-                "ir.actions.server code passes verify=False to outbound HTTP; install/update automation should not permit man-in-the-middle attacks",
+                "ir.actions.server code passes verify=False to outbound HTTP; "
+                "install/update automation should not permit man-in-the-middle attacks",
                 "ir.actions.server",
                 record_id,
             )
@@ -258,7 +266,8 @@ class XmlDataScanner:
                 "Server action uses cleartext HTTP URL",
                 "medium",
                 self._line_for_record(record),
-                "ir.actions.server code targets a literal http:// URL; use HTTPS to protect automation payloads and response data from interception or downgrade",
+                "ir.actions.server code targets a literal http:// URL; use HTTPS to protect "
+                "automation payloads and response data from interception or downgrade",
                 "ir.actions.server",
                 record_id,
             )
@@ -268,7 +277,8 @@ class XmlDataScanner:
                 "Server action URL embeds credentials",
                 "high",
                 self._line_for_record(record),
-                "ir.actions.server code embeds username, password, or token material in an outbound HTTP URL authority; move credentials to server-side configuration",
+                "ir.actions.server code embeds username, password, or token material in an "
+                "outbound HTTP URL authority; move credentials to server-side configuration",
                 "ir.actions.server",
                 record_id,
             )
@@ -292,7 +302,8 @@ class XmlDataScanner:
                 "Cron executes as admin/root user",
                 "high",
                 line,
-                "ir.cron runs under admin/root user; verify the scheduled job cannot process attacker-controlled records or external input with elevated privileges",
+                "ir.cron runs under admin/root user; verify the scheduled job cannot process "
+                "attacker-controlled records or external input with elevated privileges",
                 "ir.cron",
                 record_id,
             )
@@ -302,7 +313,8 @@ class XmlDataScanner:
                     "Cron executes Python as admin/root",
                     "high",
                     line,
-                    "ir.cron uses state='code' under admin/root user; verify it cannot process attacker-controlled records or external input",
+                    "ir.cron uses state='code' under admin/root user; verify it cannot process "
+                    "attacker-controlled records or external input",
                     "ir.cron",
                     record_id,
                 )
@@ -324,7 +336,8 @@ class XmlDataScanner:
                 "Cron disables TLS verification",
                 "high",
                 line,
-                "ir.cron code passes verify=False to outbound HTTP; scheduled integrations should not permit man-in-the-middle attacks",
+                "ir.cron code passes verify=False to outbound HTTP; "
+                "scheduled integrations should not permit man-in-the-middle attacks",
                 "ir.cron",
                 record_id,
             )
@@ -335,7 +348,8 @@ class XmlDataScanner:
                 "Cron uses cleartext HTTP URL",
                 "medium",
                 line,
-                "ir.cron code targets a literal http:// URL; use HTTPS to protect scheduled integration payloads and response data from interception or downgrade",
+                "ir.cron code targets a literal http:// URL; use HTTPS to protect scheduled "
+                "integration payloads and response data from interception or downgrade",
                 "ir.cron",
                 record_id,
             )
@@ -345,7 +359,8 @@ class XmlDataScanner:
                 "Cron URL embeds credentials",
                 "high",
                 line,
-                "ir.cron code embeds username, password, or token material in an outbound HTTP URL authority; move credentials to server-side configuration",
+                "ir.cron code embeds username, password, or token material in an outbound HTTP "
+                "URL authority; move credentials to server-side configuration",
                 "ir.cron",
                 record_id,
             )
@@ -356,7 +371,8 @@ class XmlDataScanner:
                 "Cron catches up missed executions",
                 "medium",
                 line,
-                "ir.cron has doall=True; after downtime it may replay missed jobs in bulk, causing duplicate side effects or load spikes",
+                "ir.cron has doall=True; after downtime it may replay missed jobs in bulk, "
+                "causing duplicate side effects or load spikes",
                 "ir.cron",
                 record_id,
             )
@@ -381,7 +397,8 @@ class XmlDataScanner:
                     "Cron appears to perform external sync without visible guardrails",
                     "low",
                     line,
-                    "ir.cron name/function/model suggests external import or sync; verify timeouts, batching, locking, and retry safety",
+                    "ir.cron name/function/model suggests external import or sync; "
+                    "verify timeouts, batching, locking, and retry safety",
                     "ir.cron",
                     record_id,
                 )
@@ -399,7 +416,8 @@ class XmlDataScanner:
                 "Mail/discuss channel allows public users",
                 "medium",
                 line,
-                "Channel allows public users; verify this is intentional and cannot expose internal messages or metadata",
+                "Channel allows public users; verify this is intentional and cannot expose "
+                "internal messages or metadata",
                 model,
                 record_id,
             )
@@ -416,7 +434,9 @@ class XmlDataScanner:
                 "XML data assigns user to administrator group",
                 "critical",
                 line,
-                "res.users XML data assigns groups_id/groups to base.group_system or base.group_erp_manager; verify module install/update cannot grant unintended administrator access",
+                "res.users XML data assigns groups_id/groups to base.group_system or "
+                "base.group_erp_manager; verify module install/update cannot grant unintended "
+                "administrator access",
                 "res.users",
                 record_id,
             )
@@ -435,7 +455,8 @@ class XmlDataScanner:
             "XML data changes implied group privileges",
             "critical" if ADMIN_GROUP_RE.search(implied_groups) else "high",
             line,
-            "res.groups XML data writes implied_ids toward internal/administrator groups; verify no public, portal, or signup-assigned group inherits unintended privileges",
+            "res.groups XML data writes implied_ids toward internal/administrator groups; "
+            "verify no public, portal, or signup-assigned group inherits unintended privileges",
             "res.groups",
             record_id,
         )
@@ -453,7 +474,9 @@ class XmlDataScanner:
                 "XML data enables security-sensitive config parameter",
                 "high",
                 line,
-                f"Module data sets ir.config_parameter '{key}' to '{value}'; verify install/update cannot silently weaken signup, database manager, or generated-link security posture",
+                f"Module data sets ir.config_parameter '{key}' to '{value}'; verify "
+                "install/update cannot silently weaken signup, database manager, or "
+                "generated-link security posture",
                 "ir.config_parameter",
                 record_id,
             )
@@ -463,7 +486,8 @@ class XmlDataScanner:
                 "XML data sets insecure base URL",
                 "medium",
                 line,
-                "Module data sets web.base.url to HTTP or a local host; generated portal, OAuth, payment, and password-reset links should use the public HTTPS origin",
+                "Module data sets web.base.url to HTTP or a local host; generated portal, OAuth, "
+                "payment, and password-reset links should use the public HTTPS origin",
                 "ir.config_parameter",
                 record_id,
             )
@@ -473,7 +497,8 @@ class XmlDataScanner:
                 "XML data base URL embeds credentials",
                 "high",
                 line,
-                "Module data sets web.base.url with username, password, or token material; generated portal, OAuth, payment, and password-reset links can leak those credentials",
+                "Module data sets web.base.url with username, password, or token material; "
+                "generated portal, OAuth, payment, and password-reset links can leak those credentials",
                 "ir.config_parameter",
                 record_id,
             )
@@ -493,7 +518,8 @@ class XmlDataScanner:
                 "XML mail server commits SMTP credentials",
                 "high",
                 line,
-                "ir.mail_server data includes a literal SMTP password; move outbound mail credentials to deployment secrets or administrator-managed configuration",
+                "ir.mail_server data includes a literal SMTP password; move outbound mail "
+                "credentials to deployment secrets or administrator-managed configuration",
                 "ir.mail_server",
                 record_id,
             )
@@ -503,7 +529,8 @@ class XmlDataScanner:
                 "XML mail server does not require TLS",
                 "medium",
                 line,
-                "ir.mail_server data configures outbound SMTP without TLS; credentials and notification content may cross the network in cleartext",
+                "ir.mail_server data configures outbound SMTP without TLS; credentials and "
+                "notification content may cross the network in cleartext",
                 "ir.mail_server",
                 record_id,
             )
@@ -520,7 +547,8 @@ class XmlDataScanner:
                 "XML function mutates security-sensitive model",
                 "high",
                 line,
-                f"XML <function> calls {model}.{name} during data loading; verify module install/update cannot silently alter security metadata or sensitive defaults",
+                f"XML <function> calls {model}.{name} during data loading; verify module "
+                "install/update cannot silently alter security metadata or sensitive defaults",
                 model,
                 "",
             )
@@ -531,7 +559,8 @@ class XmlDataScanner:
                 "XML function assigns user groups",
                 "critical" if ADMIN_GROUP_RE.search(text) else "high",
                 line,
-                "XML <function> creates or writes res.users group assignments; verify module install/update cannot grant administrator or internal access unexpectedly",
+                "XML <function> creates or writes res.users group assignments; verify module "
+                "install/update cannot grant administrator or internal access unexpectedly",
                 model,
                 "",
             )
@@ -547,7 +576,9 @@ class XmlDataScanner:
                 "XML function changes implied group privileges",
                 "high",
                 line,
-                "XML <function> creates or writes res.groups implied_ids toward internal/administrator groups; verify no public, portal, or signup-assigned group inherits unintended privileges",
+                "XML <function> creates or writes res.groups implied_ids toward internal/"
+                "administrator groups; verify no public, portal, or signup-assigned group "
+                "inherits unintended privileges",
                 model,
                 "",
             )
@@ -772,6 +803,7 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
+        _mark_static_dict_update(node, self.constants)
         method = _call_name(node.func).rsplit(".", 1)[-1]
         if method in {"write", "create", "unlink"} and _is_elevated_expr(
             node.func, self.elevated_names, self.constants, self.superuser_names
@@ -1087,6 +1119,59 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
     return None
 
 
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(node.keys, node.values, strict=True):
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            items.append((resolved_key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
+
+
 def _call_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -1126,6 +1211,8 @@ def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 

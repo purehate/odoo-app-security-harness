@@ -191,6 +191,28 @@ requests.post(record.callback_url, **HTTP_OPTIONS)
     assert not any(f.rule_id == "odoo-xml-server-action-http-no-timeout" for f in findings)
 
 
+def test_server_action_updated_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """XML server actions should resolve updated static **kwargs timeout values."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_static_timeout" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+HTTP_OPTIONS = {}
+HTTP_OPTIONS.update({'timeout': 10})
+requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert not any(f.rule_id == "odoo-xml-server-action-http-no-timeout" for f in findings)
+
+
 def test_server_action_tls_verification_disabled(tmp_path: Path) -> None:
     """Executable server actions should surface disabled HTTP TLS verification."""
     xml = tmp_path / "actions.xml"
@@ -245,6 +267,28 @@ def test_server_action_dict_union_static_kwargs_tls_verify_disabled(tmp_path: Pa
     <field name="code"><![CDATA[
 BASE_OPTIONS = {'timeout': 10}
 HTTP_OPTIONS = BASE_OPTIONS | {'verify': False}
+requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-server-action-tls-verify-disabled" for f in findings)
+
+
+def test_server_action_updated_static_kwargs_tls_verify_disabled(tmp_path: Path) -> None:
+    """XML server actions should flag verify=False from updated static **kwargs."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_http_tls_kwargs" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+HTTP_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS.update({'verify': False})
 requests.post(record.callback_url, **HTTP_OPTIONS)
     ]]></field>
   </record>
@@ -886,6 +930,28 @@ requests.get(record.url, **HTTP_OPTIONS)
     assert not any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
 
 
+def test_cron_updated_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """XML cron inline Python should resolve updated static **kwargs timeout values."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_static_timeout" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+HTTP_OPTIONS = {}
+HTTP_OPTIONS.update({'timeout': 10})
+requests.get(record.url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert not any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
+
+
 def test_cron_tls_verification_disabled(tmp_path: Path) -> None:
     """Cron inline Python should surface disabled HTTP TLS verification."""
     xml = tmp_path / "cron.xml"
@@ -940,6 +1006,28 @@ def test_cron_dict_union_static_kwargs_tls_verify_disabled(tmp_path: Path) -> No
     <field name="code"><![CDATA[
 BASE_OPTIONS = {'timeout': 10}
 HTTP_OPTIONS = BASE_OPTIONS | {'verify': False}
+requests.get(record.url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-cron-tls-verify-disabled" for f in findings)
+
+
+def test_cron_updated_static_kwargs_tls_verify_disabled(tmp_path: Path) -> None:
+    """XML cron inline Python should flag verify=False from updated static **kwargs."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_http_tls_kwargs" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+HTTP_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS.update({'verify': False})
 requests.get(record.url, **HTTP_OPTIONS)
     ]]></field>
   </record>
@@ -1203,7 +1291,8 @@ def test_function_user_group_assignment(tmp_path: Path) -> None:
     xml = tmp_path / "functions.xml"
     xml.write_text(
         """<odoo>
-  <function model="res.users" name="write" eval="([ref('base.user_demo')], {'groups_id': [(4, ref('base.group_system'))]})"/>
+  <function model="res.users" name="write"
+            eval="([ref('base.user_demo')], {'groups_id': [(4, ref('base.group_system'))]})"/>
 </odoo>""",
         encoding="utf-8",
     )
@@ -1220,7 +1309,8 @@ def test_function_group_implies_internal_privilege(tmp_path: Path) -> None:
     xml = tmp_path / "functions.xml"
     xml.write_text(
         """<odoo>
-  <function model="res.groups" name="write" eval="([ref('my_module.group_signup')], {'implied_ids': [(4, ref('base.group_user'))]})"/>
+  <function model="res.groups" name="write"
+            eval="([ref('my_module.group_signup')], {'implied_ids': [(4, ref('base.group_user'))]})"/>
 </odoo>""",
         encoding="utf-8",
     )
