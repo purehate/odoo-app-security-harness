@@ -376,14 +376,14 @@ class WebsiteFormScanner:
         return ""
 
     def _has_file_input(self, form: ElementTree.Element) -> bool:
-        return any(element.get("type", "").lower() == "file" for element in form.iter("input"))
+        return any(_element_attribute(element, "type").lower() == "file" for element in form.iter("input"))
 
     def _active_file_accept(self, form: ElementTree.Element) -> str:
         active_tokens: list[str] = []
         for element in form.iter("input"):
-            if element.get("type", "").lower() != "file":
+            if _element_attribute(element, "type").lower() != "file":
                 continue
-            active_tokens.extend(_active_accept_tokens(element.get("accept", "")))
+            active_tokens.extend(_active_accept_tokens(_element_attribute(element, "accept")))
         return ", ".join(dict.fromkeys(active_tokens))
 
     def _has_hidden_model_selector(self, form: ElementTree.Element) -> bool:
@@ -690,11 +690,15 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
 
 
 def _field_name(element: ElementTree.Element) -> str:
-    for attr in ("name", "t-att-name", "t-attf-name"):
-        value = element.get(attr, "").strip()
+    return _element_attribute(element, "name")
+
+
+def _element_attribute(element: ElementTree.Element, attr: str) -> str:
+    for candidate in (attr, f"t-att-{attr}", f"t-attf-{attr}"):
+        value = element.get(candidate, "").strip()
         if value:
             return value.strip("'\"")
-    mapped_value = _mapped_attribute_value(element.get("t-att", ""), "name")
+    mapped_value = _mapped_attribute_value(element.get("t-att", ""), attr)
     if mapped_value:
         return mapped_value.strip("'\"")
     return ""

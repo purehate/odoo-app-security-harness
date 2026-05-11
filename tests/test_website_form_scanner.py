@@ -127,6 +127,34 @@ def test_flags_active_file_accept_on_website_form_upload(tmp_path: Path) -> None
     )
 
 
+def test_flags_qweb_mapped_file_upload_accept(tmp_path: Path) -> None:
+    """Generic QWeb t-att mappings can hide file inputs and active accept lists."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "upload.xml").write_text(
+        """<odoo>
+  <template id="upload">
+    <form action="/website/form/helpdesk.ticket">
+      <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+      <input t-att="{'type': 'file', 'name': 'attachment', 'accept': 'image/svg+xml,.html'}"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-website-form-file-upload" in rule_ids
+    assert any(
+        f.rule_id == "odoo-website-form-active-file-upload"
+        and "image/svg+xml" in f.message
+        and ".html" in f.message
+        for f in findings
+    )
+
+
 def test_flags_missing_csrf_token_on_post_form(tmp_path: Path) -> None:
     """Public website model-create forms should carry a CSRF token."""
     views = tmp_path / "module" / "views"
