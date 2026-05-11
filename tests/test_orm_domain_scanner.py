@@ -379,6 +379,32 @@ class Search(http.Controller):
     assert any(f.rule_id == "odoo-orm-domain-tainted-search" and f.severity == "high" for f in findings)
 
 
+def test_dict_union_public_route_options_tainted_search_is_high(tmp_path: Path) -> None:
+    """Dict-union **route options should preserve public ORM-domain severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public'}
+ROUTE_OPTIONS = BASE_OPTIONS | {'route': '/public/search'}
+
+class Search(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def search(self, **kwargs):
+        domain = kwargs.get('domain')
+        return request.env['res.partner'].search(domain)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_domains(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-domain-tainted-search" and f.severity == "high" for f in findings)
+
+
 def test_request_alias_public_tainted_sudo_search_domain(tmp_path: Path) -> None:
     """Aliased request imports should still taint sudo search domains."""
     controllers = tmp_path / "module" / "controllers"
