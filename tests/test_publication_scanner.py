@@ -231,6 +231,21 @@ def test_portal_share_csv_sensitive_target_is_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-publication-portal-share-sensitive" for f in findings)
 
 
+def test_portal_share_csv_colon_res_model_sensitive_target_is_reported(tmp_path: Path) -> None:
+    """CSV portal share records exported with colon headers should resolve model refs."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "portal_share.csv").write_text(
+        "id,res_model:id,access_warning\n"
+        "share_provider,payment.model_payment_provider,\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+
+    assert any(f.rule_id == "odoo-publication-portal-share-sensitive" for f in findings)
+
+
 def test_sensitive_model_default_website_published_is_reported(tmp_path: Path) -> None:
     """Sensitive models should not default records into website publication."""
     models = tmp_path / "module" / "models"
