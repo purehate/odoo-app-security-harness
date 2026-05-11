@@ -76,6 +76,9 @@ ACTIVE_ATTACHMENT_MIMETYPES = {
     "text/javascript",
 }
 ACTIVE_ATTACHMENT_EXTENSIONS = (".htm", ".html", ".js", ".mjs", ".svg", ".xhtml")
+DANGEROUS_ATTACHMENT_URL_RE = re.compile(
+    r"(?i)^\s*(?:javascript:|vbscript:|file:|data:(?:text/html|image/svg\+xml|application/(?:javascript|xhtml\+xml)))"
+)
 SENSITIVE_ATTACHMENT_NAME_MARKERS = (
     "access_key",
     "access_token",
@@ -346,6 +349,17 @@ class AttachmentScanner(ast.NodeVisitor):
                 route.display_path(),
                 sink,
             )
+        unsafe_url = _dangerous_attachment_url(url, constants)
+        if unsafe_url:
+            self._add(
+                "odoo-attachment-unsafe-url-scheme",
+                "Attachment URL uses dangerous scheme",
+                "high",
+                node.lineno,
+                f"ir.attachment.create stores URL '{unsafe_url}' with an executable or local-file scheme; restrict attachment links to safe local routes or reviewed HTTPS destinations",
+                route.display_path(),
+                sink,
+            )
         active_content = _active_attachment_content(values, constants)
         if active_content:
             self._add(
@@ -427,6 +441,17 @@ class AttachmentScanner(ast.NodeVisitor):
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
                 "ir.attachment.write stores a request-derived URL; validate allowed schemes, trusted hosts, portal visibility, and whether users can be sent to untrusted document links",
+                route.display_path(),
+                sink,
+            )
+        unsafe_url = _dangerous_attachment_url(url, constants)
+        if unsafe_url:
+            self._add(
+                "odoo-attachment-unsafe-url-scheme",
+                "Attachment URL uses dangerous scheme",
+                "high",
+                node.lineno,
+                f"ir.attachment.write stores URL '{unsafe_url}' with an executable or local-file scheme; restrict attachment links to safe local routes or reviewed HTTPS destinations",
                 route.display_path(),
                 sink,
             )
@@ -1067,6 +1092,13 @@ def _sensitive_attachment_name_evidence(values: dict[str, ast.AST], constants: d
         if text and any(marker in text for marker in SENSITIVE_ATTACHMENT_NAME_MARKERS):
             evidence.append(f"{field}={text}")
     return ", ".join(evidence)
+
+
+def _dangerous_attachment_url(node: ast.AST | None, constants: dict[str, ast.AST]) -> str:
+    value = _literal_string(node, constants).strip()
+    if value and DANGEROUS_ATTACHMENT_URL_RE.match(value):
+        return value
+    return ""
 
 
 def _looks_route_id_arg(name: str) -> bool:

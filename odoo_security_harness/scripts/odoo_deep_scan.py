@@ -5458,6 +5458,17 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "attachment_unsafe_url_scheme",
+        (
+            "odoo-attachment-unsafe-url-scheme",
+            "attachment url uses dangerous scheme",
+            "ir.attachment.create stores url",
+            "ir.attachment.write stores url",
+            "executable or local-file scheme",
+            "safe local routes or reviewed https destinations",
+        ),
+    ),
+    (
         "attachment_tainted_lookup",
         (
             "odoo-attachment-tainted-lookup",

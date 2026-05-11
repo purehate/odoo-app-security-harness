@@ -446,6 +446,67 @@ class AttachmentBuilder(models.Model):
     )
 
 
+def test_unsafe_attachment_url_scheme_create_is_reported(tmp_path: Path) -> None:
+    """URL attachments should not store executable link schemes."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachments.py").write_text(
+        """
+from odoo import models
+
+class AttachmentBuilder(models.Model):
+    _name = 'x.attachment.builder'
+
+    def build_link(self):
+        return self.env['ir.attachment'].create({
+            'name': 'script-link',
+            'type': 'url',
+            'url': 'javascript:alert(document.domain)',
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-attachment-unsafe-url-scheme"
+        and finding.severity == "high"
+        and "javascript:alert(document.domain)" in finding.message
+        for finding in findings
+    )
+
+
+def test_unsafe_attachment_url_scheme_write_is_reported(tmp_path: Path) -> None:
+    """Attachment URL writes should catch constant-backed dangerous schemes."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachments.py").write_text(
+        """
+from odoo import models
+
+UNSAFE_URL = 'data:image/svg+xml,<svg onload=alert(1)>'
+
+class AttachmentBuilder(models.Model):
+    _name = 'x.attachment.builder'
+
+    def update_link(self, attachment_id):
+        attachment = self.env['ir.attachment'].browse(attachment_id)
+        return attachment.write({'type': 'url', 'url': UNSAFE_URL})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-attachment-unsafe-url-scheme"
+        and finding.severity == "high"
+        and finding.sink.endswith(".write")
+        for finding in findings
+    )
+
+
 def test_non_odoo_route_decorator_public_attachment_create_is_ignored(tmp_path: Path) -> None:
     """Local route-like decorators should not create Odoo route context."""
     controllers = tmp_path / "module" / "controllers"

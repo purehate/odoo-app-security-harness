@@ -2316,6 +2316,12 @@
       "capec": ["CAPEC-178", "CAPEC-21"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "attachment_unsafe_url_scheme": {
+      "label": "ir.attachment URL metadata uses an executable or local-file scheme",
+      "cwe": ["CWE-79", "CWE-601", "CWE-939"],
+      "capec": ["CAPEC-63", "CAPEC-178"],
+      "owasp": "A03:2021 Injection"
+    },
     "attachment_tainted_lookup": {
       "label": "Request-derived input selects ir.attachment records",
       "cwe": ["CWE-639", "CWE-862", "CWE-863"],
