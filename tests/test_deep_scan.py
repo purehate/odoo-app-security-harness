@@ -1555,6 +1555,32 @@ def test_taxonomy_coverage_classifies_mail_template_dangerous_url_scheme() -> No
     assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_outbound_message_url_embedded_credentials() -> None:
+    """Recipient-visible credential URLs should map to outbound message leakage taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-mail-template-url-embedded-credentials",
+                "source": "mail-templates",
+                "title": "Mail template URL embeds credentials",
+                "message": "mail.template body_html embeds username, password, or token material in a URL",
+            },
+            {
+                "rule_id": "odoo-i18n-url-embedded-credentials",
+                "source": "translations",
+                "title": "Translation URL embeds credentials",
+                "message": "Translated msgstr embeds username, password, or token material in a URL",
+            },
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {
+        "outbound_message_url_embedded_credentials"
+    }
+    assert all("CWE-798" in entry["cwe"] for entry in coverage["mapped_entries"])
+
+
 def test_taxonomy_coverage_classifies_mail_template_html_injection() -> None:
     """Raw outbound email HTML should get mail-template-specific XSS taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(

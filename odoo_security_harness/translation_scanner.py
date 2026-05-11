@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -85,6 +86,15 @@ class TranslationScanner:
                 "medium",
                 entry.msgstr_line,
                 "Translated msgstr contains a literal http:// URL; use HTTPS or same-origin links to avoid downgrade, interception, and referrer leakage risk",
+                entry.msgid,
+            )
+        if _has_url_embedded_credentials(entry.msgstr):
+            self._add(
+                "odoo-i18n-url-embedded-credentials",
+                "Translation URL embeds credentials",
+                "high",
+                entry.msgstr_line,
+                "Translated msgstr embeds username, password, or token material in a URL; keep credentials out of translated links, browser history, logs, and shared messages",
                 entry.msgid,
             )
         if QWEB_RAW_RE.search(entry.msgstr):
@@ -225,6 +235,14 @@ def _extract_placeholders(text: str) -> set[str]:
     placeholders.update("%" for _ in PRINTF_POSITIONAL_RE.findall(text))
     placeholders.update(f"{{{match}}}" for match in BRACE_RE.findall(text))
     return placeholders
+
+
+def _has_url_embedded_credentials(value: str) -> bool:
+    for match in re.finditer(r"https?://[^\s'\"<>)]+", value, re.IGNORECASE):
+        parsed = urlparse(match.group(0).rstrip(".,;"))
+        if parsed.hostname and (parsed.username is not None or parsed.password is not None):
+            return True
+    return False
 
 
 def _locale_for(path: Path) -> str:

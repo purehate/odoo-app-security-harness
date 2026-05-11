@@ -3602,6 +3602,20 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "outbound_message_url_embedded_credentials",
+        (
+            "mail-template-url-embedded-credentials",
+            "i18n-url-embedded-credentials",
+            "mail template url embeds credentials",
+            "translation url embeds credentials",
+            "body_html embeds username, password, or token material in a url",
+            "translated msgstr embeds username, password, or token material in a url",
+            "outbound email links",
+            "translated links",
+            "shared messages",
+        ),
+    ),
+    (
         "frontend_url_embedded_credentials",
         (
             "qweb-url-embedded-credentials",

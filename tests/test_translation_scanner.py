@@ -94,6 +94,26 @@ msgstr "<a href=\\"http://portal.example.com/pay\\">Payer</a>"
     )
 
 
+def test_flags_translated_url_embedded_credentials(tmp_path: Path) -> None:
+    """Translated links should not embed credentials in URL userinfo."""
+    write_po(
+        tmp_path / "module" / "i18n" / "fr.po",
+        """
+msgid "Pay now"
+msgstr "<a href=\\"https://mail_user:secret@portal.example.com/pay\\">Payer</a>"
+""",
+    )
+
+    findings = scan_translations(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-i18n-url-embedded-credentials"
+        and finding.severity == "high"
+        and finding.locale == "fr"
+        for finding in findings
+    )
+
+
 def test_ignores_https_translated_url_for_insecure_url_rule(tmp_path: Path) -> None:
     """HTTPS translated links should not create cleartext URL findings."""
     write_po(

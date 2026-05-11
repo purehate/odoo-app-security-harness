@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from defusedxml import ElementTree
 from odoo_security_harness.base_scanner import XmlScanner, _record_fields, _should_skip
@@ -208,6 +209,17 @@ class MailTemplateScanner(XmlScanner):
                 "body_html",
             )
 
+        if _has_url_embedded_credentials(body):
+            self._add(
+                "odoo-mail-template-url-embedded-credentials",
+                "Mail template URL embeds credentials",
+                "high",
+                line,
+                "mail.template body_html embeds username, password, or token material in a URL; keep credentials out of outbound email links, logs, browser history, and shared messages",
+                template_id,
+                "body_html",
+            )
+
         token_text = _join_fields(fields, TOKEN_EXPRESSION_FIELDS)
         if _references_sensitive_value(token_text):
             token_field = _first_sensitive_field(fields, TOKEN_EXPRESSION_FIELDS) or "body_html"
@@ -382,6 +394,14 @@ def _contains_dangerous_url_scheme(value: str) -> bool:
 
 def _contains_insecure_http_url(value: str) -> bool:
     return bool(re.search(r"\bhttp://", value, re.IGNORECASE))
+
+
+def _has_url_embedded_credentials(value: str) -> bool:
+    for match in re.finditer(r"https?://[^\s'\"<>)]+", value, re.IGNORECASE):
+        parsed = urlparse(match.group(0).rstrip(".,;"))
+        if parsed.hostname and (parsed.username is not None or parsed.password is not None):
+            return True
+    return False
 
 
 def _contains_privileged_expression(value: str) -> bool:
