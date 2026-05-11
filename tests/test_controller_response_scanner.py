@@ -941,6 +941,31 @@ class Controller(http.Controller):
     assert scan_controller_responses(tmp_path) == []
 
 
+def test_unpack_write_only_open_mode_is_ignored(tmp_path: Path) -> None:
+    """Static **kwargs for write-only open modes should not look like file reads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "upload.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/upload', auth='user')
+    def upload(self, **kwargs):
+        options = {'mode': 'wb'}
+        with open(kwargs.get('path'), **options) as handle:
+            handle.write(b'ok')
+        return request.make_response('ok')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert not any(f.rule_id == "odoo-controller-tainted-file-read" for f in findings)
+
+
 def test_flags_tainted_headers_and_cookie_values(tmp_path: Path) -> None:
     """Response headers and cookie values should not be raw request input."""
     controllers = tmp_path / "module" / "controllers"

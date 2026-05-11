@@ -362,7 +362,7 @@ class ControllerResponseScanner(ast.NodeVisitor):
         if sink == "open":
             if not node.args or not self._expr_is_tainted(node.args[0]):
                 return False
-            mode = _open_mode(node)
+            mode = _open_mode(node, self._effective_constants())
             return not any(flag in mode for flag in ("w", "a", "x", "+"))
         return (
             isinstance(node.func, ast.Attribute)
@@ -1174,12 +1174,12 @@ def _constant_string(node: ast.AST | None, constants: dict[str, ast.AST] | None 
     return ""
 
 
-def _open_mode(node: ast.Call) -> str:
+def _open_mode(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> str:
     if len(node.args) > 1 and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str):
         return node.args[1].value
-    for keyword in node.keywords:
-        if keyword.arg == "mode" and isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, str):
-            return keyword.value.value
+    for key, keyword_value in _expanded_keywords(node, constants or {}):
+        if key == "mode" and isinstance(keyword_value, ast.Constant) and isinstance(keyword_value.value, str):
+            return keyword_value.value
     return "r"
 
 
