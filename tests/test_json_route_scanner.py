@@ -101,6 +101,52 @@ class Api(odoo_http.Controller):
     assert "odoo-json-route-csrf-disabled" in rule_ids
 
 
+def test_flags_imported_odoo_http_module_public_json_route(tmp_path: Path) -> None:
+    """import odoo.http as aliases should still mark JSON endpoints as routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "api.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Api(odoo_http.Controller):
+    @odoo_http.route('/api/public', auth='public', type='json', csrf=False)
+    def public(self, **kwargs):
+        return {'ok': True}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_json_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-json-route-public-auth" in rule_ids
+    assert "odoo-json-route-csrf-disabled" in rule_ids
+
+
+def test_flags_imported_odoo_module_public_json_route(tmp_path: Path) -> None:
+    """import odoo as aliases should still mark od.http.route JSON endpoints."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "api.py").write_text(
+        """
+import odoo as od
+
+class Api(od.http.Controller):
+    @od.http.route('/api/public', auth='public', type='json', csrf=False)
+    def public(self, **kwargs):
+        return {'ok': True}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_json_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-json-route-public-auth" in rule_ids
+    assert "odoo-json-route-csrf-disabled" in rule_ids
+
+
 def test_ignores_non_odoo_route_attribute(tmp_path: Path) -> None:
     """Arbitrary .route decorators should not be treated as Odoo JSON routes."""
     controllers = tmp_path / "module" / "controllers"
@@ -683,6 +729,29 @@ class Api(http.Controller):
     rule_ids = {finding.rule_id for finding in findings}
 
     assert "odoo-json-route-sudo-mutation" in rule_ids
+    assert "odoo-json-route-mass-assignment" in rule_ids
+
+
+def test_flags_imported_odoo_http_request_json_mass_assignment(tmp_path: Path) -> None:
+    """odoo_http.request JSON helpers should seed payload taint."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "api.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Api(odoo_http.Controller):
+    @odoo_http.route('/api/order', auth='user', type='json')
+    def create_order(self):
+        payload = odoo_http.request.get_json_data()
+        return odoo_http.request.env['sale.order'].create(payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_json_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
     assert "odoo-json-route-mass-assignment" in rule_ids
 
 
