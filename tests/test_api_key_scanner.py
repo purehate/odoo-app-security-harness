@@ -121,6 +121,62 @@ class Controller(odoo_http.Controller):
     assert "odoo-api-key-request-derived-mutation" in rule_ids
 
 
+def test_imported_odoo_http_module_api_key_create_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http imports should expose public API-key mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/public/apikey', auth='public', csrf=False)
+    def create_key(self):
+        payload = odoo_http.request.get_http_params()
+        return odoo_http.request.env['res.users.apikeys'].sudo().create({
+            'name': payload.get('name'),
+            'user_id': payload.get('user_id'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-api-key-public-route-mutation" in rule_ids
+    assert "odoo-api-key-sudo-mutation" in rule_ids
+    assert "odoo-api-key-request-derived-mutation" in rule_ids
+
+
+def test_imported_odoo_module_api_key_create_is_reported(tmp_path: Path) -> None:
+    """Direct odoo imports should expose public API-key mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/public/apikey', auth='public', csrf=False)
+    def create_key(self):
+        payload = od.http.request.get_http_params()
+        return od.http.request.env['res.users.apikeys'].sudo().create({
+            'name': payload.get('name'),
+            'user_id': payload.get('user_id'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-api-key-public-route-mutation" in rule_ids
+    assert "odoo-api-key-sudo-mutation" in rule_ids
+    assert "odoo-api-key-request-derived-mutation" in rule_ids
+
+
 def test_non_odoo_route_decorator_api_key_create_is_not_public_route(tmp_path: Path) -> None:
     """Arbitrary .route decorators should not make API-key mutations look public."""
     controllers = tmp_path / "module" / "controllers"

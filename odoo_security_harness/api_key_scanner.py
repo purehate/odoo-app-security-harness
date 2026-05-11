@@ -96,6 +96,7 @@ class ApiKeyScanner(ast.NodeVisitor):
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
         self.http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
 
     def scan_python_file(self) -> list[ApiKeyFinding]:
@@ -111,6 +112,14 @@ class ApiKeyScanner(ast.NodeVisitor):
         self.constants = _module_constants(tree)
         self.visit(tree)
         return self.findings
+
+    def visit_Import(self, node: ast.Import) -> Any:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
+        self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo":
@@ -189,6 +198,7 @@ class ApiKeyScanner(ast.NodeVisitor):
             self._effective_constants(),
             self.route_decorator_names,
             self.http_module_names,
+            self.odoo_module_names,
         ) or RouteContext(
             is_route=False,
         )
@@ -337,7 +347,12 @@ class ApiKeyScanner(ast.NodeVisitor):
 
     def _expr_is_tainted(self, node: ast.AST) -> bool:
         text = _safe_unparse(node)
-        if _is_request_source(node, self.request_names) or any(marker in text for marker in REQUEST_MARKERS):
+        if _is_request_source(
+            node,
+            self.request_names,
+            self.http_module_names,
+            self.odoo_module_names,
+        ) or any(marker in text for marker in REQUEST_MARKERS):
             return True
         if isinstance(node, ast.Name):
             return node.id in self.tainted_names
@@ -616,12 +631,14 @@ def _route_info(
     constants: dict[str, ast.AST] | None = None,
     route_decorator_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> RouteContext | None:
     constants = constants or {}
     route_decorator_names = route_decorator_names or set()
     http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     for decorator in node.decorator_list:
-        if not _is_http_route(decorator, route_decorator_names, http_module_names):
+        if not _is_http_route(decorator, route_decorator_names, http_module_names, odoo_module_names):
             continue
         auth = "user"
         paths: list[str] = []
@@ -675,18 +692,34 @@ def _is_http_route(
     node: ast.AST,
     route_decorator_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> bool:
     route_decorator_names = route_decorator_names or set()
     http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     if isinstance(node, ast.Call):
-        return _is_http_route(node.func, route_decorator_names, http_module_names)
+        return _is_http_route(node.func, route_decorator_names, http_module_names, odoo_module_names)
     if isinstance(node, ast.Name):
         return node.id in route_decorator_names
     return (
         isinstance(node, ast.Attribute)
         and node.attr == "route"
+        and _is_http_module_expr(node.value, http_module_names, odoo_module_names)
+    )
+
+
+def _is_http_module_expr(
+    node: ast.AST,
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in http_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "http"
         and isinstance(node.value, ast.Name)
-        and node.value.id in http_module_names
+        and node.value.id in odoo_module_names
     )
 
 
@@ -767,22 +800,41 @@ def _looks_route_id_arg(name: str) -> bool:
     return bool(ROUTE_ID_ARG_RE.search(name))
 
 
-def _is_request_source(node: ast.AST, request_names: set[str]) -> bool:
+def _is_request_source(
+    node: ast.AST,
+    request_names: set[str],
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
     for child in ast.walk(node):
         if isinstance(child, ast.Attribute) and child.attr in {"params", "jsonrequest", "httprequest"}:
-            if _is_request_expr(child.value, request_names):
+            if _is_request_expr(child.value, request_names, http_module_names, odoo_module_names):
                 return True
         if not isinstance(child, ast.Call) or not isinstance(child.func, ast.Attribute):
             continue
         if child.func.attr in {"get_http_params", "get_json_data"} and _is_request_expr(
-            child.func.value, request_names
+            child.func.value,
+            request_names,
+            http_module_names,
+            odoo_module_names,
         ):
             return True
     return False
 
 
-def _is_request_expr(node: ast.AST, request_names: set[str]) -> bool:
-    return isinstance(node, ast.Name) and node.id in request_names
+def _is_request_expr(
+    node: ast.AST,
+    request_names: set[str],
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in request_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "request"
+        and _is_http_module_expr(node.value, http_module_names, odoo_module_names)
+    )
 
 
 def _api_key_model_in_expr(
