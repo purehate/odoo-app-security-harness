@@ -580,6 +580,7 @@ def _sensitive_env_mutation_model(code: str) -> str:
 class _ServerActionCodeRisks:
     sudo_mutation: bool = False
     sensitive_model: str = ""
+    http_no_timeout: bool = False
     tls_verify_disabled: bool = False
 
 
@@ -600,6 +601,27 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
         self.constants = constants
         self.risks = _ServerActionCodeRisks()
         self.elevated_names: set[str] = set()
+        self.module_aliases: dict[str, str] = {}
+        self.function_aliases: dict[str, str] = {}
+
+    def visit_Import(self, node: ast.Import) -> Any:
+        for alias in node.names:
+            if alias.name == "urllib.request" and alias.asname is None:
+                continue
+            local_name = alias.asname or alias.name.split(".", 1)[0]
+            if alias.name in {"aiohttp", "requests", "httpx", "urllib.request"}:
+                self.module_aliases[local_name] = alias.name
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
+        if node.module in {"aiohttp", "requests", "httpx", "urllib.request"}:
+            for alias in node.names:
+                self.function_aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+        elif node.module == "urllib":
+            for alias in node.names:
+                if alias.name == "request":
+                    self.module_aliases[alias.asname or alias.name] = "urllib.request"
+        self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
@@ -623,9 +645,60 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
             model = _call_receiver_env_model(node.func, self.constants)
             if model in SECURITY_FUNCTION_MODELS:
                 self.risks.sensitive_model = model
-        if _is_http_call(node.func) and _keyword_is_false(node, "verify", self.constants):
-            self.risks.tls_verify_disabled = True
+        if self._is_http_call(node.func):
+            if not _has_effective_timeout(node, self.constants):
+                self.risks.http_no_timeout = True
+            if _keyword_is_false(node, "verify", self.constants):
+                self.risks.tls_verify_disabled = True
         self.generic_visit(node)
+
+    def _is_http_call(self, node: ast.AST) -> bool:
+        call_name = self._canonical_call_name(node)
+        if call_name in {
+            "requests.delete",
+            "requests.get",
+            "requests.head",
+            "requests.patch",
+            "requests.post",
+            "requests.put",
+            "requests.request",
+            "httpx.delete",
+            "httpx.get",
+            "httpx.head",
+            "httpx.patch",
+            "httpx.post",
+            "httpx.put",
+            "httpx.request",
+            "aiohttp.delete",
+            "aiohttp.get",
+            "aiohttp.head",
+            "aiohttp.patch",
+            "aiohttp.post",
+            "aiohttp.put",
+            "aiohttp.request",
+            "urllib.request.urlopen",
+        }:
+            return True
+        return call_name.endswith(
+            (
+                ".delete",
+                ".get",
+                ".head",
+                ".patch",
+                ".post",
+                ".put",
+                ".request",
+            )
+        ) and _call_root_name(node) in {"client", "session"}
+
+    def _canonical_call_name(self, node: ast.AST) -> str:
+        call_name = _call_name(node)
+        if call_name in self.function_aliases:
+            return self.function_aliases[call_name]
+        parts = call_name.split(".")
+        if parts and parts[0] in self.module_aliases:
+            return ".".join([self.module_aliases[parts[0]], *parts[1:]])
+        return call_name
 
     def _track_elevated_target(self, target: ast.AST, value: ast.AST) -> None:
         if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
@@ -769,13 +842,49 @@ def _is_http_call(node: ast.AST) -> bool:
 
 
 def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST]) -> bool:
-    for keyword in node.keywords:
-        if keyword.arg != name:
-            continue
-        value = _resolve_constant(keyword.value, constants)
+    for keyword_value in _keyword_values(node, name, constants):
+        value = _resolve_constant(keyword_value, constants)
         if isinstance(value, ast.Constant) and value.value is False:
             return True
     return False
+
+
+def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST]) -> bool:
+    timeout_values = _keyword_values(node, "timeout", constants)
+    return bool(timeout_values) and not any(_is_none_constant(value, constants) for value in timeout_values)
+
+
+def _is_none_constant(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    return isinstance(value, ast.Constant) and value.value is None
+
+
+def _keyword_values(node: ast.Call, name: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    for keyword in node.keywords:
+        if keyword.arg == name:
+            values.append(keyword.value)
+            continue
+        if keyword.arg is not None:
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Dict):
+            values.extend(_dict_keyword_values(value, name, constants))
+    return values
+
+
+def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    for key, value in zip(node.keys, node.values, strict=True):
+        if key is None:
+            resolved_value = _resolve_constant(value, constants)
+            if isinstance(resolved_value, ast.Dict):
+                values.extend(_dict_keyword_values(resolved_value, name, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and resolved_key.value == name:
+            values.append(value)
+    return values
 
 
 def _call_name(node: ast.AST) -> str:
@@ -853,14 +962,20 @@ def _is_static_literal(node: ast.AST) -> bool:
 
 
 def _http_call_without_timeout(code: str) -> bool:
-    return any(
-        "timeout" not in match.group("args")
-        for match in re.finditer(
-            r"(?:(?:aiohttp|requests|httpx)\.(?:get|post|put|patch|delete|head|request)|(?:[\w.]+\.)?urlopen)"
-            r"\s*\((?P<args>[^)]*)\)",
-            code,
+    try:
+        ast.parse(textwrap.dedent(code))
+    except SyntaxError:
+        return any(
+            "timeout" not in match.group("args")
+            for match in re.finditer(
+                r"(?:(?:aiohttp|requests|httpx)\.(?:get|post|put|patch|delete|head|request)|(?:[\w.]+\.)?urlopen)"
+                r"\s*\((?P<args>[^)]*)\)",
+                code,
+            )
         )
-    )
+    except Exception:
+        return False
+    return _server_action_code_risks(code).http_no_timeout
 
 
 def _mentions_user_groups(value: str) -> bool:

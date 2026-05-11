@@ -130,6 +130,45 @@ urlreq.urlopen(record.callback_url)
     assert any(f.rule_id == "odoo-xml-server-action-http-no-timeout" for f in findings)
 
 
+def test_server_action_timeout_none_is_reported(tmp_path: Path) -> None:
+    """XML server actions should treat timeout=None as no effective HTTP timeout."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_timeout_none" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code">requests.post(record.callback_url, timeout=None)</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-server-action-http-no-timeout" for f in findings)
+
+
+def test_server_action_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """XML server actions should resolve static **kwargs timeout values."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_static_timeout" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+HTTP_OPTIONS = {'timeout': 10}
+requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert not any(f.rule_id == "odoo-xml-server-action-http-no-timeout" for f in findings)
+
+
 def test_server_action_tls_verification_disabled(tmp_path: Path) -> None:
     """Executable server actions should surface disabled HTTP TLS verification."""
     xml = tmp_path / "actions.xml"
@@ -151,6 +190,27 @@ httpx.post(record.audit_url, timeout=10, verify=True)
     tls_findings = [f for f in findings if f.rule_id == "odoo-xml-server-action-tls-verify-disabled"]
 
     assert len(tls_findings) == 1
+
+
+def test_server_action_static_kwargs_tls_verify_disabled(tmp_path: Path) -> None:
+    """XML server actions should flag verify=False from static **kwargs."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_http_tls_kwargs" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+HTTP_OPTIONS = {'timeout': 10, 'verify': False}
+requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-server-action-tls-verify-disabled" for f in findings)
 
 
 def test_server_action_keyword_with_user_mutation_is_reported(tmp_path: Path) -> None:
@@ -445,6 +505,45 @@ def test_cron_head_without_timeout(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
 
 
+def test_cron_timeout_none_is_reported(tmp_path: Path) -> None:
+    """XML cron inline Python should treat timeout=None as unbounded."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_timeout_none" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code">requests.get(record.url, timeout=None)</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
+
+
+def test_cron_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """XML cron inline Python should resolve static **kwargs timeout values."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_static_timeout" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+HTTP_OPTIONS = {'timeout': 10}
+requests.get(record.url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert not any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
+
+
 def test_cron_tls_verification_disabled(tmp_path: Path) -> None:
     """Cron inline Python should surface disabled HTTP TLS verification."""
     xml = tmp_path / "cron.xml"
@@ -466,6 +565,27 @@ requests.get(record.health_url, timeout=10, verify=True)
     tls_findings = [f for f in findings if f.rule_id == "odoo-xml-cron-tls-verify-disabled"]
 
     assert len(tls_findings) == 1
+
+
+def test_cron_static_kwargs_tls_verify_disabled(tmp_path: Path) -> None:
+    """XML cron inline Python should flag verify=False from static **kwargs."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_http_tls_kwargs" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+HTTP_OPTIONS = {'timeout': 10, 'verify': False}
+requests.get(record.url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-cron-tls-verify-disabled" for f in findings)
 
 
 def test_admin_method_cron_without_state_code_is_reported(tmp_path: Path) -> None:

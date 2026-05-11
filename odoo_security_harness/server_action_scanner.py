@@ -331,9 +331,7 @@ class LoosePythonScanner(ast.NodeVisitor):
         )
 
     def _is_http_call_without_timeout(self, node: ast.Call) -> bool:
-        if any(keyword.arg == "timeout" for keyword in node.keywords):
-            return False
-        return self._is_http_call(node)
+        return self._is_http_call(node) and not _has_effective_timeout(node, self._effective_constants())
 
     def _is_http_call(self, node: ast.Call) -> bool:
         sink = self._canonical_call_name(node.func)
@@ -612,13 +610,50 @@ def _call_has_superuser_arg(node: ast.Call, constants: dict[str, ast.AST] | None
 
 def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:
     constants = constants or {}
-    for keyword in node.keywords:
-        if keyword.arg != name:
-            continue
-        value = _resolve_constant(keyword.value, constants)
+    for keyword_value in _keyword_values(node, name, constants):
+        value = _resolve_constant(keyword_value, constants)
         if isinstance(value, ast.Constant) and value.value is False:
             return True
     return False
+
+
+def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+    timeout_values = _keyword_values(node, "timeout", constants)
+    return bool(timeout_values) and not any(_is_none_constant(value, constants or {}) for value in timeout_values)
+
+
+def _is_none_constant(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    return isinstance(value, ast.Constant) and value.value is None
+
+
+def _keyword_values(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> list[ast.AST]:
+    constants = constants or {}
+    values: list[ast.AST] = []
+    for keyword in node.keywords:
+        if keyword.arg == name:
+            values.append(keyword.value)
+            continue
+        if keyword.arg is not None:
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Dict):
+            values.extend(_dict_keyword_values(value, name, constants))
+    return values
+
+
+def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    for key, value in zip(node.keys, node.values, strict=True):
+        if key is None:
+            resolved_value = _resolve_constant(value, constants)
+            if isinstance(resolved_value, ast.Dict):
+                values.extend(_dict_keyword_values(resolved_value, name, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and resolved_key.value == name:
+            values.append(value)
+    return values
 
 
 def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:

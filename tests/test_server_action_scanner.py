@@ -645,6 +645,42 @@ requests.head(record.health_url, timeout=10)
     assert http_findings[0].line == 4
 
 
+def test_server_action_detects_http_timeout_none(tmp_path: Path) -> None:
+    """Loose Python should treat timeout=None as no effective HTTP timeout."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+import requests
+
+requests.post(record.callback_url, timeout=None)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-http-no-timeout" for f in findings)
+
+
+def test_server_action_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should satisfy loose Python HTTP timeout checks."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+import requests
+
+HTTP_OPTIONS = {'timeout': 10}
+
+requests.post(record.callback_url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert not any(f.rule_id == "odoo-loose-python-http-no-timeout" for f in findings)
+
+
 def test_server_action_detects_tls_verification_disabled(tmp_path: Path) -> None:
     """Loose Python outbound HTTP should not disable TLS verification."""
     script = tmp_path / "action.py"
@@ -664,6 +700,25 @@ requests.get(record.health_url, timeout=10, verify=True)
 
     assert len(tls_findings) == 1
     assert tls_findings[0].line == 5
+
+
+def test_server_action_static_kwargs_tls_verify_disabled(tmp_path: Path) -> None:
+    """Loose Python should flag verify=False from static **kwargs."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+import requests
+
+HTTP_OPTIONS = {'timeout': 10, 'verify': False}
+
+requests.post(record.callback_url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-tls-verify-disabled" for f in findings)
 
 
 def test_server_action_tracks_starred_rest_http_client_alias(tmp_path: Path) -> None:
