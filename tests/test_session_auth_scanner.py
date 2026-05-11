@@ -95,6 +95,48 @@ class Controller(odoo_http.Controller):
     assert any(f.rule_id == "odoo-session-public-authenticate" for f in findings)
 
 
+def test_imported_odoo_http_module_public_authenticate_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http imports should expose public authentication routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "auth.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/login/token', auth='public', csrf=False)
+    def login(self, **kwargs):
+        return odoo_http.request.session.authenticate(odoo_http.request.db, kwargs.get('login'), kwargs.get('password'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-public-authenticate" for f in findings)
+
+
+def test_imported_odoo_module_public_authenticate_is_reported(tmp_path: Path) -> None:
+    """Direct odoo module imports should expose public authentication routes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "auth.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/login/token', auth='public', csrf=False)
+    def login(self, **kwargs):
+        return od.http.request.session.authenticate(od.http.request.db, kwargs.get('login'), kwargs.get('password'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-public-authenticate" for f in findings)
+
+
 def test_non_odoo_route_decorator_public_authenticate_is_ignored(tmp_path: Path) -> None:
     """Arbitrary .route decorators should not make authenticate calls look public."""
     controllers = tmp_path / "module" / "controllers"
@@ -529,6 +571,50 @@ class Controller(http.Controller):
     @http.route('/impersonate', auth='user')
     def impersonate(self, **kwargs):
         req.session.uid = kwargs.get('uid')
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-direct-uid-assignment" and f.severity == "high" for f in findings)
+
+
+def test_imported_odoo_http_module_direct_session_uid_assignment(tmp_path: Path) -> None:
+    """Direct odoo.http request access should expose session uid assignment."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "impersonate.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/impersonate', auth='user')
+    def impersonate(self, **kwargs):
+        odoo_http.request.session.uid = kwargs.get('uid')
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-direct-uid-assignment" and f.severity == "high" for f in findings)
+
+
+def test_imported_odoo_module_direct_session_uid_assignment(tmp_path: Path) -> None:
+    """Direct odoo module request access should expose session uid assignment."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "impersonate.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/impersonate', auth='user')
+    def impersonate(self, **kwargs):
+        od.http.request.session.uid = kwargs.get('uid')
         return 'ok'
 """,
         encoding="utf-8",
