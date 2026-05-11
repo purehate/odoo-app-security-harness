@@ -800,6 +800,46 @@ class Publish(http.Controller):
     )
 
 
+def test_updated_static_unpack_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
+    """Updated **route options should keep publication writes public/critical."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "publish.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+PUBLISH_OPTIONS = {
+    'route': '/internal/orders/<int:order_id>/publish',
+    'auth': 'user',
+    'csrf': True,
+}
+PUBLISH_OPTIONS.update({
+    'route': '/public/orders/<int:order_id>/publish',
+    'auth': 'none',
+    'csrf': False,
+})
+
+class Publish(http.Controller):
+    @http.route(**PUBLISH_OPTIONS)
+    def publish_order(self, order_id, **kwargs):
+        return request.env['sale.order'].sudo().browse(order_id).write({
+            'website_published': kwargs.get('published'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
+    )
+
+
 def test_class_constant_static_unpack_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
     """Class-scoped static **route options should keep publication writes public/critical."""
     controllers = tmp_path / "module" / "controllers"

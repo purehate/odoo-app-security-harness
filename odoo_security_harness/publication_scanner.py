@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
@@ -194,7 +195,8 @@ class PublicationScanner:
                 "Attachment is published publicly",
                 "high",
                 line,
-                "ir.attachment record sets public=True; verify the binary cannot expose private customer, employee, invoice, or token data",
+                "ir.attachment record sets public=True; "
+                "verify the binary cannot expose private customer, employee, invoice, or token data",
                 "ir.attachment",
                 record_id,
             )
@@ -219,7 +221,8 @@ class PublicationScanner:
                 "Public attachment uses browser-active content type",
                 "critical",
                 line,
-                f"Public ir.attachment record stores browser-active content ({active_content}); verify sanitization, MIME allowlists, download disposition, and intended public access",
+                f"Public ir.attachment record stores browser-active content ({active_content}); "
+                "verify sanitization, MIME allowlists, download disposition, and intended public access",
                 "ir.attachment",
                 record_id,
             )
@@ -233,7 +236,8 @@ class PublicationScanner:
                 "Sensitive model record is website-published",
                 "high",
                 line,
-                f"Record for sensitive model '{model}' is marked website-published; verify portal/public routes cannot expose private fields",
+                f"Record for sensitive model '{model}' is marked website-published; "
+                "verify portal/public routes cannot expose private fields",
                 model,
                 record_id,
             )
@@ -248,7 +252,8 @@ class PublicationScanner:
                 "Portal/share record targets sensitive data",
                 "medium",
                 line,
-                "Portal/share wizard data targets sensitive records; verify generated links, recipients, and expiration behavior",
+                "Portal/share wizard data targets sensitive records; "
+                "verify generated links, recipients, and expiration behavior",
                 model,
                 record_id,
             )
@@ -855,7 +860,50 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str | None, value: ast.AST) -> ast.Dict:
+    if key is None:
+        return values_node
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
