@@ -7,6 +7,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -276,6 +278,15 @@ class QueueJobScanner(ast.NodeVisitor):
                             "queue_job/delayed job outbound HTTP targets a literal http:// URL; use HTTPS to protect background integration payloads and response data from interception or downgrade",
                             current.name,
                         )
+                    if _literal_url_has_embedded_credentials(url_value, constants):
+                        self._add(
+                            "odoo-queue-job-url-embedded-credentials",
+                            "Queue job URL embeds credentials",
+                            "high",
+                            node.lineno,
+                            "queue_job/delayed job embeds username, password, or token material in an outbound HTTP URL authority; move credentials to server-side configuration",
+                            current.name,
+                        )
 
         self.generic_visit(node)
 
@@ -520,6 +531,16 @@ def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> b
         isinstance(value, ast.Constant)
         and isinstance(value.value, str)
         and value.value.strip().lower().startswith("http://")
+    )
+
+
+def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+        return False
+    parsed = urlparse(value.value.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
+        parsed.username is not None or parsed.password is not None
     )
 
 

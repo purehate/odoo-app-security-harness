@@ -1051,6 +1051,29 @@ requests.request('POST', **HTTP_OPTIONS)
     assert any(f.rule_id == "odoo-automation-cleartext-http-url" for f in findings)
 
 
+def test_url_embedded_credentials_in_automation_are_reported(tmp_path: Path) -> None:
+    """Automated actions should flag credentials embedded in outbound HTTP URLs."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_url_credentials" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+PARTNER_URL = 'https://integration_user:sk_live_1234567890abcdef@hooks.example.test/automation'
+HTTP_OPTIONS = {'url': 'https://token_1234567890abcdef@partner.example.test/automation', 'timeout': 10}
+requests.post(PARTNER_URL, timeout=10)
+requests.request('POST', **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-url-embedded-credentials" for f in findings)
+
+
 def test_http_client_with_timeout_in_automation_is_ignored(tmp_path: Path) -> None:
     """HTTP client aliases with visible timeout should not trigger timeout findings."""
     xml = tmp_path / "automation.xml"

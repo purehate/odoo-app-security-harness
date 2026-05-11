@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -70,6 +71,12 @@ CLEARTEXT_HTTP_URL_RULES = {
     "compute": "odoo-model-method-compute-cleartext-http-url",
     "constraint": "odoo-model-method-constraint-cleartext-http-url",
     "inverse": "odoo-model-method-inverse-cleartext-http-url",
+}
+URL_EMBEDDED_CREDENTIALS_RULES = {
+    "onchange": "odoo-model-method-onchange-url-embedded-credentials",
+    "compute": "odoo-model-method-compute-url-embedded-credentials",
+    "constraint": "odoo-model-method-constraint-url-embedded-credentials",
+    "inverse": "odoo-model-method-inverse-url-embedded-credentials",
 }
 API_METHOD_DECORATORS = {"constrains", "depends", "onchange"}
 
@@ -379,6 +386,15 @@ class ModelMethodScanner(ast.NodeVisitor):
                         "medium",
                         node.lineno,
                         f"{context.kind} model method targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+                        context.name,
+                    )
+                if _literal_url_has_embedded_credentials(url_value, constants):
+                    self._add(
+                        URL_EMBEDDED_CREDENTIALS_RULES[context.kind],
+                        "Odoo model method URL embeds credentials",
+                        "high",
+                        node.lineno,
+                        f"{context.kind} model method embeds username, password, or token material in an outbound HTTP URL authority; move credentials to server-side configuration",
                         context.name,
                     )
 
@@ -738,6 +754,16 @@ def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST] | Non
         isinstance(value, ast.Constant)
         and isinstance(value.value, str)
         and value.value.strip().lower().startswith("http://")
+    )
+
+
+def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+    value = _resolve_constant(node, constants or {})
+    if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+        return False
+    parsed = urlparse(value.value.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
+        parsed.username is not None or parsed.password is not None
     )
 
 

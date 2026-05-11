@@ -4686,6 +4686,12 @@ def test_taxonomy_coverage_classifies_loose_python_mutation_and_runtime_shapes()
                 "title": "Loose script uses cleartext HTTP URL",
                 "message": "Server actions or loose scripts outbound HTTP targets a literal http:// URL; use HTTPS to protect privileged automation payloads and response data from interception or downgrade",
             },
+            {
+                "source": "loose-python",
+                "rule_id": "odoo-loose-python-url-embedded-credentials",
+                "title": "Loose script URL embeds credentials",
+                "message": "Server actions or loose scripts outbound HTTP embeds username, password, or token material in the URL authority",
+            },
         ]
     )
 
@@ -4698,6 +4704,7 @@ def test_taxonomy_coverage_classifies_loose_python_mutation_and_runtime_shapes()
         "odoo-loose-python-http-no-timeout": "loose_python_http_no_timeout",
         "odoo-loose-python-tls-verify-disabled": "loose_python_tls_verification_disabled",
         "odoo-loose-python-cleartext-http-url": "loose_python_cleartext_http_url",
+        "odoo-loose-python-url-embedded-credentials": "loose_python_url_embedded_credentials",
     }
     assert any("CWE-269" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-664" in entry["cwe"] for entry in coverage["mapped_entries"])
@@ -5571,6 +5578,12 @@ def test_taxonomy_coverage_classifies_model_method_sudo_and_http_side_effects() 
                 "title": "Odoo model method uses cleartext HTTP URL",
                 "message": "inverse model method targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
             },
+            {
+                "source": "model-methods",
+                "rule_id": "odoo-model-method-compute-url-embedded-credentials",
+                "title": "Odoo model method URL embeds credentials",
+                "message": "compute model method embeds username, password, or token material in an outbound HTTP URL authority",
+            },
         ]
     )
 
@@ -5585,6 +5598,7 @@ def test_taxonomy_coverage_classifies_model_method_sudo_and_http_side_effects() 
     assert {shape for rule_id, shape in shapes.items() if rule_id.endswith("cleartext-http-url")} == {
         "model_method_cleartext_http_url"
     }
+    assert shapes["odoo-model-method-compute-url-embedded-credentials"] == "model_method_url_embedded_credentials"
 
 
 def test_taxonomy_coverage_classifies_constraint_runtime_behavior() -> None:
@@ -6522,6 +6536,12 @@ def test_taxonomy_coverage_classifies_automation_risks() -> None:
                 "title": "Automated action uses cleartext HTTP URL",
                 "message": "base.automation code outbound HTTP targets a literal http:// URL; use HTTPS to protect record-triggered integration payloads and response data from interception or downgrade",
             },
+            {
+                "source": "automations",
+                "rule_id": "odoo-automation-url-embedded-credentials",
+                "title": "Automated action URL embeds credentials",
+                "message": "base.automation code embeds username, password, or token material in an outbound HTTP URL authority",
+            },
         ]
     )
 
@@ -6534,6 +6554,7 @@ def test_taxonomy_coverage_classifies_automation_risks() -> None:
     assert shapes["odoo-automation-sensitive-model-mutation"] == "automation_sensitive_model_mutation"
     assert shapes["odoo-automation-http-no-timeout"] == "automation_http_without_timeout"
     assert shapes["odoo-automation-cleartext-http-url"] == "automation_cleartext_http_url"
+    assert shapes["odoo-automation-url-embedded-credentials"] == "automation_url_embedded_credentials"
     assert any("CWE-94" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-269" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-918" in entry["cwe"] for entry in coverage["mapped_entries"])
@@ -6615,6 +6636,12 @@ def test_taxonomy_coverage_classifies_scheduled_job_integration_risks() -> None:
             },
             {
                 "source": "scheduled-jobs",
+                "rule_id": "odoo-scheduled-job-url-embedded-credentials",
+                "title": "Scheduled job URL embeds credentials",
+                "message": "Scheduled job embeds username, password, or token material in an outbound HTTP URL authority",
+            },
+            {
+                "source": "scheduled-jobs",
                 "rule_id": "odoo-scheduled-job-sync-without-limit",
                 "title": "External-sync scheduled job lacks visible batch limit",
                 "message": "Scheduled sync/import/fetch job searches without a visible limit; verify batching, locking, timeout, and retry behavior",
@@ -6628,6 +6655,7 @@ def test_taxonomy_coverage_classifies_scheduled_job_integration_risks() -> None:
     assert shapes["odoo-scheduled-job-http-no-timeout"] == "scheduled_job_http_without_timeout"
     assert shapes["odoo-scheduled-job-tls-verify-disabled"] == "scheduled_job_tls_verification_disabled"
     assert shapes["odoo-scheduled-job-cleartext-http-url"] == "scheduled_job_cleartext_http_url"
+    assert shapes["odoo-scheduled-job-url-embedded-credentials"] == "scheduled_job_url_embedded_credentials"
     assert shapes["odoo-scheduled-job-sync-without-limit"] == "scheduled_job_sync_without_limit"
 
 
@@ -6667,6 +6695,12 @@ def test_taxonomy_coverage_classifies_xml_cron_configuration_risks() -> None:
             },
             {
                 "source": "xml-data",
+                "rule_id": "odoo-xml-cron-url-embedded-credentials",
+                "title": "Cron URL embeds credentials",
+                "message": "ir.cron code embeds username, password, or token material in an outbound HTTP URL authority",
+            },
+            {
+                "source": "xml-data",
                 "rule_id": "odoo-xml-cron-doall-enabled",
                 "title": "Cron catches up missed executions",
                 "message": "ir.cron has doall=True; after downtime it may replay missed jobs in bulk, causing duplicate side effects or load spikes",
@@ -6686,7 +6720,7 @@ def test_taxonomy_coverage_classifies_xml_cron_configuration_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 8
+    assert coverage["mapped_rules"] == 9
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-xml-cron-admin-user": "xml_cron_admin_user",
@@ -6694,6 +6728,7 @@ def test_taxonomy_coverage_classifies_xml_cron_configuration_risks() -> None:
         "odoo-xml-cron-http-no-timeout": "xml_cron_http_without_timeout",
         "odoo-xml-cron-tls-verify-disabled": "xml_cron_tls_verification_disabled",
         "odoo-xml-cron-cleartext-http-url": "xml_cron_cleartext_http_url",
+        "odoo-xml-cron-url-embedded-credentials": "xml_cron_url_embedded_credentials",
         "odoo-xml-cron-doall-enabled": "xml_cron_doall_enabled",
         "odoo-xml-cron-short-interval": "xml_cron_short_interval",
         "odoo-xml-cron-external-sync-review": "xml_cron_external_sync_review",
@@ -6774,6 +6809,12 @@ def test_taxonomy_coverage_classifies_queue_job_execution_risks() -> None:
                 "title": "Queue job uses cleartext HTTP URL",
                 "message": "queue_job/delayed job outbound HTTP targets a literal http:// URL; use HTTPS to protect background integration payloads and response data from interception or downgrade",
             },
+            {
+                "source": "queue-jobs",
+                "rule_id": "odoo-queue-job-url-embedded-credentials",
+                "title": "Queue job URL embeds credentials",
+                "message": "queue_job/delayed job embeds username, password, or token material in an outbound HTTP URL authority",
+            },
         ]
     )
 
@@ -6786,6 +6827,7 @@ def test_taxonomy_coverage_classifies_queue_job_execution_risks() -> None:
     assert shapes["odoo-queue-job-http-no-timeout"] == "queue_job_http_without_timeout"
     assert shapes["odoo-queue-job-tls-verify-disabled"] == "queue_job_tls_verification_disabled"
     assert shapes["odoo-queue-job-cleartext-http-url"] == "queue_job_cleartext_http_url"
+    assert shapes["odoo-queue-job-url-embedded-credentials"] == "queue_job_url_embedded_credentials"
     assert any("CWE-295" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
@@ -8140,6 +8182,12 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
                 "title": "Server action uses cleartext HTTP URL",
                 "message": "ir.actions.server code targets a literal http:// URL; use HTTPS to protect automation payloads and response data from interception or downgrade",
             },
+            {
+                "source": "xml-data",
+                "rule_id": "odoo-xml-server-action-url-embedded-credentials",
+                "title": "Server action URL embeds credentials",
+                "message": "ir.actions.server code embeds username, password, or token material in an outbound HTTP URL authority",
+            },
         ]
     )
 
@@ -8163,6 +8211,10 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
     assert shapes["odoo-xml-public-mail-channel"] == "xml_data_public_mail_channel"
     assert shapes["odoo-xml-server-action-tls-verify-disabled"] == "xml_data_server_action_tls_verification_disabled"
     assert shapes["odoo-xml-server-action-cleartext-http-url"] == "xml_data_server_action_cleartext_http_url"
+    assert (
+        shapes["odoo-xml-server-action-url-embedded-credentials"]
+        == "xml_data_server_action_url_embedded_credentials"
+    )
     assert all(entry["cwe"] for entry in coverage["mapped_entries"])
 
 

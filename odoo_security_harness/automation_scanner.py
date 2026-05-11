@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from defusedxml import ElementTree
 from odoo_security_harness.base_scanner import _line_for, _should_skip, _record_fields
@@ -202,6 +203,16 @@ class AutomationScanner:
                 "medium",
                 line,
                 "base.automation code outbound HTTP targets a literal http:// URL; use HTTPS to protect record-triggered integration payloads and response data from interception or downgrade",
+                model,
+                record_id,
+            )
+        if "url_embedded_credentials" in code_risks:
+            self._add(
+                "odoo-automation-url-embedded-credentials",
+                "Automated action URL embeds credentials",
+                "high",
+                line,
+                "base.automation code embeds username, password, or token material in an outbound HTTP URL authority; move credentials to server-side configuration",
                 model,
                 record_id,
             )
@@ -397,6 +408,8 @@ class _AutomationCodeScanner(ast.NodeVisitor):
             for url_value in _http_url_values(node, sink, constants):
                 if _is_cleartext_literal_url(url_value, constants):
                     self.risks.add("cleartext_http_url")
+                if _literal_url_has_embedded_credentials(url_value, constants):
+                    self.risks.add("url_embedded_credentials")
         self.generic_visit(node)
 
     def _record_alias_target(self, target: ast.AST, value: ast.AST) -> None:
@@ -776,6 +789,16 @@ def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> b
         isinstance(value, ast.Constant)
         and isinstance(value.value, str)
         and value.value.strip().lower().startswith("http://")
+    )
+
+
+def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+        return False
+    parsed = urlparse(value.value.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
+        parsed.username is not None or parsed.password is not None
     )
 
 

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from defusedxml import ElementTree
 from odoo_security_harness.base_scanner import _line_for, _should_skip
@@ -274,6 +275,14 @@ class LoosePythonScanner(ast.NodeVisitor):
                         severity="medium",
                         line=node.lineno,
                         message="Server actions or loose scripts outbound HTTP targets a literal http:// URL; use HTTPS to protect privileged automation payloads and response data from interception or downgrade",
+                    )
+                if _literal_url_has_embedded_credentials(url_value, constants):
+                    self._add_finding(
+                        rule_id="odoo-loose-python-url-embedded-credentials",
+                        title="Loose script URL embeds credentials",
+                        severity="high",
+                        line=node.lineno,
+                        message="Server actions or loose scripts outbound HTTP embeds username, password, or token material in the URL authority; move credentials to server-side configuration",
                     )
 
         self.generic_visit(node)
@@ -844,6 +853,16 @@ def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> b
         isinstance(value, ast.Constant)
         and isinstance(value.value, str)
         and value.value.strip().lower().startswith("http://")
+    )
+
+
+def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+        return False
+    parsed = urlparse(value.value.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
+        parsed.username is not None or parsed.password is not None
     )
 
 

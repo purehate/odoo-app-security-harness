@@ -796,6 +796,32 @@ class Sync(models.Model):
     assert any(f.rule_id == "odoo-scheduled-job-cleartext-http-url" for f in findings)
 
 
+def test_flags_cron_url_embedded_credentials(tmp_path: Path) -> None:
+    """Recurring integrations should not embed credentials in outbound URLs."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import requests
+
+PARTNER_URL = 'https://integration_user:sk_live_1234567890abcdef@feeds.example.test/orders'
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        requests.get(PARTNER_URL, timeout=10)
+        return requests.request('POST', url='https://token_1234567890abcdef@partner.example.test/orders', timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert sum(f.rule_id == "odoo-scheduled-job-url-embedded-credentials" for f in findings) == 2
+
+
 def test_flags_imported_http_function_without_timeout(tmp_path: Path) -> None:
     """Imported requests helpers should still count as outbound HTTP calls."""
     models = tmp_path / "module" / "models"

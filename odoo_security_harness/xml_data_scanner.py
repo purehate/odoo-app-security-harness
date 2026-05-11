@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from defusedxml import ElementTree
 from odoo_security_harness.base_scanner import _line_for, _should_skip
@@ -241,6 +242,16 @@ class XmlDataScanner:
                 "ir.actions.server",
                 record_id,
             )
+        if code_risks.url_embedded_credentials:
+            self._add(
+                "odoo-xml-server-action-url-embedded-credentials",
+                "Server action URL embeds credentials",
+                "high",
+                self._line_for_record(record),
+                "ir.actions.server code embeds username, password, or token material in an outbound HTTP URL authority; move credentials to server-side configuration",
+                "ir.actions.server",
+                record_id,
+            )
 
     def _scan_cron(self, record: ElementTree.Element) -> None:
         fields = self._fields(record)
@@ -305,6 +316,16 @@ class XmlDataScanner:
                 "medium",
                 line,
                 "ir.cron code targets a literal http:// URL; use HTTPS to protect scheduled integration payloads and response data from interception or downgrade",
+                "ir.cron",
+                record_id,
+            )
+        if code_risks.url_embedded_credentials:
+            self._add(
+                "odoo-xml-cron-url-embedded-credentials",
+                "Cron URL embeds credentials",
+                "high",
+                line,
+                "ir.cron code embeds username, password, or token material in an outbound HTTP URL authority; move credentials to server-side configuration",
                 "ir.cron",
                 record_id,
             )
@@ -601,6 +622,7 @@ class _ServerActionCodeRisks:
     http_no_timeout: bool = False
     tls_verify_disabled: bool = False
     cleartext_http_url: bool = False
+    url_embedded_credentials: bool = False
 
 
 def _server_action_code_risks(code: str) -> _ServerActionCodeRisks:
@@ -679,6 +701,8 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
             for url_value in _http_url_values(node, self._canonical_call_name(node.func), self.constants):
                 if _is_cleartext_literal_url(url_value, self.constants):
                     self.risks.cleartext_http_url = True
+                if _literal_url_has_embedded_credentials(url_value, self.constants):
+                    self.risks.url_embedded_credentials = True
         self.generic_visit(node)
 
     def _is_http_call(self, node: ast.AST) -> bool:
@@ -920,6 +944,16 @@ def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> b
         isinstance(value, ast.Constant)
         and isinstance(value.value, str)
         and value.value.strip().lower().startswith("http://")
+    )
+
+
+def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+        return False
+    parsed = urlparse(value.value.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
+        parsed.username is not None or parsed.password is not None
     )
 
 

@@ -687,6 +687,31 @@ class SaleJob(models.Model):
     assert sum(f.rule_id == "odoo-queue-job-cleartext-http-url" for f in findings) == 2
 
 
+def test_flags_queue_job_url_embedded_credentials(tmp_path: Path) -> None:
+    """Background integrations should not embed credentials in outbound URLs."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+import requests
+
+PARTNER_URL = 'https://integration_user:sk_live_1234567890abcdef@jobs.example.test/callback'
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        requests.post(PARTNER_URL, timeout=10)
+        return requests.request('POST', url='https://token_1234567890abcdef@partner.example.test/jobs', timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert sum(f.rule_id == "odoo-queue-job-url-embedded-credentials" for f in findings) == 2
+
+
 def test_flags_sensitive_model_queue_mutation_without_sudo(tmp_path: Path) -> None:
     """Queue jobs mutating sensitive models deserve review even without inline sudo."""
     module = tmp_path / "module" / "models"

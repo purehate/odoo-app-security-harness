@@ -202,6 +202,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "loose_python_url_embedded_credentials",
+        (
+            "odoo-loose-python-url-embedded-credentials",
+            "loose script url embeds credentials",
+            "server actions or loose scripts outbound http embeds username, password, or token material",
+            "move credentials to server-side configuration",
+        ),
+    ),
+    (
         "loose_python_sql_injection",
         (
             "odoo-loose-python-sql-injection",
@@ -1292,6 +1301,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "automation_url_embedded_credentials",
+        (
+            "automation-url-embedded-credentials",
+            "automated action url embeds credentials",
+            "base.automation code embeds username, password, or token material",
+            "move credentials to server-side configuration",
+        ),
+    ),
+    (
         "scheduled_job_elevated_mutation",
         (
             "scheduled-job-sudo-mutation",
@@ -1371,6 +1389,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "scheduled_job_url_embedded_credentials",
+        (
+            "scheduled-job-url-embedded-credentials",
+            "scheduled job url embeds credentials",
+            "scheduled job embeds username, password, or token material",
+            "move credentials to server-side configuration",
+        ),
+    ),
+    (
         "scheduled_job_sync_without_limit",
         (
             "scheduled-job-sync-without-limit",
@@ -1444,6 +1471,15 @@ _TAXONOMY_SHAPE_HINTS = (
             "cron uses cleartext http url",
             "ir.cron code targets a literal http:// url",
             "scheduled integration payloads and response data",
+        ),
+    ),
+    (
+        "xml_cron_url_embedded_credentials",
+        (
+            "odoo-xml-cron-url-embedded-credentials",
+            "cron url embeds credentials",
+            "ir.cron code embeds username, password, or token material",
+            "move credentials to server-side configuration",
         ),
     ),
     (
@@ -1551,6 +1587,15 @@ _TAXONOMY_SHAPE_HINTS = (
             "queue job uses cleartext http url",
             "queue_job/delayed job outbound http targets a literal http:// url",
             "protect background integration payloads and response data",
+        ),
+    ),
+    (
+        "queue_job_url_embedded_credentials",
+        (
+            "queue-job-url-embedded-credentials",
+            "queue job url embeds credentials",
+            "queue_job/delayed job embeds username, password, or token material",
+            "move credentials to server-side configuration",
         ),
     ),
     (
@@ -2139,6 +2184,18 @@ _TAXONOMY_SHAPE_HINTS = (
             "odoo model method uses cleartext http url",
             "model method targets a literal http:// url",
             "protect integration payloads and response data",
+        ),
+    ),
+    (
+        "model_method_url_embedded_credentials",
+        (
+            "model-method-onchange-url-embedded-credentials",
+            "model-method-compute-url-embedded-credentials",
+            "model-method-constraint-url-embedded-credentials",
+            "model-method-inverse-url-embedded-credentials",
+            "odoo model method url embeds credentials",
+            "model method embeds username, password, or token material",
+            "move credentials to server-side configuration",
         ),
     ),
     (
@@ -3146,6 +3203,15 @@ _TAXONOMY_SHAPE_HINTS = (
             "server action uses cleartext http url",
             "ir.actions.server code targets a literal http:// url",
             "automation payloads and response data",
+        ),
+    ),
+    (
+        "xml_data_server_action_url_embedded_credentials",
+        (
+            "odoo-xml-server-action-url-embedded-credentials",
+            "server action url embeds credentials",
+            "ir.actions.server code embeds username, password, or token material",
+            "move credentials to server-side configuration",
         ),
     ),
     (
