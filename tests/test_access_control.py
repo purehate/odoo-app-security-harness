@@ -101,6 +101,23 @@ def test_public_read_and_global_read_on_sensitive_models_are_reported(tmp_path: 
     assert "odoo-acl-global-read-sensitive" in rule_ids
 
 
+def test_acl_csv_slash_ref_columns_are_parsed(tmp_path: Path) -> None:
+    """Odoo CSV exports may use model_id/id and group_id/id headers."""
+    module = tmp_path / "test_module"
+    _write_manifest(module)
+    security = module / "security"
+    security.mkdir()
+    (security / "ir.model.access.csv").write_text(
+        "id,name,model_id/id,group_id/id,perm_read,perm_write,perm_create,perm_unlink\n"
+        "access_public_partner,public partner,base.model_res_partner,base.group_public,1,0,0,0\n",
+        encoding="utf-8",
+    )
+
+    findings = analyze_access_control(tmp_path)
+
+    assert any(f.rule_id == "odoo-acl-public-read-sensitive" and f.group == "base.group_public" for f in findings)
+
+
 def test_sensitive_model_unlink_outside_admin_group_is_reported(tmp_path: Path) -> None:
     """Delete rights on sensitive models should be administratively scoped."""
     module = tmp_path / "test_module"

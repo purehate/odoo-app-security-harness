@@ -148,8 +148,8 @@ class AccessControlAnalyzer:
             return ACLRow(
                 id=row.get("id", ""),
                 name=row.get("name", ""),
-                model_id=row.get("model_id:id", row.get("model_id", "")),
-                group_id=row.get("group_id:id", row.get("group_id", "")),
+                model_id=_csv_ref(row, "model_id"),
+                group_id=_csv_ref(row, "group_id"),
                 perm_read=_truthy_permission(row.get("perm_read", "0")),
                 perm_write=_truthy_permission(row.get("perm_write", "0")),
                 perm_create=_truthy_permission(row.get("perm_create", "0")),
@@ -571,6 +571,15 @@ def _is_universal_domain(domain: str) -> bool:
 def _truthy_permission(value: str) -> bool:
     """Parse XML/CSV permission truthy values consistently."""
     return str(value).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _csv_ref(row: dict[str, str], field: str) -> str:
+    """Read Odoo CSV external-id columns using import and export spellings."""
+    for key in (f"{field}:id", f"{field}/id", field):
+        value = row.get(key, "")
+        if value:
+            return value
+    return ""
 
 
 def analyze_access_control(repo_path: Path) -> list[ACLFinding]:
