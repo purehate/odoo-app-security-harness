@@ -103,7 +103,7 @@ class FieldSecurityScanner(ast.NodeVisitor):
 
         self.class_constants_stack.append(_static_constants_from_body(node.body))
         model = _extract_model_name(node, self._effective_constants())
-        for field in _extract_fields(node):
+        for field in _extract_fields(node, self._effective_constants()):
             self._scan_field(model, field)
 
         self.generic_visit(node)
@@ -277,16 +277,17 @@ class FieldSecurityScanner(ast.NodeVisitor):
         return constants
 
 
-def _extract_fields(node: ast.ClassDef) -> list[FieldDef]:
+def _extract_fields(node: ast.ClassDef, constants: dict[str, ast.AST] | None = None) -> list[FieldDef]:
+    constants = constants or {}
     fields: list[FieldDef] = []
     for item in node.body:
-        field = _field_def_from_assignment(item)
+        field = _field_def_from_assignment(item, constants)
         if field is not None:
             fields.append(field)
     return fields
 
 
-def _field_def_from_assignment(node: ast.stmt) -> FieldDef | None:
+def _field_def_from_assignment(node: ast.stmt, constants: dict[str, ast.AST]) -> FieldDef | None:
     if isinstance(node, ast.Assign):
         if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
             return None
@@ -310,8 +311,34 @@ def _field_def_from_assignment(node: ast.stmt) -> FieldDef | None:
         name=target.id,
         field_type=field_type,
         line=node.lineno,
-        keywords={kw.arg: kw.value for kw in call.keywords if kw.arg},
+        keywords=_call_keywords(call, constants),
     )
+
+
+def _call_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> dict[str, ast.AST]:
+    keywords: dict[str, ast.AST] = {}
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            keywords[keyword.arg] = keyword.value
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Dict):
+            keywords.update(_dict_keywords(value, constants))
+    return keywords
+
+
+def _dict_keywords(node: ast.Dict, constants: dict[str, ast.AST]) -> dict[str, ast.AST]:
+    keywords: dict[str, ast.AST] = {}
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            resolved_value = _resolve_constant(value, constants)
+            if isinstance(resolved_value, ast.Dict):
+                keywords.update(_dict_keywords(resolved_value, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            keywords[resolved_key.value] = value
+    return keywords
 
 
 def _field_call_type(node: ast.AST) -> str:
@@ -442,7 +469,18 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
-    return isinstance(node, ast.Constant) and isinstance(node.value, str | bool | int | float | type(None))
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str | bool | int | float | type(None))
+    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        return all(_is_static_literal(element) for element in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(
+            (key is None or _is_static_literal(key)) and _is_static_literal(value)
+            for key, value in zip(node.keys, node.values, strict=False)
+        )
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
+        return _is_static_literal(node.operand)
+    return False
 
 
 def _should_skip(path: Path) -> bool:

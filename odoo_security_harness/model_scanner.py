@@ -282,9 +282,33 @@ class ModelStructureScanner(ast.NodeVisitor):
             name=target.id,
             field_type=field_type,
             line=node.lineno,
-            keywords={kw.arg: kw.value for kw in call.keywords if kw.arg},
+            keywords=self._call_keywords(call),
             relation=self._string_arg(call, 0),
         )
+
+    def _call_keywords(self, node: ast.Call) -> dict[str, ast.AST]:
+        keywords: dict[str, ast.AST] = {}
+        for keyword in node.keywords:
+            if keyword.arg is not None:
+                keywords[keyword.arg] = keyword.value
+                continue
+            value = self._resolve_constant(keyword.value)
+            if isinstance(value, ast.Dict):
+                keywords.update(self._dict_keywords(value))
+        return keywords
+
+    def _dict_keywords(self, node: ast.Dict) -> dict[str, ast.AST]:
+        keywords: dict[str, ast.AST] = {}
+        for key, value in zip(node.keys, node.values, strict=False):
+            if key is None:
+                resolved_value = self._resolve_constant(value)
+                if isinstance(resolved_value, ast.Dict):
+                    keywords.update(self._dict_keywords(resolved_value))
+                continue
+            resolved_key = self._resolve_constant(key)
+            if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+                keywords[resolved_key.value] = value
+        return keywords
 
     def _field_call_type(self, node: ast.AST) -> str:
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "fields":

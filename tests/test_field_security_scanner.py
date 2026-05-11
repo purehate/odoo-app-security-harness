@@ -228,6 +228,31 @@ class Token(models.Model):
     )
 
 
+def test_flags_nested_static_unpack_sensitive_field_with_public_groups(tmp_path: Path) -> None:
+    """Nested static field option dictionaries should still expose public groups."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "token.py").write_text(
+        """
+from odoo import fields, models
+
+PORTAL_GROUP = 'base.group_portal'
+BASE_OPTIONS = {'groups': PORTAL_GROUP}
+FIELD_OPTIONS = {**BASE_OPTIONS}
+
+class Token(models.Model):
+    _name = 'x.token'
+
+    access_token = fields.Char(**FIELD_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert any(f.rule_id == "odoo-field-sensitive-public-groups" for f in findings)
+
+
 def test_flags_sensitive_indexed_field(tmp_path: Path) -> None:
     """Indexed credential-like fields deserve explicit DB exposure review."""
     models = tmp_path / "module" / "models"

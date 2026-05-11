@@ -147,6 +147,27 @@ class Thing(models.Model):
     assert not any(f.rule_id == "odoo-model-secret-copyable" for f in findings)
 
 
+def test_nested_static_unpack_copy_false_suppresses_secret_copyable(tmp_path: Path) -> None:
+    """Nested static field option dictionaries should drive copy checks."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+BASE_OPTIONS = {'copy': False}
+FIELD_OPTIONS = {**BASE_OPTIONS}
+
+class Thing(models.Model):
+    _name = 'x.thing'
+    access_token = fields.Char(**FIELD_OPTIONS)
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+
+    assert not any(f.rule_id == "odoo-model-secret-copyable" for f in findings)
+
+
 def test_log_access_disabled_is_reported(tmp_path: Path) -> None:
     """Persistent models should not silently disable Odoo audit metadata."""
     model = _write_model(
