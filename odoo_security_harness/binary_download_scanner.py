@@ -310,10 +310,11 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             )
 
     def _scan_web_content_redirect(self, node: ast.Call, sink: str) -> None:
-        location = _redirect_location_arg(node)
-        if location is None or not _contains_web_content(location, self._effective_constants()):
+        constants = self._effective_constants()
+        location = _redirect_location_arg(node, constants)
+        if location is None or not _contains_web_content(location, constants):
             return
-        if _contains_web_content_token_material(location, self._effective_constants()):
+        if _contains_web_content_token_material(location, constants):
             self._add(
                 "odoo-binary-tokenized-web-content-redirect",
                 "Controller redirects to tokenized web content URL",
@@ -928,11 +929,11 @@ def _is_response_factory_call(
     )
 
 
-def _redirect_location_arg(node: ast.Call) -> ast.AST | None:
+def _redirect_location_arg(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> ast.AST | None:
     if node.args:
         return node.args[0]
-    for keyword in node.keywords:
-        if keyword.arg in {
+    for key, keyword_value in _expanded_keywords(node, constants or {}):
+        if key in {
             "location",
             "next_url",
             "redirect_url",
@@ -941,7 +942,7 @@ def _redirect_location_arg(node: ast.Call) -> ast.AST | None:
             "target_url",
             "url",
         }:
-            return keyword.value
+            return keyword_value
     return None
 
 

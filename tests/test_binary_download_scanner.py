@@ -1479,6 +1479,29 @@ class Redirect(http.Controller):
     assert any(f.rule_id == "odoo-binary-tainted-web-content-redirect" for f in findings)
 
 
+def test_flags_unpack_keyword_tainted_web_content_redirect(tmp_path: Path) -> None:
+    """Static **kwargs should not hide web content redirect targets."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "redirect.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Redirect(http.Controller):
+    @http.route('/public/content', auth='public')
+    def content(self, **kwargs):
+        options = {'location': '/web/content/%s?download=1' % kwargs.get('id')}
+        return request.redirect(**options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(f.rule_id == "odoo-binary-tainted-web-content-redirect" for f in findings)
+
+
 def test_flags_alias_keyword_tainted_web_content_redirects(tmp_path: Path) -> None:
     """Common redirect keyword aliases should still expose web content redirects."""
     controllers = tmp_path / "module" / "controllers"
