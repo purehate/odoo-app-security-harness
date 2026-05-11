@@ -531,6 +531,23 @@ http_post(record.callback_url, json={'id': record.id})
     assert any(f.rule_id == "odoo-loose-python-http-no-timeout" for f in findings)
 
 
+def test_server_action_detects_urllib_request_import_alias_without_timeout(tmp_path: Path) -> None:
+    """from urllib import request aliases should still require explicit timeouts."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+from urllib import request as urlreq
+
+urlreq.urlopen(record.callback_url)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-http-no-timeout" for f in findings)
+
+
 def test_server_action_detects_httpx_client_without_timeout(tmp_path: Path) -> None:
     """httpx client calls should also require timeout review."""
     script = tmp_path / "action.py"

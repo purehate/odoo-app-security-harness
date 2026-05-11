@@ -115,6 +115,10 @@ class LoosePythonScanner(ast.NodeVisitor):
         if node.module in {"aiohttp", "requests", "httpx", "urllib.request", "odoo.tools.safe_eval"}:
             for alias in node.names:
                 self.function_aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+        elif node.module == "urllib":
+            for alias in node.names:
+                if alias.name == "request":
+                    self.module_aliases[alias.asname or alias.name] = "urllib.request"
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
