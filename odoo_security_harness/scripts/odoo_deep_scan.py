@@ -1129,6 +1129,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "migration_cleartext_http_url",
+        (
+            "migration-cleartext-http-url",
+            "migration/hook uses cleartext http url",
+            "migration or lifecycle hook outbound http targets a literal http:// url",
+            "protect install/upgrade integration payloads and response data",
+        ),
+    ),
+    (
         "migration_process_execution",
         (
             "migration-process-execution",

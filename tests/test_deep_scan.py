@@ -6224,6 +6224,12 @@ def test_taxonomy_coverage_classifies_migration_runtime_side_effects() -> None:
             },
             {
                 "source": "migrations",
+                "rule_id": "odoo-migration-cleartext-http-url",
+                "title": "Migration/hook uses cleartext HTTP URL",
+                "message": "Migration or lifecycle hook outbound HTTP targets a literal http:// URL; use HTTPS to protect install/upgrade integration payloads and response data from interception or downgrade",
+            },
+            {
+                "source": "migrations",
                 "rule_id": "odoo-migration-process-execution",
                 "title": "Migration/hook executes a subprocess",
                 "message": "Migration or lifecycle hook executes a subprocess; review command injection, deployment portability, timeouts, and privilege assumptions",
@@ -6236,6 +6242,7 @@ def test_taxonomy_coverage_classifies_migration_runtime_side_effects() -> None:
     assert shapes["odoo-migration-sudo-mutation"] == "migration_sudo_mutation"
     assert shapes["odoo-migration-manual-transaction"] == "migration_manual_transaction"
     assert shapes["odoo-migration-http-no-timeout"] == "migration_http_without_timeout"
+    assert shapes["odoo-migration-cleartext-http-url"] == "migration_cleartext_http_url"
     assert shapes["odoo-migration-process-execution"] == "migration_process_execution"
 
 

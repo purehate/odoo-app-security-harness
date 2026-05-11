@@ -1286,6 +1286,12 @@
       "capec": ["CAPEC-94"],
       "owasp": "A02:2021 Cryptographic Failures"
     },
+    "migration_cleartext_http_url": {
+      "label": "Odoo migration or lifecycle hook uses cleartext HTTP transport",
+      "cwe": ["CWE-319", "CWE-311", "CWE-200"],
+      "capec": ["CAPEC-117", "CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "migration_process_execution": {
       "label": "Odoo migration or lifecycle hook executes a subprocess",
       "cwe": ["CWE-78", "CWE-88", "CWE-269"],

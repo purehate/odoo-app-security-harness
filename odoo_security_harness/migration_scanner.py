@@ -188,6 +188,15 @@ class MigrationScanner(ast.NodeVisitor):
                     node.lineno,
                     "Migration or lifecycle hook passes verify=False to outbound HTTP; install/upgrade integrations should not permit man-in-the-middle attacks",
                 )
+            for url_value in _http_url_values(node, _call_name(node.func), constants):
+                if _is_cleartext_literal_url(url_value, constants):
+                    self._add(
+                        "odoo-migration-cleartext-http-url",
+                        "Migration/hook uses cleartext HTTP URL",
+                        "medium",
+                        node.lineno,
+                        "Migration or lifecycle hook outbound HTTP targets a literal http:// URL; use HTTPS to protect install/upgrade integration payloads and response data from interception or downgrade",
+                    )
         elif _is_process_call(node.func, self.process_module_aliases, self.process_function_aliases):
             self._add(
                 "odoo-migration-process-execution",
@@ -552,6 +561,27 @@ def _is_static_literal(node: ast.AST) -> bool:
     return False
 
 
+def _http_url_values(node: ast.Call, sink: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    if node.args:
+        method = sink.rsplit(".", 1)[-1]
+        if method == "request" and len(node.args) >= 2:
+            values.append(node.args[1])
+        else:
+            values.append(node.args[0])
+    values.extend(_keyword_values(node, "url", constants))
+    return values
+
+
+def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    return (
+        isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+        and value.value.strip().lower().startswith("http://")
+    )
+
+
 def _is_http_call(node: ast.AST, module_aliases: set[str], function_aliases: set[str]) -> bool:
     if isinstance(node, ast.Name):
         return node.id in function_aliases
@@ -619,6 +649,19 @@ def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST
         if isinstance(resolved_key, ast.Constant) and resolved_key.value == name:
             values.append(item_value)
     return values
+
+
+def _call_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _call_name(node.value)
+        return f"{base}.{node.attr}" if base else node.attr
+    if isinstance(node, ast.Call):
+        return _call_name(node.func)
+    if isinstance(node, ast.Subscript):
+        return _call_name(node.value)
+    return ""
 
 
 def _call_root_name(node: ast.AST) -> str:
