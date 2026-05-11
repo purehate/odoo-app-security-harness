@@ -321,6 +321,10 @@ class QWebScanner:
                 self._check_sensitive_render(tag, attr, sensitive_value)
                 break
 
+        srcdoc_value = self._mapped_attribute_value(value, "srcdoc")
+        if srcdoc_value is not None and self._looks_dynamic_html_value(srcdoc_value):
+            self._check_srcdoc_html_sink(tag, attr, srcdoc_value)
+
         src_value = self._mapped_attribute_value(value, "src")
         if tag.lower() == "script" and src_value is not None and self._looks_dynamic_asset_target(src_value):
             self._add_finding(
@@ -1351,6 +1355,21 @@ class QWebScanner:
                     )
                 )
                 break
+
+            srcdoc_value = self._mapped_attribute_value(value, "srcdoc")
+            if srcdoc_value is not None and self._looks_dynamic_html_value(srcdoc_value):
+                findings.append(
+                    QWebFinding(
+                        rule_id="odoo-qweb-srcdoc-html",
+                        title="QWeb iframe srcdoc receives dynamic HTML",
+                        severity="high",
+                        file=self.file_path,
+                        line=line,
+                        element="",
+                        attribute="t-att",
+                        message="t-att maps dynamic HTML into iframe srcdoc; sanitize HTML and sandbox the frame before rendering untrusted template data",
+                    )
+                )
 
             if not self._mapping_sets_url_attribute(value):
                 continue
