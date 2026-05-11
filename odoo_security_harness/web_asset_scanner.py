@@ -149,7 +149,12 @@ ORM_SERVICE_TAINT_RE = re.compile(
     r"URLSearchParams|location\.(?:search|hash)|document\.referrer|JSON\.parse|requestData|notificationData)\b",
     re.IGNORECASE,
 )
+BROWSER_HTTP_REQUEST_RE = re.compile(
+    r"(?:\bfetch|\baxios\.(?:request|get|post|put|patch|delete)|(?:\$|jQuery)\.(?:ajax|get|post|getJSON))\s*\(",
+    re.IGNORECASE,
+)
 RAW_HTTP_REQUEST_RE = re.compile(r"\b(?:fetch|axios\.(?:post|put|patch|delete)|(?:\$|jQuery)\.ajax)\s*\(")
+HTTP_URL_LITERAL_RE = re.compile(r"['\"]http://", re.IGNORECASE)
 UNSAFE_HTTP_METHOD_RE = re.compile(
     r"(?:method|type)\s*:\s*['\"](?:POST|PUT|PATCH|DELETE)['\"]|" r"\baxios\.(?:post|put|patch|delete)\s*\(",
     re.IGNORECASE,
@@ -916,6 +921,7 @@ class WebAssetScanner:
         self._scan_message_listeners(lines)
         self._scan_action_url_navigation(lines)
         self._scan_action_window_navigation(lines)
+        self._scan_insecure_http_requests(lines)
         self._scan_raw_http_csrf(lines)
         self._scan_dom_target_blank(lines)
         self._scan_dom_iframe_missing_sandbox(lines)
@@ -1006,6 +1012,23 @@ class WebAssetScanner:
                 index + 1,
                 "Odoo frontend act_window action carries dynamic or request-derived res_model/domain/context/res_id/view data; verify client input cannot widen model access, archived-record visibility, company scope, or record selection",
                 "ir.actions.act_window",
+            )
+
+    def _scan_insecure_http_requests(self, lines: list[str]) -> None:
+        """Find browser HTTP APIs targeting cleartext URLs."""
+        for index, line in enumerate(lines):
+            if line.strip().startswith("//") or not BROWSER_HTTP_REQUEST_RE.search(line):
+                continue
+            context = "\n".join(lines[index : index + 8])
+            if not HTTP_URL_LITERAL_RE.search(context):
+                continue
+            self._add(
+                "odoo-web-insecure-http-request-url",
+                "Frontend HTTP request uses insecure URL",
+                "medium",
+                index + 1,
+                "Frontend browser request targets a literal http:// URL; use HTTPS or same-origin endpoints to avoid mixed-content downgrade, interception, and referrer leakage risk",
+                "http-request",
             )
 
     def _scan_raw_http_csrf(self, lines: list[str]) -> None:

@@ -2438,6 +2438,12 @@ def test_taxonomy_coverage_classifies_owl_insecure_asset_url() -> None:
                 "message": "Frontend code creates and loads a script over http://",
             },
             {
+                "rule_id": "odoo-web-insecure-http-request-url",
+                "source": "web-asset",
+                "title": "Frontend HTTP request uses insecure URL",
+                "message": "Frontend browser request targets a literal http:// URL",
+            },
+            {
                 "rule_id": "odoo-mail-template-insecure-url",
                 "source": "mail-templates",
                 "title": "Mail template contains insecure HTTP URL",

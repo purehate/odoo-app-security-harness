@@ -819,6 +819,53 @@ def test_axios_delete_without_visible_csrf_detected(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-web-unsafe-request-without-csrf" and f.sink == "http-request" for f in findings)
 
 
+def test_fetch_insecure_http_url_detected(tmp_path: Path) -> None:
+    """Raw frontend requests should not use cleartext remote endpoints."""
+    path = tmp_path / "widget.js"
+    path.write_text("await fetch('http://api.example.com/orders');\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-insecure-http-request-url"
+        and f.sink == "http-request"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_ajax_insecure_http_url_detected(tmp_path: Path) -> None:
+    """jQuery request options should be scanned across nearby lines."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """$.ajax({
+    url: 'http://api.example.com/orders',
+    type: 'GET',
+});
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-insecure-http-request-url" for f in findings)
+
+
+def test_https_frontend_request_ignored_for_insecure_url_rule(tmp_path: Path) -> None:
+    """HTTPS and same-origin browser requests are not cleartext URL findings."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """await fetch('https://api.example.com/orders');
+axios.get('/portal/orders');
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-insecure-http-request-url" for f in findings)
+
+
 def test_sensitive_browser_storage_detected(tmp_path: Path) -> None:
     """Frontend assets should not persist credential-like values in browser storage."""
     path = tmp_path / "widget.js"
