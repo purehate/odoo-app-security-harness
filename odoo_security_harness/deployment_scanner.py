@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import yaml
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
@@ -29,6 +30,7 @@ class DeploymentFinding:
 
 
 CONFIG_EXTENSIONS = {".conf", ".cfg", ".ini", ".env"}
+COMPOSE_FILENAMES = {"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
 DOCKERFILE_NAMES = {"containerfile", "dockerfile"}
 TRUTHY = {"1", "true", "yes", "y", "on"}
 FALSY = {"0", "false", "no", "n", "off"}
@@ -71,6 +73,8 @@ class DeploymentScanner:
             self._scan_config_parameter_xml()
         elif suffix == ".csv":
             self._scan_config_parameter_csv()
+        elif _is_compose_file(self.path):
+            self._scan_compose_environment()
         elif _is_dockerfile(self.path):
             self._scan_dockerfile_config_lines()
         else:
@@ -92,6 +96,23 @@ class DeploymentScanner:
                 continue
             key, value = parsed
             self._scan_config_value(key, value, line_number)
+
+    def _scan_compose_environment(self) -> None:
+        try:
+            document = yaml.safe_load(self.content)
+        except yaml.YAMLError:
+            return
+        if not isinstance(document, dict):
+            return
+        services = document.get("services")
+        if not isinstance(services, dict):
+            return
+        for service in services.values():
+            if not isinstance(service, dict):
+                continue
+            environment = service.get("environment")
+            for key, value in _compose_environment_items(environment):
+                self._scan_config_value(key, value, _line_for(self.content, str(key)))
 
     def _scan_config_parameter_xml(self) -> None:
         try:
@@ -443,6 +464,21 @@ def _parse_dockerfile_env_assignment(line: str) -> tuple[str, str] | None:
     return key.strip(), value.split("#", 1)[0].strip()
 
 
+def _compose_environment_items(environment: object) -> list[tuple[str, str]]:
+    if isinstance(environment, dict):
+        return [(str(key), str(value)) for key, value in environment.items() if value is not None]
+    if not isinstance(environment, list):
+        return []
+    items: list[tuple[str, str]] = []
+    for entry in environment:
+        if not isinstance(entry, str) or "=" not in entry:
+            continue
+        key, _, value = entry.partition("=")
+        if key and value:
+            items.append((key, value))
+    return items
+
+
 def _normalize_config_key(key: str) -> str:
     normalized = key.strip().lower().replace("-", "_")
     if normalized.startswith("odoo_"):
@@ -501,7 +537,17 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
 
 def _looks_config_file(path: Path) -> bool:
     suffix = path.suffix.lower()
-    return suffix in CONFIG_EXTENSIONS or path.name.startswith(".env") or path.name == "odoo.conf" or _is_dockerfile(path)
+    return (
+        suffix in CONFIG_EXTENSIONS
+        or path.name.startswith(".env")
+        or path.name == "odoo.conf"
+        or _is_compose_file(path)
+        or _is_dockerfile(path)
+    )
+
+
+def _is_compose_file(path: Path) -> bool:
+    return path.name.lower() in COMPOSE_FILENAMES
 
 
 def _is_dockerfile(path: Path) -> bool:
