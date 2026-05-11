@@ -4226,6 +4226,12 @@ def test_taxonomy_coverage_classifies_deployment_oauth_and_secret_posture() -> N
             },
             {
                 "source": "deployment",
+                "rule_id": "odoo-deploy-oauth-endpoint-embedded-credentials",
+                "title": "OAuth provider endpoint embeds credentials",
+                "message": "auth.oauth.provider field 'token_endpoint' embeds username, password, or token material in the endpoint URL",
+            },
+            {
+                "source": "deployment",
                 "rule_id": "odoo-deploy-oauth-client-secret-committed",
                 "title": "OAuth client secret committed in module data",
                 "message": "auth.oauth.provider commits client_secret in XML data; move provider secrets to environment/provisioning storage and rotate the secret",
@@ -4249,6 +4255,7 @@ def test_taxonomy_coverage_classifies_deployment_oauth_and_secret_posture() -> N
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-deploy-oauth-missing-validation-endpoint": "deployment_oauth_validation_missing",
         "odoo-deploy-oauth-insecure-endpoint": "deployment_oauth_insecure_endpoint",
+        "odoo-deploy-oauth-endpoint-embedded-credentials": "deployment_oauth_endpoint_embedded_credentials",
         "odoo-deploy-oauth-client-secret-committed": "deployment_committed_secret",
         "odoo-deploy-weak-admin-passwd": "deployment_weak_master_password",
         "odoo-deploy-admin-passwd-committed": "deployment_committed_secret",

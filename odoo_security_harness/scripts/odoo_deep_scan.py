@@ -4898,6 +4898,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "deployment_oauth_endpoint_embedded_credentials",
+        (
+            "odoo-deploy-oauth-endpoint-embedded-credentials",
+            "oauth provider endpoint embeds credentials",
+            "auth.oauth.provider field",
+            "embeds username, password, or token material in the endpoint url",
+            "move credentials to provider secret storage",
+        ),
+    ),
+    (
         "deployment_committed_secret",
         (
             "odoo-deploy-oauth-client-secret-committed",

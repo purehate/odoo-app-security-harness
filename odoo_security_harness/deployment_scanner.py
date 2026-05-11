@@ -223,6 +223,16 @@ class DeploymentScanner:
                     key,
                     value,
                 )
+            if _url_has_embedded_credentials(value):
+                self._add(
+                    "odoo-deploy-oauth-endpoint-embedded-credentials",
+                    "OAuth provider endpoint embeds credentials",
+                    "high",
+                    line,
+                    f"auth.oauth.provider field '{key}' embeds username, password, or token material in the endpoint URL; move credentials to provider secret storage and rotate exposed values",
+                    key,
+                    _redact(value),
+                )
 
         client_secret = fields.get("client_secret", "")
         if client_secret and not _looks_placeholder(client_secret):
@@ -741,6 +751,16 @@ def _is_insecure_base_url(value: str) -> bool:
         return True
     parsed = urlparse(normalized)
     return (parsed.hostname or "") in LOCAL_BASE_URL_HOSTS
+
+
+def _url_has_embedded_credentials(value: str) -> bool:
+    normalized = value.strip().strip("'\"")
+    if not normalized:
+        return False
+    parsed = urlparse(normalized)
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
+        parsed.username is not None or parsed.password is not None
+    )
 
 
 def _has_sensitive_debug_handler(value: str) -> bool:

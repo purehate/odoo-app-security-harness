@@ -445,6 +445,44 @@ oauth_partner,Partner OAuth,True,http://idp.example.com/auth,https://idp.example
     assert "odoo-deploy-oauth-client-secret-committed" in rule_ids
 
 
+def test_scan_deployment_config_flags_oauth_endpoint_embedded_credentials_xml(tmp_path: Path) -> None:
+    """OAuth provider XML endpoints should not embed client or token material."""
+    data_dir = tmp_path / "module" / "data"
+    data_dir.mkdir(parents=True)
+    (data_dir / "oauth.xml").write_text(
+        """<odoo>
+  <record id="oauth_partner" model="auth.oauth.provider">
+    <field name="name">Partner OAuth</field>
+    <field name="enabled">True</field>
+    <field name="auth_endpoint">https://client:secret-1234567890@idp.example.com/auth</field>
+    <field name="validation_endpoint">https://idp.example.com/userinfo</field>
+    <field name="token_endpoint">https://token-1234567890abcdef@idp.example.com/token</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_deployment_config(tmp_path)
+
+    assert sum(finding.rule_id == "odoo-deploy-oauth-endpoint-embedded-credentials" for finding in findings) == 2
+
+
+def test_scan_deployment_config_flags_oauth_endpoint_embedded_credentials_csv(tmp_path: Path) -> None:
+    """OAuth provider CSV endpoints should not embed client or token material."""
+    data_dir = tmp_path / "module" / "data"
+    data_dir.mkdir(parents=True)
+    (data_dir / "auth_oauth_provider.csv").write_text(
+        """id,name,enabled,auth_endpoint,validation_endpoint,token_endpoint
+oauth_partner,Partner OAuth,True,https://client:secret-1234567890@idp.example.com/auth,https://idp.example.com/userinfo,https://token-1234567890abcdef@idp.example.com/token
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_deployment_config(tmp_path)
+
+    assert sum(finding.rule_id == "odoo-deploy-oauth-endpoint-embedded-credentials" for finding in findings) == 2
+
+
 def test_scan_deployment_config_ignores_safe_oauth_provider_xml(tmp_path: Path) -> None:
     """HTTPS OAuth providers with validation and placeholder secrets should avoid findings."""
     data_dir = tmp_path / "module" / "data"
