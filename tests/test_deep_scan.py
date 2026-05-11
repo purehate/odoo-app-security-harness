@@ -6306,6 +6306,12 @@ def test_taxonomy_coverage_classifies_queue_job_execution_risks() -> None:
                 "title": "Queue job performs HTTP without timeout",
                 "message": "queue_job/delayed job performs outbound HTTP without timeout; slow upstreams can exhaust workers or stall job channels",
             },
+            {
+                "source": "queue-jobs",
+                "rule_id": "odoo-queue-job-tls-verify-disabled",
+                "title": "Queue job disables TLS verification",
+                "message": "queue_job/delayed job passes verify=False to outbound HTTP; background integrations should not permit man-in-the-middle attacks",
+            },
         ]
     )
 
@@ -6315,6 +6321,8 @@ def test_taxonomy_coverage_classifies_queue_job_execution_risks() -> None:
     assert shapes["odoo-queue-job-sensitive-model-mutation"] == "queue_job_sensitive_model_mutation"
     assert shapes["odoo-queue-job-dynamic-eval"] == "queue_job_dynamic_evaluation"
     assert shapes["odoo-queue-job-http-no-timeout"] == "queue_job_http_without_timeout"
+    assert shapes["odoo-queue-job-tls-verify-disabled"] == "queue_job_tls_verification_disabled"
+    assert any("CWE-295" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_serialization_object_parsers() -> None:
