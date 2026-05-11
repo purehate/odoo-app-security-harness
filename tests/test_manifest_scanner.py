@@ -158,6 +158,34 @@ def test_legacy_remote_qweb_assets_are_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-manifest-remote-assets" for f in findings)
 
 
+def test_insecure_remote_assets_are_reported(tmp_path: Path) -> None:
+    """Cleartext manifest assets should be a distinct transport-security lead."""
+    module = tmp_path / "insecure_remote_assets"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Insecure Remote Assets',
+    'license': 'LGPL-3',
+    'assets': {
+        'web.assets_backend': [
+            'http://cdn.example.com/widget.js',
+            'https://cdn.example.com/theme.css',
+        ],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-insecure-remote-asset"
+        and f.severity == "medium"
+        and "http://cdn.example.com/widget.js" in f.message
+        and "https://cdn.example.com/theme.css" not in f.message
+        for f in findings
+    )
+
+
 def test_risky_python_dependencies_are_reported_with_common_spellings(tmp_path: Path) -> None:
     """Security-sensitive Python dependency declarations should survive package spelling variants."""
     module = tmp_path / "risky_deps"

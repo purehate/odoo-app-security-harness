@@ -2432,6 +2432,12 @@ def test_taxonomy_coverage_classifies_owl_insecure_asset_url() -> None:
                 "message": "Literal http:// URL in attribute; use HTTPS or same-origin assets",
             },
             {
+                "rule_id": "odoo-manifest-insecure-remote-asset",
+                "source": "manifest",
+                "title": "Manifest declares insecure HTTP frontend asset",
+                "message": "Manifest frontend assets reference cleartext http:// URLs",
+            },
+            {
                 "rule_id": "odoo-web-insecure-asset-url",
                 "source": "web-asset",
                 "title": "DOM-created asset loads insecure HTTP URL",

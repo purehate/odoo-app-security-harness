@@ -233,6 +233,14 @@ class ManifestScanner:
                 "high",
                 f"Manifest frontend assets reference remote URLs: {', '.join(remote_assets)}; verify supply-chain trust, pinning, CSP, and offline install behavior",
             )
+        insecure_remote_assets = [asset for asset in remote_assets if _is_insecure_http_url(asset)]
+        if insecure_remote_assets:
+            self._add(
+                "odoo-manifest-insecure-remote-asset",
+                "Manifest declares insecure HTTP frontend asset",
+                "medium",
+                f"Manifest frontend assets reference cleartext http:// URLs: {', '.join(insecure_remote_assets)}; use HTTPS or packaged same-origin assets to avoid mixed-content downgrade and interception risk",
+            )
 
         external_dependencies = data.get("external_dependencies")
         if isinstance(external_dependencies, dict):
@@ -335,6 +343,11 @@ def _manifest_file_paths(value: Any) -> list[str]:
 def _is_remote_url(value: str) -> bool:
     """Return whether a manifest string is a remote URL-like asset reference."""
     return value.startswith(("http://", "https://", "//"))
+
+
+def _is_insecure_http_url(value: str) -> bool:
+    """Return whether a manifest string is an insecure cleartext URL."""
+    return value.lower().startswith("http://")
 
 
 def _loads_security_data(data_files: list[str]) -> bool:
