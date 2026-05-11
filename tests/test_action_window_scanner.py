@@ -322,6 +322,41 @@ class Window(http.Controller):
     )
 
 
+def test_local_constant_public_sensitive_action_window_is_reported(tmp_path: Path) -> None:
+    """Function-local action constants should not hide public sensitive windows."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "window.py").write_text(
+        """
+from odoo import http
+
+class Window(http.Controller):
+    @http.route('/window/users', auth='public')
+    def users(self):
+        action_type = 'ir.actions.act_window'
+        target_model = 'res.users'
+        broad_domain = []
+        return {
+            'type': action_type,
+            'res_model': target_model,
+            'domain': broad_domain,
+        }
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-window-sensitive-broad-domain" in rule_ids
+    assert any(
+        f.rule_id == "odoo-act-window-public-sensitive-model"
+        and f.severity == "critical"
+        and f.route == "/window/users"
+        for f in findings
+    )
+
+
 def test_class_constant_static_route_options_tainted_domain_is_critical(tmp_path: Path) -> None:
     """Class-scoped **route options should preserve public action-window severity."""
     controllers = tmp_path / "module" / "controllers"
@@ -1238,6 +1273,38 @@ class Users:
     def action_invite_admin(self):
         action = {'type': ACTION_TYPE, 'res_model': 'res.users'}
         action[CONTEXT_KEY] = ACTION_CONTEXT
+        return action
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+    flags = {finding.flag for finding in findings}
+
+    assert "odoo-act-window-privileged-default-context" in rule_ids
+    assert "odoo-act-window-company-scope-context" in rule_ids
+    assert "odoo-act-window-active-test-disabled" in rule_ids
+    assert {"default_groups_id", "allowed_company_ids", "active_test"} <= flags
+
+
+def test_local_constant_mutated_action_window_context_key_is_reported(tmp_path: Path) -> None:
+    """Function-local action and subscript-key constants should not hide context flags."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "users.py").write_text(
+        """
+class Users:
+    def action_invite_admin(self):
+        action_type = 'ir.actions.act_window'
+        context_key = 'context'
+        action_context = {
+            'default_groups_id': [(4, 1)],
+            'active_test': False,
+            'allowed_company_ids': [1],
+        }
+        action = {'type': action_type, 'res_model': 'res.users'}
+        action[context_key] = action_context
         return action
 """,
         encoding="utf-8",

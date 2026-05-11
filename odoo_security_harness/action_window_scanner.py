@@ -123,6 +123,7 @@ class ActionWindowScanner(ast.NodeVisitor):
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[ActionWindowFinding]:
         """Scan the file."""
@@ -190,6 +191,8 @@ class ActionWindowScanner(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
         previous_action_window_names = set(self.action_window_names)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         self.route_stack.append(
             _route_info(
                 node,
@@ -212,6 +215,7 @@ class ActionWindowScanner(ast.NodeVisitor):
         self.route_stack.pop()
         self.tainted_names = previous_tainted
         self.action_window_names = previous_action_window_names
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -223,6 +227,7 @@ class ActionWindowScanner(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_action_window_target(target, node.value)
             self._scan_action_window_subscript_assignment(target, node.value, node.lineno)
             self._mark_tainted_target(target, node.value)
@@ -230,6 +235,7 @@ class ActionWindowScanner(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_action_window_target(node.target, node.value)
             self._scan_action_window_subscript_assignment(node.target, node.value, node.lineno)
             self._mark_tainted_target(node.target, node.value)
@@ -246,6 +252,7 @@ class ActionWindowScanner(ast.NodeVisitor):
         self.visit_For(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_action_window_target(node.target, node.value)
         self._scan_action_window_subscript_assignment(node.target, node.value, node.lineno)
         self._mark_tainted_target(node.target, node.value)
@@ -717,15 +724,35 @@ class ActionWindowScanner(ast.NodeVisitor):
             for element in target.elts:
                 self._discard_name_target(element, names)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        names = set(self.local_constants)
+        self._discard_name_target(target, names)
+        for name in set(self.local_constants) - names:
+            self.local_constants.pop(name, None)
+
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
     def _add(
