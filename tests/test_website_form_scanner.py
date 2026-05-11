@@ -299,6 +299,40 @@ def test_flags_data_model_alias_and_qweb_sensitive_field(tmp_path: Path) -> None
     assert any(f.model == "res.users" and f.severity == "high" for f in findings)
 
 
+def test_flags_token_visibility_and_relational_website_form_fields(tmp_path: Path) -> None:
+    """Public website forms should not expose token, visibility, or chatter controls."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "forms.xml").write_text(
+        """<odoo>
+  <template id="lead">
+    <form action="/website/form/crm.lead" method="post">
+      <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+      <input name="signup_token"/>
+      <input name="access_url"/>
+      <input name="attachment_ids"/>
+      <input name="message_follower_ids"/>
+      <input name="website_published"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+    sensitive_fields = {
+        finding.field for finding in findings if finding.rule_id == "odoo-website-form-sensitive-field"
+    }
+
+    assert {
+        "signup_token",
+        "access_url",
+        "attachment_ids",
+        "message_follower_ids",
+        "website_published",
+    } <= sensitive_fields
+
+
 def test_flags_data_model_name_dash_variant(tmp_path: Path) -> None:
     """data-model-name should be treated like Odoo's data-model_name."""
     views = tmp_path / "module" / "views"
