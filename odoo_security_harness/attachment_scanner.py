@@ -613,28 +613,37 @@ class AttachmentScanner(ast.NodeVisitor):
         values_node = self.attachment_value_names.get(name)
         if values_node is None:
             return
-        update_node = node.args[0] if node.args else None
-        if not isinstance(update_node, ast.Dict):
-            return
+
+        constants = self._effective_constants()
         merged = values_node
-        for key, value in zip(update_node.keys, update_node.values, strict=False):
-            literal_key = _literal_string(key, self._effective_constants()) if key is not None else ""
-            if literal_key:
-                merged = _dict_with_field(merged, literal_key, value)
+        for arg in node.args:
+            update_node = self._attachment_values_node(arg)
+            if update_node is None:
+                continue
+            for key, value in zip(update_node.keys, update_node.values, strict=False):
+                literal_key = _literal_string(key, constants) if key is not None else ""
+                if literal_key:
+                    merged = _dict_with_field(merged, literal_key, value)
+        for key, keyword_value in _expanded_keywords(node, constants):
+            merged = _dict_with_field(merged, key, keyword_value)
         self.attachment_value_names[name] = merged
 
     def _first_dict_arg(self, node: ast.Call) -> dict[str, ast.AST] | None:
         values_node: ast.AST | None = node.args[0] if node.args else None
         if values_node is None:
-            for keyword in node.keywords:
-                if keyword.arg in {"vals", "values"}:
-                    values_node = keyword.value
+            for key, keyword_value in _expanded_keywords(node, self._effective_constants()):
+                if key in {"vals", "values"}:
+                    values_node = keyword_value
                     break
-        if isinstance(values_node, ast.Name) and values_node.id in self.attachment_value_names:
-            values_node = self.attachment_value_names[values_node.id]
-        if not isinstance(values_node, ast.Dict):
+        values_node = self._attachment_values_node(values_node) if values_node is not None else None
+        if values_node is None:
             return None
         return _dict_fields(values_node)
+
+    def _attachment_values_node(self, values_node: ast.AST) -> ast.Dict | None:
+        if isinstance(values_node, ast.Name) and values_node.id in self.attachment_value_names:
+            return self.attachment_value_names[values_node.id]
+        return _resolve_static_dict(values_node, self._effective_constants())
 
     def _mark_tainted_target(self, target: ast.AST, value: ast.AST) -> None:
         if isinstance(target, ast.Name):
@@ -685,7 +694,7 @@ class AttachmentScanner(ast.NodeVisitor):
             self._mark_local_constant_target(target.value, value)
             return
         if isinstance(target, ast.Name):
-            if _is_static_literal(value):
+            if _is_static_literal(value) or _is_static_dict_shape(value):
                 self.local_constants[target.id] = value
             else:
                 self.local_constants.pop(target.id, None)
@@ -900,6 +909,14 @@ def _is_static_literal(node: ast.AST) -> bool:
         )
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _is_static_literal(node.left) and _is_static_literal(node.right)
+    return False
+
+
+def _is_static_dict_shape(node: ast.AST) -> bool:
+    if isinstance(node, ast.Dict):
+        return all(key is None or _is_static_literal(key) for key in node.keys)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_dict_shape(node.left) and _is_static_dict_shape(node.right)
     return False
 
 

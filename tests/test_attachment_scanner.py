@@ -1680,6 +1680,69 @@ class Controller(http.Controller):
     assert "odoo-attachment-public-route-mutation" in rule_ids
 
 
+def test_unpacked_updated_attachment_values_alias_metadata_is_reported(tmp_path: Path) -> None:
+    """Unpacked dict.update maps should not hide risky attachment ownership metadata."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "attachments.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/attach/update/unpack', auth='public', csrf=False)
+    def attach(self, **kwargs):
+        vals = {'name': 'x.pdf', 'datas': kwargs.get('payload')}
+        changes = {
+            'res_model': kwargs.get('model'),
+            'res_id': kwargs.get('id'),
+            'public': True,
+        }
+        vals.update(**changes)
+        return request.env['ir.attachment'].sudo().create(vals)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-attachment-tainted-res-model" in rule_ids
+    assert "odoo-attachment-tainted-res-id" in rule_ids
+    assert "odoo-attachment-public-route-mutation" in rule_ids
+
+
+def test_unpacked_attachment_create_options_metadata_is_reported(tmp_path: Path) -> None:
+    """Unpacked create options should still expose the attachment vals dictionary."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "attachments.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/attach/options', auth='public', csrf=False)
+    def attach(self, **kwargs):
+        vals = {
+            'name': 'x.pdf',
+            'datas': kwargs.get('payload'),
+            'res_model': kwargs.get('model'),
+            'res_id': kwargs.get('id'),
+        }
+        options = {'vals': vals}
+        return request.env['ir.attachment'].sudo().create(**options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-attachment-tainted-res-model" in rule_ids
+    assert "odoo-attachment-tainted-res-id" in rule_ids
+
+
 def test_comprehension_filter_derived_attachment_create_metadata_is_reported(tmp_path: Path) -> None:
     """Request-derived comprehension filters should taint attachment create metadata."""
     controllers = tmp_path / "module" / "controllers"
