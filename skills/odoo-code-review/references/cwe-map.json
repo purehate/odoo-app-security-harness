@@ -1825,6 +1825,12 @@
       "capec": ["CAPEC-94", "CAPEC-102"],
       "owasp": "A02:2021 Cryptographic Failures"
     },
+    "oauth_cleartext_http_url": {
+      "label": "OAuth/OIDC token or userinfo HTTP validation uses cleartext transport",
+      "cwe": ["CWE-319", "CWE-311", "CWE-200"],
+      "capec": ["CAPEC-117", "CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "oauth_tainted_validation_url": {
       "label": "Request-derived data controls OAuth/OIDC token or userinfo validation URL",
       "cwe": ["CWE-918", "CWE-200", "CWE-601"],

@@ -3692,6 +3692,12 @@ def test_taxonomy_coverage_classifies_oauth_flow_specific_risks() -> None:
             },
             {
                 "source": "oauth-flows",
+                "rule_id": "odoo-oauth-cleartext-http-url",
+                "title": "OAuth token/userinfo HTTP call uses cleartext URL",
+                "message": "OAuth/OIDC token or userinfo validation targets a literal http:// URL; use HTTPS so tokens and identities cannot be intercepted or downgraded",
+            },
+            {
+                "source": "oauth-flows",
                 "rule_id": "odoo-oauth-tainted-validation-url",
                 "title": "Request-derived OAuth validation URL",
                 "message": "Request-derived data controls OAuth/OIDC token or userinfo URL",
@@ -3729,12 +3735,13 @@ def test_taxonomy_coverage_classifies_oauth_flow_specific_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 9
+    assert coverage["mapped_rules"] == 10
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-oauth-public-callback-route": "oauth_public_callback_route",
         "odoo-oauth-http-no-timeout": "oauth_http_without_timeout",
         "odoo-oauth-http-verify-disabled": "oauth_tls_verification_disabled",
+        "odoo-oauth-cleartext-http-url": "oauth_cleartext_http_url",
         "odoo-oauth-tainted-validation-url": "oauth_tainted_validation_url",
         "odoo-oauth-jwt-verification-disabled": "oauth_jwt_verification_disabled",
         "odoo-oauth-request-token-decode": "oauth_request_token_decode",

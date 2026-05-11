@@ -1876,6 +1876,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "oauth_cleartext_http_url",
+        (
+            "odoo-oauth-cleartext-http-url",
+            "oauth token/userinfo http call uses cleartext url",
+            "oauth/oidc token or userinfo validation targets a literal http:// url",
+            "tokens and identities cannot be intercepted or downgraded",
+        ),
+    ),
+    (
         "oauth_tainted_validation_url",
         (
             "odoo-oauth-tainted-validation-url",

@@ -237,7 +237,7 @@ class OAuthScanner(ast.NodeVisitor):
         self._track_oauth_identity_payload_update_call(node)
         self._track_tainted_redirect_uri_payload_update_call(node)
 
-        if _is_oauth_http_call(node, canonical_sink) or (
+        if _is_oauth_http_call(node, canonical_sink) or _call_has_oauth_literal_url(node, canonical_sink, constants) or (
             _is_oauth_route(route, "")
             and _is_http_client_sink(canonical_sink)
             and _call_has_tainted_url(node, self._expr_is_tainted)
@@ -262,6 +262,17 @@ class OAuthScanner(ast.NodeVisitor):
                     route.display_path(),
                     sink,
                 )
+            for url_value in _http_url_values(node, canonical_sink, constants):
+                if _is_cleartext_literal_url(url_value, constants):
+                    self._add(
+                        "odoo-oauth-cleartext-http-url",
+                        "OAuth token/userinfo HTTP call uses cleartext URL",
+                        "high",
+                        node.lineno,
+                        "OAuth/OIDC token or userinfo validation targets a literal http:// URL; use HTTPS so tokens and identities cannot be intercepted or downgraded",
+                        route.display_path(),
+                        sink,
+                    )
             if _call_has_tainted_url(node, self._expr_is_tainted):
                 self._add(
                     "odoo-oauth-tainted-validation-url",
@@ -946,6 +957,24 @@ def _is_oauth_http_call(node: ast.Call, sink: str | None = None) -> bool:
     return any(marker in text for marker in TOKEN_MARKERS + ("userinfo", "validation_endpoint", "token_endpoint"))
 
 
+def _call_has_oauth_literal_url(
+    node: ast.Call,
+    sink: str,
+    constants: dict[str, ast.AST] | None = None,
+) -> bool:
+    if not _is_http_client_sink(sink):
+        return False
+    constants = constants or {}
+    for url_value in _http_url_values(node, sink, constants):
+        resolved = _resolve_constant(url_value, constants)
+        if not isinstance(resolved, ast.Constant) or not isinstance(resolved.value, str):
+            continue
+        value = resolved.value.lower()
+        if any(marker in value for marker in ("oauth", "openid", "token", "userinfo", "jwks")):
+            return True
+    return False
+
+
 def _is_authorization_code_token_exchange(
     node: ast.Call,
     constants: dict[str, ast.AST] | None = None,
@@ -1192,6 +1221,28 @@ def _keyword(node: ast.Call, name: str) -> ast.keyword | None:
 def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
     timeout_values = _keyword_values(node, "timeout", constants)
     return bool(timeout_values) and not any(_is_none_constant(value, constants) for value in timeout_values)
+
+
+def _http_url_values(node: ast.Call, sink: str, constants: dict[str, ast.AST] | None = None) -> list[ast.AST]:
+    constants = constants or {}
+    values: list[ast.AST] = []
+    if node.args:
+        method = sink.rsplit(".", 1)[-1]
+        if method == "request" and len(node.args) >= 2:
+            values.append(node.args[1])
+        else:
+            values.append(node.args[0])
+    values.extend(_keyword_values(node, "url", constants))
+    return values
+
+
+def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+    value = _resolve_constant(node, constants or {})
+    return (
+        isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+        and value.value.strip().lower().startswith("http://")
+    )
 
 
 def _keyword_values(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> list[ast.AST]:
