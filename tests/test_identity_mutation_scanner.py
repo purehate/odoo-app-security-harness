@@ -709,6 +709,59 @@ class Users(http.Controller):
     assert "odoo-identity-privilege-field-write" in rule_ids
 
 
+def test_updated_identity_values_reaching_identity_write(tmp_path: Path) -> None:
+    """dict.update should not hide privilege-bearing identity write fields."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "users.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Users(http.Controller):
+    @http.route('/users/groups', auth='user', type='json')
+    def update_groups(self, **kwargs):
+        values = {}
+        values.update({'groups_id': kwargs.get('group_ids')})
+        return request.env['res.users'].browse(1).write(values)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_identity_mutations(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-identity-request-derived-mutation" in rule_ids
+    assert "odoo-identity-privilege-field-write" in rule_ids
+
+
+def test_unpacked_updated_identity_values_reaching_identity_write(tmp_path: Path) -> None:
+    """Unpacked dict.update maps should not hide privilege-bearing identity fields."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "users.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Users(http.Controller):
+    @http.route('/users/groups', auth='user', type='json')
+    def update_groups(self, **kwargs):
+        values = {}
+        changes = {'groups_id': kwargs.get('group_ids')}
+        values.update(**changes)
+        return request.env['res.users'].browse(1).write(values)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_identity_mutations(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-identity-request-derived-mutation" in rule_ids
+    assert "odoo-identity-privilege-field-write" in rule_ids
+
+
 def test_reassigned_identity_values_alias_is_not_stale(tmp_path: Path) -> None:
     """Reusing a tainted request values name for safe data should clear taint."""
     controllers = tmp_path / "module" / "controllers"

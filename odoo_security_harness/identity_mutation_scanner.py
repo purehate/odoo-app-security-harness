@@ -204,6 +204,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
         method = sink.rsplit(".", 1)[-1]
+        self._mark_dict_fields_update_call(node)
         if method not in MUTATION_METHODS:
             self.generic_visit(node)
             return
@@ -447,6 +448,31 @@ class IdentityMutationScanner(ast.NodeVisitor):
                 self.dict_fields_by_var[name] = fields
             else:
                 self.dict_fields_by_var.pop(name, None)
+
+    def _mark_dict_fields_update_call(self, node: ast.Call) -> None:
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+            return
+        root_name = _call_root_name(node.func.value)
+        if not root_name:
+            return
+
+        constants = self._effective_constants()
+        fields = set(self.dict_fields_by_var.get(root_name, set()))
+        for arg in node.args:
+            fields |= _dict_fields_for_update_expr(arg, self.dict_fields_by_var, constants)
+            if self._expr_is_tainted(arg):
+                self.tainted_names.add(root_name)
+        for keyword in node.keywords:
+            if keyword.arg is not None:
+                fields.add(keyword.arg)
+                if self._expr_is_tainted(keyword.value):
+                    self.tainted_names.add(root_name)
+                continue
+            fields |= _dict_fields_for_update_expr(keyword.value, self.dict_fields_by_var, constants)
+            if self._expr_is_tainted(keyword.value):
+                self.tainted_names.add(root_name)
+        if fields:
+            self.dict_fields_by_var[root_name] = fields
 
     def _add(
         self,
@@ -847,6 +873,18 @@ def _privilege_fields(
     if isinstance(node, ast.Subscript):
         return _filter_privilege_fields(dict_fields_by_var.get(_call_root_name(node), set()))
     return _filter_privilege_fields(_dict_keys(node, constants))
+
+
+def _dict_fields_for_update_expr(
+    node: ast.AST,
+    dict_fields_by_var: dict[str, set[str]],
+    constants: dict[str, ast.AST] | None = None,
+) -> set[str]:
+    if isinstance(node, ast.Name):
+        return set(dict_fields_by_var.get(node.id, set())) or _dict_keys(node, constants)
+    if isinstance(node, ast.Subscript):
+        return set(dict_fields_by_var.get(_call_root_name(node), set())) or _dict_keys(node, constants)
+    return _dict_keys(node, constants)
 
 
 def _target_names(node: ast.AST) -> set[str]:
