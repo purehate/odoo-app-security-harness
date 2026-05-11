@@ -255,6 +255,7 @@ class SignupTokenScanner(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> Any:
         route = self._current_route()
         sink = _call_name(node.func)
+        self._track_token_dict_update_call(node)
 
         if _is_signup_reset_sink(node) and _call_has_tainted_input(node, self._expr_is_tainted):
             self._add(
@@ -580,6 +581,21 @@ class SignupTokenScanner(ast.NodeVisitor):
             return
         self.token_mutation_names.add(root_name)
         if self._expr_is_tainted(value):
+            self.tainted_names.add(root_name)
+
+    def _track_token_dict_update_call(self, node: ast.Call) -> None:
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+            return
+        root_name = _call_root_name(node.func.value)
+        if not root_name:
+            return
+        update_values = node.args[0] if node.args else None
+        if not isinstance(update_values, ast.Dict):
+            return
+        if not _dict_mentions_token_field(update_values, self._effective_constants()):
+            return
+        self.token_mutation_names.add(root_name)
+        if any(value is not None and self._expr_is_tainted(value) for value in update_values.values):
             self.tainted_names.add(root_name)
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, route: str, sink: str) -> None:
