@@ -124,6 +124,47 @@ def test_weak_res_users_password_in_xml(tmp_path: Path) -> None:
     assert all(f.severity == "critical" for f in weak_passwords)
 
 
+def test_res_users_password_in_csv(tmp_path: Path) -> None:
+    """Committed user passwords in CSV data should be critical."""
+    path = tmp_path / "res.users.csv"
+    path.write_text(
+        "id,login,password\nuser_backdoor,backdoor@example.com,CorrectHorseBatteryStaple\n",
+        encoding="utf-8",
+    )
+
+    findings = SecretScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-secret-user-password-data" and f.severity == "critical" for f in findings)
+
+
+def test_weak_res_users_password_in_csv(tmp_path: Path) -> None:
+    """Weak CSV user passwords should be reported even when placeholder-like."""
+    path = tmp_path / "users.csv"
+    path.write_text(
+        "id,login,new_password\nuser_demo,demo@example.com,demo\nuser_admin,admin@example.com,admin\n",
+        encoding="utf-8",
+    )
+
+    findings = SecretScanner(path).scan_file()
+    weak_passwords = [f for f in findings if f.rule_id == "odoo-secret-weak-user-password-data"]
+
+    assert len(weak_passwords) == 2
+    assert all(f.severity == "critical" for f in weak_passwords)
+
+
+def test_ir_config_parameter_secret_in_csv(tmp_path: Path) -> None:
+    """Sensitive ir.config_parameter CSV rows should be reported."""
+    path = tmp_path / "ir.config_parameter.csv"
+    path.write_text(
+        "id,key,value\npayment_secret,payment.secret_key,live_secret_abcdef123456\n",
+        encoding="utf-8",
+    )
+
+    findings = SecretScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-secret-config-parameter" and f.severity == "high" for f in findings)
+
+
 def test_res_users_password_matching_login_is_reported(tmp_path: Path) -> None:
     """Account passwords equal to the login or email local part are weak defaults."""
     path = tmp_path / "users.xml"

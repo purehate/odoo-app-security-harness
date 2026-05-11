@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import math
 import re
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +74,9 @@ class SecretScanner:
         if self.path.suffix.lower() == ".xml":
             self._scan_config_parameter_xml(content)
             self._scan_res_users_passwords(content)
+        if self.path.suffix.lower() == ".csv":
+            self._scan_config_parameter_csv(content)
+            self._scan_res_users_passwords_csv(content)
         if self.path.suffix.lower() in CONFIG_EXTENSIONS or self.path.name.startswith(".env"):
             self._scan_odoo_config(content)
         return self.findings
@@ -174,6 +179,66 @@ class SecretScanner:
                             redacted=_redact(password),
                         )
 
+    def _scan_config_parameter_csv(self, content: str) -> None:
+        rows = _csv_dict_rows(content)
+        if not rows:
+            return
+        headers = {header.lower() for header in rows[0][0].keys()}
+        if "key" not in headers or "value" not in headers:
+            return
+        if "ir.config_parameter" not in self.path.name and not any(
+            _is_sensitive_key(row.get("key", "")) for row, _line in rows
+        ):
+            return
+        for row, line_number in rows:
+            key = row.get("key", "")
+            value = row.get("value", "")
+            if key and value and _is_sensitive_key(key) and not _looks_placeholder(value):
+                self._add(
+                    "odoo-secret-config-parameter",
+                    "Sensitive ir.config_parameter value committed",
+                    "high",
+                    line_number,
+                    f"CSV data commits ir.config_parameter '{key}' with value {_redact(value)}; module updates can overwrite production secrets/config",
+                    secret_kind=key,
+                    redacted=_redact(value),
+                )
+
+    def _scan_res_users_passwords_csv(self, content: str) -> None:
+        rows = _csv_dict_rows(content)
+        if not rows:
+            return
+        headers = {header.lower() for header in rows[0][0].keys()}
+        password_fields = [field for field in ("password", "new_password") if field in headers]
+        if not password_fields or ("res.users" not in self.path.name and "login" not in headers):
+            return
+        for row, line_number in rows:
+            login = row.get("login", "")
+            for field in password_fields:
+                password = row.get(field, "")
+                if not password:
+                    continue
+                if _is_weak_user_password(password, login):
+                    self._add(
+                        "odoo-secret-weak-user-password-data",
+                        "Weak user password committed in module data",
+                        "critical",
+                        line_number,
+                        "res.users password in CSV data is a weak default; remove it and rotate the account",
+                        secret_kind="res.users.password",  # noqa: S106 - finding metadata, not a credential
+                        redacted=_redact(password),
+                    )
+                elif not _looks_placeholder(password):
+                    self._add(
+                        "odoo-secret-user-password-data",
+                        "User password committed in module data",
+                        "critical",
+                        line_number,
+                        "res.users password is committed in CSV data; remove it and rotate the account",
+                        secret_kind="res.users.password",  # noqa: S106 - finding metadata, not a credential
+                        redacted=_redact(password),
+                    )
+
     def _scan_odoo_config(self, content: str) -> None:
         for line_number, line in enumerate(content.splitlines(), start=1):
             stripped = line.strip()
@@ -259,6 +324,27 @@ def _xml_field_literal(field: ElementTree.Element) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
         return value[1:-1]
     return value
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized = {
+                str(key or "").strip().lower(): str(value or "").strip()
+                for key, value in row.items()
+                if key is not None
+            }
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _entropy(value: str) -> float:
