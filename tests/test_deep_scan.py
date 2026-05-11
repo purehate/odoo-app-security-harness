@@ -7287,6 +7287,12 @@ def test_taxonomy_coverage_classifies_integration_http_risks() -> None:
             },
             {
                 "source": "integrations",
+                "rule_id": "odoo-integration-cleartext-http-url",
+                "title": "Outbound integration uses cleartext HTTP URL",
+                "message": "Outbound HTTP call targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+            },
+            {
+                "source": "integrations",
                 "rule_id": "odoo-integration-tainted-url-ssrf",
                 "title": "Outbound HTTP URL is request-controlled",
                 "message": "Outbound HTTP URL is derived from request/controller input; validate scheme, host, and private-network reachability to prevent SSRF",
@@ -7300,11 +7306,12 @@ def test_taxonomy_coverage_classifies_integration_http_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 4
+    assert coverage["mapped_rules"] == 5
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-integration-http-no-timeout": "integration_http_no_timeout",
         "odoo-integration-tls-verify-disabled": "integration_tls_verify_disabled",
+        "odoo-integration-cleartext-http-url": "integration_cleartext_http_url",
         "odoo-integration-tainted-url-ssrf": "integration_tainted_url_ssrf",
         "odoo-integration-internal-url-ssrf": "integration_internal_url_ssrf",
     }

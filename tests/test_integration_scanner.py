@@ -262,6 +262,27 @@ def sync():
     assert any(f.rule_id == "odoo-integration-internal-url-ssrf" for f in findings)
 
 
+def test_cleartext_http_integration_url_is_reported(tmp_path: Path) -> None:
+    """Literal public http:// integration endpoints should be transport review leads."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+LEGACY_URL = 'http://api.example.test/sync'
+
+def sync():
+    requests.get(LEGACY_URL, timeout=5)
+    requests.request('POST', url='http://partner.example.test/orders', timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert sum(f.rule_id == "odoo-integration-cleartext-http-url" for f in findings) == 2
+
+
 def test_requests_request_positional_url_is_reported(tmp_path: Path) -> None:
     """requests.request uses its second positional argument as the outbound URL."""
     py = tmp_path / "controller.py"

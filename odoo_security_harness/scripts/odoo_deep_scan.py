@@ -4495,6 +4495,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "integration_cleartext_http_url",
+        (
+            "odoo-integration-cleartext-http-url",
+            "outbound integration uses cleartext http url",
+            "outbound http call targets a literal http:// url",
+            "protect integration payloads and response data",
+            "interception or downgrade",
+        ),
+    ),
+    (
         "integration_tainted_url_ssrf",
         (
             "odoo-integration-tainted-url-ssrf",

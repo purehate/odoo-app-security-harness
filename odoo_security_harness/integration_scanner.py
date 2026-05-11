@@ -285,6 +285,15 @@ class IntegrationScanner(ast.NodeVisitor):
                     "Outbound HTTP call targets a literal loopback, private, link-local, or metadata URL; verify the integration cannot expose cloud metadata or internal Odoo/admin services",
                     sink,
                 )
+            if _is_cleartext_literal_url(url_arg, self._effective_constants()):
+                self._add(
+                    "odoo-integration-cleartext-http-url",
+                    "Outbound integration uses cleartext HTTP URL",
+                    "medium",
+                    node.lineno,
+                    "Outbound HTTP call targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+                    sink,
+                )
         url_keyword = _keyword(node, "url")
         if url_keyword and self._expr_is_tainted(url_keyword.value):
             self._add(
@@ -302,6 +311,15 @@ class IntegrationScanner(ast.NodeVisitor):
                 "high",
                 node.lineno,
                 "Outbound HTTP url= targets a literal loopback, private, link-local, or metadata URL; verify the integration cannot expose cloud metadata or internal Odoo/admin services",
+                sink,
+            )
+        if url_keyword and _is_cleartext_literal_url(url_keyword.value, self._effective_constants()):
+            self._add(
+                "odoo-integration-cleartext-http-url",
+                "Outbound integration uses cleartext HTTP URL",
+                "medium",
+                node.lineno,
+                "Outbound HTTP url= targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
                 sink,
             )
         for proxy_keyword_name in ("proxy", "proxies"):
@@ -888,6 +906,14 @@ def _is_internal_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bo
         or address.is_unspecified
         or address.is_reserved
     )
+
+
+def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    url = _constant_string(node, constants).strip()
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return parsed.scheme == "http" and bool(parsed.hostname)
 
 
 def _constant_string(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:

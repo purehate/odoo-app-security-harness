@@ -2619,6 +2619,12 @@
       "capec": ["CAPEC-94", "CAPEC-117"],
       "owasp": "A02:2021 Cryptographic Failures"
     },
+    "integration_cleartext_http_url": {
+      "label": "Outbound integration uses cleartext HTTP transport",
+      "cwe": ["CWE-319", "CWE-311", "CWE-200"],
+      "capec": ["CAPEC-117", "CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "integration_tainted_url_ssrf": {
       "label": "Outbound integration URL is request-controlled and can reach unintended hosts",
       "cwe": ["CWE-918", "CWE-20", "CWE-200"],
