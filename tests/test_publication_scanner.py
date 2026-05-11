@@ -480,6 +480,66 @@ class Publish(odoo_http.Controller):
     assert "odoo-publication-tainted-runtime-published" in rule_ids
 
 
+def test_imported_odoo_http_module_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http module imports should not hide publication mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "publish.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Publish(odoo_http.Controller):
+    @odoo_http.route('/public/orders/<int:order_id>/publish', auth='public', csrf=False)
+    def publish_order(self, order_id):
+        params = odoo_http.request.get_http_params()
+        return odoo_http.request.env['sale.order'].sudo().browse(order_id).write({
+            'website_published': params.get('published'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-publication-public-route-mutation" in rule_ids
+    assert "odoo-publication-sensitive-runtime-published" in rule_ids
+    assert "odoo-publication-tainted-runtime-published" in rule_ids
+    assert any(
+        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
+    )
+
+
+def test_imported_odoo_module_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
+    """Direct odoo module imports should not hide publication mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "publish.py").write_text(
+        """
+import odoo as od
+
+class Publish(od.http.Controller):
+    @od.http.route('/public/orders/<int:order_id>/publish', auth='public', csrf=False)
+    def publish_order(self, order_id):
+        params = od.http.request.get_http_params()
+        return od.http.request.env['sale.order'].sudo().browse(order_id).write({
+            'website_published': params.get('published'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-publication-public-route-mutation" in rule_ids
+    assert "odoo-publication-sensitive-runtime-published" in rule_ids
+    assert "odoo-publication-tainted-runtime-published" in rule_ids
+    assert any(
+        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
+    )
+
+
 def test_non_odoo_route_decorator_runtime_publication_write_is_not_public(tmp_path: Path) -> None:
     """Local route decorators should not make publication writes public routes."""
     controllers = tmp_path / "module" / "controllers"
