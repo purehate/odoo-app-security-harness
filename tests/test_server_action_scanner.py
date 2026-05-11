@@ -793,6 +793,26 @@ requests.post(record.callback_url, **HTTP_OPTIONS)
     assert not any(f.rule_id == "odoo-loose-python-http-no-timeout" for f in findings)
 
 
+def test_server_action_dict_union_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should satisfy loose Python HTTP timeout checks."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'headers': {}}
+
+requests.post(record.callback_url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert not any(f.rule_id == "odoo-loose-python-http-no-timeout" for f in findings)
+
+
 def test_server_action_detects_tls_verification_disabled(tmp_path: Path) -> None:
     """Loose Python outbound HTTP should not disable TLS verification."""
     script = tmp_path / "action.py"
@@ -822,6 +842,26 @@ def test_server_action_static_kwargs_tls_verify_disabled(tmp_path: Path) -> None
 import requests
 
 HTTP_OPTIONS = {'timeout': 10, 'verify': False}
+
+requests.post(record.callback_url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-tls-verify-disabled" for f in findings)
+
+
+def test_server_action_dict_union_kwargs_tls_verify_disabled(tmp_path: Path) -> None:
+    """Loose Python should flag verify=False from dict-union static **kwargs."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'verify': False}
 
 requests.post(record.callback_url, **HTTP_OPTIONS)
 """,
@@ -871,6 +911,26 @@ requests.request('POST', **HTTP_OPTIONS)
     findings = LoosePythonScanner(str(script), "server_action").scan_file()
 
     assert sum(f.rule_id == "odoo-loose-python-cleartext-http-url" for f in findings) == 2
+
+
+def test_server_action_dict_union_kwargs_cleartext_http_url(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should expose cleartext request URLs."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'url': 'http://partner.example.test/server-action'}
+HTTP_OPTIONS = BASE_OPTIONS | {'timeout': 10}
+
+requests.request('POST', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-cleartext-http-url" for f in findings)
 
 
 def test_server_action_tracks_starred_rest_http_client_alias(tmp_path: Path) -> None:
