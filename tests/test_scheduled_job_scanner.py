@@ -115,6 +115,34 @@ class Partner(models.Model):
     assert "odoo-scheduled-job-sudo-mutation" in rule_ids
 
 
+def test_flags_csv_colon_function_header_linked_cron_method_risks(tmp_path: Path) -> None:
+    """Cron CSV headers with colon suffixes should still link scheduled methods."""
+    data = tmp_path / "module" / "data"
+    models = tmp_path / "module" / "models"
+    data.mkdir(parents=True)
+    models.mkdir(parents=True)
+    (data / "ir_cron.csv").write_text(
+        "id,name,function:name\ncron_sync,Partner Sync,fetch_partner_feed\n",
+        encoding="utf-8",
+    )
+    (models / "partner.py").write_text(
+        """
+from odoo import models
+
+class Partner(models.Model):
+    _name = 'x.partner'
+
+    def fetch_partner_feed(self):
+        return self.env['sale.order'].search([])
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-scheduled-job-unbounded-search" for f in findings)
+
+
 def test_flags_cron_search_count_without_domain_or_limit(tmp_path: Path) -> None:
     """Recurring unbounded counts should be reviewed like unbounded reads."""
     models = tmp_path / "module" / "models"
