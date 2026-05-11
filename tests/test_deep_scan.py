@@ -1365,6 +1365,24 @@ def test_taxonomy_coverage_classifies_web_dangerous_url_scheme() -> None:
     assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_owl_dangerous_url_scheme() -> None:
+    """Executable OWL inline template URL schemes should map to XSS/navigation taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-web-owl-qweb-dangerous-url-scheme",
+                "source": "web-assets",
+                "title": "OWL inline template URL attribute uses dangerous scheme",
+                "message": "OWL xml template contains a literal javascript:, data:text/html, vbscript:, or file: URL",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "frontend_dangerous_url_scheme"
+    assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_qweb_dangerous_url_scheme() -> None:
     """Executable QWeb URL schemes should map to XSS/navigation taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(

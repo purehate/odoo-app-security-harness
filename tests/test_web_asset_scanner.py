@@ -1700,6 +1700,31 @@ def test_owl_inline_template_dynamic_url_mapping_detected(tmp_path: Path) -> Non
     assert any(f.rule_id == "odoo-web-owl-qweb-dynamic-url-attribute" for f in findings)
 
 
+def test_owl_inline_template_dangerous_static_url_detected(tmp_path: Path) -> None:
+    """OWL inline templates should not hard-code executable URL schemes."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<a href=\"javascript:alert(document.cookie)\">Open</a>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-dangerous-url-scheme"
+        and f.sink == "owl-template"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_safe_static_url_ignored(tmp_path: Path) -> None:
+    """Normal local OWL URLs should not create dangerous-scheme noise."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<a href=\"/web#action=12\">Open</a>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-dangerous-url-scheme" for f in findings)
+
+
 def test_owl_inline_template_sensitive_field_render_detected(tmp_path: Path) -> None:
     """OWL inline templates should not expose credential-shaped values."""
     path = tmp_path / "widget.js"
