@@ -429,10 +429,21 @@ def _call_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> dict[str, a
             continue
         value = _resolve_constant(keyword.value, constants)
         if isinstance(value, ast.Dict):
-            for key, dict_value in zip(value.keys, value.values, strict=False):
-                resolved_key = _resolve_constant(key, constants) if key is not None else key
-                if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
-                    keywords[resolved_key.value] = dict_value
+            keywords.update(_dict_keywords(value, constants))
+    return keywords
+
+
+def _dict_keywords(node: ast.Dict, constants: dict[str, ast.AST]) -> dict[str, ast.AST]:
+    keywords: dict[str, ast.AST] = {}
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            resolved_value = _resolve_constant(value, constants)
+            if isinstance(resolved_value, ast.Dict):
+                keywords.update(_dict_keywords(resolved_value, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            keywords[resolved_key.value] = value
     return keywords
 
 

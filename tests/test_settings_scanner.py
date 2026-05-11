@@ -187,6 +187,34 @@ class ResConfigSettings(models.TransientModel):
     assert "odoo-settings-config-field-public-groups" in rule_ids
 
 
+def test_flags_nested_static_unpack_config_parameter_and_groups(tmp_path: Path) -> None:
+    """Nested static **field options should not hide settings metadata."""
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "settings.py").write_text(
+        """
+from odoo import fields, models
+
+SECRET_KEY = 'payment.provider.api_secret'
+PORTAL_GROUP = 'base.group_portal'
+BASE_OPTIONS = {'config_parameter': SECRET_KEY}
+FIELD_OPTIONS = {**BASE_OPTIONS, 'groups': PORTAL_GROUP}
+
+class ResConfigSettings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    api_secret = fields.Char(**FIELD_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_settings(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-settings-sensitive-config-field-no-admin-groups" in rule_ids
+    assert "odoo-settings-config-field-public-groups" in rule_ids
+
+
 def test_flags_class_constant_backed_config_parameter_and_groups(tmp_path: Path) -> None:
     """Class-level config_parameter and groups metadata should be scanned."""
     models = tmp_path / "module" / "models"
