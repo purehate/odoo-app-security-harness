@@ -1211,6 +1211,85 @@ class Preview(http.Controller):
     )
 
 
+def test_flags_module_aliased_werkzeug_response_tainted_html(tmp_path: Path) -> None:
+    """Module-aliased Werkzeug Response factories should preserve HTML taint checks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "html.py").write_text(
+        """
+from odoo import http
+import werkzeug.wrappers as wrappers
+
+class Preview(http.Controller):
+    @http.route('/preview', auth='public')
+    def preview(self, **kwargs):
+        return wrappers.Response(kwargs.get('body'), content_type='text/html')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-tainted-html-response"
+        and f.severity == "high"
+        and f.sink == "Response"
+        for f in findings
+    )
+
+
+def test_flags_imported_werkzeug_wrappers_module_response_tainted_html(tmp_path: Path) -> None:
+    """Imported Werkzeug wrapper modules should preserve HTML taint checks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "html.py").write_text(
+        """
+from odoo import http
+from werkzeug import wrappers as wz_wrappers
+
+class Preview(http.Controller):
+    @http.route('/preview', auth='public')
+    def preview(self, **kwargs):
+        return wz_wrappers.Response(kwargs.get('body'), content_type='text/html')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-tainted-html-response"
+        and f.severity == "high"
+        and f.sink == "Response"
+        for f in findings
+    )
+
+
+def test_flags_module_qualified_odoo_response_tainted_html(tmp_path: Path) -> None:
+    """Module-qualified odoo.http Response factories should preserve HTML taint checks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "html.py").write_text(
+        """
+import odoo as od
+
+class Preview(od.http.Controller):
+    @od.http.route('/preview', auth='public')
+    def preview(self, **kwargs):
+        return od.http.Response(kwargs.get('body'), content_type='text/html')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-tainted-html-response"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
 def test_static_html_make_response_ignored(tmp_path: Path) -> None:
     """Static reviewed HTML responses are not request-derived by themselves."""
     controllers = tmp_path / "module" / "controllers"

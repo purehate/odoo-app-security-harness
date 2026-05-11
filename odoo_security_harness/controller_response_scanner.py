@@ -134,6 +134,7 @@ class ControllerResponseScanner(ast.NodeVisitor):
         self.odoo_module_names: set[str] = {"odoo"}
         self.route_names: set[str] = set()
         self.function_aliases: dict[str, str] = {}
+        self.module_aliases: dict[str, str] = {}
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
@@ -160,6 +161,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 self.odoo_module_names.add(alias.asname or alias.name)
             elif alias.name == "odoo.http" and alias.asname:
                 self.http_module_names.add(alias.asname)
+            elif alias.name in {"werkzeug", "werkzeug.utils", "werkzeug.wrappers", "werkzeug.wrappers.response"}:
+                self.module_aliases[alias.asname or alias.name.split(".", 1)[0]] = alias.name
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
@@ -189,6 +192,10 @@ class ControllerResponseScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "Response":
                     self.function_aliases[alias.asname or alias.name] = "Response"
+        elif node.module == "werkzeug":
+            for alias in node.names:
+                if alias.name in {"utils", "wrappers"}:
+                    self.module_aliases[alias.asname or alias.name] = f"werkzeug.{alias.name}"
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
@@ -792,6 +799,12 @@ class ControllerResponseScanner(ast.NodeVisitor):
     def _is_response_factory_sink(self, node: ast.AST) -> bool:
         if self._canonical_call_name(node) in RESPONSE_FACTORY_SINKS:
             return True
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == "Response"
+            and _is_http_module_expr(node.value, self.http_module_names, self.odoo_module_names)
+        ):
+            return True
         return _is_request_method(
             node,
             self.request_names,
@@ -802,7 +815,13 @@ class ControllerResponseScanner(ast.NodeVisitor):
 
     def _canonical_call_name(self, node: ast.AST) -> str:
         sink = _call_name(node)
-        return self.function_aliases.get(sink, sink)
+        sink = self.function_aliases.get(sink, sink)
+        parts = sink.split(".")
+        if parts and parts[0] in self.module_aliases:
+            sink = ".".join([self.module_aliases[parts[0]], *parts[1:]])
+        if sink in {"werkzeug.wrappers.Response", "werkzeug.wrappers.response.Response"}:
+            return "Response"
+        return sink
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, sink: str) -> None:
         self.findings.append(
