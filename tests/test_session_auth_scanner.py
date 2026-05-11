@@ -1038,6 +1038,50 @@ class Controller(http.Controller):
     assert "odoo-session-sensitive-cookie-weak-flags" not in rule_ids
 
 
+def test_flags_local_constant_alias_session_auth_boundaries(tmp_path: Path) -> None:
+    """Function-local constants should resolve for session, token, root, and cookie checks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "switch.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/switch', auth='public', csrf=False)
+    def switch(self):
+        root = 1
+        uid_key = 'uid'
+        token_key = 'csrf_token'
+        cookie_name = 'session_token'
+        secure_flag = True
+        httponly_flag = True
+        samesite = 'Lax'
+        request.update_env(user=root)
+        request.session.update({uid_key: root})
+        response = request.make_response({token_key: request.session.sid})
+        response.set_cookie(
+            key=cookie_name,
+            value=request.session.sid,
+            secure=secure_flag,
+            httponly=httponly_flag,
+            samesite=samesite,
+        )
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-session-update-env-superuser" in rule_ids
+    assert "odoo-session-public-update-env" in rule_ids
+    assert "odoo-session-direct-uid-assignment" in rule_ids
+    assert "odoo-session-token-exposed" in rule_ids
+    assert "odoo-session-sensitive-cookie-weak-flags" not in rule_ids
+
+
 def test_flags_get_json_data_update_env_user(tmp_path: Path) -> None:
     """Modern JSON routes should treat request.get_json_data() as tainted identity input."""
     controllers = tmp_path / "module" / "controllers"
