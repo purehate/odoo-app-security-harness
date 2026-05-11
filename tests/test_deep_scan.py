@@ -4915,6 +4915,12 @@ def test_taxonomy_coverage_classifies_manifest_supply_chain_and_parse_findings()
                 "title": "Manifest declares dependency with security-sensitive usage",
                 "message": "Review usage of security-sensitive dependency declarations: paramiko, requests",
             },
+            {
+                "source": "manifest",
+                "rule_id": "odoo-manifest-risky-bin-dependency",
+                "title": "Manifest declares binary dependency with security-sensitive usage",
+                "message": "Review usage of security-sensitive binary dependency declarations: wkhtmltopdf, curl",
+            },
         ]
     )
 
@@ -4923,6 +4929,7 @@ def test_taxonomy_coverage_classifies_manifest_supply_chain_and_parse_findings()
     assert shapes["odoo-manifest-parse-error"] == "manifest_parse_integrity"
     assert shapes["odoo-manifest-remote-assets"] == "manifest_remote_asset_supply_chain"
     assert shapes["odoo-manifest-risky-python-dependency"] == "manifest_risky_dependency"
+    assert shapes["odoo-manifest-risky-bin-dependency"] == "manifest_risky_dependency"
 
 
 def test_taxonomy_coverage_classifies_view_inheritance_group_and_xpath_risks() -> None:

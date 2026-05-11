@@ -41,6 +41,22 @@ RISKY_PYTHON_DEPENDENCIES = {
     "suds",
     "zeep",
 }
+RISKY_BINARY_DEPENDENCIES = {
+    "chrome",
+    "chromium",
+    "curl",
+    "gpg",
+    "gs",
+    "node",
+    "npm",
+    "openssl",
+    "pg_dump",
+    "psql",
+    "rsync",
+    "ssh",
+    "wkhtmltopdf",
+    "wget",
+}
 
 
 @dataclass
@@ -188,6 +204,15 @@ class ManifestScanner:
                     "info",
                     f"Review usage of security-sensitive dependency declarations: {', '.join(risky)}",
                 )
+            bin_deps = _as_string_list(external_dependencies.get("bin"))
+            risky_bins = _risky_binary_dependencies(bin_deps)
+            if risky_bins:
+                self._add(
+                    "odoo-manifest-risky-bin-dependency",
+                    "Manifest declares binary dependency with security-sensitive usage",
+                    "info",
+                    f"Review usage of security-sensitive binary dependency declarations: {', '.join(risky_bins)}",
+                )
 
         lifecycle_hooks = [field for field in LIFECYCLE_HOOK_FIELDS if data.get(field)]
         if lifecycle_hooks:
@@ -272,6 +297,16 @@ def _risky_python_dependencies(dependencies: list[str]) -> list[str]:
         if package_name == "yaml":
             package_name = "pyyaml"
         if package_name in RISKY_PYTHON_DEPENDENCIES:
+            risky.append(dependency)
+    return sorted(set(risky), key=str.lower)
+
+
+def _risky_binary_dependencies(dependencies: list[str]) -> list[str]:
+    """Return manifest binary dependencies whose usage deserves security review."""
+    risky: list[str] = []
+    for dependency in dependencies:
+        package_name = Path(dependency.strip().lower()).name
+        if package_name in RISKY_BINARY_DEPENDENCIES:
             risky.append(dependency)
     return sorted(set(risky), key=str.lower)
 

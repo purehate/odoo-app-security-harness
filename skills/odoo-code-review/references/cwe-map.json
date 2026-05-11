@@ -803,7 +803,7 @@
       "owasp": "A08:2021 Software and Data Integrity Failures"
     },
     "manifest_risky_dependency": {
-      "label": "Odoo manifest declares Python dependencies with security-sensitive usage",
+      "label": "Odoo manifest declares dependencies with security-sensitive usage",
       "cwe": ["CWE-1104", "CWE-829"],
       "owasp": "A06:2021 Vulnerable and Outdated Components"
     },

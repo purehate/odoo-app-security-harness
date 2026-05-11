@@ -185,6 +185,31 @@ def test_risky_python_dependencies_are_reported_with_common_spellings(tmp_path: 
     )
 
 
+def test_risky_binary_dependencies_are_reported(tmp_path: Path) -> None:
+    """Security-sensitive binary dependency declarations should be visible in manifest review."""
+    module = tmp_path / "risky_bin_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Risky Bin Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'bin': ['/usr/bin/wkhtmltopdf', 'curl', 'safe-tool'],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-risky-bin-dependency"
+        and "/usr/bin/wkhtmltopdf" in f.message
+        and "curl" in f.message
+        and "safe-tool" not in f.message
+        for f in findings
+    )
+
+
 def test_lifecycle_hooks_are_reported(tmp_path: Path) -> None:
     """Install/uninstall hooks deserve explicit privileged-code review."""
     module = tmp_path / "hooks"
