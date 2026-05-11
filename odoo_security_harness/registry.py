@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import pkgutil
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,7 +30,7 @@ _SCANNER_REGISTRY: dict[str, ScannerMeta] = {}
 def register_scanner(
     name: str,
     scan_func: ScannerFunc | None = None,
-    source_types: set[str] | None = None,
+    source_types: Iterable[str] | None = None,
     description: str = "",
 ) -> ScannerFunc | Callable[[ScannerFunc], ScannerFunc]:
     """Register a scanner function with the global registry.
@@ -97,10 +97,18 @@ def auto_discover(package_name: str = "odoo_security_harness") -> None:
     for top-level functions whose name starts with ``scan_`` and whose
     signature accepts a single ``pathlib.Path`` argument.
     """
-    import odoo_security_harness as _root
+    with suppress(Exception):
+        package = importlib.import_module(package_name)
+    if "package" not in locals():
+        return
 
-    pkg_path = Path(_root.__file__).parent
-    for _finder, mod_name, _ispkg in pkgutil.iter_modules([str(pkg_path)]):
+    package_paths = getattr(package, "__path__", None)
+    if not package_paths:
+        return
+
+    for _finder, mod_name, is_pkg in pkgutil.iter_modules(package_paths):
+        if is_pkg:
+            continue
         if mod_name.startswith("_") or mod_name in {"scripts", "base_scanner", "registry"}:
             continue
         full_name = f"{package_name}.{mod_name}"
@@ -113,6 +121,8 @@ def auto_discover(package_name: str = "odoo_security_harness") -> None:
         for attr_name, obj in inspect.getmembers(mod, inspect.isfunction):
             if not attr_name.startswith("scan_"):
                 continue
+            if obj.__module__ != mod.__name__:
+                continue
             sig = inspect.signature(obj)
             if _is_repo_scanner_signature(sig):
                 scanner_name = attr_name.replace("scan_", "", 1)
@@ -122,8 +132,13 @@ def auto_discover(package_name: str = "odoo_security_harness") -> None:
                         name=scanner_name,
                         scan_func=obj,
                         source_types=source_types,
-                        description=(obj.__doc__ or "").splitlines()[0].strip(),
+                        description=_first_doc_line(obj),
                     )
+
+
+def _first_doc_line(obj: object) -> str:
+    lines = (getattr(obj, "__doc__", None) or "").splitlines()
+    return lines[0].strip() if lines else ""
 
 
 def _is_repo_scanner_signature(sig: inspect.Signature) -> bool:

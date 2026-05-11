@@ -50,20 +50,29 @@ def test_run_scanner_unknown_name_raises(tmp_path: Path) -> None:
 
 
 def test_auto_discover_registers_scan_functions(monkeypatch) -> None:
-    module = types.ModuleType("odoo_security_harness.fake_scanner")
+    package = types.ModuleType("demo_scanners")
+    package.__path__ = ["demo_scanners"]
+    module = types.ModuleType("demo_scanners.fake_scanner")
 
     def scan_fake(repo_path: Path) -> list[str]:
         """Fake scanner."""
         return [repo_path.name]
 
+    scan_fake.__module__ = "demo_scanners.fake_scanner"
     scan_fake._source_types = {"python"}
     module.scan_fake = scan_fake
     module.helper = lambda repo_path: []
 
     monkeypatch.setattr(registry.pkgutil, "iter_modules", lambda paths: [(None, "fake_scanner", False)])
-    monkeypatch.setattr(registry.importlib, "import_module", lambda name: module)
 
-    registry.auto_discover()
+    def import_module(name: str) -> types.ModuleType:
+        if name == "demo_scanners":
+            return package
+        return module
+
+    monkeypatch.setattr(registry.importlib, "import_module", import_module)
+
+    registry.auto_discover("demo_scanners")
 
     assert registry.list_scanner_names() == ["fake"]
     assert registry.get_scanner("fake").description == "Fake scanner."
@@ -71,13 +80,62 @@ def test_auto_discover_registers_scan_functions(monkeypatch) -> None:
 
 
 def test_auto_discover_skips_import_failures(monkeypatch) -> None:
+    package = types.ModuleType("demo_scanners")
+    package.__path__ = ["demo_scanners"]
     monkeypatch.setattr(registry.pkgutil, "iter_modules", lambda paths: [(None, "broken_scanner", False)])
 
     def fail_import(name: str) -> types.ModuleType:
+        if name == "demo_scanners":
+            return package
         raise RuntimeError("broken")
 
     monkeypatch.setattr(registry.importlib, "import_module", fail_import)
 
-    registry.auto_discover()
+    registry.auto_discover("demo_scanners")
+
+    assert registry.list_scanner_names() == []
+
+
+def test_auto_discover_skips_subpackages_and_imported_functions(monkeypatch) -> None:
+    package = types.ModuleType("demo_scanners")
+    package.__path__ = ["demo_scanners"]
+    module = types.ModuleType("demo_scanners.real_scanner")
+
+    def scan_real(repo_path: Path) -> list[str]:
+        return [repo_path.name]
+
+    def scan_imported(repo_path: Path) -> list[str]:
+        return [repo_path.name]
+
+    scan_real.__module__ = "demo_scanners.real_scanner"
+    scan_imported.__module__ = "other_package.shared"
+    module.scan_real = scan_real
+    module.scan_imported = scan_imported
+
+    monkeypatch.setattr(
+        registry.pkgutil,
+        "iter_modules",
+        lambda paths: [(None, "nested", True), (None, "real_scanner", False)],
+    )
+
+    def import_module(name: str) -> types.ModuleType:
+        if name == "demo_scanners":
+            return package
+        return module
+
+    monkeypatch.setattr(registry.importlib, "import_module", import_module)
+
+    registry.auto_discover("demo_scanners")
+
+    assert registry.list_scanner_names() == ["real"]
+
+
+def test_auto_discover_unknown_package_is_noop(monkeypatch) -> None:
+    def fail_import(name: str) -> types.ModuleType:
+        raise RuntimeError("missing")
+
+    monkeypatch.setattr(registry.importlib, "import_module", fail_import)
+
+    registry.auto_discover("missing_package")
 
     assert registry.list_scanner_names() == []
