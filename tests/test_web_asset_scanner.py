@@ -49,6 +49,22 @@ iframe.srcdoc = response.html;
     assert any(f.rule_id == "odoo-web-dom-xss-sink" and f.sink == "iframe.srcdoc" for f in findings)
 
 
+def test_unsafe_html_parser_apis_detected(tmp_path: Path) -> None:
+    """Modern unsafe HTML parser APIs should be reviewed as DOM XSS sinks."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """this.el.setHTMLUnsafe(response.html);
+const doc = Document.parseHTMLUnsafe(payload.html);
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-dom-xss-sink" and f.sink == "setHTMLUnsafe" for f in findings)
+    assert any(f.rule_id == "odoo-web-dom-xss-sink" and f.sink == "Document.parseHTMLUnsafe" for f in findings)
+
+
 def test_legacy_jquery_html_insertion_sinks_detected(tmp_path: Path) -> None:
     """Legacy Odoo widgets often inject HTML through jQuery helpers."""
     path = tmp_path / "widget.js"

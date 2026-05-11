@@ -33,6 +33,8 @@ DOM_XSS_PATTERNS = {
         re.IGNORECASE,
     ),
     "Range.createContextualFragment": re.compile(r"\.createContextualFragment\s*\("),
+    "setHTMLUnsafe": re.compile(r"\.setHTMLUnsafe\s*\("),
+    "Document.parseHTMLUnsafe": re.compile(r"\bDocument\.parseHTMLUnsafe\s*\("),
     "iframe.srcdoc": re.compile(r"\.srcdoc\s*=|\.setAttribute\s*\(\s*['\"]srcdoc['\"]\s*,"),
 }
 DOM_EVENT_HANDLER_NAMES = (
