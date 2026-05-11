@@ -321,6 +321,26 @@ class TestModel(models.Model):
     assert "odoo-mc-search-no-company" in rule_ids
 
 
+def test_local_constant_backed_superuser_search_read_without_company_filter(tmp_path: Path) -> None:
+    """Function-local constants should not hide elevated reads on company models."""
+    model = _write_model(
+        tmp_path,
+        """
+class TestModel(models.Model):
+    def leak_orders(self):
+        root_uid = 1
+        order_model = 'sale.order'
+        return self.env[order_model].with_user(root_uid).search_read([])
+""",
+    )
+
+    findings = MultiCompanyChecker(str(model)).check_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mc-sudo-search-no-company" in rule_ids
+    assert "odoo-mc-search-no-company" in rule_ids
+
+
 def test_aliased_superuser_search_without_company_filter(tmp_path: Path) -> None:
     """Aliased with_user(1) recordsets should keep elevated read posture."""
     model = _write_model(
@@ -434,6 +454,23 @@ ORDER_MODEL = 'sale.order'
 class TestModel(models.Model):
     def orders(self):
         return self.env[ORDER_MODEL].search([('state', '=', 'sale')])
+""",
+    )
+
+    findings = MultiCompanyChecker(str(model)).check_file()
+
+    assert any(f.rule_id == "odoo-mc-search-no-company" for f in findings)
+
+
+def test_local_constant_backed_sensitive_model_search_without_company_filter(tmp_path: Path) -> None:
+    """Function-local constants should not hide multi-company env model names."""
+    model = _write_model(
+        tmp_path,
+        """
+class TestModel(models.Model):
+    def orders(self):
+        order_model = 'sale.order'
+        return self.env[order_model].search([('state', '=', 'sale')])
 """,
     )
 
@@ -603,6 +640,25 @@ class TestModel(models.Model):
         return self.env['sale.order'].with_context({
             'allowed_company_ids': kwargs.get('company_ids'),
             'force_company': kwargs.get('company_id'),
+        }).search([])
+""",
+    )
+
+    findings = MultiCompanyChecker(str(model)).check_file()
+
+    assert any(f.rule_id == "odoo-mc-company-context-user-input" for f in findings)
+
+
+def test_local_constant_company_context_key_from_kwargs_and_dict(tmp_path: Path) -> None:
+    """Function-local constants should not hide dict-style company context keys."""
+    model = _write_model(
+        tmp_path,
+        """
+class TestModel(models.Model):
+    def orders(self, **kwargs):
+        company_key = 'allowed_company_ids'
+        return self.env['sale.order'].with_context({
+            company_key: kwargs.get('company_ids'),
         }).search([])
 """,
     )

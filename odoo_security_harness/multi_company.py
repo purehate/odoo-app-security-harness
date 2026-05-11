@@ -59,6 +59,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
         self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def check_file(self) -> list[MultiCompanyFinding]:
         """Check a Python file for multi-company issues."""
@@ -159,6 +160,8 @@ class MultiCompanyChecker(ast.NodeVisitor):
         """Seed common request wrapper names inside functions."""
         old_tainted_vars = set(self.tainted_vars)
         old_elevated_record_vars = set(self.elevated_record_vars)
+        old_local_constants = self.local_constants
+        self.local_constants = {}
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in {"kwargs", "kw", "post", "params"}:
                 self.tainted_vars.add(arg.arg)
@@ -170,12 +173,15 @@ class MultiCompanyChecker(ast.NodeVisitor):
         self.generic_visit(node)
         self.tainted_vars = old_tainted_vars
         self.elevated_record_vars = old_elevated_record_vars
+        self.local_constants = old_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self.visit_FunctionDef(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         """Visit assignments to detect company_id fields."""
+        for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
         is_request_controlled = self._is_request_controlled(node.value)
         is_elevated_record = self._is_elevated_record_expr(node.value)
         for target in node.targets:
@@ -212,6 +218,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """Visit annotated assignments to track tainted/elevated aliases."""
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             is_request_controlled = self._is_request_controlled(node.value)
             is_elevated_record = self._is_elevated_record_expr(node.value)
             self._mark_target_names(node.target, self.tainted_vars, is_request_controlled)
@@ -222,6 +229,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
     def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
         """Visit assignment expressions to track request-controlled aliases."""
         if isinstance(node.target, ast.Name):
+            self._mark_local_constant_target(node.target, node.value)
             if self._is_request_controlled(node.value):
                 self.tainted_vars.add(node.target.id)
             else:
@@ -411,11 +419,12 @@ class MultiCompanyChecker(ast.NodeVisitor):
 
     def _effective_constants(self) -> dict[str, ast.AST]:
         """Return module constants overlaid with constants from active classes."""
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
     def _is_request_controlled(self, node: ast.expr) -> bool:
@@ -477,6 +486,24 @@ class MultiCompanyChecker(ast.NodeVisitor):
                 self._mark_target_names(element, names, should_mark)
         if isinstance(target, ast.Starred):
             self._mark_target_names(target.value, names, should_mark)
+
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        """Track static constants assigned inside the current function."""
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target, value):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        for name in _target_names(target):
+            self.local_constants.pop(name, None)
 
     def _add_finding(
         self,
@@ -618,6 +645,30 @@ def _is_superuser_arg(
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
     return _static_constants_from_body(tree.body)
+
+
+def _target_names(node: ast.AST) -> set[str]:
+    if isinstance(node, ast.Name):
+        return {node.id}
+    if isinstance(node, ast.Tuple | ast.List):
+        names: set[str] = set()
+        for element in node.elts:
+            names.update(_target_names(element))
+        return names
+    if isinstance(node, ast.Starred):
+        return _target_names(node.value)
+    return set()
+
+
+def _unpack_target_value_pairs(
+    target: ast.Tuple | ast.List,
+    value: ast.Tuple | ast.List,
+) -> list[tuple[ast.AST, ast.AST]]:
+    if any(isinstance(element, ast.Starred) for element in target.elts):
+        return []
+    if len(target.elts) != len(value.elts):
+        return []
+    return list(zip(target.elts, value.elts, strict=True))
 
 
 def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
