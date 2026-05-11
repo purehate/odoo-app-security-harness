@@ -283,6 +283,35 @@ class Sale(models.Model):
     assert any(f.model == "x.sale" for f in findings)
 
 
+def test_flags_local_constant_button_state_and_superuser_mutation(tmp_path: Path) -> None:
+    """Function-local state and superuser constants should still be recognized."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    def action_approve(self):
+        root_uid = 1
+        state_field = 'state'
+        approved = 'approved'
+        orders = self.env['sale.order'].with_user(root_uid)
+        orders.write({state_field: approved})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_button_actions(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-button-action-sudo-mutation" in rule_ids
+    assert "odoo-button-action-sensitive-state-write" in rule_ids
+    assert "odoo-button-action-mutation-no-access-check" in rule_ids
+
+
 def test_flags_env_ref_admin_mutation_and_missing_access_check(tmp_path: Path) -> None:
     """Aliases elevated with base.user_admin should be treated like sudo aliases."""
     models = tmp_path / "module" / "models"
@@ -557,6 +586,33 @@ class Settings(models.Model):
     findings = scan_button_actions(tmp_path)
 
     assert any(f.rule_id == "odoo-button-action-sensitive-model-mutation" for f in findings)
+
+
+def test_flags_local_constant_sensitive_model_mutation(tmp_path: Path) -> None:
+    """Function-local env model names should still flag sensitive mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import models
+
+class Settings(models.Model):
+    _name = 'x.settings'
+
+    def action_rotate_access(self):
+        users_model = 'res.users'
+        config_model = 'ir.config_parameter'
+        self.env[users_model].write({'active': False})
+        self.env[config_model].set_param('auth_signup.invitation_scope', 'b2c')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_button_actions(tmp_path)
+
+    assert (
+        len([finding for finding in findings if finding.rule_id == "odoo-button-action-sensitive-model-mutation"]) == 2
+    )
 
 
 def test_flags_unlink_without_access_check(tmp_path: Path) -> None:
