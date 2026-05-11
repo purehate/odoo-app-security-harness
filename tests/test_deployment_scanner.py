@@ -155,6 +155,19 @@ ODOO_AUTH_SIGNUP_ALLOW_UNINVITED=true
     assert "odoo-deploy-open-signup" in rule_ids
 
 
+def test_scan_deployment_config_flags_base_url_embedded_credentials(tmp_path: Path) -> None:
+    """Deployment web.base.url should not carry embedded credential material."""
+    config = tmp_path / ".env.production"
+    config.write_text(
+        "ODOO_WEB_BASE_URL=https://client:secret-1234567890@odoo.example.com\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_deployment_config(tmp_path)
+
+    assert any(finding.rule_id == "odoo-deploy-base-url-embedded-credentials" for finding in findings)
+
+
 def test_scan_deployment_config_flags_dockerfile_odoo_env_keys(tmp_path: Path) -> None:
     """Dockerfile ARG/ENV layers can bake risky Odoo production settings."""
     config = tmp_path / "Dockerfile"

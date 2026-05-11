@@ -4234,6 +4234,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "config_parameter_base_url_embedded_credentials",
+        (
+            "odoo-config-param-base-url-embedded-credentials",
+            "base url config parameter embeds credentials",
+            "set_param writes web.base.url with username, password, or token material",
+            "generated portal, oauth, payment, and password-reset links can leak those credentials",
+        ),
+    ),
+    (
         "config_parameter_secret_default",
         (
             "config-param-sensitive-default",
@@ -5007,6 +5016,15 @@ _TAXONOMY_SHAPE_HINTS = (
             "base url uses an insecure or local endpoint",
             "host-header or proxy mistakes can affect generated links",
             "generated portal, oauth, and password-reset links",
+        ),
+    ),
+    (
+        "deployment_base_url_embedded_credentials",
+        (
+            "odoo-deploy-base-url-embedded-credentials",
+            "base url embeds credentials",
+            "web.base.url embeds username, password, or token material",
+            "generated portal, oauth, payment, and password-reset links can leak those credentials",
         ),
     ),
     (

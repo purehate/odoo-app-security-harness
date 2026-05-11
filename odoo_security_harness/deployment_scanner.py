@@ -411,16 +411,27 @@ class DeploymentScanner:
                 key,
                 value,
             )
-        elif normalized_key in {"web.base.url", "web_base_url"} and _is_insecure_base_url(value):
-            self._add(
-                "odoo-deploy-insecure-base-url",
-                "Base URL uses an insecure or local endpoint",
-                "medium",
-                line,
-                "web.base.url uses HTTP or a local host; generated portal, OAuth, and password-reset links should use the public HTTPS origin",
-                key,
-                value,
-            )
+        elif normalized_key in {"web.base.url", "web_base_url"}:
+            if _is_insecure_base_url(value):
+                self._add(
+                    "odoo-deploy-insecure-base-url",
+                    "Base URL uses an insecure or local endpoint",
+                    "medium",
+                    line,
+                    "web.base.url uses HTTP or a local host; generated portal, OAuth, and password-reset links should use the public HTTPS origin",
+                    key,
+                    value,
+                )
+            if _url_has_embedded_credentials(value):
+                self._add(
+                    "odoo-deploy-base-url-embedded-credentials",
+                    "Base URL embeds credentials",
+                    "high",
+                    line,
+                    "web.base.url embeds username, password, or token material; generated portal, OAuth, payment, and password-reset links can leak those credentials",
+                    key,
+                    _redact(value),
+                )
         elif normalized_key in {"auth_signup.allow_uninvited", "auth_signup_allow_uninvited"} and _is_truthy(
             normalized_value
         ):

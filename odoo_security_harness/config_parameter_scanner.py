@@ -403,6 +403,16 @@ class ConfigParameterScanner(ast.NodeVisitor):
                 key,
                 sink,
             )
+        if key.strip().lower() == "web.base.url" and _url_has_embedded_credentials(literal_value):
+            self._add(
+                "odoo-config-param-base-url-embedded-credentials",
+                "Base URL config parameter embeds credentials",
+                "high",
+                node.lineno,
+                "set_param writes web.base.url with username, password, or token material; generated portal, OAuth, payment, and password-reset links can leak those credentials",
+                key,
+                sink,
+            )
 
     def _expr_is_tainted(self, node: ast.AST) -> bool:
         if self._is_request_derived(node):
@@ -921,6 +931,16 @@ def _is_insecure_base_url(value: str) -> bool:
         return True
     parsed = urlparse(normalized)
     return (parsed.hostname or "") in LOCAL_BASE_URL_HOSTS
+
+
+def _url_has_embedded_credentials(value: str) -> bool:
+    normalized = value.strip().strip("'\"")
+    if not normalized:
+        return False
+    parsed = urlparse(normalized)
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
+        parsed.username is not None or parsed.password is not None
+    )
 
 
 def _is_sensitive_default(value: str) -> bool:

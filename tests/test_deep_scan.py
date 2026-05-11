@@ -4312,6 +4312,12 @@ def test_taxonomy_coverage_classifies_deployment_runtime_posture() -> None:
             },
             {
                 "source": "deployment",
+                "rule_id": "odoo-deploy-base-url-embedded-credentials",
+                "title": "Base URL embeds credentials",
+                "message": "web.base.url embeds username, password, or token material",
+            },
+            {
+                "source": "deployment",
                 "rule_id": "odoo-deploy-oauth-auto-signup",
                 "title": "OAuth auto-signup is enabled",
                 "message": "auth_oauth.allow_signup is enabled; verify OAuth providers and domain restrictions cannot create unintended accounts",
@@ -4328,6 +4334,7 @@ def test_taxonomy_coverage_classifies_deployment_runtime_posture() -> None:
         "odoo-deploy-time-limit-disabled": "deployment_worker_limits_weak",
         "odoo-deploy-debug-logging": "deployment_debug_logging",
         "odoo-deploy-base-url-not-frozen": "deployment_base_url_integrity",
+        "odoo-deploy-base-url-embedded-credentials": "deployment_base_url_embedded_credentials",
         "odoo-deploy-oauth-auto-signup": "deployment_open_signup",
     }
     assert any("CWE-532" in entry["cwe"] for entry in coverage["mapped_entries"])
@@ -4754,16 +4761,23 @@ def test_taxonomy_coverage_classifies_runtime_config_security_misconfiguration()
                 "title": "Base URL config parameter is set to an insecure endpoint",
                 "message": "set_param writes web.base.url to HTTP or a local host; generated portal, OAuth, and password-reset links should use the public HTTPS origin",
             },
+            {
+                "source": "config-parameters",
+                "rule_id": "odoo-config-param-base-url-embedded-credentials",
+                "title": "Base URL config parameter embeds credentials",
+                "message": "set_param writes web.base.url with username, password, or token material",
+            },
         ]
     )
 
-    assert coverage["mapped_rules"] == 4
+    assert coverage["mapped_rules"] == 5
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-config-param-tainted-security-toggle-write": "config_parameter_security_toggle_write",
         "odoo-config-param-tainted-base-url-write": "config_parameter_base_url_write",
         "odoo-config-param-security-toggle-enabled": "config_parameter_security_toggle_write",
         "odoo-config-param-insecure-base-url-write": "config_parameter_base_url_write",
+        "odoo-config-param-base-url-embedded-credentials": "config_parameter_base_url_embedded_credentials",
     }
     assert any("CWE-16" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-601" in entry["cwe"] for entry in coverage["mapped_entries"])

@@ -1136,6 +1136,26 @@ def set_values(self):
     assert any(f.rule_id == "odoo-config-param-insecure-base-url-write" for f in findings)
 
 
+def test_flags_base_url_embedded_credentials_literal_write(tmp_path: Path) -> None:
+    """Literal web.base.url writes should not include credential material."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+def set_values(self):
+    self.env['ir.config_parameter'].sudo().set_param(
+        'web.base.url',
+        'https://client:secret-1234567890@odoo.example.com',
+    )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+
+    assert any(f.rule_id == "odoo-config-param-base-url-embedded-credentials" for f in findings)
+
+
 def test_flags_hardcoded_sensitive_config_write(tmp_path: Path) -> None:
     """Literal writes to sensitive config keys commit deployable secrets."""
     models = tmp_path / "module" / "models"
