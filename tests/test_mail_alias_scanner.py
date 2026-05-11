@@ -45,6 +45,22 @@ def test_flags_public_alias_to_sensitive_model_in_csv(tmp_path: Path) -> None:
     assert "odoo-mail-alias-broad-contact-policy" in rule_ids
 
 
+def test_flags_public_alias_with_colon_csv_ref(tmp_path: Path) -> None:
+    """Colon-style alias model relation headers should normalize like slash-style headers."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "mail.alias.csv").write_text(
+        "id,alias_name,alias_model_id:id,alias_contact\nalias_sale,orders,sale.model_sale_order,everyone\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_aliases(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-alias-public-sensitive-model" in rule_ids
+    assert "odoo-mail-alias-broad-contact-policy" in rule_ids
+
+
 def test_flags_csv_privileged_alias_owner_and_defaults(tmp_path: Path) -> None:
     """CSV aliases should expose privileged owners and default assignments."""
     data = tmp_path / "module" / "data"

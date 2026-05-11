@@ -299,9 +299,10 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
                 if key is None:
                     continue
                 name = str(key).strip().lower()
-                normalized[name] = str(value or "").strip()
-                if "/" in name:
-                    normalized.setdefault(name.split("/", 1)[0], str(value or "").strip())
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name or ":" in name:
+                    normalized.setdefault(re.split(r"[/:]", name, maxsplit=1)[0], text)
             rows.append((normalized, index))
     except Exception:
         return []
