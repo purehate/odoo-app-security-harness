@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -256,7 +257,8 @@ class AttachmentScanner(ast.NodeVisitor):
                     "Public route mutates attachments",
                     "critical",
                     node.lineno,
-                    "Public/unauthenticated route mutates ir.attachment; verify upload/delete authority, record ownership, and token checks",
+                    "Public/unauthenticated route mutates ir.attachment; verify upload/delete authority, "
+                    "record ownership, and token checks",
                     route.display_path(),
                     sink,
                 )
@@ -266,7 +268,8 @@ class AttachmentScanner(ast.NodeVisitor):
                     "Attachment mutation runs with elevated environment",
                     "high",
                     node.lineno,
-                    "ir.attachment mutation runs through sudo()/with_user(SUPERUSER_ID); verify res_model/res_id binding, ownership, company scope, and auditability",
+                    "ir.attachment mutation runs through sudo()/with_user(SUPERUSER_ID); verify "
+                    "res_model/res_id binding, ownership, company scope, and auditability",
                     route.display_path(),
                     sink,
                 )
@@ -281,7 +284,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Request-derived attachment lookup",
                 "high" if route.auth in {"public", "none"} else "medium",
                 node.lineno,
-                "Request-derived input selects ir.attachment records; verify ownership, res_model/res_id constraints, access_token, and record-rule behavior",
+                "Request-derived input selects ir.attachment records; verify ownership, res_model/res_id "
+                "constraints, access_token, and record-rule behavior",
                 route.display_path(),
                 sink,
             )
@@ -304,7 +308,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment res_model is request-controlled",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "ir.attachment.create uses request-derived res_model; attackers may bind uploads to unintended protected models",
+                "ir.attachment.create uses request-derived res_model; attackers may bind uploads to "
+                "unintended protected models",
                 route.display_path(),
                 sink,
             )
@@ -314,7 +319,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment res_id is request-controlled",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "ir.attachment.create uses request-derived res_id; verify ownership before binding files to existing records",
+                "ir.attachment.create uses request-derived res_id; verify ownership before binding files to "
+                "existing records",
                 route.display_path(),
                 sink,
             )
@@ -324,7 +330,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Public attachment lacks record binding",
                 "high",
                 node.lineno,
-                "ir.attachment.create sets public=True without both res_model and res_id; verify the file is intended to be world-readable",
+                "ir.attachment.create sets public=True without both res_model and res_id; verify the file is "
+                "intended to be world-readable",
                 route.display_path(),
                 sink,
             )
@@ -335,7 +342,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Public attachment is bound to sensitive model",
                 "critical",
                 node.lineno,
-                f"ir.attachment.create sets public=True on sensitive model '{literal_res_model}'; verify no private business document is exposed",
+                f"ir.attachment.create sets public=True on sensitive model '{literal_res_model}'; verify no "
+                "private business document is exposed",
                 route.display_path(),
                 sink,
             )
@@ -345,7 +353,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment URL is request-controlled",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "ir.attachment.create stores a request-derived URL; validate allowed schemes, trusted hosts, portal visibility, and whether users can be sent to untrusted document links",
+                "ir.attachment.create stores a request-derived URL; validate allowed schemes, trusted hosts, "
+                "portal visibility, and whether users can be sent to untrusted document links",
                 route.display_path(),
                 sink,
             )
@@ -356,7 +365,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment URL uses dangerous scheme",
                 "high",
                 node.lineno,
-                f"ir.attachment.create stores URL '{unsafe_url}' with an executable or local-file scheme; restrict attachment links to safe local routes or reviewed HTTPS destinations",
+                f"ir.attachment.create stores URL '{unsafe_url}' with an executable or local-file scheme; "
+                "restrict attachment links to safe local routes or reviewed HTTPS destinations",
                 route.display_path(),
                 sink,
             )
@@ -367,7 +377,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment uses browser-active content type",
                 _active_content_severity(route, public, constants),
                 node.lineno,
-                f"ir.attachment.create stores browser-active content ({active_content}); verify MIME allowlists, sanitization, download disposition, and public access",
+                f"ir.attachment.create stores browser-active content ({active_content}); verify MIME "
+                "allowlists, sanitization, download disposition, and public access",
                 route.display_path(),
                 sink,
             )
@@ -378,7 +389,9 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment filename contains sensitive marker",
                 "high",
                 node.lineno,
-                f"ir.attachment.create stores token, secret, password, or API-key-like material in attachment filename metadata ({sensitive_name}); avoid leaking credentials through download headers, chatter, exports, logs, and shared file records",
+                "ir.attachment.create stores token, secret, password, or API-key-like material in attachment "
+                f"filename metadata ({sensitive_name}); avoid leaking credentials through download headers, "
+                "chatter, exports, logs, and shared file records",
                 route.display_path(),
                 sink,
             )
@@ -400,7 +413,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment write makes file public",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "ir.attachment.write sets public=True; verify the existing file, linked record, and storage object are intentionally world-readable",
+                "ir.attachment.write sets public=True; verify the existing file, linked record, and storage "
+                "object are intentionally world-readable",
                 route.display_path(),
                 sink,
             )
@@ -410,7 +424,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment res_model is changed from request input",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "ir.attachment.write uses request-derived res_model; attackers may rebind files to unintended protected models",
+                "ir.attachment.write uses request-derived res_model; attackers may rebind files to "
+                "unintended protected models",
                 route.display_path(),
                 sink,
             )
@@ -420,7 +435,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment res_id is changed from request input",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "ir.attachment.write uses request-derived res_id; verify ownership before rebinding files to existing records",
+                "ir.attachment.write uses request-derived res_id; verify ownership before rebinding files to "
+                "existing records",
                 route.display_path(),
                 sink,
             )
@@ -430,7 +446,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment access_token is request-controlled",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "ir.attachment.write stores a request-derived access_token; generate attachment tokens server-side and bind them to explicit ownership checks",
+                "ir.attachment.write stores a request-derived access_token; generate attachment tokens "
+                "server-side and bind them to explicit ownership checks",
                 route.display_path(),
                 sink,
             )
@@ -440,7 +457,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment URL is request-controlled",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "ir.attachment.write stores a request-derived URL; validate allowed schemes, trusted hosts, portal visibility, and whether users can be sent to untrusted document links",
+                "ir.attachment.write stores a request-derived URL; validate allowed schemes, trusted hosts, "
+                "portal visibility, and whether users can be sent to untrusted document links",
                 route.display_path(),
                 sink,
             )
@@ -451,7 +469,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment URL uses dangerous scheme",
                 "high",
                 node.lineno,
-                f"ir.attachment.write stores URL '{unsafe_url}' with an executable or local-file scheme; restrict attachment links to safe local routes or reviewed HTTPS destinations",
+                f"ir.attachment.write stores URL '{unsafe_url}' with an executable or local-file scheme; "
+                "restrict attachment links to safe local routes or reviewed HTTPS destinations",
                 route.display_path(),
                 sink,
             )
@@ -462,7 +481,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment uses browser-active content type",
                 _active_content_severity(route, public, constants),
                 node.lineno,
-                f"ir.attachment.write stores browser-active content ({active_content}); verify MIME allowlists, sanitization, download disposition, and public access",
+                f"ir.attachment.write stores browser-active content ({active_content}); verify MIME "
+                "allowlists, sanitization, download disposition, and public access",
                 route.display_path(),
                 sink,
             )
@@ -473,7 +493,9 @@ class AttachmentScanner(ast.NodeVisitor):
                 "Attachment filename contains sensitive marker",
                 "high",
                 node.lineno,
-                f"ir.attachment.write stores token, secret, password, or API-key-like material in attachment filename metadata ({sensitive_name}); avoid leaking credentials through download headers, chatter, exports, logs, and shared file records",
+                "ir.attachment.write stores token, secret, password, or API-key-like material in attachment "
+                f"filename metadata ({sensitive_name}); avoid leaking credentials through download headers, "
+                "chatter, exports, logs, and shared file records",
                 route.display_path(),
                 sink,
             )
@@ -863,6 +885,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -893,6 +917,45 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
