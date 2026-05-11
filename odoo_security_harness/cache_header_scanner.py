@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -258,7 +259,9 @@ class CacheHeaderScanner(ast.NodeVisitor):
                 "Public sensitive response lacks no-store cache-control",
                 "high",
                 node.lineno,
-                "Public controller response includes token/secret-like data without obvious Cache-Control: no-store/private headers; prevent browser/proxy caching of account or document secrets",
+                "Public controller response includes token/secret-like data without obvious "
+                "Cache-Control: no-store/private headers; prevent browser/proxy caching of "
+                "account or document secrets",
                 route.display_path(),
                 sink,
             )
@@ -273,7 +276,9 @@ class CacheHeaderScanner(ast.NodeVisitor):
                 "Public render includes token/secret-like data",
                 "high",
                 node.lineno,
-                "Public route renders token/secret-like values; verify the response sets no-store/private cache headers and does not leak through shared caches or referrers",
+                "Public route renders token/secret-like values; verify the response sets "
+                "no-store/private cache headers and does not leak through shared caches or "
+                "referrers",
                 route.display_path(),
                 sink,
             )
@@ -289,7 +294,8 @@ class CacheHeaderScanner(ast.NodeVisitor):
                 "Public file download may be cacheable",
                 "medium",
                 node.lineno,
-                "Public sensitive-looking download uses send_file without cache disabling arguments; ensure private documents are not cached by browsers or proxies",
+                "Public sensitive-looking download uses send_file without cache disabling "
+                "arguments; ensure private documents are not cached by browsers or proxies",
                 route.display_path(),
                 sink,
             )
@@ -317,7 +323,9 @@ class CacheHeaderScanner(ast.NodeVisitor):
                     "Public sensitive response lacks no-store cache-control",
                     "medium",
                     node.lineno,
-                    "Public sensitive-looking route returns a response without obvious no-store/private cache headers; verify tokenized pages and downloads cannot be cached",
+                    "Public sensitive-looking route returns a response without obvious "
+                    "no-store/private cache headers; verify tokenized pages and downloads cannot "
+                    "be cached",
                     route.display_path(),
                     "return",
                 )
@@ -327,7 +335,9 @@ class CacheHeaderScanner(ast.NodeVisitor):
                     "Public response sets sensitive cookie without no-store cache-control",
                     "high",
                     node.lineno,
-                    "Public controller response sets a session/token/CSRF-shaped cookie without obvious Cache-Control: no-store/private headers; prevent auth callback and token responses from being cached",
+                    "Public controller response sets a session/token/CSRF-shaped cookie without "
+                    "obvious Cache-Control: no-store/private headers; prevent auth callback and "
+                    "token responses from being cached",
                     route.display_path(),
                     "return",
                 )
@@ -371,7 +381,8 @@ class CacheHeaderScanner(ast.NodeVisitor):
                 "Public sensitive route sets cacheable headers",
                 "high",
                 line,
-                "Public sensitive-looking route sets cacheable Cache-Control headers; tokenized pages, invoices, exports, and downloads should use no-store/private policies",
+                "Public sensitive-looking route sets cacheable Cache-Control headers; tokenized "
+                "pages, invoices, exports, and downloads should use no-store/private policies",
                 route.display_path(),
                 sink,
             )
@@ -714,6 +725,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -760,6 +773,59 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            items.append((resolved_key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
