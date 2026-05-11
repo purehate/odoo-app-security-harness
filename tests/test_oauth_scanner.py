@@ -365,6 +365,28 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-oauth-session-authenticate" for f in findings)
 
 
+def test_refresh_token_oauth_session_authenticate_is_reported(tmp_path: Path) -> None:
+    """Refresh-token backed OAuth session creation should remain review-visible."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        return request.session.authenticate(request.db, kwargs.get('login'), kwargs.get('refresh_token'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(f.rule_id == "odoo-oauth-session-authenticate" for f in findings)
+
+
 def test_imported_route_decorator_oauth_callback_risks_are_reported(tmp_path: Path) -> None:
     """Imported route decorators should still expose OAuth callback risks."""
     controllers = tmp_path / "module" / "controllers"

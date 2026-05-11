@@ -37,6 +37,7 @@ TAINTED_ARG_NAMES = {
     "post",
     "provider_url",
     "redirect_uri",
+    "refresh_token",
     "state",
     "token",
     "token_endpoint",
@@ -50,7 +51,7 @@ REQUEST_MARKERS = (
     "post.get",
 )
 OAUTH_ROUTE_MARKERS = ("oauth", "oidc", "openid", "sso", "signin", "callback")
-TOKEN_MARKERS = ("access_token", "id_token", "oauth", "openid", "jwt")
+TOKEN_MARKERS = ("access_token", "id_token", "oauth", "openid", "jwt", "refresh_token")
 OAUTH_IDENTITY_FIELDS = {"groups_id", "login", "oauth_uid"}
 
 
