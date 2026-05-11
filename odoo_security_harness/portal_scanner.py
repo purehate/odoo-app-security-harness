@@ -51,6 +51,7 @@ class PortalScanner(ast.NodeVisitor):
         self.findings: list[PortalFinding] = []
         self.request_names: set[str] = {"request"}
         self.http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.route_names: set[str] = set()
         self.route_stack: list[PortalContext] = []
         self.function_stack: list[FunctionContext] = []
@@ -77,6 +78,7 @@ class PortalScanner(ast.NodeVisitor):
             self._effective_constants(),
             self.route_names,
             self.http_module_names,
+            self.odoo_module_names,
         ) or PortalContext(is_route=False)
         arg_names = {arg.arg for arg in [*node.args.args, *node.args.kwonlyargs]}
         if node.args.vararg:
@@ -116,6 +118,14 @@ class PortalScanner(ast.NodeVisitor):
         self.class_constants_stack.append(_static_constants_from_body(node.body))
         self.generic_visit(node)
         self.class_constants_stack.pop()
+
+    def visit_Import(self, node: ast.Import) -> Any:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
+        self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo":
@@ -171,9 +181,21 @@ class PortalScanner(ast.NodeVisitor):
             if method == "_document_check_access":
                 context.document_check_line = context.document_check_line or node.lineno
                 context.document_check_has_token = context.document_check_has_token or _call_mentions_access_token(node)
-        if _call_reads_access_token_param(node, self.request_names, constants):
+        if _call_reads_access_token_param(
+            node,
+            self.request_names,
+            self.http_module_names,
+            self.odoo_module_names,
+            constants,
+        ):
             context.access_token_input_line = context.access_token_input_line or node.lineno
-        if _call_reads_route_id_param(node, self.request_names, constants):
+        if _call_reads_route_id_param(
+            node,
+            self.request_names,
+            self.http_module_names,
+            self.odoo_module_names,
+            constants,
+        ):
             context.route_id_input_line = context.route_id_input_line or node.lineno
         if sink.endswith("request.render") or sink == "request.render" or sink.endswith(".render"):
             if any(_expr_mentions_token(arg) for arg in node.args) or any(
@@ -208,12 +230,22 @@ class PortalScanner(ast.NodeVisitor):
         context = self._current_context()
         if route.is_portal and context is not None:
             key_name = _subscript_key_name(node.slice, self._effective_constants(context))
-            if key_name == "access_token" and _is_request_mapping(node.value, self.request_names):
+            if key_name == "access_token" and _is_request_mapping(
+                node.value,
+                self.request_names,
+                self.http_module_names,
+                self.odoo_module_names,
+            ):
                 context.access_token_input_line = context.access_token_input_line or node.lineno
             if (
                 key_name
                 and (key_name == "id" or key_name.endswith("_id"))
-                and _is_request_mapping(node.value, self.request_names)
+                and _is_request_mapping(
+                    node.value,
+                    self.request_names,
+                    self.http_module_names,
+                    self.odoo_module_names,
+                )
             ):
                 context.route_id_input_line = context.route_id_input_line or node.lineno
         self.generic_visit(node)
@@ -412,11 +444,12 @@ def _route_info(
     constants: dict[str, ast.AST] | None = None,
     route_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> PortalContext | None:
     constants = constants or {}
     route_names = route_names or set()
     for decorator in node.decorator_list:
-        if not _is_http_route(decorator, route_names, http_module_names):
+        if not _is_http_route(decorator, route_names, http_module_names, odoo_module_names):
             continue
         auth = "user"
         website = False
@@ -494,18 +527,34 @@ def _is_http_route(
     node: ast.AST,
     route_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> bool:
     route_names = route_names or set()
     http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     if isinstance(node, ast.Call):
-        return _is_http_route(node.func, route_names, http_module_names)
+        return _is_http_route(node.func, route_names, http_module_names, odoo_module_names)
     if isinstance(node, ast.Name):
         return node.id in route_names
     return (
         isinstance(node, ast.Attribute)
         and node.attr == "route"
+        and _is_http_module_expr(node.value, http_module_names, odoo_module_names)
+    )
+
+
+def _is_http_module_expr(
+    node: ast.AST,
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in http_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "http"
         and isinstance(node.value, ast.Name)
-        and node.value.id in http_module_names
+        and node.value.id in odoo_module_names
     )
 
 
@@ -603,14 +652,18 @@ def _is_static_empty_token(node: ast.AST) -> bool:
 def _call_reads_access_token_param(
     node: ast.Call,
     request_names: set[str],
+    http_module_names: set[str],
+    odoo_module_names: set[str],
     constants: dict[str, ast.AST] | None = None,
 ) -> bool:
-    return _call_reads_param_name(node, {"access_token"}, request_names, constants)
+    return _call_reads_param_name(node, {"access_token"}, request_names, http_module_names, odoo_module_names, constants)
 
 
 def _call_reads_route_id_param(
     node: ast.Call,
     request_names: set[str],
+    http_module_names: set[str],
+    odoo_module_names: set[str],
     constants: dict[str, ast.AST] | None = None,
 ) -> bool:
     if not isinstance(node.func, ast.Attribute) or node.func.attr != "get":
@@ -621,18 +674,22 @@ def _call_reads_route_id_param(
     if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
         return False
     name = value.value
-    return _is_request_mapping(node.func.value, request_names) and (name == "id" or name.endswith("_id"))
+    return _is_request_mapping(node.func.value, request_names, http_module_names, odoo_module_names) and (
+        name == "id" or name.endswith("_id")
+    )
 
 
 def _call_reads_param_name(
     node: ast.Call,
     names: set[str],
     request_names: set[str],
+    http_module_names: set[str],
+    odoo_module_names: set[str],
     constants: dict[str, ast.AST] | None = None,
 ) -> bool:
     if not isinstance(node.func, ast.Attribute) or node.func.attr != "get":
         return False
-    if not _is_request_mapping(node.func.value, request_names):
+    if not _is_request_mapping(node.func.value, request_names, http_module_names, odoo_module_names):
         return False
     if not node.args:
         return False
@@ -640,17 +697,33 @@ def _call_reads_param_name(
     return isinstance(value, ast.Constant) and value.value in names
 
 
-def _is_request_mapping(node: ast.AST, request_names: set[str]) -> bool:
+def _is_request_mapping(
+    node: ast.AST,
+    request_names: set[str],
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
     if isinstance(node, ast.Name):
         return node.id in {"kw", "kwargs", "post"}
     if isinstance(node, ast.Attribute) and node.attr == "params":
-        return _is_request_expr(node.value, request_names)
+        return _is_request_expr(node.value, request_names, http_module_names, odoo_module_names)
     text = _safe_unparse(node)
     return text in {"kw", "kwargs", "post"}
 
 
-def _is_request_expr(node: ast.AST, request_names: set[str]) -> bool:
-    return isinstance(node, ast.Name) and node.id in request_names
+def _is_request_expr(
+    node: ast.AST,
+    request_names: set[str],
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in request_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "request"
+        and _is_http_module_expr(node.value, http_module_names, odoo_module_names)
+    )
 
 
 def _subscript_key_name(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:
