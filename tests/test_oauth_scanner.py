@@ -446,6 +446,60 @@ class Controller(odoo_http.Controller):
     assert "odoo-oauth-jwt-verification-disabled" in rule_ids
 
 
+def test_imported_odoo_http_module_oauth_callback_risks_are_reported(tmp_path: Path) -> None:
+    """Direct odoo.http imports should expose OAuth callback risks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+import odoo.http as odoo_http
+import jwt
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        token = odoo_http.request.get_http_params().get('id_token')
+        jwt.decode(token, audience='client')
+        return odoo_http.request.session.authenticate(odoo_http.request.db, kwargs.get('login'), kwargs.get('access_token'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-oauth-public-callback-route" in rule_ids
+    assert "odoo-oauth-request-token-decode" in rule_ids
+    assert "odoo-oauth-session-authenticate" in rule_ids
+
+
+def test_imported_odoo_module_oauth_callback_risks_are_reported(tmp_path: Path) -> None:
+    """Direct odoo imports should expose OAuth callback risks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+import odoo as od
+import jwt
+
+class Controller(od.http.Controller):
+    @od.http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        token = od.http.request.get_http_params().get('id_token')
+        jwt.decode(token, audience='client')
+        return od.http.request.session.authenticate(od.http.request.db, kwargs.get('login'), kwargs.get('access_token'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-oauth-public-callback-route" in rule_ids
+    assert "odoo-oauth-request-token-decode" in rule_ids
+    assert "odoo-oauth-session-authenticate" in rule_ids
+
+
 def test_non_odoo_route_decorator_oauth_callback_is_ignored(tmp_path: Path) -> None:
     """Local route-like decorators should not create Odoo route context."""
     controllers = tmp_path / "module" / "controllers"

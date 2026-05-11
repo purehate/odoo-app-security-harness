@@ -80,6 +80,7 @@ class OAuthScanner(ast.NodeVisitor):
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
         self.http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.http_client_module_names: dict[str, str] = {}
         self.http_client_function_names: dict[str, str] = {}
         self.route_decorator_names: set[str] = set()
@@ -100,6 +101,10 @@ class OAuthScanner(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> Any:
         for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
             local_name = alias.asname or alias.name.split(".", 1)[0]
             if alias.name in HTTP_CLIENT_MODULES:
                 self.http_client_module_names[local_name] = alias.name
@@ -143,6 +148,7 @@ class OAuthScanner(ast.NodeVisitor):
             self._effective_constants(),
             self.route_decorator_names,
             self.http_module_names,
+            self.odoo_module_names,
         ) or RouteContext(
             is_route=False,
         )
@@ -595,10 +601,21 @@ class OAuthScanner(ast.NodeVisitor):
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
 
     def _is_request_derived(self, node: ast.AST) -> bool:
-        return _is_request_derived(node, self.request_names)
+        return _is_request_derived(
+            node,
+            self.request_names,
+            self.http_module_names,
+            self.odoo_module_names,
+        )
 
     def _is_request_session_method(self, node: ast.AST, method: str) -> bool:
-        return _is_request_session_method(node, method, self.request_names)
+        return _is_request_session_method(
+            node,
+            method,
+            self.request_names,
+            self.http_module_names,
+            self.odoo_module_names,
+        )
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, route: str, sink: str) -> None:
         self.findings.append(
@@ -632,11 +649,14 @@ def _route_info(
     constants: dict[str, ast.AST] | None = None,
     route_decorator_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> RouteContext | None:
     constants = constants or {}
     route_decorator_names = route_decorator_names or set()
+    http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     for decorator in node.decorator_list:
-        if not _is_http_route(decorator, route_decorator_names, http_module_names):
+        if not _is_http_route(decorator, route_decorator_names, http_module_names, odoo_module_names):
             continue
         auth = "user"
         paths: list[str] = []
@@ -690,18 +710,34 @@ def _is_http_route(
     node: ast.AST,
     route_decorator_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> bool:
     route_decorator_names = route_decorator_names or set()
     http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     if isinstance(node, ast.Call):
-        return _is_http_route(node.func, route_decorator_names, http_module_names)
+        return _is_http_route(node.func, route_decorator_names, http_module_names, odoo_module_names)
     if isinstance(node, ast.Name):
         return node.id in route_decorator_names
     return (
         isinstance(node, ast.Attribute)
         and node.attr == "route"
+        and _is_http_module_expr(node.value, http_module_names, odoo_module_names)
+    )
+
+
+def _is_http_module_expr(
+    node: ast.AST,
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in http_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "http"
         and isinstance(node.value, ast.Name)
-        and node.value.id in http_module_names
+        and node.value.id in odoo_module_names
     )
 
 
@@ -779,15 +815,25 @@ def _is_static_literal(node: ast.AST) -> bool:
     return False
 
 
-def _is_request_derived(node: ast.AST, request_names: set[str]) -> bool:
+def _is_request_derived(
+    node: ast.AST,
+    request_names: set[str],
+    http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
+) -> bool:
+    http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     for child in ast.walk(node):
         if isinstance(child, ast.Attribute) and child.attr in {"params", "jsonrequest", "httprequest"}:
-            if _is_request_expr(child.value, request_names):
+            if _is_request_expr(child.value, request_names, http_module_names, odoo_module_names):
                 return True
         if not isinstance(child, ast.Call) or not isinstance(child.func, ast.Attribute):
             continue
         if child.func.attr in {"get_http_params", "get_json_data"} and _is_request_expr(
-            child.func.value, request_names
+            child.func.value,
+            request_names,
+            http_module_names,
+            odoo_module_names,
         ):
             return True
 
@@ -795,17 +841,47 @@ def _is_request_derived(node: ast.AST, request_names: set[str]) -> bool:
     return any(marker in text for marker in REQUEST_MARKERS)
 
 
-def _is_request_expr(node: ast.AST, request_names: set[str]) -> bool:
-    return isinstance(node, ast.Name) and node.id in request_names
-
-
-def _is_request_session_expr(node: ast.AST, request_names: set[str]) -> bool:
-    return isinstance(node, ast.Attribute) and node.attr == "session" and _is_request_expr(node.value, request_names)
-
-
-def _is_request_session_method(node: ast.AST, method: str, request_names: set[str]) -> bool:
+def _is_request_expr(
+    node: ast.AST,
+    request_names: set[str],
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in request_names
     return (
-        isinstance(node, ast.Attribute) and node.attr == method and _is_request_session_expr(node.value, request_names)
+        isinstance(node, ast.Attribute)
+        and node.attr == "request"
+        and _is_http_module_expr(node.value, http_module_names, odoo_module_names)
+    )
+
+
+def _is_request_session_expr(
+    node: ast.AST,
+    request_names: set[str],
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "session"
+        and _is_request_expr(node.value, request_names, http_module_names, odoo_module_names)
+    )
+
+
+def _is_request_session_method(
+    node: ast.AST,
+    method: str,
+    request_names: set[str],
+    http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
+) -> bool:
+    http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == method
+        and _is_request_session_expr(node.value, request_names, http_module_names, odoo_module_names)
     )
 
 
