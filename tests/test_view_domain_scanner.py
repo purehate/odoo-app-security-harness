@@ -163,6 +163,36 @@ def test_flags_sensitive_action_broad_domain_without_groups(tmp_path: Path) -> N
     assert any(f.rule_id == "odoo-view-domain-sensitive-action-broad-domain" for f in findings)
 
 
+def test_flags_sensitive_csv_action_broad_domain_without_groups(tmp_path: Path) -> None:
+    """CSV act_window domains should feed the view-domain action checks."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_act_window.csv").write_text(
+        "id,res_model,domain,context\n"
+        "action_partners,res.partner,[],\"{'active_test': False}\"\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_view_domains(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-view-domain-sensitive-action-broad-domain" in rule_ids
+    assert "odoo-view-context-active-test-disabled" in rule_ids
+
+
+def test_grouped_sensitive_csv_action_broad_domain_is_ignored(tmp_path: Path) -> None:
+    """Grouped CSV act_window records should not be broad-exposure findings."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_window.csv").write_text(
+        "id,res_model,domain,groups_id/id\n"
+        "action_partners,res.partner,[],base.group_user\n",
+        encoding="utf-8",
+    )
+
+    assert scan_view_domains(tmp_path) == []
+
+
 def test_empty_groups_eval_does_not_hide_sensitive_broad_action(tmp_path: Path) -> None:
     """Empty groups eval values still leave sensitive actions unrestricted."""
     views = tmp_path / "module" / "views"
@@ -223,6 +253,25 @@ def test_flags_global_sensitive_saved_filter(tmp_path: Path) -> None:
     <field name="is_default">True</field>
   </record>
 </odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_view_domains(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-view-domain-global-sensitive-filter-broad-domain" in rule_ids
+    assert "odoo-view-filter-global-default-sensitive" in rule_ids
+    assert "odoo-view-domain-default-sensitive-filter" in rule_ids
+    assert "odoo-view-context-active-test-disabled" in rule_ids
+
+
+def test_flags_global_sensitive_saved_filter_in_csv(tmp_path: Path) -> None:
+    """CSV ir.filters rows should feed global sensitive filter checks."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_filters.csv").write_text(
+        "id,name,model_id,domain,context,is_default,user_id\n"
+        "filter_all_partners,All partners,res.partner,[],\"{'active_test': False}\",True,\n",
         encoding="utf-8",
     )
 
