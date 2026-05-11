@@ -63,6 +63,29 @@ class SaleJob(models.Model):
     assert sum(f.rule_id == "odoo-queue-job-http-no-timeout" for f in findings) == 3
 
 
+def test_flags_queue_job_aiohttp_client_session_context(tmp_path: Path) -> None:
+    """Queue jobs should track aiohttp ClientSession context aliases."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+import aiohttp
+
+class SaleJob(models.Model):
+    @job
+    async def sync_queue(self, record):
+        async with aiohttp.ClientSession() as client:
+            await client.post(record.callback_url)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-queue-job-http-no-timeout" for f in findings)
+
+
 def test_flags_queue_job_with_user_superuser_mutation(tmp_path: Path) -> None:
     """Queue jobs should treat with_user(SUPERUSER_ID) mutations as elevated."""
     module = tmp_path / "module" / "models"

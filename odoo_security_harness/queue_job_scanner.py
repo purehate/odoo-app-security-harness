@@ -23,6 +23,7 @@ class QueueJobFinding:
 
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request", "urlopen"}
+HTTP_CLIENT_FACTORIES = {"AsyncClient", "Client", "ClientSession", "Session"}
 MUTATION_METHODS = {"write", "create", "unlink"}
 SENSITIVE_MODEL_MUTATION_METHODS = {*MUTATION_METHODS, "set", "set_param"}
 SENSITIVE_MUTATION_MODELS = {
@@ -57,7 +58,7 @@ class QueueJobScanner(ast.NodeVisitor):
         self.path = path
         self.findings: list[QueueJobFinding] = []
         self.function_stack: list[FunctionContext] = []
-        self.http_module_aliases: set[str] = {"requests", "httpx", "urllib.request"}
+        self.http_module_aliases: set[str] = {"aiohttp", "requests", "httpx", "urllib.request"}
         self.http_function_aliases: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
@@ -78,14 +79,14 @@ class QueueJobScanner(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> Any:
         for alias in node.names:
-            if alias.name in {"requests", "httpx"}:
+            if alias.name in {"aiohttp", "requests", "httpx"}:
                 self.http_module_aliases.add(alias.asname or alias.name)
             elif alias.name == "urllib.request":
                 self.http_module_aliases.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        if node.module in {"requests", "httpx", "urllib.request"}:
+        if node.module in {"aiohttp", "requests", "httpx", "urllib.request"}:
             for alias in node.names:
                 if alias.name in HTTP_METHODS:
                     self.http_function_aliases.add(alias.asname or alias.name)
@@ -127,6 +128,23 @@ class QueueJobScanner(ast.NodeVisitor):
         if current:
             self._record_alias_target(node.target, node.value, current)
         self.generic_visit(node)
+
+    def visit_With(self, node: ast.With) -> Any:
+        current = self.function_stack[-1] if self.function_stack else None
+        if current:
+            for item in node.items:
+                if item.optional_vars is not None:
+                    self._track_alias(
+                        item.optional_vars,
+                        item.context_expr,
+                        current.http_client_vars,
+                        lambda value: _is_http_client_expr(value, self.http_module_aliases)
+                        or _call_root_name(value) in current.http_client_vars,
+                    )
+        self.generic_visit(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> Any:
+        self.visit_With(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
@@ -438,7 +456,7 @@ def _is_http_client_expr(node: ast.AST, module_aliases: set[str]) -> bool:
         return any(_is_http_client_expr(element, module_aliases) for element in node.elts)
     if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
         return False
-    if node.func.attr not in {"Session", "Client", "AsyncClient"}:
+    if node.func.attr not in HTTP_CLIENT_FACTORIES:
         return False
     return _call_root_name(node.func) in module_aliases
 
