@@ -635,6 +635,20 @@ class TestModel(models.Model):
         admin_findings = [f for f in findings if f.rule_id == "odoo-deep-with-user-admin"]
         assert len(admin_findings) >= 1
 
+    def test_aliased_import_with_user_superuser_keyword(self) -> None:
+        """Imported SUPERUSER_ID aliases should preserve admin-root detection."""
+        source = """
+from odoo import SUPERUSER_ID as ROOT_UID
+
+class TestModel(models.Model):
+    def do_admin_thing(self):
+        return self.with_user(user=ROOT_UID).search([])
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-with-user-admin" for f in findings)
+
     def test_class_constant_backed_with_user_superuser_keyword(self) -> None:
         """Class-scoped superuser constants should preserve admin-root detection."""
         source = """
@@ -749,6 +763,20 @@ from odoo import SUPERUSER_ID
 class TestModel(models.Model):
     def get_everything(self):
         return self.env['sale.order'].with_user(SUPERUSER_ID).search([])
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-empty-search-sudo" for f in findings)
+
+    def test_aliased_import_empty_domain_superuser_search(self) -> None:
+        """Imported SUPERUSER_ID aliases should expose unbounded privileged reads."""
+        source = """
+from odoo import SUPERUSER_ID as ROOT_UID
+
+class TestModel(models.Model):
+    def get_everything(self):
+        return self.env['sale.order'].with_user(ROOT_UID).search([])
 """
         analyzer = OdooDeepAnalyzer("test.py")
         findings = analyzer.analyze(source)

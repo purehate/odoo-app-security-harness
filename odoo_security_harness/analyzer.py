@@ -78,6 +78,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
         self.field_module_names: set[str] = {"fields"}
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.route_decorator_names: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
@@ -111,6 +112,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                     self.http_module_names.add(alias.asname or alias.name)
                 elif alias.name == "fields":
                     self.field_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         if node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -424,7 +427,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 and statement.value is not None
                 and self._is_static_literal(statement.value)
             ):
-                    constants[statement.target.id] = statement.value
+                constants[statement.target.id] = statement.value
         return constants
 
     def _resolve_constant(self, node: ast.AST, seen: set[str] | None = None) -> ast.AST:
@@ -511,11 +514,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
     def _is_request_name(self, node: ast.AST) -> bool:
         if isinstance(node, ast.Name):
             return node.id in self.request_names
-        return (
-            isinstance(node, ast.Attribute)
-            and node.attr == "request"
-            and self._is_http_module_expr(node.value)
-        )
+        return isinstance(node, ast.Attribute) and node.attr == "request" and self._is_http_module_expr(node.value)
 
     def _is_http_module_expr(self, node: ast.AST) -> bool:
         if isinstance(node, ast.Name):
@@ -528,11 +527,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         )
 
     def _is_request_httprequest_attr(self, node: ast.AST) -> bool:
-        return (
-            isinstance(node, ast.Attribute)
-            and node.attr == "httprequest"
-            and self._is_request_name(node.value)
-        )
+        return isinstance(node, ast.Attribute) and node.attr == "httprequest" and self._is_request_name(node.value)
 
     def _is_orm_write(self, node: ast.Call) -> bool:
         """Check if call is an ORM write()."""
@@ -573,7 +568,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         if isinstance(node, ast.Constant):
             return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
         if isinstance(node, ast.Name):
-            return node.id == "SUPERUSER_ID"
+            return node.id in self.superuser_names
         if isinstance(node, ast.Attribute):
             return node.attr == "SUPERUSER_ID"
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
