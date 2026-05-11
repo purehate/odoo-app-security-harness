@@ -575,6 +575,35 @@ class ApproveWizard(models.TransientModel):
     assert any(f.model == "approve.alias.superuser.wizard" for f in findings)
 
 
+def test_flags_local_constant_superuser_mutation(tmp_path: Path) -> None:
+    """Function-local superuser ID constants should count as privileged wizard mutations."""
+    wizards = tmp_path / "module" / "wizards"
+    wizards.mkdir(parents=True)
+    (wizards / "approve_alias_superuser.py").write_text(
+        """
+from odoo import models
+
+class ApproveWizard(models.TransientModel):
+    _name = 'approve.alias.superuser.wizard'
+
+    def action_apply(self):
+        root_uid = 1
+        active_ids = self.env.context.get('active_ids')
+        records = self.env['sale.order'].browse(active_ids)
+        elevated = records.with_user(root_uid)
+        return elevated.write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_wizards(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-wizard-sudo-mutation" in rule_ids
+    assert "odoo-wizard-active-ids-bulk-mutation" in rule_ids
+    assert "odoo-wizard-mutation-no-access-check" in rule_ids
+
+
 def test_flags_starred_rest_sudo_alias_mutation(tmp_path: Path) -> None:
     """Starred-rest sudo record aliases should count as privileged wizard mutations."""
     wizards = tmp_path / "module" / "wizards"
@@ -735,6 +764,34 @@ class ConfigWizard(models.TransientModel):
     assert "odoo-wizard-sensitive-model-mutation" in rule_ids
     assert "odoo-wizard-mutation-no-access-check" in rule_ids
     assert any(f.model == "config.wizard" for f in findings)
+
+
+def test_flags_local_constant_backed_sensitive_model_mutation(tmp_path: Path) -> None:
+    """Function-local env model-name constants should still reveal sensitive wizard mutations."""
+    wizards = tmp_path / "module" / "wizards"
+    wizards.mkdir(parents=True)
+    (wizards / "config.py").write_text(
+        """
+from odoo import models
+
+class ConfigWizard(models.TransientModel):
+    _name = 'config.wizard'
+
+    def action_apply(self):
+        users_model = 'res.users'
+        params_model = 'ir.config_parameter'
+        self.env[users_model].write({'active': False})
+        self.env[params_model].set_param('auth_signup.invitation_scope', 'b2c')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_wizards(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+    sensitive_findings = [finding for finding in findings if finding.rule_id == "odoo-wizard-sensitive-model-mutation"]
+
+    assert len(sensitive_findings) == 2
+    assert "odoo-wizard-mutation-no-access-check" in rule_ids
 
 
 def test_flags_upload_parser_aliases(tmp_path: Path) -> None:
