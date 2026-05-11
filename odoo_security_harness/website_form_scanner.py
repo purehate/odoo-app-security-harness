@@ -200,6 +200,17 @@ class WebsiteFormScanner:
             "",
         )
 
+        if self._is_get_form(form):
+            self._add(
+                "odoo-website-form-get-method",
+                "Website form uses GET for model submission",
+                "high" if model in SENSITIVE_MODELS else "medium",
+                line,
+                "Website form targets model submission with method=GET; verify state changes cannot be triggered by links, crawlers, prefetchers, or cross-site navigation",
+                model,
+                "method",
+            )
+
         if form.get("enctype", "").lower() == "multipart/form-data" or self._has_file_input(form):
             self._add(
                 "odoo-website-form-file-upload",
@@ -325,6 +336,9 @@ class WebsiteFormScanner:
 
     def _is_post_form(self, form: ElementTree.Element) -> bool:
         return form.get("method", "post").strip().lower() == "post"
+
+    def _is_get_form(self, form: ElementTree.Element) -> bool:
+        return form.get("method", "post").strip().lower() == "get"
 
     def _success_page(self, form: ElementTree.Element) -> str:
         for attr in SUCCESS_PAGE_ATTRS:

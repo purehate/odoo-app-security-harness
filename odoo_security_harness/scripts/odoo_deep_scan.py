@@ -5064,6 +5064,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "website_form_get_method",
+        (
+            "odoo-website-form-get-method",
+            "website form uses get for model submission",
+            "method=get",
+            "state changes cannot be triggered by links, crawlers, prefetchers, or cross-site navigation",
+        ),
+    ),
+    (
         "website_form_hidden_model_selector",
         (
             "odoo-website-form-hidden-model-selector",

@@ -2880,6 +2880,12 @@
       "capec": ["CAPEC-62"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "website_form_get_method": {
+      "label": "Website form targets model submission with GET",
+      "cwe": ["CWE-352", "CWE-749", "CWE-862"],
+      "capec": ["CAPEC-62", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "website_form_hidden_model_selector": {
       "label": "Website form carries model or field metadata in client-controlled hidden inputs",
       "cwe": ["CWE-915", "CWE-20", "CWE-862"],

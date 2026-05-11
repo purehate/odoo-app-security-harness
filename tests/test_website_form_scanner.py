@@ -147,6 +147,32 @@ def test_flags_missing_csrf_token_on_post_form(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-website-form-missing-csrf-token" and f.severity == "high" for f in findings)
 
 
+def test_flags_get_method_website_form_submission(tmp_path: Path) -> None:
+    """Website model submissions should not be reachable through GET forms."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "forms.xml").write_text(
+        """<odoo>
+  <template id="contact">
+    <form action="/website/form/crm.lead" method="get">
+      <input name="name"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-website-form-get-method"
+        and f.severity == "high"
+        and f.field == "method"
+        for f in findings
+    )
+    assert not any(f.rule_id == "odoo-website-form-missing-csrf-token" for f in findings)
+
+
 def test_flags_external_success_redirect(tmp_path: Path) -> None:
     """Website form success pages should not redirect to arbitrary external origins."""
     views = tmp_path / "module" / "views"

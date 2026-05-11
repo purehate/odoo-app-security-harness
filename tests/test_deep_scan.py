@@ -7719,6 +7719,12 @@ def test_taxonomy_coverage_classifies_website_form_specific_risks() -> None:
             },
             {
                 "source": "website-forms",
+                "rule_id": "odoo-website-form-get-method",
+                "title": "Website form uses GET for model submission",
+                "message": "Website form targets model submission with method=GET; verify state changes cannot be triggered by links, crawlers, prefetchers, or cross-site navigation",
+            },
+            {
+                "source": "website-forms",
                 "rule_id": "odoo-website-form-dangerous-success-redirect",
                 "title": "Website form success redirect uses dangerous URL scheme",
                 "message": "Website form success page uses dangerous URL 'javascript:alert(1)'; restrict success redirects to local routes or reviewed HTTPS destinations",
@@ -7750,13 +7756,14 @@ def test_taxonomy_coverage_classifies_website_form_specific_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 9
+    assert coverage["mapped_rules"] == 10
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-website-form-public-model-create": "website_form_public_model_create",
         "odoo-website-form-file-upload": "website_form_file_upload",
         "odoo-website-form-active-file-upload": "website_form_active_file_upload",
         "odoo-website-form-missing-csrf-token": "website_form_missing_csrf_token",
+        "odoo-website-form-get-method": "website_form_get_method",
         "odoo-website-form-dangerous-success-redirect": "website_form_dangerous_success_redirect",
         "odoo-website-form-external-success-redirect": "website_form_external_success_redirect",
         "odoo-website-form-dynamic-success-redirect": "website_form_dynamic_success_redirect",
