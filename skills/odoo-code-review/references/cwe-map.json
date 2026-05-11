@@ -389,6 +389,11 @@
       "cwe": ["CWE-353", "CWE-829"],
       "owasp": "A08:2021 Software and Data Integrity Failures"
     },
+    "frontend_insecure_asset_url": {
+      "label": "Frontend template loads literal insecure HTTP URLs",
+      "cwe": ["CWE-319", "CWE-829"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "frontend_dynamic_code_import": {
       "label": "Frontend imports JavaScript at runtime from external or request-derived module targets",
       "cwe": ["CWE-829", "CWE-94"],

@@ -1230,6 +1230,15 @@ class WebAssetScanner:
                     "OWL xml template contains a literal javascript:, data:text/html, vbscript:, or file: URL in a link, frame, form, or media attribute; restrict URL attributes to safe schemes",
                     "owl-template",
                 )
+            if _owl_template_has_insecure_static_url(body):
+                self._add(
+                    "odoo-web-owl-qweb-insecure-asset-url",
+                    "OWL inline template loads insecure HTTP URL",
+                    "medium",
+                    line,
+                    "OWL xml template contains a literal http:// URL in a link, frame, form, or media attribute; use HTTPS or same-origin assets to avoid mixed-content downgrade and interception risk",
+                    "owl-template",
+                )
             if OWL_TEMPLATE_DYNAMIC_EVENT_RE.search(body):
                 self._add(
                     "odoo-web-owl-qweb-dynamic-event-handler",
@@ -1510,6 +1519,14 @@ def _owl_template_has_dangerous_static_url(body: str) -> bool:
     for tag_match in OWL_TEMPLATE_ANY_TAG_RE.finditer(body):
         for attr_match in OWL_TEMPLATE_STATIC_URL_ATTR_RE.finditer(tag_match.group("attrs")):
             if _is_dangerous_url_value(attr_match.group("value")):
+                return True
+    return False
+
+
+def _owl_template_has_insecure_static_url(body: str) -> bool:
+    for tag_match in OWL_TEMPLATE_ANY_TAG_RE.finditer(body):
+        for attr_match in OWL_TEMPLATE_STATIC_URL_ATTR_RE.finditer(tag_match.group("attrs")):
+            if _is_insecure_http_url(attr_match.group("value")):
                 return True
     return False
 
@@ -1920,6 +1937,10 @@ def _dom_link_external_href(context: str, link_name: str) -> bool:
 
 def _is_external_url(value: str) -> bool:
     return bool(re.match(r"^(?:https?:)?//", value.strip(), re.IGNORECASE))
+
+
+def _is_insecure_http_url(value: str) -> bool:
+    return bool(re.match(r"^http://", value.strip(), re.IGNORECASE))
 
 
 def _is_static_js_literal(value: str) -> bool:

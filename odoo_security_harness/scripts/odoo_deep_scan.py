@@ -3387,6 +3387,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "frontend_insecure_asset_url",
+        (
+            "web-owl-qweb-insecure-asset-url",
+            "owl inline template loads insecure http url",
+            "literal http:// url in a link, frame, form, or media attribute",
+            "mixed-content downgrade",
+            "interception risk",
+        ),
+    ),
+    (
         "frontend_dynamic_code_import",
         (
             "web-owl-qweb-dynamic-script-src",

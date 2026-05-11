@@ -1740,6 +1740,31 @@ def test_owl_inline_template_safe_static_url_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-web-owl-qweb-dangerous-url-scheme" for f in findings)
 
 
+def test_owl_inline_template_insecure_static_url_detected(tmp_path: Path) -> None:
+    """OWL inline templates should not hard-code insecure external URLs."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<img src=\"http://cdn.example.com/logo.png\" alt=\"Logo\"/>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-insecure-asset-url"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_https_static_url_ignored(tmp_path: Path) -> None:
+    """HTTPS OWL template URLs should not create mixed-content leads."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<img src=\"https://cdn.example.com/logo.png\" alt=\"Logo\"/>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-insecure-asset-url" for f in findings)
+
+
 def test_owl_inline_template_sensitive_url_token_detected(tmp_path: Path) -> None:
     """OWL inline template URLs should not expose dynamic credential parameters."""
     path = tmp_path / "widget.js"

@@ -2415,6 +2415,24 @@ def test_taxonomy_coverage_classifies_qweb_external_stylesheet_missing_sri() -> 
     assert any("CWE-829" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
+def test_taxonomy_coverage_classifies_owl_insecure_asset_url() -> None:
+    """Insecure OWL template asset URLs should map to transport/integrity taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-web-owl-qweb-insecure-asset-url",
+                "source": "web-asset",
+                "title": "OWL inline template loads insecure HTTP URL",
+                "message": "OWL xml template contains a literal http:// URL in a link, frame, form, or media attribute",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "frontend_insecure_asset_url"
+    assert "CWE-319" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_web_external_stylesheet_missing_sri() -> None:
     """JavaScript-generated external stylesheet integrity leads should map to software integrity taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(
