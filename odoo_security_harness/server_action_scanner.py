@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
@@ -183,6 +184,7 @@ class LoosePythonScanner(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         """Detect high-risk calls in loose Python contexts."""
+        _mark_static_dict_update(node, self.local_constants)
         if self._is_cr_execute(node):
             self._check_sql(node)
 
@@ -192,7 +194,10 @@ class LoosePythonScanner(ast.NodeVisitor):
                 title="Dynamic Python execution in loose script",
                 severity="critical",
                 line=node.lineno,
-                message="eval()/exec() in server actions or loose scripts can become code execution if inputs are not strictly controlled",
+                message=(
+                    "eval()/exec() in server actions or loose scripts can become code execution if inputs are not "
+                    "strictly controlled"
+                ),
             )
 
         if self._is_safe_eval(node):
@@ -203,9 +208,13 @@ class LoosePythonScanner(ast.NodeVisitor):
                 severity="critical" if exec_mode else "high",
                 line=node.lineno,
                 message=(
-                    "safe_eval() runs in exec mode in a server action/script; treat the expression as code execution and verify strict input provenance, globals, and locals"
+                    "safe_eval() runs in exec mode in a server action/script; treat the expression as code "
+                    "execution and verify strict input provenance, globals, and locals"
                     if exec_mode
-                    else "safe_eval() in server actions/scripts needs strict input provenance review and sandbox assumptions"
+                    else (
+                        "safe_eval() in server actions/scripts needs strict input provenance review and sandbox "
+                        "assumptions"
+                    )
                 ),
             )
 
@@ -215,7 +224,10 @@ class LoosePythonScanner(ast.NodeVisitor):
                 title="Privileged mutation in loose script",
                 severity="high",
                 line=node.lineno,
-                message="sudo()/with_user(SUPERUSER_ID) is chained into write/create/unlink; verify this cannot bypass intended record rules or company isolation",
+                message=(
+                    "sudo()/with_user(SUPERUSER_ID) is chained into write/create/unlink; verify this cannot bypass "
+                    "intended record rules or company isolation"
+                ),
             )
 
         if self._is_elevated_business_method_call(node):
@@ -224,7 +236,10 @@ class LoosePythonScanner(ast.NodeVisitor):
                 title="Privileged business method call in loose script",
                 severity="high",
                 line=node.lineno,
-                message="sudo()/with_user(SUPERUSER_ID) is used to call a business/action method; verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
+                message=(
+                    "sudo()/with_user(SUPERUSER_ID) is used to call a business/action method; verify workflow "
+                    "side effects cannot bypass record rules, approvals, audit, or company isolation"
+                ),
             )
 
         sensitive_model = self._sensitive_mutation_model(node)
@@ -234,7 +249,10 @@ class LoosePythonScanner(ast.NodeVisitor):
                 title="Sensitive model mutation in loose script",
                 severity="high",
                 line=node.lineno,
-                message=f"Server action or loose script mutates sensitive model '{sensitive_model}'; verify actor, trigger scope, idempotency, and audit trail",
+                message=(
+                    f"Server action or loose script mutates sensitive model '{sensitive_model}'; verify actor, "
+                    "trigger scope, idempotency, and audit trail"
+                ),
             )
 
         if self._is_commit_or_rollback(node):
@@ -252,7 +270,10 @@ class LoosePythonScanner(ast.NodeVisitor):
                 title="Outbound HTTP without timeout in loose script",
                 severity="medium",
                 line=node.lineno,
-                message="Server actions or loose scripts perform outbound HTTP without timeout; review SSRF, retry behavior, and worker exhaustion risk",
+                message=(
+                    "Server actions or loose scripts perform outbound HTTP without timeout; review SSRF, retry "
+                    "behavior, and worker exhaustion risk"
+                ),
             )
 
         if self._is_http_call(node) and _keyword_is_false(node, "verify", self._effective_constants()):
@@ -261,7 +282,10 @@ class LoosePythonScanner(ast.NodeVisitor):
                 title="Loose script disables TLS verification",
                 severity="high",
                 line=node.lineno,
-                message="Server actions or loose scripts pass verify=False to outbound HTTP; privileged automation should not permit man-in-the-middle attacks",
+                message=(
+                    "Server actions or loose scripts pass verify=False to outbound HTTP; privileged automation "
+                    "should not permit man-in-the-middle attacks"
+                ),
             )
 
         if self._is_http_call(node):
@@ -274,7 +298,11 @@ class LoosePythonScanner(ast.NodeVisitor):
                         title="Loose script uses cleartext HTTP URL",
                         severity="medium",
                         line=node.lineno,
-                        message="Server actions or loose scripts outbound HTTP targets a literal http:// URL; use HTTPS to protect privileged automation payloads and response data from interception or downgrade",
+                        message=(
+                            "Server actions or loose scripts outbound HTTP targets a literal http:// URL; use "
+                            "HTTPS to protect privileged automation payloads and response data from interception "
+                            "or downgrade"
+                        ),
                     )
                 if _literal_url_has_embedded_credentials(url_value, constants):
                     self._add_finding(
@@ -282,7 +310,10 @@ class LoosePythonScanner(ast.NodeVisitor):
                         title="Loose script URL embeds credentials",
                         severity="high",
                         line=node.lineno,
-                        message="Server actions or loose scripts outbound HTTP embeds username, password, or token material in the URL authority; move credentials to server-side configuration",
+                        message=(
+                            "Server actions or loose scripts outbound HTTP embeds username, password, or token "
+                            "material in the URL authority; move credentials to server-side configuration"
+                        ),
                     )
 
         self.generic_visit(node)
@@ -309,7 +340,10 @@ class LoosePythonScanner(ast.NodeVisitor):
                 title="Raw SQL built with string interpolation",
                 severity="high",
                 line=node.lineno,
-                message="cr.execute() receives SQL built with interpolation/concatenation; use parameters or psycopg2.sql for identifiers",
+                message=(
+                    "cr.execute() receives SQL built with interpolation/concatenation; use parameters or "
+                    "psycopg2.sql for identifiers"
+                ),
             )
 
     def _is_unsafe_sql_expr(self, node: ast.expr) -> bool:
@@ -786,6 +820,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -816,6 +852,59 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            items.append((resolved_key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:

@@ -214,6 +214,25 @@ def run(record):
     assert any(f.rule_id == "odoo-loose-python-safe-eval" and f.severity == "critical" for f in findings)
 
 
+def test_server_action_updated_safe_eval_options_exec_mode_is_critical(tmp_path: Path) -> None:
+    """Updated safe_eval option dictionaries should keep exec-mode severity."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+from odoo.tools.safe_eval import safe_eval
+
+EVAL_OPTIONS = {'nocopy': True}
+EVAL_OPTIONS.update({'mode': 'exec'})
+safe_eval(record.expression, **EVAL_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-safe-eval" and f.severity == "critical" for f in findings)
+
+
 def test_server_action_detects_sudo_write_and_manual_commit(tmp_path: Path) -> None:
     """Privileged mutation and manual transactions are review leads."""
     script = tmp_path / "action.py"
