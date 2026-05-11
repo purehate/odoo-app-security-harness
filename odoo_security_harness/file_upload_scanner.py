@@ -369,7 +369,10 @@ class FileUploadScanner(ast.NodeVisitor):
                 self._is_request_derived(node)
                 or self._expr_is_tainted(node.func)
                 or any(self._expr_is_tainted(arg) for arg in node.args)
-                or any(keyword.value is not None and self._expr_is_tainted(keyword.value) for keyword in node.keywords)
+                or any(
+                    keyword.value is not None and self._expr_is_tainted(keyword.value)
+                    for keyword in _expanded_keywords(node, self._effective_constants())
+                )
             )
         if isinstance(node, ast.JoinedStr):
             return any(self._expr_is_tainted(value) for value in node.values)
@@ -520,8 +523,9 @@ class FileUploadScanner(ast.NodeVisitor):
             self._mark_attachment_value_target(target.value, value)
             return
         if isinstance(target, ast.Name):
-            if isinstance(value, ast.Dict) and _dict_mentions_attachment_create_values(value):
-                self.attachment_value_names[target.id] = value
+            resolved_value = self._resolve_attachment_values(value)
+            if resolved_value is not None and _dict_mentions_attachment_create_values(resolved_value):
+                self.attachment_value_names[target.id] = resolved_value
             elif isinstance(value, ast.Name) and value.id in self.attachment_value_names:
                 self.attachment_value_names[target.id] = self.attachment_value_names[value.id]
             else:
@@ -547,26 +551,40 @@ class FileUploadScanner(ast.NodeVisitor):
         values = self.attachment_value_names.get(name)
         if values is None:
             return
-        update_values = node.args[0] if node.args else None
-        if not isinstance(update_values, ast.Dict):
-            return
         merged = values
-        for key, value in zip(update_values.keys, update_values.values, strict=False):
-            literal_key = _literal_string(key, self._effective_constants()) if key is not None else ""
-            if literal_key:
-                merged = _dict_with_field(merged, literal_key, value)
+        update_values = self._resolve_attachment_values(node.args[0]) if node.args else None
+        if update_values is not None:
+            for key, value in zip(update_values.keys, update_values.values, strict=False):
+                literal_key = _literal_string(key, self._effective_constants()) if key is not None else ""
+                if literal_key:
+                    merged = _dict_with_field(merged, literal_key, value)
+        for keyword in _expanded_keywords(node, self._effective_constants()):
+            if keyword.arg:
+                merged = _dict_with_field(merged, keyword.arg, keyword.value)
         self.attachment_value_names[name] = merged
 
     def _attachment_create_values(self, node: ast.Call) -> ast.Dict | None:
         values = node.args[0] if node.args else None
         if values is None:
-            for keyword in node.keywords:
+            for keyword in _expanded_keywords(node, self._effective_constants()):
                 if keyword.arg in {"vals", "values"}:
                     values = keyword.value
                     break
         if isinstance(values, ast.Name) and values.id in self.attachment_value_names:
             values = self.attachment_value_names[values.id]
-        return values if isinstance(values, ast.Dict) else None
+        if isinstance(values, ast.Dict):
+            return values
+        return self._resolve_attachment_values(values) if values is not None else None
+
+    def _resolve_attachment_values(self, node: ast.AST) -> ast.Dict | None:
+        if isinstance(node, ast.Name) and node.id in self.attachment_value_names:
+            return self.attachment_value_names[node.id]
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            left = self._resolve_attachment_values(node.left)
+            right = self._resolve_attachment_values(node.right)
+            if left is not None and right is not None:
+                return _merge_static_dicts(left, right)
+        return _resolve_static_dict(node, self._effective_constants())
 
     def _mark_archive_target(self, target: ast.AST, is_tainted_archive: bool) -> None:
         if isinstance(target, ast.Name):
@@ -668,7 +686,7 @@ class FileUploadScanner(ast.NodeVisitor):
                 or any(self._expr_uses_secure_filename(arg) for arg in node.args)
                 or any(
                     keyword.value is not None and self._expr_uses_secure_filename(keyword.value)
-                    for keyword in node.keywords
+                    for keyword in _expanded_keywords(node, self._effective_constants())
                 )
             )
         if isinstance(node, ast.Attribute):
@@ -902,7 +920,7 @@ def _open_mode(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> s
         mode = _literal_string(node.args[1], constants)
         if mode:
             return mode
-    for keyword in node.keywords:
+    for keyword in _expanded_keywords(node, constants or {}):
         if keyword.arg == "mode":
             mode = _literal_string(keyword.value, constants)
             if mode:
@@ -969,7 +987,58 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
+    if isinstance(node, ast.Dict):
+        return all(key is None or _is_static_literal(key) for key in node.keys)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_literal(node.left) and _is_static_literal(node.right)
     return isinstance(node, ast.Constant) and isinstance(node.value, str | bool | int | float | type(None))
+
+
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> ast.Dict | None:
+    constants = constants or {}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _resolve_static_dict(resolved, constants)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants)
+        right = _resolve_static_dict(node.right, constants)
+        if left is not None and right is not None:
+            return _merge_static_dicts(left, right)
+    return None
+
+
+def _merge_static_dicts(left: ast.Dict, right: ast.Dict) -> ast.Dict:
+    merged = left
+    for key, value in zip(right.keys, right.values, strict=False):
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            merged = _dict_with_field(merged, key.value, value)
+        else:
+            merged = ast.Dict(keys=[*merged.keys, key], values=[*merged.values, value])
+    return merged
+
+
+def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> list[ast.keyword]:
+    expanded: list[ast.keyword] = []
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            expanded.append(keyword)
+            continue
+        expanded.extend(_expanded_dict_keywords(keyword.value, constants))
+    return expanded
+
+
+def _expanded_dict_keywords(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> list[ast.keyword]:
+    resolved = _resolve_static_dict(node, constants)
+    if resolved is None:
+        return []
+    keywords: list[ast.keyword] = []
+    for key, value in zip(resolved.keys, resolved.values, strict=False):
+        literal_key = _literal_string(key, constants) if key is not None else ""
+        if literal_key:
+            keywords.append(ast.keyword(arg=literal_key, value=value))
+    return keywords
 
 
 def _literal_string(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:

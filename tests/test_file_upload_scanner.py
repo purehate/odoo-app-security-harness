@@ -107,6 +107,25 @@ def upload(**kwargs):
     assert any(f.rule_id == "odoo-file-upload-tainted-path-write" for f in findings)
 
 
+def test_tainted_open_dict_union_keyword_write_mode_is_reported(tmp_path: Path) -> None:
+    """Dict-union **kwargs should not hide write-mode upload path writes."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def upload(**kwargs):
+    open_options = {'mode': 'rb'} | {'mode': 'wb'}
+    filename = kwargs.get('filename')
+    with open(filename, **open_options) as handle:
+        handle.write(b'data')
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-tainted-path-write" for f in findings)
+
+
 def test_request_alias_tainted_open_write_path_is_reported(tmp_path: Path) -> None:
     """Aliased Odoo request params should taint upload filesystem paths."""
     py = tmp_path / "controller.py"
@@ -590,6 +609,66 @@ def test_updated_attachment_values_alias_from_request_is_reported(tmp_path: Path
 def upload(self, **kwargs):
     vals = {'name': kwargs.get('filename')}
     vals.update({'datas': kwargs.get('payload'), 'public': True})
+    return self.env['ir.attachment'].sudo().create(vals)
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-file-upload-attachment-from-request" in rule_ids
+    assert "odoo-file-upload-public-attachment-create" in rule_ids
+
+
+def test_dict_union_attachment_values_alias_from_request_is_reported(tmp_path: Path) -> None:
+    """Dict-union attachment value aliases should keep upload checks visible."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def upload(self, **kwargs):
+    base_vals = {'name': kwargs.get('filename'), 'public': False}
+    vals = base_vals | {'datas': kwargs.get('payload'), 'public': True}
+    return self.env['ir.attachment'].sudo().create(vals)
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-file-upload-attachment-from-request" in rule_ids
+    assert "odoo-file-upload-public-attachment-create" in rule_ids
+
+
+def test_dict_union_attachment_create_kwargs_from_request_is_reported(tmp_path: Path) -> None:
+    """Dict-union create **kwargs should expose aliased attachment values."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def upload(self, **kwargs):
+    vals = {'name': kwargs.get('filename')} | {'datas': kwargs.get('payload'), 'public': True}
+    create_kwargs = {'vals': {'name': 'safe.txt'}} | {'vals': vals}
+    return self.env['ir.attachment'].sudo().create(**create_kwargs)
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-file-upload-attachment-from-request" in rule_ids
+    assert "odoo-file-upload-public-attachment-create" in rule_ids
+
+
+def test_dict_union_attachment_values_update_from_request_is_reported(tmp_path: Path) -> None:
+    """Dict-union update **kwargs should preserve incremental attachment checks."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def upload(self, **kwargs):
+    vals = {'name': kwargs.get('filename')}
+    vals.update(**({'public': False} | {'datas': kwargs.get('payload'), 'public': True}))
     return self.env['ir.attachment'].sudo().create(vals)
 """,
         encoding="utf-8",
