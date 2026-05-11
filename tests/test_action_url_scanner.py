@@ -730,6 +730,23 @@ def test_flags_unsafe_scheme_csv_act_url(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-act-url-unsafe-scheme" for f in findings)
 
 
+def test_grouped_external_csv_act_url_with_colon_groups_is_not_ungrouped(tmp_path: Path) -> None:
+    """Colon-style groups headers should count as URL action group restrictions."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_url.csv").write_text(
+        "id,name,url,target,groups_id:id\n"
+        "action_external_docs,External Docs,https://docs.example.com/path,new,base.group_user\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-url-external-no-groups" not in rule_ids
+    assert "odoo-act-url-external-new-window" in rule_ids
+
+
 def test_empty_groups_eval_does_not_hide_external_xml_act_url(tmp_path: Path) -> None:
     """Empty groups eval values still leave external URL actions unrestricted."""
     views = tmp_path / "module" / "views"
