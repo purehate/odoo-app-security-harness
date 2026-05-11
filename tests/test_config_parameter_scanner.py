@@ -31,6 +31,34 @@ class Config(http.Controller):
     assert "odoo-config-param-sudo-sensitive-read" in rule_ids
 
 
+def test_flags_public_integration_key_config_read(tmp_path: Path) -> None:
+    """Key-shaped integration parameters should be treated as sensitive reads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "config.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Config(http.Controller):
+    @http.route('/public/config', auth='public')
+    def config(self):
+        return {
+            'access': request.env['ir.config_parameter'].sudo().get_param('connector.access_key'),
+            'license': request.env['ir.config_parameter'].sudo().get_param('connector.license_key'),
+        }
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+    public_keys = {finding.key for finding in findings if finding.rule_id == "odoo-config-param-public-sensitive-read"}
+    sudo_keys = {finding.key for finding in findings if finding.rule_id == "odoo-config-param-sudo-sensitive-read"}
+
+    assert {"connector.access_key", "connector.license_key"} <= public_keys
+    assert {"connector.access_key", "connector.license_key"} <= sudo_keys
+
+
 def test_imported_route_decorator_public_sensitive_config_read(tmp_path: Path) -> None:
     """Imported route decorators should still expose public config reads."""
     controllers = tmp_path / "module" / "controllers"

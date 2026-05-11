@@ -23,17 +23,30 @@ class SettingsFinding:
 
 
 SENSITIVE_KEY_HINTS = {
+    "access_key",
     "api_key",
     "apikey",
+    "auth_token",
+    "bearer_token",
     "client_secret",
+    "csrf_token",
+    "hmac_secret",
     "jwt",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
     "password",
     "passwd",
     "private_key",
+    "secret_key",
+    "session_token",
     "secret",
+    "signature_secret",
     "signing_key",
     "smtp_password",
+    "totp_secret",
     "token",
+    "webhook_secret",
 }
 ADMIN_GROUP_HINTS = {"base.group_system", "base.group_erp_manager", "group_system", "group_erp_manager"}
 PUBLIC_GROUP_HINTS = {"base.group_public", "base.group_portal", "group_public", "group_portal"}

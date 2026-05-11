@@ -28,6 +28,29 @@ class ResConfigSettings(models.TransientModel):
     assert any(f.rule_id == "odoo-settings-sensitive-config-field-no-admin-groups" for f in findings)
 
 
+def test_flags_common_integration_key_config_parameters(tmp_path: Path) -> None:
+    """Key-shaped integration parameters should be treated as sensitive settings."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import fields, models
+
+class ResConfigSettings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    access_key = fields.Char(config_parameter='connector.access_key')
+    license_key = fields.Char(config_parameter='connector.license_key')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_settings(tmp_path)
+    fields = {finding.field for finding in findings if finding.rule_id == "odoo-settings-sensitive-config-field-no-admin-groups"}
+
+    assert {"access_key", "license_key"} <= fields
+
+
 def test_flags_direct_transient_model_base_and_direct_field_constructor(tmp_path: Path) -> None:
     """Direct TransientModel bases and field constructors should still be scanned."""
     models = tmp_path / "module" / "models"

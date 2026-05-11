@@ -27,18 +27,31 @@ class ConfigParameterFinding:
 TAINTED_ARG_NAMES = {"key", "name", "param", "value", "kwargs", "kw", "post"}
 ROUTE_CONFIG_ARG_RE = re.compile(r"(?:^key$|_key$|^name$|_name$|^param$|_param$|^value$|_value$)")
 SENSITIVE_KEY_HINTS = {
+    "access_key",
     "api_key",
     "apikey",
+    "auth_token",
+    "bearer_token",
     "client_secret",
+    "csrf_token",
     "database.secret",
+    "hmac_secret",
     "jwt",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
     "password",
     "passwd",
     "private_key",
+    "secret_key",
+    "session_token",
     "secret",
+    "signature_secret",
     "signing_key",
     "smtp_password",
+    "totp_secret",
     "token",
+    "webhook_secret",
 }
 SECURITY_TOGGLE_UNSAFE_VALUES = {
     "auth.signup.allow_uninvited": {"1", "true", "yes", "y"},
