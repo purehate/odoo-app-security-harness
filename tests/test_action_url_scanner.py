@@ -101,6 +101,31 @@ class Redirect(odoo_http.Controller):
     assert "odoo-act-url-public-route" in rule_ids
 
 
+def test_flags_common_redirect_parameter_aliases(tmp_path: Path) -> None:
+    """Common redirect URL parameter names should be treated as request-controlled."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "redirect.py").write_text(
+        """
+from odoo import http
+
+class Redirect(http.Controller):
+    @http.route('/go/action', auth='public')
+    def go(self, target_url=None, next_url=None, success_url=None):
+        return [
+            {'type': 'ir.actions.act_url', 'url': target_url, 'target': 'self'},
+            {'type': 'ir.actions.act_url', 'url': next_url, 'target': 'self'},
+            {'type': 'ir.actions.act_url', 'url': success_url, 'target': 'self'},
+        ]
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+
+    assert sum(1 for finding in findings if finding.rule_id == "odoo-act-url-tainted-url") == 3
+
+
 def test_non_odoo_route_decorator_tainted_act_url_is_not_public(tmp_path: Path) -> None:
     """Local route decorators should not make act_url redirects public routes."""
     controllers = tmp_path / "module" / "controllers"

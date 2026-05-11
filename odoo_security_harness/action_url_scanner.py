@@ -29,7 +29,19 @@ class ActionUrlFinding:
     record_id: str = ""
 
 
-TAINTED_ARG_NAMES = {"callback_url", "kwargs", "kw", "next", "post", "redirect_url", "return_url", "url"}
+TAINTED_ARG_NAMES = {
+    "callback_url",
+    "kwargs",
+    "kw",
+    "next",
+    "next_url",
+    "post",
+    "redirect_url",
+    "return_url",
+    "success_url",
+    "target_url",
+    "url",
+}
 ROUTE_ID_ARG_RE = re.compile(r"(?:^id$|_ids?$)")
 REQUEST_MARKERS = (
     "kwargs.get",
