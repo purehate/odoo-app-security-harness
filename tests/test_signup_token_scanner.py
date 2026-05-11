@@ -235,6 +235,43 @@ class Controller(http.Controller):
     assert any(f.route == "/web/reset_password,/web/signup/reset" for f in findings)
 
 
+def test_nested_static_unpack_route_options_public_reset_token_lifecycle_risks_are_reported(
+    tmp_path: Path,
+) -> None:
+    """Nested static ** route options must not hide public reset token risks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public'}
+RESET_OPTIONS = {
+    **BASE_OPTIONS,
+    'routes': ['/web/reset_password', '/web/signup/reset'],
+}
+
+class Controller(http.Controller):
+    @http.route(**RESET_OPTIONS)
+    def reset_password(self, **kwargs):
+        partner = request.env['res.partner'].sudo().search([('signup_token', '=', kwargs.get('token'))], limit=1)
+        return request.render('auth_signup.reset_password', {'signup_token': partner.signup_token})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-signup-public-token-route" in rule_ids
+    assert "odoo-signup-tainted-token-lookup" in rule_ids
+    assert "odoo-signup-token-lookup-without-expiry" in rule_ids
+    assert "odoo-signup-public-sudo-identity-flow" in rule_ids
+    assert "odoo-signup-token-exposed" in rule_ids
+    assert any(f.route == "/web/reset_password,/web/signup/reset" for f in findings)
+
+
 def test_recursive_static_unpack_route_options_reset_token_write_is_critical(tmp_path: Path) -> None:
     """Recursive constants inside ** route options should preserve public reset severity."""
     controllers = tmp_path / "module" / "controllers"
