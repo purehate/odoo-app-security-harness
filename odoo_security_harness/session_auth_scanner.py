@@ -65,6 +65,7 @@ class SessionAuthScanner(ast.NodeVisitor):
         self.api_module_names: set[str] = {"api"}
         self.environment_constructor_names: set[str] = {"Environment"}
         self.route_decorator_names: set[str] = set()
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.session_update_value_names: dict[str, ast.Dict] = {}
 
@@ -102,6 +103,8 @@ class SessionAuthScanner(ast.NodeVisitor):
                     self.http_module_names.add(alias.asname or alias.name)
                 elif alias.name == "api":
                     self.api_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -231,9 +234,13 @@ class SessionAuthScanner(ast.NodeVisitor):
                     sink,
                 )
 
-        if route.auth in {"public", "none"} and _is_res_users_lookup_call(node) and _call_has_tainted_input(
-            node,
-            self._expr_is_tainted,
+        if (
+            route.auth in {"public", "none"}
+            and _is_res_users_lookup_call(node)
+            and _call_has_tainted_input(
+                node,
+                self._expr_is_tainted,
+            )
         ):
             self._add(
                 "odoo-session-public-user-lookup",
@@ -265,7 +272,7 @@ class SessionAuthScanner(ast.NodeVisitor):
         ]
         if not user_values:
             return
-        if any(_expr_mentions_superuser(value, constants) for value in user_values):
+        if any(_expr_mentions_superuser(value, constants, self.superuser_names) for value in user_values):
             self._add(
                 "odoo-session-update-env-superuser",
                 "Controller switches request environment to superuser",
@@ -298,7 +305,7 @@ class SessionAuthScanner(ast.NodeVisitor):
             return
         route = self._current_route()
         uid_arg = node.args[1]
-        if _expr_mentions_superuser(uid_arg, self._effective_constants()):
+        if _expr_mentions_superuser(uid_arg, self._effective_constants(), self.superuser_names):
             self._add(
                 "odoo-session-environment-superuser",
                 "Manual Environment uses superuser",
@@ -336,7 +343,9 @@ class SessionAuthScanner(ast.NodeVisitor):
         constants = self._effective_constants()
         for value in self._session_update_uid_values(node, constants):
             severity = (
-                "high" if self._expr_is_tainted(value) or _expr_mentions_superuser(value, constants) else "medium"
+                "high"
+                if self._expr_is_tainted(value) or _expr_mentions_superuser(value, constants, self.superuser_names)
+                else "medium"
             )
             self._add(
                 "odoo-session-direct-uid-assignment",
@@ -352,7 +361,9 @@ class SessionAuthScanner(ast.NodeVisitor):
         values: list[ast.AST] = []
         for arg in node.args:
             if isinstance(arg, ast.Name) and arg.id in self.session_update_value_names:
-                values.extend(_dict_literal_values_for_keys(self.session_update_value_names[arg.id], SESSION_UID_KEYS, constants))
+                values.extend(
+                    _dict_literal_values_for_keys(self.session_update_value_names[arg.id], SESSION_UID_KEYS, constants)
+                )
             elif isinstance(arg, ast.Dict):
                 values.extend(_dict_literal_values_for_keys(arg, SESSION_UID_KEYS, constants))
         for keyword in node.keywords:
@@ -375,7 +386,8 @@ class SessionAuthScanner(ast.NodeVisitor):
             route = self._current_route()
             severity = (
                 "critical"
-                if route.auth in {"public", "none"} or _expr_mentions_superuser(value, self._effective_constants())
+                if route.auth in {"public", "none"}
+                or _expr_mentions_superuser(value, self._effective_constants(), self.superuser_names)
                 else "high"
             )
             self._add(
@@ -616,7 +628,7 @@ class SessionAuthScanner(ast.NodeVisitor):
             f"ir.http method '{node.name}' participates in global request authentication; verify it preserves Odoo's session, API-key, public-user, and database-selection guarantees",
             node.name,
         )
-        if _auth_method_grants_superuser(node, self._effective_constants()):
+        if _auth_method_grants_superuser(node, self._effective_constants(), self.superuser_names):
             self._add(
                 "odoo-session-ir-http-superuser-auth",
                 "ir.http authentication override grants elevated user",
@@ -691,6 +703,7 @@ def _is_ir_http_class(node: ast.ClassDef, constants: dict[str, ast.AST] | None =
 def _auth_method_grants_superuser(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
     constants = constants or {}
     for child in ast.walk(node):
@@ -706,19 +719,24 @@ def _auth_method_grants_superuser(
                 targets = [child.target]
                 value = child.value
             if any(_safe_unparse(target) in {"request.uid", "request.session.uid"} for target in targets) and (
-                value is not None and _expr_mentions_superuser(value, constants)
+                value is not None and _expr_mentions_superuser(value, constants, superuser_names)
             ):
                 return True
         if isinstance(child, ast.Call) and _call_name(child.func).endswith(".update_env"):
             if any(
-                keyword.arg in {"user", "uid"} and _expr_mentions_superuser(keyword.value, constants)
+                keyword.arg in {"user", "uid"} and _expr_mentions_superuser(keyword.value, constants, superuser_names)
                 for keyword in child.keywords
                 if keyword.value is not None
             ):
                 return True
-        if isinstance(child, ast.Return) and child.value is not None and _expr_mentions_superuser(
-            child.value,
-            constants,
+        if (
+            isinstance(child, ast.Return)
+            and child.value is not None
+            and _expr_mentions_superuser(
+                child.value,
+                constants,
+                superuser_names,
+            )
         ):
             return True
     return False
@@ -1038,9 +1056,16 @@ def _is_request_uid_target(
     )
 
 
-def _expr_mentions_superuser(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _expr_mentions_superuser(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
     node = _resolve_constant(node, constants)
+    if isinstance(node, ast.Name) and node.id in superuser_names:
+        return True
     text = _safe_unparse(node)
     return any(marker in text for marker in SUPERUSER_MARKERS) or text in {"1", "True"}
 
@@ -1094,7 +1119,11 @@ def _dict_literal_values_for_keys(
         if value is None:
             continue
         resolved_key = _resolve_constant(key, constants) if key is not None else None
-        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str) and resolved_key.value in keys:
+        if (
+            isinstance(resolved_key, ast.Constant)
+            and isinstance(resolved_key.value, str)
+            and resolved_key.value in keys
+        ):
             values.append(value)
     return values
 
@@ -1203,8 +1232,7 @@ def _expr_mentions_token(node: ast.AST, constants: dict[str, ast.AST] | None = N
         return True
     if isinstance(node, ast.Dict):
         return any(
-            key is not None and _expr_mentions_token(_resolve_constant(key, constants), constants)
-            for key in node.keys
+            key is not None and _expr_mentions_token(_resolve_constant(key, constants), constants) for key in node.keys
         ) or any(_expr_mentions_token(value, constants) for value in node.values if value is not None)
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
         return any(_expr_mentions_token(element, constants) for element in node.elts)

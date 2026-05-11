@@ -886,6 +886,54 @@ class Controller(http.Controller):
     assert "odoo-session-update-env-superuser" in rule_ids
 
 
+def test_flags_aliased_superuser_import_session_auth_boundaries(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should still count as root identity switching."""
+    controllers = tmp_path / "module" / "controllers"
+    models = tmp_path / "module" / "models"
+    controllers.mkdir(parents=True)
+    models.mkdir(parents=True)
+    (controllers / "switch.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, api, http
+from odoo.http import request
+
+ROOT = ROOT_UID
+
+class Controller(http.Controller):
+    @http.route('/public/switch', auth='public', csrf=False)
+    def switch(self):
+        request.uid = ROOT_UID
+        request.update_env(user=ROOT)
+        root_env = api.Environment(request.cr, ROOT_UID, {})
+        return root_env['res.users'].browse(ROOT)
+""",
+        encoding="utf-8",
+    )
+    (models / "ir_http.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+from odoo.http import request
+
+class IrHttp(models.AbstractModel):
+    _inherit = 'ir.http'
+
+    @classmethod
+    def _auth_method_public(cls):
+        request.uid = ROOT_UID
+        return True
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-session-direct-request-uid-assignment" in rule_ids
+    assert "odoo-session-update-env-superuser" in rule_ids
+    assert "odoo-session-environment-superuser" in rule_ids
+    assert "odoo-session-ir-http-superuser-auth" in rule_ids
+
+
 def test_flags_constant_alias_session_auth_boundaries(tmp_path: Path) -> None:
     """Aliased route metadata, session keys, superusers, token names, and cookie flags should resolve."""
     controllers = tmp_path / "module" / "controllers"
