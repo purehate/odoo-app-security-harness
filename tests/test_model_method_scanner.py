@@ -493,6 +493,31 @@ class Feed(models.Model):
     assert any(f.rule_id == "odoo-model-method-constraint-http-no-timeout" for f in findings)
 
 
+def test_flags_aiohttp_client_session_context_without_timeout(tmp_path: Path) -> None:
+    """aiohttp ClientSession context aliases inside model methods should be tracked."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "compute.py").write_text(
+        """
+from odoo import api, models
+import aiohttp
+
+class Feed(models.Model):
+    _name = 'x.feed'
+
+    @api.depends('url')
+    async def _compute_payload(self):
+        async with aiohttp.ClientSession() as client:
+            await client.get(self.url)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-compute-http-no-timeout" for f in findings)
+
+
 def test_flags_named_expression_http_client_without_timeout(tmp_path: Path) -> None:
     """Walrus-bound HTTP client aliases should still be treated as blocking calls."""
     models = tmp_path / "module" / "models"

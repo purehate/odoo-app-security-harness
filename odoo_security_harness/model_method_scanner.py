@@ -24,6 +24,7 @@ class ModelMethodFinding:
 
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request", "urlopen"}
+HTTP_CLIENT_FACTORIES = {"AsyncClient", "Client", "ClientSession", "Session"}
 MUTATION_METHODS = {"write", "create", "unlink"}
 SENSITIVE_MODEL_MUTATION_METHODS = {*MUTATION_METHODS, "set", "set_param"}
 SENSITIVE_MUTATION_MODELS = {
@@ -77,7 +78,7 @@ class ModelMethodScanner(ast.NodeVisitor):
         self.findings: list[ModelMethodFinding] = []
         self.model_stack: list[str] = []
         self.method_stack: list[MethodContext] = []
-        self.http_modules = {"requests", "httpx", "urllib"}
+        self.http_modules = {"aiohttp", "requests", "httpx", "urllib"}
         self.http_functions: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
@@ -98,14 +99,14 @@ class ModelMethodScanner(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> Any:
         for alias in node.names:
-            if alias.name in {"requests", "httpx"}:
+            if alias.name in {"aiohttp", "requests", "httpx"}:
                 self.http_modules.add(alias.asname or alias.name)
             elif alias.name == "urllib.request":
                 self.http_modules.add(alias.asname or "urllib")
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        if node.module not in {"requests", "httpx", "urllib.request"}:
+        if node.module not in {"aiohttp", "requests", "httpx", "urllib.request"}:
             self.generic_visit(node)
             return
         for alias in node.names:
@@ -186,6 +187,22 @@ class ModelMethodScanner(ast.NodeVisitor):
                 lambda value: _is_http_client_expr(value, self.http_modules, context.http_client_vars),
             )
         self.generic_visit(node)
+
+    def visit_With(self, node: ast.With) -> Any:
+        if self.method_stack:
+            context = self.method_stack[-1]
+            for item in node.items:
+                if item.optional_vars is not None:
+                    self._track_alias(
+                        item.optional_vars,
+                        item.context_expr,
+                        context.http_client_vars,
+                        lambda value: _is_http_client_expr(value, self.http_modules, context.http_client_vars),
+                    )
+        self.generic_visit(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> Any:
+        self.visit_With(node)
 
     def _track_alias(
         self,
@@ -382,7 +399,7 @@ def _is_http_call(sink: str, http_modules: set[str], http_functions: set[str]) -
 def _is_http_client_factory(node: ast.AST, http_modules: set[str]) -> bool:
     sink = _call_name(node.func) if isinstance(node, ast.Call) else _call_name(node)
     parts = sink.split(".")
-    return len(parts) >= 2 and parts[0] in http_modules and parts[-1] in {"Client", "Session"}
+    return len(parts) >= 2 and parts[0] in http_modules and parts[-1] in HTTP_CLIENT_FACTORIES
 
 
 def _is_http_client_expr(node: ast.AST, http_modules: set[str], http_client_vars: set[str]) -> bool:
