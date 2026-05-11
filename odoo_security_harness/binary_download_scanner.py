@@ -27,6 +27,13 @@ TAINTED_ARG_NAMES = {"attachment_id", "download", "filename", "id", "kwargs", "k
 ROUTE_ID_ARG_RE = re.compile(r"(?:^id$|_ids?$)")
 WEB_CONTENT_MARKERS = {"/web/content", "/web/image"}
 ATTACHMENT_BINARY_ATTRS = {"datas", "raw", "db_datas"}
+ACTIVE_RESPONSE_CONTENT_TYPES = {
+    "application/javascript",
+    "application/xhtml+xml",
+    "image/svg+xml",
+    "text/html",
+    "text/javascript",
+}
 RESPONSE_FACTORY_SINKS = {
     "request.make_json_response",
     "request.make_response",
@@ -318,6 +325,16 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "Controller response body contains attachment or binary field data; verify access checks, token validation, and cache/header policy",
                 sink,
             )
+            active_content = _active_response_content(node, self._effective_constants())
+            if active_content and not _response_forces_attachment_download(node, self._effective_constants()):
+                self._add(
+                    "odoo-binary-active-inline-response",
+                    "Controller serves attachment data as browser-active content",
+                    severity,
+                    node.lineno,
+                    f"Controller response contains attachment/binary data with browser-active content type ({active_content}) without forced attachment disposition; verify sanitization, ownership, and download headers",
+                    sink,
+                )
 
     def _expr_is_tainted(self, node: ast.AST) -> bool:
         if self._is_request_derived(node):
@@ -875,6 +892,73 @@ def _response_body_arg(node: ast.Call) -> ast.AST | None:
         if keyword.arg in {"data", "response", "body"}:
             return keyword.value
     return None
+
+
+def _active_response_content(node: ast.Call, constants: dict[str, ast.AST]) -> str:
+    for keyword in node.keywords:
+        if keyword.arg in {"content_type", "mimetype"}:
+            content_type = _constant_string(keyword.value, constants).lower()
+            if _is_active_content_type(content_type):
+                return f"content_type={content_type}"
+    for header_name, header_value in _response_header_pairs(node, constants):
+        if header_name.lower() in {"content-type", "content_type"} and _is_active_content_type(header_value.lower()):
+            return f"content-type={header_value.lower()}"
+    return ""
+
+
+def _response_forces_attachment_download(node: ast.Call, constants: dict[str, ast.AST]) -> bool:
+    for header_name, header_value in _response_header_pairs(node, constants):
+        if header_name.lower() in {"content-disposition", "content_disposition"}:
+            return "attachment" in header_value.lower()
+    return False
+
+
+def _response_header_pairs(node: ast.Call, constants: dict[str, ast.AST]) -> list[tuple[str, str]]:
+    header_nodes: list[ast.AST] = []
+    if len(node.args) >= 2:
+        header_nodes.append(node.args[1])
+    for keyword in node.keywords:
+        if keyword.arg in {"header", "headers"}:
+            header_nodes.append(keyword.value)
+    pairs: list[tuple[str, str]] = []
+    for header_node in header_nodes:
+        pairs.extend(_literal_header_pairs(header_node, constants))
+    return pairs
+
+
+def _literal_header_pairs(node: ast.AST, constants: dict[str, ast.AST]) -> list[tuple[str, str]]:
+    resolved = _resolve_constant(node, constants)
+    if isinstance(resolved, ast.Dict):
+        pairs: list[tuple[str, str]] = []
+        for key, value in zip(resolved.keys, resolved.values, strict=False):
+            if key is None:
+                continue
+            name = _constant_string(key, constants)
+            text = _constant_string(value, constants) or ("attachment" if _is_content_disposition_helper(value) else "")
+            if name and text:
+                pairs.append((name, text))
+        return pairs
+    if isinstance(resolved, ast.List | ast.Tuple | ast.Set):
+        pairs = []
+        for element in resolved.elts:
+            if isinstance(element, ast.Tuple | ast.List) and len(element.elts) >= 2:
+                name = _constant_string(element.elts[0], constants)
+                text = _constant_string(element.elts[1], constants) or (
+                    "attachment" if _is_content_disposition_helper(element.elts[1]) else ""
+                )
+                if name and text:
+                    pairs.append((name, text))
+        return pairs
+    return []
+
+
+def _is_content_disposition_helper(node: ast.AST) -> bool:
+    return isinstance(node, ast.Call) and _call_name(node.func).endswith("content_disposition")
+
+
+def _is_active_content_type(value: str) -> bool:
+    content_type = value.split(";", 1)[0].strip().lower()
+    return content_type in ACTIVE_RESPONSE_CONTENT_TYPES
 
 
 def _looks_route_id_arg(name: str) -> bool:

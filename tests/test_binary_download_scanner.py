@@ -32,6 +32,67 @@ class Download(http.Controller):
     assert any(f.rule_id == "odoo-binary-attachment-data-response" for f in findings)
 
 
+def test_flags_public_active_inline_attachment_response(tmp_path: Path) -> None:
+    """Public attachment bytes served as active content need download-disposition review."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Download(http.Controller):
+    @http.route('/public/preview', auth='public')
+    def preview(self, **kwargs):
+        attachment = request.env['ir.attachment'].sudo().browse(int(kwargs.get('id')))
+        return request.make_response(
+            attachment.datas,
+            headers=[('Content-Type', 'image/svg+xml; charset=utf-8')],
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-active-inline-response"
+        and f.severity == "high"
+        and "content-type=image/svg+xml" in f.message
+        for f in findings
+    )
+
+
+def test_attachment_download_disposition_suppresses_active_inline_response(tmp_path: Path) -> None:
+    """Forced attachment downloads should not trigger the inline active-content rule."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.http import content_disposition, request
+
+class Download(http.Controller):
+    @http.route('/public/preview', auth='public')
+    def preview(self, **kwargs):
+        attachment = request.env['ir.attachment'].sudo().browse(int(kwargs.get('id')))
+        return request.make_response(
+            attachment.datas,
+            headers={
+                'Content-Type': 'text/html',
+                'Content-Disposition': content_disposition('preview.html'),
+            },
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(f.rule_id == "odoo-binary-attachment-data-response" for f in findings)
+    assert not any(f.rule_id == "odoo-binary-active-inline-response" for f in findings)
+
+
 def test_imported_route_decorator_public_attachment_datas_response(tmp_path: Path) -> None:
     """Imported route decorators should still expose public binary downloads."""
     controllers = tmp_path / "module" / "controllers"

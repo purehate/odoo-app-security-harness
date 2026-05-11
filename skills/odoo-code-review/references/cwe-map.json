@@ -2281,6 +2281,12 @@
       "capec": ["CAPEC-118", "CAPEC-21"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "binary_active_inline_response": {
+      "label": "Controller serves attachment or binary field data as browser-active inline content",
+      "cwe": ["CWE-79", "CWE-434", "CWE-116"],
+      "capec": ["CAPEC-63", "CAPEC-592"],
+      "owasp": "A03:2021 Injection"
+    },
     "binary_content_sudo": {
       "label": "ir.http.binary_content is called through sudo or a superuser identity",
       "cwe": ["CWE-269", "CWE-639", "CWE-863"],

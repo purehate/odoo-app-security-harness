@@ -5277,6 +5277,16 @@ _TAXONOMY_SHAPE_HINTS = (
             "validate crlf, path separators, extension",
         ),
     ),
+    (
+        "binary_active_inline_response",
+        (
+            "odoo-binary-active-inline-response",
+            "controller serves attachment data as browser-active content",
+            "browser-active content type",
+            "without forced attachment disposition",
+            "verify sanitization, ownership, and download headers",
+        ),
+    ),
     ("csrf_state_change_get", ("csrf", "state-change", "unsafe-method", "get-route")),
     ("portal_route_no_auth", ("public-route", "auth-none", "auth-public", "portal-route", "public-write-route")),
     (

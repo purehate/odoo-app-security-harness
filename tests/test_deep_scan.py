@@ -3612,10 +3612,16 @@ def test_taxonomy_coverage_classifies_binary_download_specific_risks() -> None:
                 "title": "Download filename is request-controlled",
                 "message": "content_disposition uses request-derived filename; validate CRLF, path separators, extension, and confusing Unicode/control characters",
             },
+            {
+                "source": "binary-downloads",
+                "rule_id": "odoo-binary-active-inline-response",
+                "title": "Controller serves attachment data as browser-active content",
+                "message": "Controller response contains attachment/binary data with browser-active content type (content-type=image/svg+xml) without forced attachment disposition; verify sanitization, ownership, and download headers",
+            },
         ]
     )
 
-    assert coverage["mapped_rules"] == 5
+    assert coverage["mapped_rules"] == 6
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-binary-attachment-data-response": "binary_attachment_data_response",
@@ -3623,6 +3629,7 @@ def test_taxonomy_coverage_classifies_binary_download_specific_risks() -> None:
         "odoo-binary-tainted-binary-content-args": "binary_tainted_content_args",
         "odoo-binary-tainted-web-content-redirect": "binary_tainted_web_content_redirect",
         "odoo-binary-tainted-content-disposition": "binary_tainted_content_disposition",
+        "odoo-binary-active-inline-response": "binary_active_inline_response",
     }
     assert any("CWE-113" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-601" in entry["cwe"] for entry in coverage["mapped_entries"])
