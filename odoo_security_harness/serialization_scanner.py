@@ -26,6 +26,8 @@ UNSAFE_DESERIALIZATION_SINKS = {
     "pickle.loads",
     "cPickle.load",
     "cPickle.loads",
+    "cloudpickle.load",
+    "cloudpickle.loads",
     "dill.load",
     "dill.loads",
     "joblib.load",
@@ -137,6 +139,7 @@ class SerializationScanner(ast.NodeVisitor):
             if alias.name in {
                 "pickle",
                 "cPickle",
+                "cloudpickle",
                 "dill",
                 "joblib",
                 "marshal",
@@ -160,6 +163,7 @@ class SerializationScanner(ast.NodeVisitor):
         if node.module in {
             "pickle",
             "cPickle",
+            "cloudpickle",
             "dill",
             "joblib",
             "marshal",

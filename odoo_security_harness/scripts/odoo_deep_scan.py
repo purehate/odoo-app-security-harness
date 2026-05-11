@@ -1362,6 +1362,8 @@ _TAXONOMY_SHAPE_HINTS = (
             "serialization-unsafe-deserialization",
             "unsafe deserialization sink",
             "can execute code or instantiate attacker-controlled objects",
+            "cloudpickle.load",
+            "cloudpickle.loads",
             "never use it on request, attachment, or integration data",
             "numpy.load(..., allow_pickle=true)",
         ),

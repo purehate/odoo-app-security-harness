@@ -246,6 +246,53 @@ def import_payload(payload):
     assert any(f.rule_id == "odoo-serialization-unsafe-deserialization" for f in findings)
 
 
+def test_cloudpickle_loads_is_reported(tmp_path: Path) -> None:
+    """cloudpickle.loads is pickle-compatible and unsafe on uploaded data."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+import cloudpickle
+
+def import_payload(**kwargs):
+    payload = kwargs.get('payload')
+    return cloudpickle.loads(payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-serialization-unsafe-deserialization"
+        and f.severity == "critical"
+        and f.sink == "cloudpickle.loads"
+        for f in findings
+    )
+
+
+def test_imported_cloudpickle_load_alias_is_reported(tmp_path: Path) -> None:
+    """from-cloudpickle aliases should not hide unsafe deserialization."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+from cloudpickle import load as load_payload
+
+def import_payload(file):
+    return load_payload(file)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-serialization-unsafe-deserialization"
+        and f.severity == "critical"
+        and f.sink == "cloudpickle.load"
+        for f in findings
+    )
+
+
 def test_torch_load_on_tainted_attachment_is_reported(tmp_path: Path) -> None:
     """torch.load is pickle-backed and unsafe for uploaded model files."""
     py = tmp_path / "importer.py"
