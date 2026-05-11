@@ -2280,6 +2280,12 @@
       "capec": ["CAPEC-63", "CAPEC-592"],
       "owasp": "A03:2021 Injection"
     },
+    "attachment_sensitive_filename": {
+      "label": "Attachment filename metadata contains token, secret, password, or API-key-like material",
+      "cwe": ["CWE-598", "CWE-522", "CWE-359"],
+      "capec": ["CAPEC-191", "CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "attachment_public_write": {
       "label": "ir.attachment write makes an existing file public",
       "cwe": ["CWE-200", "CWE-284", "CWE-732"],

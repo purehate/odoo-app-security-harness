@@ -56,6 +56,7 @@ SENSITIVE_RES_MODELS = {
 ATTACHMENT_VALUE_KEYS = {
     "access_token",
     "datas",
+    "datas_fname",
     "db_datas",
     "mimetype",
     "name",
@@ -75,6 +76,22 @@ ACTIVE_ATTACHMENT_MIMETYPES = {
     "text/javascript",
 }
 ACTIVE_ATTACHMENT_EXTENSIONS = (".htm", ".html", ".js", ".mjs", ".svg", ".xhtml")
+SENSITIVE_ATTACHMENT_NAME_MARKERS = (
+    "access_key",
+    "access_token",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "client_secret",
+    "password",
+    "private_key",
+    "reset_password_token",
+    "secret",
+    "session_token",
+    "signature",
+    "signup_token",
+    "token",
+)
 
 
 def scan_attachments(repo_path: Path) -> list[AttachmentFinding]:
@@ -329,6 +346,17 @@ class AttachmentScanner(ast.NodeVisitor):
                 route.display_path(),
                 sink,
             )
+        sensitive_name = _sensitive_attachment_name_evidence(values, constants)
+        if sensitive_name:
+            self._add(
+                "odoo-attachment-sensitive-filename",
+                "Attachment filename contains sensitive marker",
+                "high",
+                node.lineno,
+                f"ir.attachment.create stores token, secret, password, or API-key-like material in attachment filename metadata ({sensitive_name}); avoid leaking credentials through download headers, chatter, exports, logs, and shared file records",
+                route.display_path(),
+                sink,
+            )
 
     def _scan_attachment_write(self, node: ast.Call, route: RouteContext, sink: str) -> None:
         values = self._first_dict_arg(node)
@@ -388,6 +416,17 @@ class AttachmentScanner(ast.NodeVisitor):
                 _active_content_severity(route, public, constants),
                 node.lineno,
                 f"ir.attachment.write stores browser-active content ({active_content}); verify MIME allowlists, sanitization, download disposition, and public access",
+                route.display_path(),
+                sink,
+            )
+        sensitive_name = _sensitive_attachment_name_evidence(values, constants)
+        if sensitive_name:
+            self._add(
+                "odoo-attachment-sensitive-filename",
+                "Attachment filename contains sensitive marker",
+                "high",
+                node.lineno,
+                f"ir.attachment.write stores token, secret, password, or API-key-like material in attachment filename metadata ({sensitive_name}); avoid leaking credentials through download headers, chatter, exports, logs, and shared file records",
                 route.display_path(),
                 sink,
             )
@@ -993,6 +1032,18 @@ def _active_attachment_content(values: dict[str, ast.AST], constants: dict[str, 
     name = _literal_string(values.get("name"), constants).strip().lower()
     if name.endswith(ACTIVE_ATTACHMENT_EXTENSIONS):
         evidence.append(f"name={name}")
+    return ", ".join(evidence)
+
+
+def _sensitive_attachment_name_evidence(values: dict[str, ast.AST], constants: dict[str, ast.AST]) -> str:
+    evidence: list[str] = []
+    for field in ("name", "datas_fname", "store_fname"):
+        value = values.get(field)
+        if value is None:
+            continue
+        text = (_literal_string(value, constants) or _safe_unparse(value)).strip().lower()
+        if text and any(marker in text for marker in SENSITIVE_ATTACHMENT_NAME_MARKERS):
+            evidence.append(f"{field}={text}")
     return ", ".join(evidence)
 
 

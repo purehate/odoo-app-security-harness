@@ -5420,6 +5420,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "attachment_sensitive_filename",
+        (
+            "odoo-attachment-sensitive-filename",
+            "attachment filename contains sensitive marker",
+            "ir.attachment.create stores token, secret, password, or api-key-like material in attachment filename metadata",
+            "ir.attachment.write stores token, secret, password, or api-key-like material in attachment filename metadata",
+            "download headers, chatter, exports, logs, and shared file records",
+        ),
+    ),
+    (
         "attachment_public_write",
         (
             "odoo-attachment-public-write",

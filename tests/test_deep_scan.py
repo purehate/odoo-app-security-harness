@@ -3572,6 +3572,12 @@ def test_taxonomy_coverage_classifies_attachment_metadata_specific_risks() -> No
             },
             {
                 "source": "attachments",
+                "rule_id": "odoo-attachment-sensitive-filename",
+                "title": "Attachment filename contains sensitive marker",
+                "message": "ir.attachment.create stores token, secret, password, or API-key-like material in attachment filename metadata (name=invoice-access_token-static.pdf); avoid leaking credentials through download headers, chatter, exports, logs, and shared file records",
+            },
+            {
+                "source": "attachments",
                 "rule_id": "odoo-attachment-public-write",
                 "title": "Attachment write makes file public",
                 "message": "ir.attachment.write sets public=True; verify the existing file, linked record, and storage object are intentionally world-readable",
@@ -3603,7 +3609,7 @@ def test_taxonomy_coverage_classifies_attachment_metadata_specific_risks() -> No
         ]
     )
 
-    assert coverage["mapped_rules"] == 12
+    assert coverage["mapped_rules"] == 13
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-attachment-public-route-mutation": "attachment_public_route_mutation",
@@ -3613,6 +3619,7 @@ def test_taxonomy_coverage_classifies_attachment_metadata_specific_risks() -> No
         "odoo-attachment-public-orphan": "attachment_public_orphan",
         "odoo-attachment-public-sensitive-binding": "attachment_public_sensitive_binding",
         "odoo-attachment-active-content": "attachment_active_content",
+        "odoo-attachment-sensitive-filename": "attachment_sensitive_filename",
         "odoo-attachment-public-write": "attachment_public_write",
         "odoo-attachment-tainted-res-model-write": "attachment_tainted_res_model_write",
         "odoo-attachment-tainted-res-id-write": "attachment_tainted_res_id_write",

@@ -326,6 +326,67 @@ class AttachmentBuilder(models.Model):
     )
 
 
+def test_sensitive_attachment_filename_create_is_reported(tmp_path: Path) -> None:
+    """Attachment filenames should not contain token or secret-shaped material."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachments.py").write_text(
+        """
+from odoo import models
+
+class AttachmentBuilder(models.Model):
+    _name = 'x.attachment.builder'
+
+    def build(self, payload):
+        filename = 'invoice-access_token-static.pdf'
+        return self.env['ir.attachment'].create({
+            'name': filename,
+            'datas_fname': 'backup-client_secret.txt',
+            'datas': payload,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-attachment-sensitive-filename"
+        and finding.severity == "high"
+        and "name=invoice-access_token-static.pdf" in finding.message
+        and "datas_fname=backup-client_secret.txt" in finding.message
+        for finding in findings
+    )
+
+
+def test_sensitive_attachment_filename_write_is_reported(tmp_path: Path) -> None:
+    """Attachment writes should not rename files to token-shaped names."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachments.py").write_text(
+        """
+from odoo import models
+
+class AttachmentBuilder(models.Model):
+    _name = 'x.attachment.builder'
+
+    def rename(self, attachment_id):
+        attachment = self.env['ir.attachment'].browse(attachment_id)
+        return attachment.write({'name': 'reset_password_token.pdf'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-attachment-sensitive-filename"
+        and finding.severity == "high"
+        and finding.sink.endswith(".write")
+        for finding in findings
+    )
+
+
 def test_non_odoo_route_decorator_public_attachment_create_is_ignored(tmp_path: Path) -> None:
     """Local route-like decorators should not create Odoo route context."""
     controllers = tmp_path / "module" / "controllers"
