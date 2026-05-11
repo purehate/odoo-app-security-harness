@@ -490,6 +490,34 @@ class Controller(http.Controller):
     assert "odoo-report-tainted-render-records" in rule_ids
 
 
+def test_dict_union_static_unpack_public_report_render_is_reported(tmp_path: Path) -> None:
+    """Dict-union **route options should not hide public report rendering."""
+    controller = tmp_path / "module" / "controllers" / "report.py"
+    controller.parent.mkdir(parents=True)
+    controller.write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public'}
+ROUTE_OPTIONS = BASE_OPTIONS | {'type': 'http'}
+
+class Controller(http.Controller):
+    @http.route('/public/invoice', **ROUTE_OPTIONS)
+    def invoice(self, **kwargs):
+        report = request.env.ref('account.account_invoices')
+        return report._render_qweb_pdf([int(kwargs.get('id'))])
+""",
+        encoding="utf-8",
+    )
+
+    findings = ReportPythonScanner(controller).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-report-public-render-route" in rule_ids
+    assert "odoo-report-tainted-render-records" in rule_ids
+
+
 def test_constant_backed_public_report_render_is_reported(tmp_path: Path) -> None:
     """Constant-backed public route auth should still expose report rendering."""
     controller = tmp_path / "module" / "controllers" / "report.py"
