@@ -1902,6 +1902,36 @@ class Controller(http.Controller):
     )
 
 
+def test_flags_unpack_tainted_x_sendfile_header_update(tmp_path: Path) -> None:
+    """Unpacked header update maps should keep X-Sendfile path risk visible."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/offload', auth='user')
+    def offload(self, **kwargs):
+        response = request.make_response('')
+        headers = {'X-Sendfile': kwargs.get('path')}
+        response.headers.update(**headers)
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-tainted-file-offload-header"
+        and f.severity == "medium"
+        and f.sink == "response.headers.update"
+        for f in findings
+    )
+
+
 def test_flags_tainted_file_offload_header_from_response_factory(tmp_path: Path) -> None:
     """Response factory headers should include file offload path checks."""
     controllers = tmp_path / "module" / "controllers"

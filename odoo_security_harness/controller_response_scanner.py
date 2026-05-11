@@ -467,8 +467,10 @@ class ControllerResponseScanner(ast.NodeVisitor):
 
     def _scan_headers_mutation(self, node: ast.Call, sink: str) -> None:
         if isinstance(node.func, ast.Attribute) and node.func.attr == "update":
+            constants = self._effective_constants()
+            header_keywords = _expanded_keywords(node, constants)
             if any(self._expr_is_tainted(arg) for arg in node.args) or any(
-                keyword.value is not None and self._expr_is_tainted(keyword.value) for keyword in node.keywords
+                self._expr_is_tainted(keyword_value) for _, keyword_value in header_keywords
             ):
                 self._add(
                     "odoo-controller-response-header-injection",
@@ -477,9 +479,11 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     node.lineno,
                     "Controller response headers include request-derived data; validate against CRLF/header injection and unsafe filenames",
                     sink,
-                )
+            )
             for arg in node.args:
                 self._scan_static_headers(arg, node.lineno, sink)
+            for header_name, value in header_keywords:
+                self._scan_static_header_value(header_name, value, node.lineno, sink)
         elif len(node.args) >= 2 and self._expr_is_tainted(node.args[1]):
             self._add(
                 "odoo-controller-response-header-injection",
