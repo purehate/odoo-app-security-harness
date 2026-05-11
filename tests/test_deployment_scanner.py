@@ -201,6 +201,45 @@ def test_scan_deployment_config_flags_compose_odoo_env_keys(tmp_path: Path) -> N
     assert "odoo-deploy-insecure-base-url" in rule_ids
 
 
+def test_scan_deployment_config_flags_kubernetes_odoo_env_keys(tmp_path: Path) -> None:
+    """Kubernetes container env values should feed deployment posture checks."""
+    config = tmp_path / "deployment.yaml"
+    config.write_text(
+        """apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odoo
+spec:
+  template:
+    spec:
+      containers:
+        - name: odoo
+          image: odoo:18
+          env:
+            - name: ODOO_LIST_DB
+              value: "true"
+            - name: ODOO_PROXY_MODE
+              value: "false"
+            - name: ODOO_WEB_BASE_URL
+              value: http://localhost:8069
+            - name: ODOO_DB_SSLMODE
+              valueFrom:
+                configMapKeyRef:
+                  name: odoo
+                  key: db_sslmode
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_deployment_config(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deploy-list-db-enabled" in rule_ids
+    assert "odoo-deploy-proxy-mode-disabled" in rule_ids
+    assert "odoo-deploy-insecure-base-url" in rule_ids
+    assert "odoo-deploy-db-sslmode-opportunistic" not in rule_ids
+
+
 def test_scan_deployment_config_flags_signup_and_base_url_xml(tmp_path: Path) -> None:
     """XML config parameters should flag open signup and mutable base URL settings."""
     data_dir = tmp_path / "module" / "data"

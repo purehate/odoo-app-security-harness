@@ -75,6 +75,8 @@ class DeploymentScanner:
             self._scan_config_parameter_csv()
         elif _is_compose_file(self.path):
             self._scan_compose_environment()
+        elif suffix in {".yaml", ".yml"}:
+            self._scan_kubernetes_environment()
         elif _is_dockerfile(self.path):
             self._scan_dockerfile_config_lines()
         else:
@@ -112,6 +114,17 @@ class DeploymentScanner:
                 continue
             environment = service.get("environment")
             for key, value in _compose_environment_items(environment):
+                self._scan_config_value(key, value, _line_for(self.content, str(key)))
+
+    def _scan_kubernetes_environment(self) -> None:
+        try:
+            documents = list(yaml.safe_load_all(self.content))
+        except yaml.YAMLError:
+            return
+        for document in documents:
+            if not _looks_kubernetes_manifest(document):
+                continue
+            for key, value in _kubernetes_environment_items(document):
                 self._scan_config_value(key, value, _line_for(self.content, str(key)))
 
     def _scan_config_parameter_xml(self) -> None:
@@ -479,6 +492,41 @@ def _compose_environment_items(environment: object) -> list[tuple[str, str]]:
     return items
 
 
+def _looks_kubernetes_manifest(document: object) -> bool:
+    return isinstance(document, dict) and "apiVersion" in document and "kind" in document
+
+
+def _kubernetes_environment_items(document: object) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    for container in _kubernetes_containers(document):
+        environment = container.get("env")
+        if not isinstance(environment, list):
+            continue
+        for entry in environment:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            value = entry.get("value")
+            if name and value is not None:
+                items.append((str(name), str(value)))
+    return items
+
+
+def _kubernetes_containers(node: object) -> list[dict[str, object]]:
+    containers: list[dict[str, object]] = []
+    if isinstance(node, dict):
+        for key in ("containers", "initContainers"):
+            values = node.get(key)
+            if isinstance(values, list):
+                containers.extend(item for item in values if isinstance(item, dict))
+        for value in node.values():
+            containers.extend(_kubernetes_containers(value))
+    elif isinstance(node, list):
+        for value in node:
+            containers.extend(_kubernetes_containers(value))
+    return containers
+
+
 def _normalize_config_key(key: str) -> str:
     normalized = key.strip().lower().replace("-", "_")
     if normalized.startswith("odoo_"):
@@ -542,6 +590,7 @@ def _looks_config_file(path: Path) -> bool:
         or path.name.startswith(".env")
         or path.name == "odoo.conf"
         or _is_compose_file(path)
+        or suffix in {".yaml", ".yml"}
         or _is_dockerfile(path)
     )
 
