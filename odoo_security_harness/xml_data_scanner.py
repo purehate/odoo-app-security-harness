@@ -58,6 +58,7 @@ KNOWN_MODEL_EXTERNAL_IDS = {
     "model_payment_transaction": "payment.transaction",
 }
 CONFIG_PARAMETER_MODELS = {"ir.config_parameter", "ir.config.parameter"}
+MAIL_SERVER_MODELS = {"ir.mail_server", "ir.mail.server"}
 LOCAL_BASE_URL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0"}  # noqa: S104
 SECURITY_TOGGLE_UNSAFE_VALUES = {
     "auth.signup.allow_uninvited": {"1", "true", "yes", "y"},
@@ -129,6 +130,8 @@ class XmlDataScanner:
                 self._scan_group_record(record)
             elif model in CONFIG_PARAMETER_MODELS:
                 self._scan_config_parameter_record(record)
+            elif model in MAIL_SERVER_MODELS:
+                self._scan_mail_server_record(record)
         for function in root.iter("function"):
             self._scan_function(function)
 
@@ -154,6 +157,8 @@ class XmlDataScanner:
                 self._scan_group_fields(fields, line, record_id)
             elif model in CONFIG_PARAMETER_MODELS:
                 self._scan_config_parameter_fields(fields, line, record_id)
+            elif model in MAIL_SERVER_MODELS:
+                self._scan_mail_server_fields(fields, line, record_id)
         return self.findings
 
     def _scan_server_action(self, record: ElementTree.Element) -> None:
@@ -469,6 +474,25 @@ class XmlDataScanner:
                 line,
                 "Module data sets web.base.url with username, password, or token material; generated portal, OAuth, payment, and password-reset links can leak those credentials",
                 "ir.config_parameter",
+                record_id,
+            )
+
+    def _scan_mail_server_record(self, record: ElementTree.Element) -> None:
+        fields = self._fields(record)
+        self._scan_mail_server_fields(fields, self._line_for_record(record), record.get("id", ""))
+
+    def _scan_mail_server_fields(self, fields: dict[str, str], line: int, record_id: str) -> None:
+        host = fields.get("smtp_host", "").strip().strip("'\"")
+        encryption = fields.get("smtp_encryption", "").strip().strip("'\"").lower()
+        port = fields.get("smtp_port", "").strip().strip("'\"")
+        if _mail_server_tls_disabled(host, encryption, port):
+            self._add(
+                "odoo-xml-mail-server-no-tls",
+                "XML mail server does not require TLS",
+                "medium",
+                line,
+                "ir.mail_server data configures outbound SMTP without TLS; credentials and notification content may cross the network in cleartext",
+                "ir.mail_server",
                 record_id,
             )
 
@@ -1168,6 +1192,17 @@ def _url_has_embedded_credentials(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
         parsed.username is not None or parsed.password is not None
     )
+
+
+def _mail_server_tls_disabled(host: str, encryption: str, port: str) -> bool:
+    if not host:
+        return False
+    host_name = host.lower()
+    if host_name in LOCAL_BASE_URL_HOSTS:
+        return False
+    if encryption in {"ssl", "starttls", "tls"}:
+        return False
+    return encryption in {"", "none", "false", "0"} or port == "25"
 
 
 def findings_to_json(findings: list[XmlDataFinding]) -> list[dict[str, Any]]:

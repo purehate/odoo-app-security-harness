@@ -8355,6 +8355,12 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
             },
             {
                 "source": "xml-data",
+                "rule_id": "odoo-xml-mail-server-no-tls",
+                "title": "XML mail server does not require TLS",
+                "message": "ir.mail_server data configures outbound SMTP without TLS; credentials and notification content may cross the network in cleartext",
+            },
+            {
+                "source": "xml-data",
                 "rule_id": "odoo-xml-config-param-security-toggle-enabled",
                 "title": "XML data enables security-sensitive config parameter",
                 "message": "Module data sets ir.config_parameter 'auth_signup.allow_uninvited' to 'True'; verify install/update cannot silently weaken signup, database manager, or generated-link security posture",
@@ -8410,6 +8416,7 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
     assert shapes["odoo-xml-function-user-group-assignment"] == "xml_data_user_admin_group_assignment"
     assert shapes["odoo-xml-function-security-model-mutation"] == "xml_data_function_security_model_mutation"
     assert shapes["odoo-xml-public-mail-channel"] == "xml_data_public_mail_channel"
+    assert shapes["odoo-xml-mail-server-no-tls"] == "xml_data_mail_server_no_tls"
     assert shapes["odoo-xml-config-param-security-toggle-enabled"] == "config_parameter_security_toggle_write"
     assert shapes["odoo-xml-config-param-insecure-base-url"] == "config_parameter_base_url_write"
     assert (

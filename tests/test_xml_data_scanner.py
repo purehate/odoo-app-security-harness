@@ -532,6 +532,52 @@ def test_csv_config_parameter_base_url_embedded_credentials_is_reported(tmp_path
     )
 
 
+def test_xml_mail_server_without_tls_is_reported(tmp_path: Path) -> None:
+    """Module XML data should not configure cleartext outbound SMTP."""
+    xml = tmp_path / "mail_server.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="mail_server_cleartext" model="ir.mail_server">
+    <field name="smtp_host">smtp.partner.example</field>
+    <field name="smtp_port">25</field>
+    <field name="smtp_encryption">none</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(
+        finding.rule_id == "odoo-xml-mail-server-no-tls"
+        and finding.record_id == "mail_server_cleartext"
+        for finding in findings
+    )
+
+
+def test_csv_mail_server_starttls_is_not_reported(tmp_path: Path) -> None:
+    """TLS-protected mail server CSV records should stay quiet."""
+    csv_file = tmp_path / "ir.mail_server.csv"
+    csv_file.write_text(
+        "id,smtp_host,smtp_port,smtp_encryption\n"
+        "mail_server_cleartext,smtp.partner.example,25,none\n"
+        "mail_server_tls,smtp.partner.example,587,starttls\n",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(csv_file).scan_csv_file()
+
+    assert any(
+        finding.rule_id == "odoo-xml-mail-server-no-tls"
+        and finding.record_id == "mail_server_cleartext"
+        for finding in findings
+    )
+    assert not any(
+        finding.rule_id == "odoo-xml-mail-server-no-tls" and finding.record_id == "mail_server_tls"
+        for finding in findings
+    )
+
+
 def test_server_action_constant_backed_sensitive_model_mutation(tmp_path: Path) -> None:
     """XML server action code should resolve env[...] model constants."""
     xml = tmp_path / "actions.xml"

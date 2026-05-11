@@ -1451,6 +1451,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ("odoo-xml-public-mail-channel",),
     ),
     (
+        "xml_data_mail_server_no_tls",
+        (
+            "odoo-xml-mail-server-no-tls",
+            "xml mail server does not require tls",
+            "ir.mail_server data configures outbound smtp without tls",
+            "credentials and notification content may cross the network in cleartext",
+        ),
+    ),
+    (
         "xml_cron_admin_user",
         (
             "odoo-xml-cron-admin-user",
