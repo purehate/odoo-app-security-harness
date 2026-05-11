@@ -107,6 +107,24 @@ def test_sensitive_csv_template_model_external_id_is_normalized(tmp_path: Path) 
     )
 
 
+def test_sensitive_csv_template_colon_model_external_id_is_normalized(tmp_path: Path) -> None:
+    """CSV model refs exported with colon headers should drive sensitive-template checks."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "mail_template.csv").write_text(
+        "id,name,model_id:id,email_to,body_html\n"
+        "template_invoice,Invoice,account.model_account_move,${object.partner_id.email},Invoice ready\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_templates(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-mail-template-dynamic-sensitive-recipient" and finding.template == "template_invoice"
+        for finding in findings
+    )
+
+
 def test_sensitive_signup_url_helpers_are_reported(tmp_path: Path) -> None:
     """Odoo signup URL helper fields carry tokenized account-access links."""
     xml = tmp_path / "mail.xml"
