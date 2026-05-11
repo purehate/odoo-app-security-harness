@@ -560,6 +560,26 @@ class Sale:
     assert any(f.rule_id == "odoo-mail-force-send" for f in findings)
 
 
+def test_local_constant_template_force_send_is_reported(tmp_path: Path) -> None:
+    """Function-local force_send values should not hide synchronous sends."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+class Sale:
+    def action_send(self):
+        force_now = True
+        template = self.env.ref('sale.email_template_edi_sale')
+        template.send_mail(self.id, force_send=force_now)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+
+    assert any(f.rule_id == "odoo-mail-force-send" for f in findings)
+
+
 def test_flags_with_user_superuser_message_post(tmp_path: Path) -> None:
     """with_user(SUPERUSER_ID) chatter posts should be treated as elevated."""
     models = tmp_path / "module" / "models"
@@ -617,6 +637,26 @@ ROOT_UID = 1
 class Message:
     def post(self):
         return self.with_user(ROOT_UID).message_post(body='Internal update')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-chatter-sudo-post" in rule_ids
+
+
+def test_local_constant_with_user_message_post_is_reported(tmp_path: Path) -> None:
+    """Function-local superuser IDs should still mark chatter posts elevated."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "message.py").write_text(
+        """
+class Message:
+    def post(self):
+        root_uid = 1
+        return self.with_user(root_uid).message_post(body='Internal update')
 """,
         encoding="utf-8",
     )
@@ -876,6 +916,31 @@ class Mail:
     def send_template(self):
         template = self.env.ref('sale.email_template_edi_sale')
         return template.send_mail(self.id, email_values=EMAIL_VALUES)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-sensitive-body" in rule_ids
+
+
+def test_local_constant_email_values_send_mail_are_reported(tmp_path: Path) -> None:
+    """Function-local email_values dictionaries should still expose sensitive bodies."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "mail.py").write_text(
+        """
+class Mail:
+    def send_template(self):
+        sensitive_body = 'reset_password_token issued'
+        email_values = {
+            'email_to': 'ops@example.com',
+            'body_html': sensitive_body,
+        }
+        template = self.env.ref('sale.email_template_edi_sale')
+        return template.send_mail(self.id, email_values=email_values)
 """,
         encoding="utf-8",
     )
@@ -1335,6 +1400,30 @@ class Followers:
 
     def follow_order(self):
         return self.env['mail.followers'].create(FOLLOW_VALUES)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+
+    assert any(f.rule_id == "odoo-mail-followers-sensitive-model-mutation" for f in findings)
+
+
+def test_local_constant_dict_sensitive_model_mail_followers_mutation(tmp_path: Path) -> None:
+    """Function-local follower value dictionaries should expose sensitive res_model values."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "followers.py").write_text(
+        """
+class Followers:
+    def follow_order(self):
+        followed_model = 'sale.order'
+        follow_values = {
+            'res_model': followed_model,
+            'res_id': 1,
+            'partner_id': 2,
+        }
+        return self.env['mail.followers'].create(follow_values)
 """,
         encoding="utf-8",
     )

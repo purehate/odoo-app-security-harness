@@ -127,6 +127,7 @@ class MailChatterScanner(ast.NodeVisitor):
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[MailChatterFinding]:
         """Scan the file."""
@@ -146,6 +147,8 @@ class MailChatterScanner(ast.NodeVisitor):
         previous_tainted = set(self.tainted_names)
         previous_sudo = set(self.sudo_names)
         previous_models = dict(self.model_names)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         route = _route_info(
             node,
             self._effective_constants(),
@@ -169,6 +172,7 @@ class MailChatterScanner(ast.NodeVisitor):
         self.tainted_names = previous_tainted
         self.sudo_names = previous_sudo
         self.model_names = previous_models
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -203,11 +207,14 @@ class MailChatterScanner(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._track_tainted_target(target, node.value)
         self._track_aliases(node.targets, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
+        if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
         if isinstance(node.target, ast.Name) and node.value is not None:
             self._track_tainted_target(node.target, node.value)
             self._track_aliases([node.target], node.value)
@@ -224,6 +231,7 @@ class MailChatterScanner(ast.NodeVisitor):
         self.visit_For(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._track_tainted_target(node.target, node.value)
         self._track_aliases([node.target], node.value)
         self.generic_visit(node)
@@ -391,7 +399,7 @@ class MailChatterScanner(ast.NodeVisitor):
         reported_tainted_recipients = False
         constants = self._effective_constants()
         for value in _field_values(node, BODY_FIELDS, constants):
-            if value is not None and _contains_sensitive_hint(value) and not reported_sensitive_body:
+            if value is not None and _contains_sensitive_hint(value, constants) and not reported_sensitive_body:
                 reported_sensitive_body = True
                 self._add(
                     "odoo-mail-sensitive-body",
@@ -518,15 +526,34 @@ class MailChatterScanner(ast.NodeVisitor):
         else:
             self.tainted_names.difference_update(_target_names(target))
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for child_target, child_value in _unpack_target_value_pairs(target, value):
+                self._mark_local_constant_target(child_target, child_value)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for name in _target_names(target):
+                self.local_constants.pop(name, None)
+
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, sink: str) -> None:
@@ -760,7 +787,8 @@ def _looks_route_id_arg(name: str) -> bool:
     return bool(ROUTE_ID_ARG_RE.search(name))
 
 
-def _contains_sensitive_hint(node: ast.AST) -> bool:
+def _contains_sensitive_hint(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+    node = _resolve_constant(node, constants or {})
     return any(hint in _safe_unparse(node).lower() for hint in SENSITIVE_HINTS)
 
 
