@@ -194,6 +194,16 @@ class AutomationScanner:
                 model,
                 record_id,
             )
+        if "cleartext_http_url" in code_risks:
+            self._add(
+                "odoo-automation-cleartext-http-url",
+                "Automated action uses cleartext HTTP URL",
+                "medium",
+                line,
+                "base.automation code outbound HTTP targets a literal http:// URL; use HTTPS to protect record-triggered integration payloads and response data from interception or downgrade",
+                model,
+                record_id,
+            )
 
     def _line_for_record(self, record: ElementTree.Element) -> int:
         record_id = record.get("id")
@@ -393,6 +403,9 @@ class _AutomationCodeScanner(ast.NodeVisitor):
                 self.risks.add("http_no_timeout")
             if _keyword_is_false(node, "verify", constants):
                 self.risks.add("tls_verify_disabled")
+            for url_value in _http_url_values(node, sink, constants):
+                if _is_cleartext_literal_url(url_value, constants):
+                    self.risks.add("cleartext_http_url")
         self.generic_visit(node)
 
     def _record_alias_target(self, target: ast.AST, value: ast.AST) -> None:
@@ -750,6 +763,27 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
         return _is_static_literal(node.operand)
     return False
+
+
+def _http_url_values(node: ast.Call, sink: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    if node.args:
+        method = sink.rsplit(".", 1)[-1]
+        if method == "request" and len(node.args) >= 2:
+            values.append(node.args[1])
+        else:
+            values.append(node.args[0])
+    values.extend(_keyword_values(node, "url", constants))
+    return values
+
+
+def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    return (
+        isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+        and value.value.strip().lower().startswith("http://")
+    )
 
 
 def _has_keyword(node: ast.Call, name: str) -> bool:

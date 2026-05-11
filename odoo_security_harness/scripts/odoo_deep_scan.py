@@ -1236,6 +1236,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "automation_cleartext_http_url",
+        (
+            "automation-cleartext-http-url",
+            "automated action uses cleartext http url",
+            "base.automation code outbound http targets a literal http:// url",
+            "protect record-triggered integration payloads and response data",
+        ),
+    ),
+    (
         "scheduled_job_elevated_mutation",
         (
             "scheduled-job-sudo-mutation",

@@ -6311,6 +6311,12 @@ def test_taxonomy_coverage_classifies_automation_risks() -> None:
                 "title": "Automated action performs HTTP without timeout",
                 "message": "base.automation code performs outbound HTTP without timeout; review SSRF and worker exhaustion risk",
             },
+            {
+                "source": "automations",
+                "rule_id": "odoo-automation-cleartext-http-url",
+                "title": "Automated action uses cleartext HTTP URL",
+                "message": "base.automation code outbound HTTP targets a literal http:// URL; use HTTPS to protect record-triggered integration payloads and response data from interception or downgrade",
+            },
         ]
     )
 
@@ -6322,6 +6328,7 @@ def test_taxonomy_coverage_classifies_automation_risks() -> None:
     assert shapes["odoo-automation-sudo-method-call"] == "automation_sudo_method_call"
     assert shapes["odoo-automation-sensitive-model-mutation"] == "automation_sensitive_model_mutation"
     assert shapes["odoo-automation-http-no-timeout"] == "automation_http_without_timeout"
+    assert shapes["odoo-automation-cleartext-http-url"] == "automation_cleartext_http_url"
     assert any("CWE-94" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-269" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-918" in entry["cwe"] for entry in coverage["mapped_entries"])

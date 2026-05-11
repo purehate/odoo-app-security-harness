@@ -962,6 +962,29 @@ def sync_callback():
     assert any(f.rule_id == "odoo-automation-tls-verify-disabled" for f in findings)
 
 
+def test_cleartext_http_url_in_automation_is_reported(tmp_path: Path) -> None:
+    """Automated actions should flag literal cleartext HTTP integration targets."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_cleartext" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+CALLBACK_URL = 'http://hooks.example.test/automation'
+HTTP_OPTIONS = {'url': 'http://partner.example.test/automation', 'timeout': 10}
+requests.post(CALLBACK_URL, timeout=10)
+requests.request('POST', **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-cleartext-http-url" for f in findings)
+
+
 def test_http_client_with_timeout_in_automation_is_ignored(tmp_path: Path) -> None:
     """HTTP client aliases with visible timeout should not trigger timeout findings."""
     xml = tmp_path / "automation.xml"
