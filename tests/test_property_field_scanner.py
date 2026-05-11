@@ -323,6 +323,24 @@ def test_flags_global_ir_property_csv_record(tmp_path: Path) -> None:
     assert "odoo-property-sensitive-value" in rule_ids
 
 
+def test_flags_global_ir_property_csv_colon_field_record(tmp_path: Path) -> None:
+    """CSV ir.property rows exported with colon headers should resolve field refs."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.property.csv").write_text(
+        "id,fields_id:id,value_reference\n"
+        'property_receivable_global,account.field_res_partner__property_account_receivable_id,"account.account,1"\n',
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-property-global-default" in rule_ids
+    assert "odoo-property-no-resource-scope" in rule_ids
+    assert "odoo-property-sensitive-value" in rule_ids
+
+
 def test_safe_company_scoped_property_csv_is_ignored(tmp_path: Path) -> None:
     """Company-scoped non-sensitive CSV properties should avoid noise."""
     data = tmp_path / "module" / "data"
