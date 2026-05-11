@@ -23,14 +23,35 @@ class CacheHeaderFinding:
 
 
 SENSITIVE_MARKERS = (
+    "access_key",
+    "access_link",
     "access_token",
+    "access_url",
     "api_key",
+    "apikey",
+    "auth_token",
+    "bearer_token",
+    "client_secret",
     "csrf_token",
+    "hmac_secret",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
+    "partner_signup_url",
     "password",
+    "private_key",
     "reset_password_token",
+    "reset_password_url",
     "secret",
+    "secret_key",
+    "session_token",
+    "signature_secret",
     "signup_token",
+    "signup_url",
+    "signing_key",
     "token",
+    "totp_secret",
+    "webhook_secret",
 )
 SENSITIVE_COOKIE_MARKERS = ("csrf", "session", "sid", "token")
 SENSITIVE_ROUTE_MARKERS = ("download", "export", "invoice", "portal", "reset", "signup", "token")
