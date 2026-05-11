@@ -295,6 +295,15 @@ class IntegrationScanner(ast.NodeVisitor):
                     "Outbound HTTP call targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
                     sink,
                 )
+            if _literal_url_has_embedded_credentials(url_arg, self._effective_constants()):
+                self._add(
+                    "odoo-integration-url-embedded-credentials",
+                    "Outbound integration URL embeds credentials",
+                    "high",
+                    node.lineno,
+                    "Outbound HTTP URL embeds username, password, or token material in the URL authority; move credentials to server-side configuration and send them through explicit auth/header handling",
+                    sink,
+                )
         for url_value in _keyword_values(node, "url", self._effective_constants()):
             if self._expr_is_tainted(url_value):
                 self._add(
@@ -321,6 +330,15 @@ class IntegrationScanner(ast.NodeVisitor):
                     "medium",
                     node.lineno,
                     "Outbound HTTP url= targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+                    sink,
+                )
+            if _literal_url_has_embedded_credentials(url_value, self._effective_constants()):
+                self._add(
+                    "odoo-integration-url-embedded-credentials",
+                    "Outbound integration URL embeds credentials",
+                    "high",
+                    node.lineno,
+                    "Outbound HTTP url= embeds username, password, or token material in the URL authority; move credentials to server-side configuration and send them through explicit auth/header handling",
                     sink,
                 )
         for proxy_keyword_name in ("proxy", "proxies"):
@@ -913,6 +931,16 @@ def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> b
         return False
     parsed = urlparse(url)
     return parsed.scheme == "http" and bool(parsed.hostname)
+
+
+def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    url = _constant_string(node, constants).strip()
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
+        parsed.username is not None or parsed.password is not None
+    )
 
 
 def _constant_string(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:

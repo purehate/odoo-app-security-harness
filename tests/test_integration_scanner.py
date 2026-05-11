@@ -346,6 +346,47 @@ def sync():
     assert any(f.rule_id == "odoo-integration-cleartext-http-url" for f in findings)
 
 
+def test_embedded_credentials_in_integration_url_are_reported(tmp_path: Path) -> None:
+    """Credentials in URL authority should be visible even when headers look clean."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+PARTNER_URL = 'https://integration_user:sk_live_1234567890abcdef@api.example.test/sync'
+
+def sync():
+    return requests.post(PARTNER_URL, timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-url-embedded-credentials" for f in findings)
+
+
+def test_embedded_credentials_in_url_kwargs_are_reported(tmp_path: Path) -> None:
+    """Static url= kwargs should not hide embedded integration credentials."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'url': 'https://token_1234567890abcdef@partner.example.test/orders'}
+HTTP_OPTIONS = BASE_OPTIONS | {'timeout': 5}
+
+def sync():
+    return requests.request('POST', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-url-embedded-credentials" for f in findings)
+
+
 def test_requests_request_positional_url_is_reported(tmp_path: Path) -> None:
     """requests.request uses its second positional argument as the outbound URL."""
     py = tmp_path / "controller.py"

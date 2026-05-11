@@ -4687,6 +4687,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "integration_url_embedded_credentials",
+        (
+            "odoo-integration-url-embedded-credentials",
+            "outbound integration url embeds credentials",
+            "outbound http url embeds username, password, or token material",
+            "move credentials to server-side configuration",
+        ),
+    ),
+    (
         "integration_http_no_timeout",
         (
             "odoo-integration-http-no-timeout",
