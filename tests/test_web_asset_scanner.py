@@ -888,6 +888,22 @@ def test_urlsearchparams_sensitive_token_detected(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-web-sensitive-url-token" for f in findings)
 
 
+def test_urlsearchparams_sensitive_token_read_detected(tmp_path: Path) -> None:
+    """Reading token-like values from browser URLs points to credential-bearing links."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "const token = new URLSearchParams(window.location.search).get('access_token');\n"
+        "const reset = new URL(window.location.href).searchParams.get('reset_password_token');\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    matches = [f for f in findings if f.rule_id == "odoo-web-sensitive-url-token"]
+    assert len(matches) == 2
+    assert all(f.severity == "medium" and f.sink == "url-token" for f in matches)
+
+
 def test_static_sensitive_url_token_ignored(tmp_path: Path) -> None:
     """Static examples/defaults should not be noisy sensitive URL findings."""
     path = tmp_path / "widget.js"

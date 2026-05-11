@@ -172,6 +172,7 @@ SENSITIVE_URL_PARAM_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 SENSITIVE_URL_PARAM_SET_RE = re.compile(r"\.(?:set|append)\s*\(\s*['\"](?P<key>[^'\"]+)['\"]\s*,\s*(?P<value>[^)\n]+)")
+SENSITIVE_URL_PARAM_GET_RE = re.compile(r"\.get\s*\(\s*['\"](?P<key>[^'\"]+)['\"]")
 SENSITIVE_URL_QUERY_RE = re.compile(
     r"(?:[?#&]|%3[fF]|%26)[^'\"`\s={}]*"
     r"(?:access[_-]?token|auth[_-]?token|api[_-]?key|secret|password|session|csrf|jwt|bearer)"
@@ -1224,6 +1225,9 @@ def _looks_sensitive_url_exposure(line: str) -> bool:
     param_match = SENSITIVE_URL_PARAM_SET_RE.search(line)
     if param_match and SENSITIVE_URL_PARAM_NAME_RE.search(param_match.group("key")):
         return not _is_static_js_literal(param_match.group("value").strip())
+    param_get_match = SENSITIVE_URL_PARAM_GET_RE.search(line)
+    if param_get_match and SENSITIVE_URL_PARAM_NAME_RE.search(param_get_match.group("key")):
+        return bool(re.search(r"\b(?:URLSearchParams|location\.(?:search|hash|href)|window\.location)\b", line))
     return bool(SENSITIVE_URL_QUERY_RE.search(line) and SENSITIVE_URL_DYNAMIC_VALUE_RE.search(line))
 
 
