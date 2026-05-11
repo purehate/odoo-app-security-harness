@@ -645,8 +645,8 @@ def _regex_extract_routes(text: str, module: str, path: Path, repo: Path) -> lis
 
 def _regex_route_decorator_names(text: str) -> set[str]:
     names = {"http.route", "odoo.http.route"}
-    for match in re.finditer(r"from\s+odoo\s+import\s+([^\n]+)", text):
-        for part in match.group(1).replace("(", "").replace(")", "").split(","):
+    for clause in _regex_import_clauses(text, "odoo"):
+        for part in clause.split(","):
             tokens = part.strip().split()
             if not tokens or tokens[0] != "http":
                 continue
@@ -654,13 +654,25 @@ def _regex_route_decorator_names(text: str) -> set[str]:
     for match in re.finditer(r"import\s+odoo\.http(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?", text):
         alias = match.group(1)
         names.add(f"{alias}.route" if alias else "odoo.http.route")
-    for match in re.finditer(r"from\s+odoo\.http\s+import\s+([^\n]+)", text):
-        for part in match.group(1).replace("(", "").replace(")", "").split(","):
+    for clause in _regex_import_clauses(text, "odoo.http"):
+        for part in clause.split(","):
             tokens = part.strip().split()
             if not tokens or tokens[0] != "route":
                 continue
             names.add(tokens[2] if len(tokens) >= 3 and tokens[1] == "as" else "route")
     return names
+
+
+def _regex_import_clauses(text: str, module: str) -> list[str]:
+    clauses: list[str] = []
+    pattern = re.compile(
+        rf"from\s+{re.escape(module)}\s+import\s+(?:\((?P<paren>.*?)\)|(?P<line>[^\n]+))",
+        re.DOTALL,
+    )
+    for match in pattern.finditer(text):
+        clause = match.group("paren") if match.group("paren") is not None else match.group("line")
+        clauses.append(clause)
+    return clauses
 
 
 def _is_regex_route_decorator(decorator: str, route_decorator_names: set[str]) -> bool:

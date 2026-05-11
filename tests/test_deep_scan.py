@@ -8001,6 +8001,44 @@ class TestController:
     ]
 
 
+def test_route_inventory_fallback_resolves_multiline_imported_route_alias_metadata(tmp_path: Path) -> None:
+    """Route inventory fallback should preserve parenthesized odoo.http route imports."""
+    controllers = tmp_path / "test_module" / "controllers"
+    controllers.mkdir(parents=True)
+    controller = controllers / "main.py"
+    controller.write_text(
+        """
+from odoo.http import (
+    route as odoo_route,
+)
+
+class TestController:
+    @odoo_route('/public/multiline-alias-fallback', auth='public')
+    def fallback(self):
+        return {}
+
+    =
+""",
+        encoding="utf-8",
+    )
+
+    routes = odoo_deep_scan._route_inventory(tmp_path, [controller])
+
+    assert routes == [
+        {
+            "file": "test_module/controllers/main.py",
+            "line": 7,
+            "end_line": 7,
+            "function": "fallback",
+            "route": "/public/multiline-alias-fallback",
+            "auth": "public",
+            "csrf": "True",
+            "type": "http",
+            "methods": "",
+        }
+    ]
+
+
 def test_route_inventory_ignores_non_odoo_route_decorators(tmp_path: Path) -> None:
     """Route inventory should not count arbitrary non-Odoo route decorators."""
     controllers = tmp_path / "test_module" / "controllers"
