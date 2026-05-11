@@ -618,6 +618,7 @@ class SessionAuthScanner(ast.NodeVisitor):
             self.request_names,
             self.http_module_names,
             self.odoo_module_names,
+            self._effective_constants(),
         )
 
     def _is_request_uid_target(self, node: ast.AST) -> bool:
@@ -1069,7 +1070,9 @@ def _is_session_uid_target(
     request_names: set[str],
     http_module_names: set[str],
     odoo_module_names: set[str],
+    constants: dict[str, ast.AST] | None = None,
 ) -> bool:
+    constants = constants or {}
     if (
         isinstance(node, ast.Attribute)
         and node.attr == "uid"
@@ -1082,7 +1085,7 @@ def _is_session_uid_target(
         http_module_names,
         odoo_module_names,
     ):
-        return _literal_subscript_key(node.slice) == "uid"
+        return _literal_subscript_key(_resolve_constant(node.slice, constants)) in SESSION_UID_KEYS
     return False
 
 

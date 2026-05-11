@@ -817,6 +817,31 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-session-direct-uid-assignment" and f.severity == "high" for f in findings)
 
 
+def test_flags_direct_session_user_id_assignment(tmp_path: Path) -> None:
+    """Dict-style user_id session writes should be treated as direct session switching."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "impersonate.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+SESSION_USER_KEY = 'user_id'
+
+class Controller(http.Controller):
+    @http.route('/impersonate', auth='user')
+    def impersonate(self, **kwargs):
+        request.session[SESSION_USER_KEY] = int(kwargs.get('uid'))
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-direct-uid-assignment" and f.severity == "high" for f in findings)
+
+
 def test_flags_updated_session_update_uid_assignment(tmp_path: Path) -> None:
     """dict.update calls should not hide session uid updates."""
     controllers = tmp_path / "module" / "controllers"
