@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -103,7 +104,8 @@ class PortalScanner(ast.NodeVisitor):
                 "Portal route is publicly reachable",
                 "high" if route.auth == "public" else "critical",
                 node.lineno,
-                f"Portal-like route {route.display_path()} uses auth='{route.auth}'; verify portal tokens, ownership checks, and record rule boundaries",
+                f"Portal-like route {route.display_path()} uses auth='{route.auth}'; verify "
+                "portal tokens, ownership checks, and record rule boundaries",
                 route,
                 "route",
             )
@@ -269,7 +271,9 @@ class PortalScanner(ast.NodeVisitor):
                 "Portal route accepts access_token without access helper",
                 "medium",
                 context.access_token_input_line or node.lineno,
-                "Portal route accepts an access_token argument but does not call a visible portal access helper; verify the token is actually validated before record access or rendering",
+                "Portal route accepts an access_token argument but does not call a visible portal "
+                "access helper; verify the token is actually validated before record access or "
+                "rendering",
                 route,
                 "access_token",
             )
@@ -279,7 +283,9 @@ class PortalScanner(ast.NodeVisitor):
                 "Portal access check does not pass access_token",
                 "medium",
                 context.document_check_line,
-                "Portal route accepts access_token but calls _document_check_access without passing it; shared portal links may fail open/closed inconsistently or bypass intended token validation",
+                "Portal route accepts access_token but calls _document_check_access without "
+                "passing it; shared portal links may fail open/closed inconsistently or bypass "
+                "intended token validation",
                 route,
                 "_document_check_access",
             )
@@ -293,7 +299,9 @@ class PortalScanner(ast.NodeVisitor):
                 "Portal route reads route-selected records through an elevated environment",
                 "high",
                 context.sudo_read_line,
-                "Portal route uses a URL id to read records through sudo()/with_user(SUPERUSER_ID) without a portal access helper; verify ownership, token validation, and company isolation",
+                "Portal route uses a URL id to read records through sudo()/with_user(SUPERUSER_ID) "
+                "without a portal access helper; verify ownership, token validation, and company "
+                "isolation",
                 route,
                 context.sudo_read_sink,
             )
@@ -303,7 +311,8 @@ class PortalScanner(ast.NodeVisitor):
                 "Portal route exposes token data without access helper",
                 "medium",
                 context.token_exposure_line,
-                "Portal route returns or renders access_token/access_url data without an accompanying portal access helper; verify tokens are not leaked across records",
+                "Portal route returns or renders access_token/access_url data without an "
+                "accompanying portal access helper; verify tokens are not leaked across records",
                 route,
                 context.token_exposure_sink,
             )
@@ -313,7 +322,8 @@ class PortalScanner(ast.NodeVisitor):
                 "Portal URL generated without local access check",
                 "low",
                 context.portal_url_line,
-                "Portal route generates portal URLs without a nearby access helper; verify links are only created for records the caller may access",
+                "Portal route generates portal URLs without a nearby access helper; verify links "
+                "are only created for records the caller may access",
                 route,
                 context.portal_url_sink,
             )
@@ -323,7 +333,9 @@ class PortalScanner(ast.NodeVisitor):
                 "Portal route manually compares access_token",
                 "high" if context.sudo_read_line or route.auth in {"public", "none"} else "medium",
                 context.manual_token_check_line,
-                "Portal route manually compares access_token values instead of using a portal access helper; verify ACLs, ownership, company scope, and token semantics match Odoo's _document_check_access behavior",
+                "Portal route manually compares access_token values instead of using a portal "
+                "access helper; verify ACLs, ownership, company scope, and token semantics match "
+                "Odoo's _document_check_access behavior",
                 route,
                 context.manual_token_check_sink,
             )
@@ -524,6 +536,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -606,6 +620,45 @@ def _resolve_static_dict(
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
