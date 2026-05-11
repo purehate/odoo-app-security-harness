@@ -33,8 +33,10 @@ class FieldDef:
 
 
 SENSITIVE_FIELD_MARKERS = (
-    "access_token",
     "access_key",
+    "access_link",
+    "access_token",
+    "access_url",
     "api_key",
     "apikey",
     "auth_token",
@@ -45,21 +47,57 @@ SENSITIVE_FIELD_MARKERS = (
     "jwt_secret",
     "license_key",
     "oauth_token",
+    "partner_signup_url",
     "password",
     "passwd",
     "private_key",
     "refresh_token",
+    "reset_password_token",
+    "reset_password_url",
     "secret_key",
     "session_token",
     "secret",
     "signature_secret",
+    "signup_token",
+    "signup_url",
+    "signing_key",
     "totp_secret",
     "token",
     "webhook_secret",
 )
 PUBLIC_GROUPS = {"base.group_public", "base.group_portal"}
 ADMIN_GROUP_MARKERS = ("base.group_system", "base.group_erp_manager", "base.group_no_one")
-SENSITIVE_RELATED_PARTS = ("password", "token", "secret", "api_key", "apikey", "private_key")
+SENSITIVE_RELATED_PARTS = (
+    "access_key",
+    "access_link",
+    "access_token",
+    "access_url",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "bearer_token",
+    "client_secret",
+    "csrf_token",
+    "hmac_secret",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
+    "partner_signup_url",
+    "password",
+    "private_key",
+    "reset_password_token",
+    "reset_password_url",
+    "secret",
+    "secret_key",
+    "session_token",
+    "signature_secret",
+    "signup_token",
+    "signup_url",
+    "signing_key",
+    "token",
+    "totp_secret",
+    "webhook_secret",
+)
 HTML_SANITIZER_KEYWORDS = ("sanitize", "sanitize_tags", "sanitize_attributes")
 
 

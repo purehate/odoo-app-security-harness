@@ -46,6 +46,9 @@ class Connector(models.Model):
     totp_secret = fields.Char()
     license_key = fields.Char()
     access_key = fields.Char()
+    access_url = fields.Char()
+    reset_password_url = fields.Char()
+    partner_signup_url = fields.Char()
     session_token = fields.Char()
     csrf_token = fields.Char()
 """,
@@ -63,6 +66,9 @@ class Connector(models.Model):
         "totp_secret",
         "license_key",
         "access_key",
+        "access_url",
+        "reset_password_url",
+        "partner_signup_url",
         "session_token",
         "csrf_token",
     } <= fields
@@ -419,7 +425,7 @@ class Projection(models.Model):
 
     user_id = fields.Many2one('res.users')
     secret_count = fields.Integer(compute='_compute_secret_count', compute_sudo=True)
-    partner_token = fields.Char(related='user_id.partner_id.signup_token')
+    partner_token = fields.Char(related='user_id.partner_id.reset_password_url')
 """,
         encoding="utf-8",
     )
