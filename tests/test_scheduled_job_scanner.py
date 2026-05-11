@@ -561,6 +561,30 @@ class Sync(models.Model):
     assert sum(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings) == 2
 
 
+def test_flags_aiohttp_client_session_context_without_timeout(tmp_path: Path) -> None:
+    """Scheduled jobs should track aiohttp ClientSession context aliases."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import aiohttp
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    async def _cron_sync_feed(self):
+        async with aiohttp.ClientSession() as client:
+            await client.get(self.status_url)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings)
+
+
 def test_flags_tuple_unpacked_sudo_cron_mutation(tmp_path: Path) -> None:
     """Tuple-unpacked sudo aliases should still be recognized in cron methods."""
     models = tmp_path / "module" / "models"
