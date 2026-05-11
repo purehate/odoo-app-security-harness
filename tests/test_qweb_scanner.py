@@ -1181,3 +1181,34 @@ def test_detects_file_url_attribute(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(f.rule_id == "odoo-qweb-js-url" and f.attribute == "href" and f.severity == "high" for f in findings)
+
+
+def test_detects_insecure_http_url_attribute(tmp_path: Path) -> None:
+    """Literal template URL attributes should not load cleartext HTTP resources."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><img src="http://cdn.example.com/logo.png"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-qweb-insecure-asset-url"
+        and f.attribute == "src"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_https_url_attribute_ignored(tmp_path: Path) -> None:
+    """HTTPS template URL attributes should not create mixed-content leads."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><img src="https://cdn.example.com/logo.png"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-insecure-asset-url" for f in findings)

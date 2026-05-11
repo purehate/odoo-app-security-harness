@@ -2424,13 +2424,19 @@ def test_taxonomy_coverage_classifies_owl_insecure_asset_url() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template loads insecure HTTP URL",
                 "message": "OWL xml template contains a literal http:// URL in a link, frame, form, or media attribute",
-            }
+            },
+            {
+                "rule_id": "odoo-qweb-insecure-asset-url",
+                "source": "qweb",
+                "title": "QWeb template loads insecure HTTP URL",
+                "message": "Literal http:// URL in attribute; use HTTPS or same-origin assets",
+            },
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_insecure_asset_url"
-    assert "CWE-319" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_insecure_asset_url"}
+    assert all("CWE-319" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_web_external_stylesheet_missing_sri() -> None:

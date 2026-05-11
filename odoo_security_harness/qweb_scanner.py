@@ -571,11 +571,24 @@ class QWebScanner:
                 attribute=attr,
                 message=f"{attr}='{value}' contains an executable or local-file URL scheme; XSS/navigation sink",
             )
+        if self._has_insecure_http_url(value):
+            self._add_finding(
+                rule_id="odoo-qweb-insecure-asset-url",
+                title="QWeb template loads insecure HTTP URL",
+                severity="medium",
+                element=tag,
+                attribute=attr,
+                message=f"{attr}='{value}' contains a literal http:// URL; use HTTPS or same-origin assets to avoid mixed-content downgrade and interception risk",
+            )
         self._check_sensitive_url_token(tag, attr, value)
 
     def _has_dangerous_url_scheme(self, value: str) -> bool:
         """Return True for URL literals that execute script/HTML or expose local files."""
         return bool(self.DANGEROUS_URL_SCHEME_RE.search(value) or self.DANGEROUS_URL_SCHEME_LITERAL_RE.search(value))
+
+    def _has_insecure_http_url(self, value: str) -> bool:
+        """Return True for URL literals that load over cleartext HTTP."""
+        return bool(re.match(r"\s*http://", value, re.IGNORECASE))
 
     def _has_dangerous_meta_refresh_url(self, value: str) -> bool:
         """Return True when a meta refresh URL uses an executable/local scheme."""
@@ -882,6 +895,23 @@ class QWebScanner:
                     element="",
                     attribute=match.group(1),
                     message="Executable or local-file URL scheme in attribute; XSS/navigation sink",
+                )
+            )
+
+        # Find insecure literal HTTP URL attributes.
+        insecure_url_attr_re = re.compile(rf"({self.URL_BEARING_ATTRIBUTE_RE})\s*=\s*([\"'])\s*http://", re.IGNORECASE)
+        for match in insecure_url_attr_re.finditer(content):
+            line = content[: match.start()].count("\n") + 1
+            findings.append(
+                QWebFinding(
+                    rule_id="odoo-qweb-insecure-asset-url",
+                    title="QWeb template loads insecure HTTP URL",
+                    severity="medium",
+                    file=self.file_path,
+                    line=line,
+                    element="",
+                    attribute=match.group(1),
+                    message="Literal http:// URL in attribute; use HTTPS or same-origin assets to avoid mixed-content downgrade and interception risk",
                 )
             )
 
