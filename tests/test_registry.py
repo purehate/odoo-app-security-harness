@@ -1,4 +1,4 @@
-"""Tests for scanner registry utilities."""
+"""Tests for scanner plugin registry."""
 
 from __future__ import annotations
 
@@ -13,6 +13,75 @@ from odoo_security_harness import registry
 @pytest.fixture(autouse=True)
 def clear_registry() -> None:
     registry._SCANNER_REGISTRY.clear()
+
+
+class TestRegistry:
+    """Test scanner registry operations."""
+
+    def test_auto_discover_finds_scanners(self) -> None:
+        registry.auto_discover()
+        names = registry.list_scanner_names()
+        assert "access_overrides" in names
+        assert "qweb_templates" in names
+        assert "record_rules" in names
+        assert "button_actions" in names
+
+    def test_get_scanner_returns_meta(self) -> None:
+        registry.auto_discover()
+        meta = registry.get_scanner("access_overrides")
+        assert meta is not None
+        assert meta.name == "access_overrides"
+        assert callable(meta.scan_func)
+
+    def test_get_scanner_returns_none_for_missing(self) -> None:
+        assert registry.get_scanner("nonexistent_scanner_xyz") is None
+
+    def test_run_scanner_executes(self, tmp_path: Path) -> None:
+        registry.auto_discover()
+        # Create a minimal Odoo Python file so access_override scanner can run
+        models = tmp_path / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("", encoding="utf-8")
+        (models / "sale.py").write_text(
+            "from odoo import models\n\nclass Sale(models.Model):\n    pass\n",
+            encoding="utf-8",
+        )
+        findings = registry.run_scanner("access_overrides", tmp_path)
+        assert isinstance(findings, list)
+
+    def test_run_scanner_raises_for_missing(self, tmp_path: Path) -> None:
+        with pytest.raises(KeyError):
+            registry.run_scanner("nonexistent", tmp_path)
+
+    def test_run_all_scanners(self, tmp_path: Path) -> None:
+        registry.auto_discover()
+        models = tmp_path / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("", encoding="utf-8")
+        (models / "sale.py").write_text(
+            "from odoo import models\n\nclass Sale(models.Model):\n    pass\n",
+            encoding="utf-8",
+        )
+        results = registry.run_all_scanners(tmp_path)
+        assert "access_overrides" in results
+        assert isinstance(results["access_overrides"], list)
+
+    def test_register_scanner_decorator(self) -> None:
+        calls = []
+
+        @registry.register_scanner("test_scanner", source_types={"python"})
+        def test_scan(repo_path: Path) -> list:
+            calls.append(repo_path)
+            return []
+
+        meta = registry.get_scanner("test_scanner")
+        assert meta is not None
+        assert meta.source_types == {"python"}
+        assert meta.description == ""
+
+        result = registry.run_scanner("test_scanner", Path("/tmp"))
+        assert result == []
+        assert calls == [Path("/tmp")]
 
 
 def test_register_scanner_direct_and_run(tmp_path: Path) -> None:
@@ -42,11 +111,6 @@ def test_run_all_scanners_filters_names(tmp_path: Path) -> None:
     registry.register_scanner("b", lambda repo_path: ["b"])
 
     assert registry.run_all_scanners(tmp_path, names=["b"]) == {"b": ["b"]}
-
-
-def test_run_scanner_unknown_name_raises(tmp_path: Path) -> None:
-    with pytest.raises(KeyError):
-        registry.run_scanner("missing", tmp_path)
 
 
 def test_auto_discover_registers_scan_functions(monkeypatch) -> None:
