@@ -238,6 +238,37 @@ class Portal(http.Controller):
     assert any(f.route == "/my/orders/<int:order_id>,/my/orders/<int:order_id>/print" for f in findings)
 
 
+def test_flags_nested_static_unpack_public_portal_route_options(tmp_path: Path) -> None:
+    """Nested route option unpacking should preserve public portal context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "portal.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public', 'website': True}
+ROUTE_OPTIONS = {
+    **BASE_OPTIONS,
+    'route': ['/my/orders/<int:order_id>', '/my/orders/<int:order_id>/print'],
+}
+
+class Portal(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def portal_order(self, order_id, access_token=None):
+        return request.render('sale.portal_order_page', {'order_id': order_id})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_portal_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-portal-public-route" in rule_ids
+    assert "odoo-portal-access-token-without-helper" in rule_ids
+    assert any(f.route == "/my/orders/<int:order_id>,/my/orders/<int:order_id>/print" for f in findings)
+
+
 def test_flags_constant_backed_public_portal_route(tmp_path: Path) -> None:
     """Route constants should not hide public portal exposure."""
     controllers = tmp_path / "module" / "controllers"
