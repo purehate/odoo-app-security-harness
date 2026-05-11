@@ -74,6 +74,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
         self.dynamic_eval_names: set[str] = {"eval", "exec", "safe_eval"}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
         self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_file(self) -> list[ScheduledJobFinding]:
@@ -123,10 +124,13 @@ class ScheduledJobScanner(ast.NodeVisitor):
         self.class_constants_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         context = JobContext(name=node.name, is_scheduled=_is_scheduled_method(node.name, self.cron_methods))
         self.function_stack.append(context)
         self.generic_visit(node)
         self.function_stack.pop()
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -135,18 +139,21 @@ class ScheduledJobScanner(ast.NodeVisitor):
         context = self.function_stack[-1] if self.function_stack else None
         if context and context.is_scheduled:
             for target in node.targets:
+                self._mark_local_constant_target(target, node.value)
                 self._record_alias_target(target, node.value, context)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         context = self.function_stack[-1] if self.function_stack else None
         if context and context.is_scheduled and node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._record_alias_target(node.target, node.value, context)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
         context = self.function_stack[-1] if self.function_stack else None
         if context and context.is_scheduled:
+            self._mark_local_constant_target(node.target, node.value)
             self._record_alias_target(node.target, node.value, context)
         self.generic_visit(node)
 
@@ -322,6 +329,33 @@ class ScheduledJobScanner(ast.NodeVisitor):
         else:
             aliases.discard(target.id)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for child_target, child_value in _unpack_target_value_pairs(target, value):
+                self._mark_local_constant_target(child_target, child_value)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
+    def _discard_local_constant_target(self, target: ast.AST) -> None:
+        if isinstance(target, ast.Name):
+            self.local_constants.pop(target.id, None)
+        elif isinstance(target, ast.Starred):
+            self._discard_local_constant_target(target.value)
+        elif isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
     def _add(
         self,
         rule_id: str,
@@ -346,11 +380,12 @@ class ScheduledJobScanner(ast.NodeVisitor):
         )
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
 

@@ -448,6 +448,32 @@ class Sale(models.Model):
     assert "odoo-scheduled-job-sudo-mutation" in rule_ids
 
 
+def test_flags_local_constant_backed_with_user_cron_mutation(tmp_path: Path) -> None:
+    """Function-local superuser ID aliases should not hide cron mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    def _cron_close_orders(self):
+        root_uid = 1
+        orders = self.env['sale.order'].with_user(root_uid).search([])
+        orders.write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-scheduled-job-unbounded-search" in rule_ids
+    assert "odoo-scheduled-job-sudo-mutation" in rule_ids
+
+
 def test_flags_env_ref_admin_cron_mutation(tmp_path: Path) -> None:
     """Aliased with_user(base.user_admin) recordsets in cron methods are elevated."""
     models = tmp_path / "module" / "models"
@@ -633,6 +659,31 @@ class Sync(models.Model):
 
     def _cron_sync_feed(self):
         return requests.get(self.feed_url, timeout=10, verify=TLS_VERIFY)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-scheduled-job-tls-verify-disabled" for f in findings)
+
+
+def test_flags_local_constant_backed_tls_verification_disabled(tmp_path: Path) -> None:
+    """Function-local verify=False values should still flag recurring HTTP integrations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import requests
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        verify_tls = False
+        http_options = {'timeout': 10, 'verify': verify_tls}
+        return requests.get(self.feed_url, **http_options)
 """,
         encoding="utf-8",
     )
@@ -1033,6 +1084,34 @@ class Identity(models.Model):
     def _cron_rotate_identity_state(self):
         self.env[TARGET_MODEL].write({'active': False})
         self.env[CONFIG_MODEL].set_param('auth.signup.allow_uninvited', 'False')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+    sensitive_mutations = [
+        finding for finding in findings if finding.rule_id == "odoo-scheduled-job-sensitive-model-mutation"
+    ]
+
+    assert len(sensitive_mutations) == 2
+
+
+def test_flags_local_constant_backed_sensitive_model_cron_mutation(tmp_path: Path) -> None:
+    """Function-local env model-name aliases should still flag sensitive cron mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "identity.py").write_text(
+        """
+from odoo import models
+
+class Identity(models.Model):
+    _name = 'x.identity'
+
+    def _cron_rotate_identity_state(self):
+        users_model = 'res.users'
+        config_model = 'ir.config_parameter'
+        self.env[users_model].write({'active': False})
+        self.env[config_model].set_param('auth.signup.allow_uninvited', 'False')
 """,
         encoding="utf-8",
     )
