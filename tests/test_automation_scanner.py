@@ -491,6 +491,29 @@ client.post(record.callback_url)
     assert any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
 
 
+def test_aiohttp_client_session_context_without_timeout_is_reported(tmp_path: Path) -> None:
+    """aiohttp ClientSession aliases in automated actions should be recognized."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_aiohttp" model="base.automation">
+    <field name="code"><![CDATA[
+import aiohttp
+
+async def sync():
+    async with aiohttp.ClientSession() as client:
+        await client.post(record.callback_url)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
+
+
 def test_imported_http_without_timeout_in_automation_is_reported(tmp_path: Path) -> None:
     """Imported HTTP helpers in automated action code should be recognized."""
     xml = tmp_path / "automation.xml"
