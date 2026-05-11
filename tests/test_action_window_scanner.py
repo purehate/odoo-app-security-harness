@@ -886,6 +886,25 @@ def test_flags_xml_privileged_default_context(tmp_path: Path) -> None:
     assert "odoo-act-window-active-test-disabled" in rule_ids
 
 
+def test_flags_csv_privileged_default_context(tmp_path: Path) -> None:
+    """CSV act_window records can seed privileged create defaults too."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_act_window.csv").write_text(
+        "id,res_model,domain,context\n"
+        "action_create_admin,res.users,[],"
+        "\"{'default_groups_id': [(4, ref('base.group_system'))], 'active_test': False}\"\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-window-sensitive-broad-domain" in rule_ids
+    assert "odoo-act-window-privileged-default-context" in rule_ids
+    assert "odoo-act-window-active-test-disabled" in rule_ids
+
+
 def test_sensitive_xml_res_model_external_ids_are_normalized(tmp_path: Path) -> None:
     """XML model refs should resolve before sensitive act_window checks."""
     views = tmp_path / "module" / "views"
@@ -901,6 +920,25 @@ def test_sensitive_xml_res_model_external_ids_are_normalized(tmp_path: Path) -> 
     <field name="domain">[]</field>
   </record>
 </odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+    sensitive_models = {
+        finding.model for finding in findings if finding.rule_id == "odoo-act-window-sensitive-broad-domain"
+    }
+
+    assert {"ir.config_parameter", "payment.provider"} <= sensitive_models
+
+
+def test_sensitive_csv_res_model_external_ids_are_normalized(tmp_path: Path) -> None:
+    """CSV model refs should resolve before sensitive act_window checks."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_window.csv").write_text(
+        "id,res_model/id,domain\n"
+        "action_system_parameters,base.model_ir_config_parameter,[]\n"
+        "action_payment_providers,payment.model_payment_provider,[]\n",
         encoding="utf-8",
     )
 
@@ -978,6 +1016,23 @@ def test_flags_xml_company_scope_context(tmp_path: Path) -> None:
     <field name="context">{'allowed_company_ids': user.company_ids.ids, 'force_company': user.company_id.id}</field>
   </record>
 </odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+    flags = {finding.flag for finding in findings if finding.rule_id == "odoo-act-window-company-scope-context"}
+
+    assert {"allowed_company_ids", "force_company"} <= flags
+
+
+def test_flags_csv_company_scope_context(tmp_path: Path) -> None:
+    """CSV action contexts can also change company scoping."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_act_window.csv").write_text(
+        "id,res_model,domain,context\n"
+        "action_company_orders,sale.order,\"[('state', '!=', 'cancel')]\","
+        "\"{'allowed_company_ids': user.company_ids.ids, 'force_company': user.company_id.id}\"\n",
         encoding="utf-8",
     )
 

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ast
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -100,6 +102,8 @@ def scan_action_windows(repo_path: Path) -> list[ActionWindowFinding]:
             findings.extend(scanner.scan_file())
         elif path.suffix == ".xml":
             findings.extend(scanner.scan_xml_file())
+        elif path.suffix == ".csv":
+            findings.extend(scanner.scan_csv_file())
     return findings
 
 
@@ -158,6 +162,19 @@ class ActionWindowScanner(ast.NodeVisitor):
         for record in root.iter("record"):
             if record.get("model") == "ir.actions.act_window":
                 self._scan_action_window_record(record, content)
+        return self.findings
+
+    def scan_csv_file(self) -> list[ActionWindowFinding]:
+        """Scan CSV act_window records."""
+        if _csv_model_name(self.path) != "ir.actions.act_window":
+            return []
+        try:
+            content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+        for fields, line in _csv_dict_rows(content):
+            self._scan_action_window_fields(fields, fields.get("id", ""), line)
         return self.findings
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
@@ -353,6 +370,9 @@ class ActionWindowScanner(ast.NodeVisitor):
             if record_id
             else _line_for(content, 'model="ir.actions.act_window"')
         )
+        self._scan_action_window_fields(fields, record_id, line)
+
+    def _scan_action_window_fields(self, fields: dict[str, str], record_id: str, line: int) -> None:
         model = _model_value(fields.get("res_model", ""))
         domain = fields.get("domain", "")
         context = fields.get("context", "")
@@ -901,6 +921,39 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("ref") or field.get("eval") or "".join(field.itertext()).strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    if stem in {"ir.actions.act_window", "ir_actions_act_window"}:
+        return "ir.actions.act_window"
+    return stem.replace("_", ".")
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _model_value(value: str) -> str:
