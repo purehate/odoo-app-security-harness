@@ -171,7 +171,8 @@ class OAuthScanner(ast.NodeVisitor):
                 "Public OAuth callback route",
                 "medium",
                 node.lineno,
-                "OAuth/OIDC callback route is public; verify state/nonce validation, redirect URI binding, provider allowlist, and replay resistance",
+                "OAuth/OIDC callback route is public; verify state/nonce validation, redirect URI binding, "
+                "provider allowlist, and replay resistance",
                 route.display_path(),
                 "route",
             )
@@ -181,7 +182,8 @@ class OAuthScanner(ast.NodeVisitor):
                     "OAuth callback lacks visible state or nonce validation",
                     "high",
                     node.lineno,
-                    "Public OAuth/OIDC callback lacks visible state or nonce validation; verify CSRF protection, replay resistance, and ID-token nonce binding before session creation",
+                    "Public OAuth/OIDC callback lacks visible state or nonce validation; verify CSRF "
+                    "protection, replay resistance, and ID-token nonce binding before session creation",
                     route.display_path(),
                     "route",
                 )
@@ -240,10 +242,14 @@ class OAuthScanner(ast.NodeVisitor):
         self._track_oauth_identity_payload_update_call(node)
         self._track_tainted_redirect_uri_payload_update_call(node)
 
-        if _is_oauth_http_call(node, canonical_sink) or _call_has_oauth_literal_url(node, canonical_sink, constants) or (
-            _is_oauth_route(route, "")
-            and _is_http_client_sink(canonical_sink)
-            and _call_has_tainted_url(node, self._expr_is_tainted, canonical_sink, constants)
+        if (
+            _is_oauth_http_call(node, canonical_sink)
+            or _call_has_oauth_literal_url(node, canonical_sink, constants)
+            or (
+                _is_oauth_route(route, "")
+                and _is_http_client_sink(canonical_sink)
+                and _call_has_tainted_url(node, self._expr_is_tainted, canonical_sink, constants)
+            )
         ):
             if not _has_effective_timeout(node, constants):
                 self._add(
@@ -251,7 +257,8 @@ class OAuthScanner(ast.NodeVisitor):
                     "OAuth token/userinfo HTTP call lacks timeout",
                     "medium",
                     node.lineno,
-                    "OAuth/OIDC token or userinfo validation performs outbound HTTP without timeout; slow providers can exhaust workers",
+                    "OAuth/OIDC token or userinfo validation performs outbound HTTP without timeout; slow "
+                    "providers can exhaust workers",
                     route.display_path(),
                     sink,
                 )
@@ -261,7 +268,8 @@ class OAuthScanner(ast.NodeVisitor):
                     "OAuth HTTP call disables TLS verification",
                     "critical",
                     node.lineno,
-                    "OAuth/OIDC token or userinfo validation disables TLS verification; tokens and identities can be intercepted or forged",
+                    "OAuth/OIDC token or userinfo validation disables TLS verification; tokens and "
+                    "identities can be intercepted or forged",
                     route.display_path(),
                     sink,
                 )
@@ -272,7 +280,8 @@ class OAuthScanner(ast.NodeVisitor):
                         "OAuth token/userinfo HTTP call uses cleartext URL",
                         "high",
                         node.lineno,
-                        "OAuth/OIDC token or userinfo validation targets a literal http:// URL; use HTTPS so tokens and identities cannot be intercepted or downgraded",
+                        "OAuth/OIDC token or userinfo validation targets a literal http:// URL; use HTTPS "
+                        "so tokens and identities cannot be intercepted or downgraded",
                         route.display_path(),
                         sink,
                     )
@@ -282,7 +291,9 @@ class OAuthScanner(ast.NodeVisitor):
                         "OAuth token/userinfo URL embeds credentials",
                         "high",
                         node.lineno,
-                        "OAuth/OIDC token or userinfo validation embeds username, password, or token material in the URL authority; move provider credentials to trusted server-side configuration",
+                        "OAuth/OIDC token or userinfo validation embeds username, password, or token "
+                        "material in the URL authority; move provider credentials to trusted server-side "
+                        "configuration",
                         route.display_path(),
                         sink,
                     )
@@ -292,7 +303,8 @@ class OAuthScanner(ast.NodeVisitor):
                     "Request-derived OAuth validation URL",
                     "critical",
                     node.lineno,
-                    "Request-derived data controls OAuth/OIDC token or userinfo URL; enforce provider allowlists to avoid SSRF and token exfiltration",
+                    "Request-derived data controls OAuth/OIDC token or userinfo URL; enforce provider "
+                    "allowlists to avoid SSRF and token exfiltration",
                     route.display_path(),
                     sink,
                 )
@@ -302,7 +314,8 @@ class OAuthScanner(ast.NodeVisitor):
                     "Request-derived OAuth redirect URI is forwarded",
                     "high",
                     node.lineno,
-                    "OAuth/OIDC token or validation request forwards a request-derived redirect_uri; bind redirect URIs to trusted provider/client configuration instead of callback input",
+                    "OAuth/OIDC token or validation request forwards a request-derived redirect_uri; bind "
+                    "redirect URIs to trusted provider/client configuration instead of callback input",
                     route.display_path(),
                     sink,
                 )
@@ -315,7 +328,8 @@ class OAuthScanner(ast.NodeVisitor):
                     "OAuth authorization-code exchange lacks PKCE verifier",
                     "medium",
                     node.lineno,
-                    "OAuth/OIDC authorization-code token exchange lacks a visible code_verifier; verify PKCE or equivalent confidential-client binding prevents code interception and replay",
+                    "OAuth/OIDC authorization-code token exchange lacks a visible code_verifier; verify PKCE "
+                    "or equivalent confidential-client binding prevents code interception and replay",
                     route.display_path(),
                     sink,
                 )
@@ -327,7 +341,8 @@ class OAuthScanner(ast.NodeVisitor):
                     "JWT decode disables signature or claim verification",
                     "critical",
                     node.lineno,
-                    "OAuth/OIDC JWT decode disables verification; require signature, issuer, audience, nonce, and expiry validation",
+                    "OAuth/OIDC JWT decode disables verification; require signature, issuer, audience, "
+                    "nonce, and expiry validation",
                     route.display_path(),
                     sink,
                 )
@@ -338,7 +353,8 @@ class OAuthScanner(ast.NodeVisitor):
                         "JWT decode lacks explicit algorithm allowlist",
                         "high" if route.auth in {"public", "none"} else "medium",
                         node.lineno,
-                        "OAuth/OIDC JWT decode does not pass an explicit algorithms allowlist; pin expected algorithms and keys to avoid algorithm confusion or unsafe library defaults",
+                        "OAuth/OIDC JWT decode does not pass an explicit algorithms allowlist; pin expected "
+                        "algorithms and keys to avoid algorithm confusion or unsafe library defaults",
                         route.display_path(),
                         sink,
                     )
@@ -348,7 +364,8 @@ class OAuthScanner(ast.NodeVisitor):
                         "Request-derived token is decoded",
                         "medium",
                         node.lineno,
-                        "Request-derived OAuth/OIDC token is decoded; verify issuer, audience, nonce, expiry, algorithm, and key selection are constrained",
+                        "Request-derived OAuth/OIDC token is decoded; verify issuer, audience, nonce, "
+                        "expiry, algorithm, and key selection are constrained",
                         route.display_path(),
                         sink,
                     )
@@ -364,7 +381,8 @@ class OAuthScanner(ast.NodeVisitor):
                 "Request-derived OAuth identity reaches user mutation",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "Request-derived OAuth identity data reaches res.users mutation; verify provider validation and domain/account linking before writing oauth_uid/login/groups",
+                "Request-derived OAuth identity data reaches res.users mutation; verify provider validation "
+                "and domain/account linking before writing oauth_uid/login/groups",
                 route.display_path(),
                 sink,
             )
@@ -379,7 +397,8 @@ class OAuthScanner(ast.NodeVisitor):
                 "OAuth flow authenticates a session",
                 "high",
                 node.lineno,
-                "OAuth/OIDC flow calls request.session.authenticate; verify state/nonce validation and provider identity binding happen before session creation",
+                "OAuth/OIDC flow calls request.session.authenticate; verify state/nonce validation and "
+                "provider identity binding happen before session creation",
                 route.display_path(),
                 sink,
             )
@@ -815,6 +834,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -845,6 +866,59 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(values_node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(values_node.keys, values_node.values, strict=False):
+        key = _resolve_constant(key, constants) if key is not None else None
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            items.append((key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _literal_subscript_key(node: ast.AST, constants: dict[str, ast.AST]) -> str:
@@ -1153,7 +1227,10 @@ def _call_has_tainted_url(
         return True
     if any(is_tainted(value) for value in _keyword_values(node, "endpoint", constants)):
         return True
-    return any(keyword.arg is None and keyword.value is not None and is_tainted(keyword.value) for keyword in node.keywords)
+    return any(
+        keyword.arg is None and keyword.value is not None and is_tainted(keyword.value)
+        for keyword in node.keywords
+    )
 
 
 def _is_jwt_decode(node: ast.Call) -> bool:

@@ -662,7 +662,11 @@ class Controller(odoo_http.Controller):
     def callback(self, **kwargs):
         token = odoo_http.request.get_http_params().get('id_token')
         jwt.decode(token, audience='client')
-        return odoo_http.request.session.authenticate(odoo_http.request.db, kwargs.get('login'), kwargs.get('access_token'))
+        return odoo_http.request.session.authenticate(
+            odoo_http.request.db,
+            kwargs.get('login'),
+            kwargs.get('access_token'),
+        )
 """,
         encoding="utf-8",
     )
@@ -881,6 +885,40 @@ class Controller(http.Controller):
     assert any(f.route == "/auth/oauth/callback,/auth/oidc/callback" for f in findings)
 
 
+def test_updated_static_unpack_route_options_oauth_callback_risks_are_reported(tmp_path: Path) -> None:
+    """Updated ** route options should not hide public OAuth callbacks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+CALLBACK_OPTIONS = {
+    'routes': ['/auth/internal/callback'],
+    'auth': 'user',
+}
+CALLBACK_OPTIONS.update({
+    'routes': ['/auth/oauth/callback', '/auth/oidc/callback'],
+    'auth': 'none',
+})
+
+class Controller(http.Controller):
+    @http.route(**CALLBACK_OPTIONS)
+    def callback(self, **kwargs):
+        return request.session.authenticate(request.db, kwargs.get('login'), kwargs.get('access_token'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-oauth-public-callback-route" in rule_ids
+    assert "odoo-oauth-session-authenticate" in rule_ids
+    assert any(f.route == "/auth/oauth/callback,/auth/oidc/callback" for f in findings)
+
+
 def test_class_constant_backed_public_oauth_callback_risks_are_reported(tmp_path: Path) -> None:
     """Class-scoped public callback constants should still expose OAuth risks."""
     controllers = tmp_path / "module" / "controllers"
@@ -915,7 +953,10 @@ class Controller(http.Controller):
     assert "odoo-oauth-jwt-verification-disabled" in rule_ids
     assert "odoo-oauth-http-verify-disabled" in rule_ids
     assert "odoo-oauth-session-authenticate" in rule_ids
-    assert any(f.rule_id == "odoo-oauth-public-callback-route" and f.route == "/auth/oauth/class-callback" for f in findings)
+    assert any(
+        f.rule_id == "odoo-oauth-public-callback-route" and f.route == "/auth/oauth/class-callback"
+        for f in findings
+    )
 
 
 def test_class_constant_static_unpack_route_options_identity_write_is_critical(tmp_path: Path) -> None:
