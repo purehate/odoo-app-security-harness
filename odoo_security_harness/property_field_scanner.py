@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _record_fields, _should_skip
 
 
@@ -303,7 +304,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "Company-dependent field on model without company_id",
                 "medium",
                 field.line,
-                f"Field '{field.name}' is company_dependent=True but model has no company_id field; review property fallback and cross-company behavior",
+                f"Field '{field.name}' is company_dependent=True but model has no company_id field; "
+                "review property fallback and cross-company behavior",
                 model,
                 field.name,
             )
@@ -314,7 +316,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "Sensitive company-dependent field lacks groups",
                 "high",
                 field.line,
-                f"Sensitive company-dependent field '{field.name}' has no groups= restriction; verify users cannot alter company-specific accounting/security values",
+                f"Sensitive company-dependent field '{field.name}' has no groups= restriction; "
+                "verify users cannot alter company-specific accounting/security values",
                 model,
                 field.name,
             )
@@ -325,7 +328,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "Company-dependent field defines a default",
                 "low",
                 field.line,
-                f"Field '{field.name}' is company_dependent=True and defines default=; verify default does not mask missing company-specific properties",
+                f"Field '{field.name}' is company_dependent=True and defines default=; "
+                "verify default does not mask missing company-specific properties",
                 model,
                 field.name,
             )
@@ -349,7 +353,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "ir.property record has no company",
                 "medium",
                 line,
-                f"ir.property '{record_id}' has no company_id and becomes a global fallback; verify this is safe for all companies",
+                f"ir.property '{record_id}' has no company_id and becomes a global fallback; "
+                "verify this is safe for all companies",
                 "ir.property",
                 field_ref,
                 record_id,
@@ -361,7 +366,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "ir.property record has no resource scope",
                 "low",
                 line,
-                f"ir.property '{record_id}' has no res_id and may apply broadly as a default; verify intended model/company scope",
+                f"ir.property '{record_id}' has no res_id and may apply broadly as a default; "
+                "verify intended model/company scope",
                 "ir.property",
                 field_ref,
                 record_id,
@@ -373,7 +379,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "Sensitive ir.property value is preconfigured",
                 "medium",
                 line,
-                f"ir.property '{record_id}' configures a sensitive field '{field_ref}'; verify accounting/security defaults are company-scoped",
+                f"ir.property '{record_id}' configures a sensitive field '{field_ref}'; "
+                "verify accounting/security defaults are company-scoped",
                 "ir.property",
                 field_ref,
                 record_id,
@@ -393,7 +400,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "Public route mutates ir.property",
                 "critical",
                 node.lineno,
-                "Public route writes ir.property; verify unauthenticated users cannot alter company-specific accounting or configuration defaults",
+                "Public route writes ir.property; "
+                "verify unauthenticated users cannot alter company-specific accounting or configuration defaults",
                 "ir.property",
                 field_ref,
                 "",
@@ -408,7 +416,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "ir.property is mutated through privileged context",
                 "high",
                 node.lineno,
-                "sudo()/with_user(SUPERUSER_ID) mutates ir.property; verify explicit admin checks and company scoping before changing property defaults",
+                "sudo()/with_user(SUPERUSER_ID) mutates ir.property; "
+                "verify explicit admin checks and company scoping before changing property defaults",
                 "ir.property",
                 field_ref,
                 "",
@@ -421,7 +430,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "Request-derived data reaches ir.property",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "Request-derived data reaches ir.property mutation; whitelist fields and reject accounting, company, token, and security properties",
+                "Request-derived data reaches ir.property mutation; "
+                "whitelist fields and reject accounting, company, token, and security properties",
                 "ir.property",
                 field_ref,
                 "",
@@ -434,7 +444,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "Runtime ir.property mutation has no company",
                 "medium",
                 node.lineno,
-                "Runtime ir.property mutation omits company_id and may create a global fallback; verify this is safe for all companies",
+                "Runtime ir.property mutation omits company_id and may create a global fallback; "
+                "verify this is safe for all companies",
                 "ir.property",
                 field_ref,
                 "",
@@ -447,7 +458,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "Runtime ir.property mutation has no resource scope",
                 "low",
                 node.lineno,
-                "Runtime ir.property mutation omits res_id and may apply broadly as a default; verify intended model/company scope",
+                "Runtime ir.property mutation omits res_id and may apply broadly as a default; "
+                "verify intended model/company scope",
                 "ir.property",
                 field_ref,
                 "",
@@ -460,7 +472,8 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 "Runtime ir.property writes sensitive value",
                 "high",
                 node.lineno,
-                f"Runtime ir.property mutation configures sensitive field '{field_ref}'; verify accounting/security defaults are company-scoped",
+                f"Runtime ir.property mutation configures sensitive field '{field_ref}'; "
+                "verify accounting/security defaults are company-scoped",
                 "ir.property",
                 field_ref,
                 "",
@@ -890,7 +903,50 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str | None, value: ast.AST) -> ast.Dict:
+    if key is None:
+        return values_node
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:

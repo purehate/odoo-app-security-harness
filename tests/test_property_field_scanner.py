@@ -188,7 +188,11 @@ from odoo import fields, models
 class AccountConfig(models.Model):
     _name = 'x.account.config'
     company_id = fields.Many2one('res.company')
-    property_journal_id = fields.Many2one('account.journal', company_dependent=True, default=lambda self: self.env.company.id)
+    property_journal_id = fields.Many2one(
+        'account.journal',
+        company_dependent=True,
+        default=lambda self: self.env.company.id,
+    )
 """,
         encoding="utf-8",
     )
@@ -837,6 +841,38 @@ from odoo.http import request
 
 BASE_OPTIONS = {'auth': 'public'}
 ROUTE_OPTIONS = BASE_OPTIONS | {'csrf': False}
+
+class Properties(http.Controller):
+    @http.route('/properties/account', **ROUTE_OPTIONS)
+    def set_property(self, **kwargs):
+        return request.env['ir.property'].sudo().create({
+            'fields_id': 'account.field_res_partner__property_account_receivable_id',
+            'value_reference': kwargs.get('account'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-property-public-route-mutation" in rule_ids
+    assert "odoo-property-sudo-mutation" in rule_ids
+    assert "odoo-property-request-derived-mutation" in rule_ids
+    assert "odoo-property-runtime-sensitive-value" in rule_ids
+
+
+def test_updated_public_route_options_property_create(tmp_path: Path) -> None:
+    """Updated route option unpacking should preserve public mutation context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "properties.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+ROUTE_OPTIONS = {'auth': 'user', 'csrf': True}
+ROUTE_OPTIONS.update({'auth': 'none', 'csrf': False})
 
 class Properties(http.Controller):
     @http.route('/properties/account', **ROUTE_OPTIONS)
