@@ -1781,6 +1781,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "oauth_tainted_redirect_uri",
+        (
+            "odoo-oauth-tainted-redirect-uri",
+            "request-derived oauth redirect uri is forwarded",
+            "forwards a request-derived redirect_uri",
+            "bind redirect uris to trusted provider/client configuration",
+        ),
+    ),
+    (
         "oauth_jwt_verification_disabled",
         (
             "odoo-oauth-jwt-verification-disabled",

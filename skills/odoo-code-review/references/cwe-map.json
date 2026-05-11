@@ -1742,6 +1742,12 @@
       "capec": ["CAPEC-664", "CAPEC-118"],
       "owasp": "A10:2021 Server-Side Request Forgery"
     },
+    "oauth_tainted_redirect_uri": {
+      "label": "Request-derived OAuth/OIDC redirect URI is forwarded during token exchange",
+      "cwe": ["CWE-346", "CWE-20", "CWE-352"],
+      "capec": ["CAPEC-62", "CAPEC-115"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
     "oauth_jwt_verification_disabled": {
       "label": "OAuth/OIDC JWT decode disables signature or claim verification",
       "cwe": ["CWE-347", "CWE-345", "CWE-613"],

@@ -1367,6 +1367,87 @@ class Controller(http.Controller):
     assert not any(f.rule_id == "odoo-oauth-token-exchange-missing-pkce" for f in findings)
 
 
+def test_authorization_code_exchange_with_tainted_redirect_uri_is_reported(tmp_path: Path) -> None:
+    """Token exchanges should not forward callback-controlled redirect_uri values."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import requests
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, code, redirect_uri):
+        return requests.post(
+            'https://idp.example.com/oauth/token',
+            timeout=10,
+            data={'grant_type': 'authorization_code', 'code': code, 'redirect_uri': redirect_uri},
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(f.rule_id == "odoo-oauth-tainted-redirect-uri" for f in findings)
+
+
+def test_local_token_payload_tainted_redirect_uri_is_reported(tmp_path: Path) -> None:
+    """Aliased token payload dictionaries should keep redirect_uri taint visible."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import requests
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, code, **kwargs):
+        payload = {
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': kwargs.get('redirect_uri'),
+        }
+        return requests.post('https://idp.example.com/oauth/token', timeout=10, data=payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(f.rule_id == "odoo-oauth-tainted-redirect-uri" for f in findings)
+
+
+def test_static_token_payload_redirect_uri_is_ignored(tmp_path: Path) -> None:
+    """Provider-owned redirect_uri values should not create tainted redirect findings."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import requests
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, code):
+        payload = {
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': 'https://odoo.example.com/auth/oauth/callback',
+            'code_verifier': 'server-side-verifier',
+        }
+        return requests.post('https://idp.example.com/oauth/token', timeout=10, data=payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert not any(f.rule_id == "odoo-oauth-tainted-redirect-uri" for f in findings)
+
+
 def test_scanner_skips_test_fixtures(tmp_path: Path) -> None:
     """Repository tests can contain intentionally insecure OAuth examples."""
     tests = tmp_path / "tests"

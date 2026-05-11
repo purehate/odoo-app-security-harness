@@ -74,6 +74,7 @@ class OAuthScanner(ast.NodeVisitor):
         self.tainted_names: set[str] = set()
         self.user_model_names: set[str] = set()
         self.oauth_identity_payload_names: set[str] = set()
+        self.tainted_redirect_uri_payload_names: set[str] = set()
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
@@ -134,6 +135,7 @@ class OAuthScanner(ast.NodeVisitor):
         previous_tainted = set(self.tainted_names)
         previous_user_model_names = set(self.user_model_names)
         previous_oauth_identity_payload_names = set(self.oauth_identity_payload_names)
+        previous_tainted_redirect_uri_payload_names = set(self.tainted_redirect_uri_payload_names)
         previous_local_constants = self.local_constants
         self.local_constants = {}
         route = _route_info(
@@ -179,6 +181,7 @@ class OAuthScanner(ast.NodeVisitor):
         self.tainted_names = previous_tainted
         self.user_model_names = previous_user_model_names
         self.oauth_identity_payload_names = previous_oauth_identity_payload_names
+        self.tainted_redirect_uri_payload_names = previous_tainted_redirect_uri_payload_names
         self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
@@ -190,6 +193,7 @@ class OAuthScanner(ast.NodeVisitor):
             self._mark_tainted_target(target, node.value)
             self._mark_user_model_target(target, node.value)
             self._mark_oauth_identity_payload_target(target, node.value)
+            self._mark_tainted_redirect_uri_payload_target(target, node.value)
             self._track_oauth_identity_payload_subscript_assignment(target, node.value)
         self.generic_visit(node)
 
@@ -199,6 +203,7 @@ class OAuthScanner(ast.NodeVisitor):
             self._mark_tainted_target(node.target, node.value)
             self._mark_user_model_target(node.target, node.value)
             self._mark_oauth_identity_payload_target(node.target, node.value)
+            self._mark_tainted_redirect_uri_payload_target(node.target, node.value)
         self.generic_visit(node)
 
     def visit_For(self, node: ast.For) -> Any:
@@ -213,6 +218,7 @@ class OAuthScanner(ast.NodeVisitor):
         self._mark_tainted_target(node.target, node.value)
         self._mark_user_model_target(node.target, node.value)
         self._mark_oauth_identity_payload_target(node.target, node.value)
+        self._mark_tainted_redirect_uri_payload_target(node.target, node.value)
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
@@ -254,6 +260,16 @@ class OAuthScanner(ast.NodeVisitor):
                     "critical",
                     node.lineno,
                     "Request-derived data controls OAuth/OIDC token or userinfo URL; enforce provider allowlists to avoid SSRF and token exfiltration",
+                    route.display_path(),
+                    sink,
+                )
+            if self._call_contains_tainted_redirect_uri(node):
+                self._add(
+                    "odoo-oauth-tainted-redirect-uri",
+                    "Request-derived OAuth redirect URI is forwarded",
+                    "high",
+                    node.lineno,
+                    "OAuth/OIDC token or validation request forwards a request-derived redirect_uri; bind redirect URIs to trusted provider/client configuration instead of callback input",
                     route.display_path(),
                     sink,
                 )
@@ -468,6 +484,35 @@ class OAuthScanner(ast.NodeVisitor):
         self.oauth_identity_payload_names.add(root_name)
         if any(value is not None and self._expr_is_tainted(value) for value in update_values.values):
             self.tainted_names.add(root_name)
+
+    def _call_contains_tainted_redirect_uri(self, node: ast.Call) -> bool:
+        constants = self._effective_constants()
+        for arg in node.args:
+            if self._expr_contains_tainted_redirect_uri(arg, constants):
+                return True
+        for keyword in node.keywords:
+            if keyword.value is None:
+                continue
+            if keyword.arg == "redirect_uri" and self._expr_is_tainted(keyword.value):
+                return True
+            if self._expr_contains_tainted_redirect_uri(keyword.value, constants):
+                return True
+        return False
+
+    def _expr_contains_tainted_redirect_uri(self, node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+        if isinstance(node, ast.Starred):
+            return self._expr_contains_tainted_redirect_uri(node.value, constants)
+        if isinstance(node, ast.Name) and node.id in self.tainted_redirect_uri_payload_names:
+            return True
+        if isinstance(node, ast.Subscript):
+            return self._expr_contains_tainted_redirect_uri(node.value, constants)
+        return _expr_contains_tainted_key(node, "redirect_uri", self._expr_is_tainted, constants)
+
+    def _mark_tainted_redirect_uri_payload_target(self, target: ast.AST, value: ast.AST) -> None:
+        if self._expr_contains_tainted_redirect_uri(value, self._effective_constants()):
+            self._mark_name_target(target, self.tainted_redirect_uri_payload_names)
+        else:
+            self._discard_name_target(target, self.tainted_redirect_uri_payload_names)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
         if isinstance(target, ast.Name):
@@ -831,6 +876,37 @@ def _call_contains_key(node: ast.Call, key_name: str, constants: dict[str, ast.A
     for keyword in node.keywords:
         if keyword.value is not None and _expr_contains_key(keyword.value, key_name, constants):
             return True
+    return False
+
+
+def _expr_contains_tainted_key(
+    node: ast.AST,
+    key_name: str,
+    is_tainted: Any,
+    constants: dict[str, ast.AST],
+) -> bool:
+    node = _resolve_constant(node, constants)
+    if isinstance(node, ast.Dict):
+        for key, value in zip(node.keys, node.values, strict=False):
+            if value is None:
+                continue
+            key = _resolve_constant(key, constants) if key is not None else None
+            if isinstance(key, ast.Constant) and str(key.value) == key_name and is_tainted(value):
+                return True
+            if _expr_contains_tainted_key(value, key_name, is_tainted, constants):
+                return True
+        return False
+    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        return any(_expr_contains_tainted_key(element, key_name, is_tainted, constants) for element in node.elts)
+    if isinstance(node, ast.Call):
+        return any(_expr_contains_tainted_key(arg, key_name, is_tainted, constants) for arg in node.args) or any(
+            keyword.value is not None
+            and (
+                (keyword.arg == key_name and is_tainted(keyword.value))
+                or _expr_contains_tainted_key(keyword.value, key_name, is_tainted, constants)
+            )
+            for keyword in node.keywords
+        )
     return False
 
 
