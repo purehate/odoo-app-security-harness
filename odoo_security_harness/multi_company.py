@@ -54,6 +54,8 @@ class MultiCompanyChecker(ast.NodeVisitor):
         self.tainted_vars: set[str] = set()
         self.elevated_record_vars: set[str] = set()
         self.request_names: set[str] = {"request"}
+        self.http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
 
@@ -131,10 +133,23 @@ class MultiCompanyChecker(ast.NodeVisitor):
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         """Track aliases for the Odoo HTTP request proxy."""
-        if node.module == "odoo.http":
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.http_module_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
                     self.request_names.add(alias.asname or alias.name)
+        self.generic_visit(node)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        """Track direct Odoo module aliases for the request proxy."""
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -432,7 +447,23 @@ class MultiCompanyChecker(ast.NodeVisitor):
 
     def _is_request_name(self, node: ast.AST) -> bool:
         """Check whether a node is the imported Odoo request proxy name."""
-        return isinstance(node, ast.Name) and node.id in self.request_names
+        if isinstance(node, ast.Name):
+            return node.id in self.request_names
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "request"
+            and self._is_http_module_expr(node.value)
+        )
+
+    def _is_http_module_expr(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.http_module_names
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "http"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in self.odoo_module_names
+        )
 
     def _mark_target_names(self, target: ast.AST, names: set[str], should_mark: bool) -> None:
         """Add or clear tracked names for assignment targets."""

@@ -481,6 +481,44 @@ class TestModel(models.Model):
     assert any(f.rule_id == "odoo-mc-company-context-user-input" for f in findings)
 
 
+def test_imported_odoo_http_request_company_context(tmp_path: Path) -> None:
+    """Direct odoo.http request access should still taint company context values."""
+    model = _write_model(
+        tmp_path,
+        """
+import odoo.http as odoo_http
+
+class TestModel(models.Model):
+    def orders(self):
+        company_ids = odoo_http.request.get_http_params().get('company_ids')
+        return self.env['sale.order'].with_context(allowed_company_ids=company_ids).search([])
+""",
+    )
+
+    findings = MultiCompanyChecker(str(model)).check_file()
+
+    assert any(f.rule_id == "odoo-mc-company-context-user-input" for f in findings)
+
+
+def test_imported_odoo_request_company_context(tmp_path: Path) -> None:
+    """Direct odoo module request access should still taint company context values."""
+    model = _write_model(
+        tmp_path,
+        """
+import odoo as od
+
+class TestModel(models.Model):
+    def orders(self):
+        company_ids = od.http.request.get_http_params().get('company_ids')
+        return self.env['sale.order'].with_context(allowed_company_ids=company_ids).search([])
+""",
+    )
+
+    findings = MultiCompanyChecker(str(model)).check_file()
+
+    assert any(f.rule_id == "odoo-mc-company-context-user-input" for f in findings)
+
+
 def test_reassigned_company_context_value_is_not_stale(tmp_path: Path) -> None:
     """Request-controlled company aliases should clear when rebound to static values."""
     model = _write_model(
