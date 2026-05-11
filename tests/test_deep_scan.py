@@ -6470,6 +6470,12 @@ def test_taxonomy_coverage_classifies_xml_cron_configuration_risks() -> None:
             },
             {
                 "source": "xml-data",
+                "rule_id": "odoo-xml-cron-cleartext-http-url",
+                "title": "Cron uses cleartext HTTP URL",
+                "message": "ir.cron code targets a literal http:// URL; use HTTPS to protect scheduled integration payloads and response data from interception or downgrade",
+            },
+            {
+                "source": "xml-data",
                 "rule_id": "odoo-xml-cron-doall-enabled",
                 "title": "Cron catches up missed executions",
                 "message": "ir.cron has doall=True; after downtime it may replay missed jobs in bulk, causing duplicate side effects or load spikes",
@@ -6489,13 +6495,14 @@ def test_taxonomy_coverage_classifies_xml_cron_configuration_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 7
+    assert coverage["mapped_rules"] == 8
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-xml-cron-admin-user": "xml_cron_admin_user",
         "odoo-xml-cron-root-code": "xml_cron_root_code",
         "odoo-xml-cron-http-no-timeout": "xml_cron_http_without_timeout",
         "odoo-xml-cron-tls-verify-disabled": "xml_cron_tls_verification_disabled",
+        "odoo-xml-cron-cleartext-http-url": "xml_cron_cleartext_http_url",
         "odoo-xml-cron-doall-enabled": "xml_cron_doall_enabled",
         "odoo-xml-cron-short-interval": "xml_cron_short_interval",
         "odoo-xml-cron-external-sync-review": "xml_cron_external_sync_review",
@@ -7890,6 +7897,12 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
                 "title": "Server action disables TLS verification",
                 "message": "ir.actions.server code passes verify=False to outbound HTTP; install/update automation should not permit man-in-the-middle attacks",
             },
+            {
+                "source": "xml-data",
+                "rule_id": "odoo-xml-server-action-cleartext-http-url",
+                "title": "Server action uses cleartext HTTP URL",
+                "message": "ir.actions.server code targets a literal http:// URL; use HTTPS to protect automation payloads and response data from interception or downgrade",
+            },
         ]
     )
 
@@ -7912,6 +7925,7 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
     assert shapes["odoo-xml-function-security-model-mutation"] == "xml_data_function_security_model_mutation"
     assert shapes["odoo-xml-public-mail-channel"] == "xml_data_public_mail_channel"
     assert shapes["odoo-xml-server-action-tls-verify-disabled"] == "xml_data_server_action_tls_verification_disabled"
+    assert shapes["odoo-xml-server-action-cleartext-http-url"] == "xml_data_server_action_cleartext_http_url"
     assert all(entry["cwe"] for entry in coverage["mapped_entries"])
 
 

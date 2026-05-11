@@ -1409,6 +1409,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "xml_cron_cleartext_http_url",
+        (
+            "odoo-xml-cron-cleartext-http-url",
+            "cron uses cleartext http url",
+            "ir.cron code targets a literal http:// url",
+            "scheduled integration payloads and response data",
+        ),
+    ),
+    (
         "xml_cron_doall_enabled",
         (
             "odoo-xml-cron-doall-enabled",
@@ -3008,6 +3017,15 @@ _TAXONOMY_SHAPE_HINTS = (
             "odoo-xml-server-action-tls-verify-disabled",
             "server action disables tls verification",
             "ir.actions.server code passes verify=false to outbound http",
+        ),
+    ),
+    (
+        "xml_data_server_action_cleartext_http_url",
+        (
+            "odoo-xml-server-action-cleartext-http-url",
+            "server action uses cleartext http url",
+            "ir.actions.server code targets a literal http:// url",
+            "automation payloads and response data",
         ),
     ),
     (

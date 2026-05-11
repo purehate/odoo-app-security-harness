@@ -213,6 +213,29 @@ requests.post(record.callback_url, **HTTP_OPTIONS)
     assert any(f.rule_id == "odoo-xml-server-action-tls-verify-disabled" for f in findings)
 
 
+def test_server_action_cleartext_http_url(tmp_path: Path) -> None:
+    """XML server action inline Python should flag literal cleartext HTTP URLs."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_http_cleartext" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+CALLBACK_URL = 'http://hooks.example.test/server-action'
+HTTP_OPTIONS = {'url': 'http://partner.example.test/action', 'timeout': 10}
+requests.post(CALLBACK_URL, timeout=10)
+requests.request('POST', **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert sum(f.rule_id == "odoo-xml-server-action-cleartext-http-url" for f in findings) == 1
+
+
 def test_server_action_keyword_with_user_mutation_is_reported(tmp_path: Path) -> None:
     """XML server actions should surface keyword with_user superuser mutations."""
     xml = tmp_path / "actions.xml"
@@ -608,6 +631,29 @@ requests.get(record.url, **HTTP_OPTIONS)
     findings = XmlDataScanner(xml).scan_file()
 
     assert any(f.rule_id == "odoo-xml-cron-tls-verify-disabled" for f in findings)
+
+
+def test_cron_cleartext_http_url(tmp_path: Path) -> None:
+    """XML cron inline Python should flag literal cleartext HTTP URLs."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_http_cleartext" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+FEED_URL = 'http://feeds.example.test/orders'
+HTTP_OPTIONS = {'url': 'http://partner.example.test/cron', 'timeout': 10}
+requests.get(FEED_URL, timeout=10)
+requests.request('POST', **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert sum(f.rule_id == "odoo-xml-cron-cleartext-http-url" for f in findings) == 1
 
 
 def test_admin_method_cron_without_state_code_is_reported(tmp_path: Path) -> None:

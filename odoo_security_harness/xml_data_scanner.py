@@ -230,6 +230,17 @@ class XmlDataScanner:
                 record_id,
             )
 
+        if code_risks.cleartext_http_url:
+            self._add(
+                "odoo-xml-server-action-cleartext-http-url",
+                "Server action uses cleartext HTTP URL",
+                "medium",
+                self._line_for_record(record),
+                "ir.actions.server code targets a literal http:// URL; use HTTPS to protect automation payloads and response data from interception or downgrade",
+                "ir.actions.server",
+                record_id,
+            )
+
     def _scan_cron(self, record: ElementTree.Element) -> None:
         fields = self._fields(record)
         self._scan_cron_fields(fields, self._line_for_record(record), record.get("id", ""))
@@ -282,6 +293,17 @@ class XmlDataScanner:
                 "high",
                 line,
                 "ir.cron code passes verify=False to outbound HTTP; scheduled integrations should not permit man-in-the-middle attacks",
+                "ir.cron",
+                record_id,
+            )
+
+        if code_risks.cleartext_http_url:
+            self._add(
+                "odoo-xml-cron-cleartext-http-url",
+                "Cron uses cleartext HTTP URL",
+                "medium",
+                line,
+                "ir.cron code targets a literal http:// URL; use HTTPS to protect scheduled integration payloads and response data from interception or downgrade",
                 "ir.cron",
                 record_id,
             )
@@ -584,6 +606,7 @@ class _ServerActionCodeRisks:
     sensitive_model: str = ""
     http_no_timeout: bool = False
     tls_verify_disabled: bool = False
+    cleartext_http_url: bool = False
 
 
 def _server_action_code_risks(code: str) -> _ServerActionCodeRisks:
@@ -659,6 +682,9 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
                 self.risks.http_no_timeout = True
             if _keyword_is_false(node, "verify", self.constants):
                 self.risks.tls_verify_disabled = True
+            for url_value in _http_url_values(node, self._canonical_call_name(node.func), self.constants):
+                if _is_cleartext_literal_url(url_value, self.constants):
+                    self.risks.cleartext_http_url = True
         self.generic_visit(node)
 
     def _is_http_call(self, node: ast.AST) -> bool:
@@ -880,6 +906,27 @@ def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST]) -> boo
 def _is_none_constant(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
     value = _resolve_constant(node, constants)
     return isinstance(value, ast.Constant) and value.value is None
+
+
+def _http_url_values(node: ast.Call, sink: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    if node.args:
+        method = sink.rsplit(".", 1)[-1]
+        if method == "request" and len(node.args) >= 2:
+            values.append(node.args[1])
+        else:
+            values.append(node.args[0])
+    values.extend(_keyword_values(node, "url", constants))
+    return values
+
+
+def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    return (
+        isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+        and value.value.strip().lower().startswith("http://")
+    )
 
 
 def _keyword_values(node: ast.Call, name: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
