@@ -648,6 +648,9 @@ def _apply_route_options(
         return auth, paths
     for key, option_value in zip(value.keys, value.values, strict=False):
         key = _resolve_constant(key, constants) if key is not None else None
+        if key is None:
+            auth, paths = _apply_route_options(option_value, constants, auth, paths)
+            continue
         if isinstance(key, ast.Constant) and isinstance(key.value, str):
             auth, paths = _apply_route_keyword(key.value, option_value, constants, auth, paths)
     return auth, paths
