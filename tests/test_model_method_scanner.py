@@ -58,6 +58,100 @@ class Sale(Model):
     assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" for f in findings)
 
 
+def test_flags_aliased_odoo_api_module_onchange(tmp_path: Path) -> None:
+    """Aliased Odoo API modules should not hide model method decorators."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import api as odoo_api, models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    @odoo_api.onchange('partner_id')
+    def _onchange_partner_id(self):
+        self.env['sale.order'].sudo().write({'note': 'x'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" for f in findings)
+
+
+def test_flags_imported_odoo_api_module_onchange(tmp_path: Path) -> None:
+    """Direct odoo.api module imports should not hide model method decorators."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+import odoo.api as odoo_api
+from odoo import models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    @odoo_api.onchange('partner_id')
+    def sync_partner(self):
+        self.env['sale.order'].sudo().write({'note': 'x'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" for f in findings)
+
+
+def test_flags_imported_odoo_module_api_onchange(tmp_path: Path) -> None:
+    """Direct odoo module imports should not hide model method decorators."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+import odoo as od
+
+class Sale(od.models.Model):
+    _name = 'x.sale'
+
+    @od.api.onchange('partner_id')
+    def sync_partner(self):
+        self.env['sale.order'].sudo().write({'note': 'x'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" for f in findings)
+
+
+def test_flags_aliased_imported_onchange_decorator(tmp_path: Path) -> None:
+    """Aliased direct model method decorator imports should remain visible."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import models
+from odoo.api import onchange as on_change
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    @on_change('partner_id')
+    def sync_partner(self):
+        self.env['sale.order'].sudo().write({'note': 'x'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" for f in findings)
+
+
 def test_flags_aliased_onchange_sudo_mutation(tmp_path: Path) -> None:
     """Sudo recordset aliases inside onchange methods should be recognized."""
     models = tmp_path / "module" / "models"

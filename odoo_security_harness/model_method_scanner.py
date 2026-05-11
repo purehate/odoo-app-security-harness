@@ -64,6 +64,7 @@ TLS_VERIFY_DISABLED_RULES = {
     "constraint": "odoo-model-method-constraint-tls-verify-disabled",
     "inverse": "odoo-model-method-inverse-tls-verify-disabled",
 }
+API_METHOD_DECORATORS = {"constrains", "depends", "onchange"}
 
 
 def scan_model_methods(repo_path: Path) -> list[ModelMethodFinding]:
@@ -88,6 +89,9 @@ class ModelMethodScanner(ast.NodeVisitor):
         self.http_functions: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.api_module_names: set[str] = {"api"}
+        self.odoo_module_names: set[str] = {"odoo"}
+        self.api_decorator_names: dict[str, str] = {}
 
     def scan_file(self) -> list[ModelMethodFinding]:
         """Scan the file."""
@@ -109,6 +113,13 @@ class ModelMethodScanner(ast.NodeVisitor):
                 self.http_modules.add(alias.asname or alias.name)
             elif alias.name == "urllib.request":
                 self.http_modules.add(alias.asname or "urllib")
+            elif alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.api":
+                if alias.asname:
+                    self.api_module_names.add(alias.asname)
+                else:
+                    self.odoo_module_names.add("odoo")
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
@@ -120,6 +131,14 @@ class ModelMethodScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "request":
                     self.http_modules.add(alias.asname or alias.name)
+        elif node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "api":
+                    self.api_module_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.api":
+            for alias in node.names:
+                if alias.name in API_METHOD_DECORATORS:
+                    self.api_decorator_names[alias.asname or alias.name] = alias.name
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
@@ -136,7 +155,15 @@ class ModelMethodScanner(ast.NodeVisitor):
         if not self.model_stack:
             self.generic_visit(node)
             return
-        context = MethodContext(name=node.name, kind=_method_kind(node))
+        context = MethodContext(
+            name=node.name,
+            kind=_method_kind(
+                node,
+                self.api_module_names,
+                self.odoo_module_names,
+                self.api_decorator_names,
+            ),
+        )
         self.method_stack.append(context)
         self.generic_visit(node)
         self.method_stack.pop()
@@ -363,21 +390,61 @@ def _extract_model_name(node: ast.ClassDef, constants: dict[str, ast.AST] | None
     return node.name
 
 
-def _method_kind(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
-    decorators = {_decorator_name(decorator) for decorator in node.decorator_list}
-    if any(name.endswith(".onchange") or name == "onchange" for name in decorators) or node.name.startswith(
-        "_onchange"
-    ):
+def _method_kind(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    api_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
+    api_decorator_names: dict[str, str] | None = None,
+) -> str:
+    api_module_names = api_module_names or {"api"}
+    odoo_module_names = odoo_module_names or {"odoo"}
+    api_decorator_names = api_decorator_names or {}
+    decorators = {
+        _api_decorator_kind(decorator, api_module_names, odoo_module_names, api_decorator_names)
+        for decorator in node.decorator_list
+    }
+    if "onchange" in decorators or node.name.startswith("_onchange"):
         return "onchange"
-    if any(name.endswith(".depends") or name == "depends" for name in decorators) or node.name.startswith("_compute"):
+    if "depends" in decorators or node.name.startswith("_compute"):
         return "compute"
-    if any(name.endswith(".constrains") or name == "constrains" for name in decorators) or node.name.startswith(
-        "_check"
-    ):
+    if "constrains" in decorators or node.name.startswith("_check"):
         return "constraint"
     if node.name.startswith("_inverse"):
         return "inverse"
     return ""
+
+
+def _api_decorator_kind(
+    node: ast.AST,
+    api_module_names: set[str],
+    odoo_module_names: set[str],
+    api_decorator_names: dict[str, str],
+) -> str:
+    if isinstance(node, ast.Call):
+        node = node.func
+    if isinstance(node, ast.Name):
+        if node.id in API_METHOD_DECORATORS:
+            return node.id
+        return api_decorator_names.get(node.id, "")
+    if isinstance(node, ast.Attribute) and node.attr in API_METHOD_DECORATORS:
+        if _is_odoo_api_module_expr(node.value, api_module_names, odoo_module_names):
+            return node.attr
+    return ""
+
+
+def _is_odoo_api_module_expr(
+    node: ast.AST,
+    api_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in api_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "api"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in odoo_module_names
+    )
 
 
 def _is_privileged_mutation(

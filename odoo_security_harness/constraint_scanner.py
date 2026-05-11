@@ -24,6 +24,7 @@ class ConstraintFinding:
 
 
 READ_METHODS = {"browse", "read", "read_group", "search", "search_count", "search_read"}
+API_CONSTRAINT_DECORATORS = {"constrains"}
 
 
 def scan_constraints(repo_path: Path) -> list[ConstraintFinding]:
@@ -46,6 +47,9 @@ class ConstraintScanner(ast.NodeVisitor):
         self.method_stack: list[ConstraintContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.api_module_names: set[str] = {"api"}
+        self.odoo_module_names: set[str] = {"odoo"}
+        self.api_decorator_names: set[str] = set()
 
     def scan_file(self) -> list[ConstraintFinding]:
         """Scan the file."""
@@ -60,6 +64,28 @@ class ConstraintScanner(ast.NodeVisitor):
         self.constants = _module_constants(tree)
         self.visit(tree)
         return self.findings
+
+    def visit_Import(self, node: ast.Import) -> Any:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.api":
+                if alias.asname:
+                    self.api_module_names.add(alias.asname)
+                else:
+                    self.odoo_module_names.add("odoo")
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "api":
+                    self.api_module_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.api":
+            for alias in node.names:
+                if alias.name in API_CONSTRAINT_DECORATORS:
+                    self.api_decorator_names.add(alias.asname or alias.name)
+        self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
         if not _is_odoo_model(node):
@@ -76,7 +102,12 @@ class ConstraintScanner(ast.NodeVisitor):
             self.generic_visit(node)
             return
 
-        decorator = _constraint_decorator(node)
+        decorator = _constraint_decorator(
+            node,
+            self.api_module_names,
+            self.odoo_module_names,
+            self.api_decorator_names,
+        )
         is_named_constraint = node.name.startswith("_check")
         if decorator is None and not is_named_constraint:
             self.generic_visit(node)
@@ -295,11 +326,54 @@ class ConstraintContext:
             self.sudo_vars = set()
 
 
-def _constraint_decorator(node: ast.FunctionDef | ast.AsyncFunctionDef) -> ast.Call | None:
+def _constraint_decorator(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    api_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
+    api_decorator_names: set[str] | None = None,
+) -> ast.Call | None:
+    api_module_names = api_module_names or {"api"}
+    odoo_module_names = odoo_module_names or {"odoo"}
+    api_decorator_names = api_decorator_names or set()
     for decorator in node.decorator_list:
-        if isinstance(decorator, ast.Call) and _call_name(decorator.func) in {"api.constrains", "constrains"}:
+        if isinstance(decorator, ast.Call) and _is_constraint_decorator_func(
+            decorator.func,
+            api_module_names,
+            odoo_module_names,
+            api_decorator_names,
+        ):
             return decorator
     return None
+
+
+def _is_constraint_decorator_func(
+    node: ast.AST,
+    api_module_names: set[str],
+    odoo_module_names: set[str],
+    api_decorator_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id == "constrains" or node.id in api_decorator_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "constrains"
+        and _is_odoo_api_module_expr(node.value, api_module_names, odoo_module_names)
+    )
+
+
+def _is_odoo_api_module_expr(
+    node: ast.AST,
+    api_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in api_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "api"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in odoo_module_names
+    )
 
 
 def _constraint_fields(decorator: ast.Call | None, constants: dict[str, ast.AST] | None = None) -> list[str]:

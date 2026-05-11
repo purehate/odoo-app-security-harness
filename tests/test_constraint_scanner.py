@@ -62,6 +62,100 @@ class Product(Model):
     assert any(f.rule_id == "odoo-constraint-empty-fields" for f in findings)
 
 
+def test_flags_aliased_odoo_api_module_constraint(tmp_path: Path) -> None:
+    """Aliased Odoo API modules should not hide constraint decorators."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "empty.py").write_text(
+        """
+from odoo import api as odoo_api, models
+
+class Product(models.Model):
+    _name = 'x.product'
+
+    @odoo_api.constrains()
+    def _check_empty(self):
+        pass
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_constraints(tmp_path)
+
+    assert any(f.rule_id == "odoo-constraint-empty-fields" for f in findings)
+
+
+def test_flags_imported_odoo_api_module_constraint(tmp_path: Path) -> None:
+    """Direct odoo.api module imports should not hide constraint decorators."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "empty.py").write_text(
+        """
+import odoo.api as odoo_api
+from odoo import models
+
+class Product(models.Model):
+    _name = 'x.product'
+
+    @odoo_api.constrains()
+    def _check_empty(self):
+        pass
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_constraints(tmp_path)
+
+    assert any(f.rule_id == "odoo-constraint-empty-fields" for f in findings)
+
+
+def test_flags_imported_odoo_module_api_constraint(tmp_path: Path) -> None:
+    """Direct odoo module imports should not hide constraint decorators."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "empty.py").write_text(
+        """
+import odoo as od
+
+class Product(od.models.Model):
+    _name = 'x.product'
+
+    @od.api.constrains()
+    def _check_empty(self):
+        pass
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_constraints(tmp_path)
+
+    assert any(f.rule_id == "odoo-constraint-empty-fields" for f in findings)
+
+
+def test_flags_aliased_imported_constraint_decorator(tmp_path: Path) -> None:
+    """Aliased direct constraint decorator imports should remain visible."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "empty.py").write_text(
+        """
+from odoo import models
+from odoo.api import constrains as validates
+
+class Product(models.Model):
+    _name = 'x.product'
+
+    @validates()
+    def _check_empty(self):
+        pass
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_constraints(tmp_path)
+
+    assert any(f.rule_id == "odoo-constraint-empty-fields" for f in findings)
+
+
 def test_flags_dotted_constraint_field_and_ignored_return(tmp_path: Path) -> None:
     """Dotted fields do not reliably trigger and returned values do not reject records."""
     models = tmp_path / "module" / "models"
