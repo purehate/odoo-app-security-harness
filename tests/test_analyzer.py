@@ -330,6 +330,39 @@ class TestController(http.Controller):
         assert "odoo-deep-sql-concat" in rule_ids
         assert "odoo-deep-request-to-sql" in rule_ids
 
+    def test_route_string_parameter_taints_safe_eval(self) -> None:
+        """Named Odoo route path parameters should be treated as request-controlled."""
+        source = """
+from odoo import http
+
+class TestController(http.Controller):
+    @http.route('/public/eval/<string:expression>', auth='public')
+    def test_eval(self, expression):
+        return safe_eval(expression)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-safe-eval-user-input" for f in findings)
+
+    def test_route_path_parameter_taints_raw_sql(self) -> None:
+        """Non-ID route path parameters should be tainted in SQL flows."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+class TestController(http.Controller):
+    @http.route('/lookup/<path:table_name>', auth='user')
+    def lookup(self, table_name):
+        request.env.cr.execute('SELECT * FROM ' + table_name)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-sql-concat" in rule_ids
+        assert "odoo-deep-request-to-sql" in rule_ids
+
     def test_cr_execute_fstring(self) -> None:
         """Test detecting SQL injection with f-string."""
         source = """

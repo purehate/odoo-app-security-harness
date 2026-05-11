@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -133,11 +134,17 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.tainted_vars = set()
         self.unsafe_sql_vars = set()
 
+        route_param_names = set(_route_parameter_names(func.route_paths)) if func.is_controller else set()
         for arg in node.args.args + node.args.kwonlyargs:
             if arg.arg in {"kw", "kwargs", "params", "post"} and func.is_controller:
                 self.tainted_vars.add(arg.arg)
-            if func.is_controller and arg.arg != "self" and (arg.arg == "id" or arg.arg.endswith("_id")):
+            if (
+                func.is_controller
+                and arg.arg != "self"
+                and (arg.arg == "id" or arg.arg.endswith("_id") or arg.arg in route_param_names)
+            ):
                 self.tainted_vars.add(arg.arg)
+                func.has_request_params = True
         if node.args.vararg and node.args.vararg.arg in {"args"} and func.is_controller:
             self.tainted_vars.add(node.args.vararg.arg)
         if node.args.kwarg and func.is_controller:
@@ -1122,6 +1129,15 @@ def _should_skip_python_file(path: Path) -> bool:
     """Skip generated/cache/test files without dropping modules whose names contain 'test'."""
     parts = set(path.parts)
     return bool(parts & {"tests", "__pycache__", ".venv", "venv", ".git"})
+
+
+def _route_parameter_names(route_paths: list[str]) -> list[str]:
+    """Extract Odoo route converter parameter names from literal route paths."""
+    names: list[str] = []
+    for route_path in route_paths:
+        for match in re.finditer(r"<(?:[^:<>]+:)?(?P<name>[A-Za-z_]\w*)>", route_path):
+            names.append(match.group("name"))
+    return names
 
 
 def findings_to_json(findings: list[Finding]) -> list[dict[str, Any]]:
