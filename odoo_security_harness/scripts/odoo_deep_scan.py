@@ -846,10 +846,13 @@ _TAXONOMY_SHAPE_HINTS = (
         (
             "manifest-risky-python-dependency",
             "manifest-risky-bin-dependency",
+            "manifest-direct-python-dependency",
             "manifest declares dependency with security-sensitive usage",
             "manifest declares binary dependency with security-sensitive usage",
+            "manifest declares direct python dependency reference",
             "security-sensitive dependency declarations",
             "security-sensitive binary dependency declarations",
+            "direct url, vcs, or local-file references",
             "paramiko",
         ),
     ),

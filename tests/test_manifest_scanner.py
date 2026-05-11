@@ -239,6 +239,37 @@ def test_versioned_python_dependencies_are_reported(tmp_path: Path) -> None:
     )
 
 
+def test_direct_python_dependency_references_are_reported(tmp_path: Path) -> None:
+    """Direct URL, VCS, and local-file Python dependencies need provenance review."""
+    module = tmp_path / "direct_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Direct Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'python': [
+            'git+https://github.com/example/private-addon-helper.git@main',
+            'helper @ https://packages.example.com/helper-1.0.tar.gz',
+            'file:///opt/vendor/custom.whl',
+            'safe-package',
+        ],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-direct-python-dependency"
+        and "git+https://github.com/example/private-addon-helper.git@main" in f.message
+        and "helper @ https://packages.example.com/helper-1.0.tar.gz" in f.message
+        and "file:///opt/vendor/custom.whl" in f.message
+        and "safe-package" not in f.message
+        for f in findings
+    )
+
+
 def test_risky_binary_dependencies_are_reported(tmp_path: Path) -> None:
     """Security-sensitive binary dependency declarations should be visible in manifest review."""
     module = tmp_path / "risky_bin_deps"

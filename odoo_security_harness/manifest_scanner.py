@@ -74,6 +74,15 @@ RISKY_BINARY_DEPENDENCIES = {
     "wget",
 }
 PYTHON_DEPENDENCY_NAME_RE = re.compile(r"^\s*(?P<name>[A-Za-z0-9_.-]+)")
+DIRECT_PYTHON_DEPENDENCY_PREFIXES = (
+    "git+",
+    "hg+",
+    "svn+",
+    "bzr+",
+    "http://",
+    "https://",
+    "file://",
+)
 
 
 @dataclass
@@ -224,6 +233,14 @@ class ManifestScanner:
                     "info",
                     f"Review usage of security-sensitive dependency declarations: {', '.join(risky)}",
                 )
+            direct_refs = _direct_python_dependency_references(python_deps)
+            if direct_refs:
+                self._add(
+                    "odoo-manifest-direct-python-dependency",
+                    "Manifest declares direct Python dependency reference",
+                    "medium",
+                    f"Manifest Python dependencies include direct URL, VCS, or local-file references: {', '.join(direct_refs)}; pin immutable artifacts and verify dependency provenance before deployment",
+                )
             bin_deps = _as_string_list(external_dependencies.get("bin"))
             risky_bins = _risky_binary_dependencies(bin_deps)
             if risky_bins:
@@ -346,6 +363,16 @@ def _python_dependency_name(dependency: str) -> str:
     if not match:
         return ""
     return match.group("name").lower().replace("_", "-").split("[", 1)[0]
+
+
+def _direct_python_dependency_references(dependencies: list[str]) -> list[str]:
+    """Return direct URL, VCS, or local-file Python dependency declarations."""
+    direct: list[str] = []
+    for dependency in dependencies:
+        normalized = dependency.strip().lower()
+        if normalized.startswith(DIRECT_PYTHON_DEPENDENCY_PREFIXES) or " @ " in normalized:
+            direct.append(dependency)
+    return sorted(set(direct), key=str.lower)
 
 
 def _risky_binary_dependencies(dependencies: list[str]) -> list[str]:
