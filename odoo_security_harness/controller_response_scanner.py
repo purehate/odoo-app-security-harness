@@ -382,10 +382,11 @@ class ControllerResponseScanner(ast.NodeVisitor):
         )
 
     def _scan_response_factory(self, node: ast.Call, sink: str) -> None:
-        body = _response_body_arg(node)
+        constants = self._effective_constants()
+        body = _response_body_arg(node, constants)
         if body is not None:
             self._scan_response_body(body, sink, node.lineno)
-            if self._expr_is_tainted(body) and _response_factory_is_html(node, self._effective_constants()):
+            if self._expr_is_tainted(body) and _response_factory_is_html(node, constants):
                 route = self._current_route()
                 self._add(
                     "odoo-controller-tainted-html-response",
@@ -395,9 +396,9 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Controller returns request-derived data as text/html; sanitize or render through trusted QWeb templates before sending HTML",
                     sink,
                 )
-            if self._expr_is_tainted(body) and _response_factory_is_javascript(
-                node, self._effective_constants()
-            ) and _looks_jsonp_callback_body(body):
+            if self._expr_is_tainted(body) and _response_factory_is_javascript(node, constants) and _looks_jsonp_callback_body(
+                body
+            ):
                 route = self._current_route()
                 self._add(
                     "odoo-controller-jsonp-callback-response",
@@ -407,8 +408,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Controller builds a JavaScript/JSONP response from a request-controlled callback; remove JSONP or strictly validate callback names and response data",
                     sink,
                 )
-        for keyword in node.keywords:
-            if keyword.arg in {"headers", "header"} and self._expr_is_tainted(keyword.value):
+        for key, keyword_value in _expanded_keywords(node, constants):
+            if key in {"headers", "header"} and self._expr_is_tainted(keyword_value):
                 self._add(
                     "odoo-controller-response-header-injection",
                     "Response headers include request-controlled value",
@@ -417,8 +418,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Controller response headers include request-derived data; validate against CRLF/header injection and unsafe filenames",
                     sink,
                 )
-            if keyword.arg in {"headers", "header"}:
-                self._scan_static_headers(keyword.value, node.lineno, sink)
+            if key in {"headers", "header"}:
+                self._scan_static_headers(keyword_value, node.lineno, sink)
         if len(node.args) >= 2 and self._expr_is_tainted(node.args[1]):
             self._add(
                 "odoo-controller-response-header-injection",
@@ -1256,21 +1257,21 @@ def _keyword_value(node: ast.Call, name: str) -> ast.AST | None:
     return None
 
 
-def _response_body_arg(node: ast.Call) -> ast.AST | None:
+def _response_body_arg(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> ast.AST | None:
     if node.args:
         return node.args[0]
-    for keyword in node.keywords:
-        if keyword.arg in RESPONSE_BODY_KEYWORDS:
-            return keyword.value
+    for key, keyword_value in _expanded_keywords(node, constants or {}):
+        if key in RESPONSE_BODY_KEYWORDS:
+            return keyword_value
     return None
 
 
 def _response_factory_is_html(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
     constants = constants or {}
-    for keyword in node.keywords:
-        if keyword.arg in {"mimetype", "content_type"} and _is_html_content_type(keyword.value, constants):
+    for key, keyword_value in _expanded_keywords(node, constants):
+        if key in {"mimetype", "content_type"} and _is_html_content_type(keyword_value, constants):
             return True
-        if keyword.arg in {"headers", "header"} and _headers_include_html_content_type(keyword.value, constants):
+        if key in {"headers", "header"} and _headers_include_html_content_type(keyword_value, constants):
             return True
     if len(node.args) >= 2 and _headers_include_html_content_type(node.args[1], constants):
         return True
@@ -1279,10 +1280,10 @@ def _response_factory_is_html(node: ast.Call, constants: dict[str, ast.AST] | No
 
 def _response_factory_is_javascript(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
     constants = constants or {}
-    for keyword in node.keywords:
-        if keyword.arg in {"mimetype", "content_type"} and _is_javascript_content_type(keyword.value, constants):
+    for key, keyword_value in _expanded_keywords(node, constants):
+        if key in {"mimetype", "content_type"} and _is_javascript_content_type(keyword_value, constants):
             return True
-        if keyword.arg in {"headers", "header"} and _headers_include_javascript_content_type(keyword.value, constants):
+        if key in {"headers", "header"} and _headers_include_javascript_content_type(keyword_value, constants):
             return True
     if len(node.args) >= 2 and _headers_include_javascript_content_type(node.args[1], constants):
         return True

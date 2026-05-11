@@ -1287,6 +1287,37 @@ class Controller(http.Controller):
     )
 
 
+def test_flags_unpack_keyword_tainted_html_make_response(tmp_path: Path) -> None:
+    """Static **kwargs passed to response factories should preserve body and header checks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/preview', auth='public')
+    def preview(self, **kwargs):
+        options = {
+            'data': kwargs.get('body'),
+            'headers': [('Content-Type', 'text/html; charset=utf-8')],
+        }
+        return request.make_response(**options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-tainted-html-response"
+        and f.severity == "high"
+        and f.sink == "request.make_response"
+        for f in findings
+    )
+
+
 def test_flags_aliased_odoo_response_tainted_html(tmp_path: Path) -> None:
     """Aliased odoo.http Response factories should preserve HTML taint checks."""
     controllers = tmp_path / "module" / "controllers"
