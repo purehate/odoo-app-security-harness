@@ -46,6 +46,7 @@ class Config(http.Controller):
         return {
             'access': request.env['ir.config_parameter'].sudo().get_param('connector.access_key'),
             'license': request.env['ir.config_parameter'].sudo().get_param('connector.license_key'),
+            'reset': request.env['ir.config_parameter'].sudo().get_param('connector.reset_password_url'),
         }
 """,
         encoding="utf-8",
@@ -55,8 +56,8 @@ class Config(http.Controller):
     public_keys = {finding.key for finding in findings if finding.rule_id == "odoo-config-param-public-sensitive-read"}
     sudo_keys = {finding.key for finding in findings if finding.rule_id == "odoo-config-param-sudo-sensitive-read"}
 
-    assert {"connector.access_key", "connector.license_key"} <= public_keys
-    assert {"connector.access_key", "connector.license_key"} <= sudo_keys
+    assert {"connector.access_key", "connector.license_key", "connector.reset_password_url"} <= public_keys
+    assert {"connector.access_key", "connector.license_key", "connector.reset_password_url"} <= sudo_keys
 
 
 def test_imported_route_decorator_public_sensitive_config_read(tmp_path: Path) -> None:

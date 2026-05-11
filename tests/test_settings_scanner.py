@@ -41,6 +41,7 @@ class ResConfigSettings(models.TransientModel):
 
     access_key = fields.Char(config_parameter='connector.access_key')
     license_key = fields.Char(config_parameter='connector.license_key')
+    reset_password_url = fields.Char(config_parameter='connector.reset_password_url')
 """,
         encoding="utf-8",
     )
@@ -52,7 +53,7 @@ class ResConfigSettings(models.TransientModel):
         if finding.rule_id == "odoo-settings-sensitive-config-field-no-admin-groups"
     }
 
-    assert {"access_key", "license_key"} <= fields
+    assert {"access_key", "license_key", "reset_password_url"} <= fields
 
 
 def test_flags_direct_transient_model_base_and_direct_field_constructor(tmp_path: Path) -> None:
