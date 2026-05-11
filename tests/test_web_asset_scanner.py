@@ -864,6 +864,44 @@ def test_jquery_post_without_visible_csrf_detected(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-web-unsafe-request-without-csrf" and f.sink == "http-request" for f in findings)
 
 
+def test_xmlhttprequest_post_without_visible_csrf_detected(tmp_path: Path) -> None:
+    """Legacy XHR writes should get the same CSRF review as fetch/axios calls."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """const xhr = new XMLHttpRequest();
+xhr.open('POST', '/portal/pay');
+xhr.send(JSON.stringify(payload));
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-unsafe-request-without-csrf"
+        and f.sink == "XMLHttpRequest.open"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_xmlhttprequest_post_with_visible_csrf_ignored(tmp_path: Path) -> None:
+    """A visible X-CSRF token header suppresses the XHR CSRF lead."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """const xhr = new XMLHttpRequest();
+xhr.open('POST', '/portal/pay');
+xhr.setRequestHeader('X-CSRF-Token', csrfToken);
+xhr.send(JSON.stringify(payload));
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-unsafe-request-without-csrf" for f in findings)
+
+
 def test_fetch_insecure_http_url_detected(tmp_path: Path) -> None:
     """Raw frontend requests should not use cleartext remote endpoints."""
     path = tmp_path / "widget.js"
@@ -894,6 +932,27 @@ def test_ajax_insecure_http_url_detected(tmp_path: Path) -> None:
     findings = WebAssetScanner(path).scan_file()
 
     assert any(f.rule_id == "odoo-web-insecure-http-request-url" for f in findings)
+
+
+def test_xmlhttprequest_insecure_http_url_detected(tmp_path: Path) -> None:
+    """Legacy XHR calls should not use cleartext remote endpoints."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """const xhr = new XMLHttpRequest();
+xhr.open('GET', 'http://api.example.com/orders');
+xhr.send();
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-insecure-http-request-url"
+        and f.sink == "XMLHttpRequest.open"
+        and f.severity == "medium"
+        for f in findings
+    )
 
 
 def test_https_frontend_request_ignored_for_insecure_url_rule(tmp_path: Path) -> None:

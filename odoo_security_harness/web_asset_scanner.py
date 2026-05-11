@@ -157,6 +157,14 @@ RAW_HTTP_REQUEST_RE = re.compile(
     r"(?:\bfetch|\baxios\.(?:request|post|put|patch|delete)|(?:\$|jQuery)\.(?:ajax|post))\s*\(",
     re.IGNORECASE,
 )
+XMLHTTPREQUEST_CREATE_RE = re.compile(
+    r"\b(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\s*=\s*new\s+XMLHttpRequest\s*\(",
+    re.IGNORECASE,
+)
+XMLHTTPREQUEST_OPEN_RE = re.compile(
+    r"\b(?P<name>[A-Za-z_$][\w$]*)\.open\s*\(\s*['\"](?P<method>GET|POST|PUT|PATCH|DELETE|HEAD)['\"]\s*,\s*(?P<url>[^,\)\n]+)",
+    re.IGNORECASE,
+)
 HTTP_URL_LITERAL_RE = re.compile(r"['\"]http://", re.IGNORECASE)
 UNSAFE_HTTP_METHOD_RE = re.compile(
     r"(?:method|type)\s*:\s*['\"](?:POST|PUT|PATCH|DELETE)['\"]|"
@@ -937,6 +945,7 @@ class WebAssetScanner:
         self._scan_action_window_navigation(lines)
         self._scan_insecure_http_requests(lines)
         self._scan_raw_http_csrf(lines)
+        self._scan_xmlhttprequest_usage(lines)
         self._scan_dom_target_blank(lines)
         self._scan_dom_iframe_missing_sandbox(lines)
         self._scan_dom_external_script_missing_sri(lines)
@@ -1061,6 +1070,40 @@ class WebAssetScanner:
                 "Raw frontend HTTP request uses an unsafe method without a visible CSRF token/header; verify Odoo session-protected endpoints cannot be driven cross-site",
                 "http-request",
             )
+
+    def _scan_xmlhttprequest_usage(self, lines: list[str]) -> None:
+        """Find legacy XMLHttpRequest calls with cleartext URLs or unsafe writes."""
+        xhr_names: set[str] = set()
+        for index, line in enumerate(lines):
+            create_match = XMLHTTPREQUEST_CREATE_RE.search(line)
+            if create_match:
+                xhr_names.add(create_match.group("name"))
+
+            open_match = XMLHTTPREQUEST_OPEN_RE.search(line)
+            if not open_match or open_match.group("name") not in xhr_names:
+                continue
+
+            context = "\n".join(lines[index : index + 10])
+            if _is_insecure_http_url(_strip_js_string(open_match.group("url"))):
+                self._add(
+                    "odoo-web-insecure-http-request-url",
+                    "Frontend HTTP request uses insecure URL",
+                    "medium",
+                    index + 1,
+                    "Frontend XMLHttpRequest targets a literal http:// URL; use HTTPS or same-origin endpoints to avoid mixed-content downgrade, interception, and referrer leakage risk",
+                    "XMLHttpRequest.open",
+                )
+
+            method = open_match.group("method").upper()
+            if method in {"POST", "PUT", "PATCH", "DELETE"} and not CSRF_TOKEN_RE.search(context):
+                self._add(
+                    "odoo-web-unsafe-request-without-csrf",
+                    "Frontend unsafe HTTP request lacks visible CSRF token",
+                    "medium",
+                    index + 1,
+                    "XMLHttpRequest uses an unsafe method without a visible CSRF token/header; verify Odoo session-protected endpoints cannot be driven cross-site",
+                    "XMLHttpRequest.open",
+                )
 
     def _scan_dom_target_blank(self, lines: list[str]) -> None:
         """Find DOM-created new-tab links without visible opener isolation."""
