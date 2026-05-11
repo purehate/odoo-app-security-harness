@@ -34,7 +34,37 @@ SENSITIVE_FIELD_NAMES = {
     "token",
     "user_ids",
 }
-SENSITIVE_FIELD_MARKERS = ("secret", "token", "password", "api_key", "apikey", "private_key")
+SENSITIVE_FIELD_MARKERS = (
+    "access_key",
+    "access_link",
+    "access_token",
+    "access_url",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "bearer_token",
+    "client_secret",
+    "csrf_token",
+    "hmac_secret",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
+    "partner_signup_url",
+    "password",
+    "private_key",
+    "reset_password_token",
+    "reset_password_url",
+    "secret",
+    "secret_key",
+    "session_token",
+    "signature_secret",
+    "signup_token",
+    "signup_url",
+    "signing_key",
+    "token",
+    "totp_secret",
+    "webhook_secret",
+)
 PUBLIC_GROUPS = {"base.group_public", "base.group_portal"}
 
 

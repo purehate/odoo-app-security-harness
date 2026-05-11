@@ -262,6 +262,29 @@ def test_flags_inserted_sensitive_field_without_groups(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-view-inherit-adds-sensitive-field-no-groups" for f in findings)
 
 
+def test_flags_inserted_broad_sensitive_field_without_groups(tmp_path: Path) -> None:
+    """Inherited views should catch key-shaped fields beyond token/password names."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "insert_license_key.xml").write_text(
+        """<odoo>
+  <record id="view_user_insert_license_key" model="ir.ui.view">
+    <field name="inherit_id" ref="base.view_users_form"/>
+    <field name="arch" type="xml">
+      <xpath expr="//group" position="inside">
+        <field name="license_key"/>
+      </xpath>
+    </field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_view_inheritance(tmp_path)
+
+    assert any(f.rule_id == "odoo-view-inherit-adds-sensitive-field-no-groups" for f in findings)
+
+
 def test_grouped_inserted_controls_are_not_reported_as_ungrouped(tmp_path: Path) -> None:
     """Admin-grouped inserted controls should avoid the ungrouped insertion findings."""
     views = tmp_path / "module" / "views"
