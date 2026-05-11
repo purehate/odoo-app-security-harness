@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -282,7 +283,8 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "Controller returns attachment/binary data directly",
                 severity,
                 node.lineno,
-                "Controller returns attachment or binary field data directly; verify record ownership, access_token handling, and response headers",
+                "Controller returns attachment or binary field data directly; verify record "
+                "ownership, access_token handling, and response headers",
                 "return",
             )
         self.generic_visit(node)
@@ -294,7 +296,8 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "ir.http binary_content is called with an elevated environment",
                 "high",
                 node.lineno,
-                "ir.http.binary_content is reached through sudo()/with_user(SUPERUSER_ID); verify model/id/field inputs cannot bypass record rules or attachment ownership",
+                "ir.http.binary_content is reached through sudo()/with_user(SUPERUSER_ID); "
+                "verify model/id/field inputs cannot bypass record rules or attachment ownership",
                 sink,
             )
         if _call_has_tainted_input(node, self._expr_is_tainted, self._effective_constants()):
@@ -305,7 +308,8 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "binary_content receives request-controlled arguments",
                 severity,
                 node.lineno,
-                "ir.http.binary_content receives request-derived model/id/field arguments; constrain model, field, record ownership, and token semantics",
+                "ir.http.binary_content receives request-derived model/id/field arguments; "
+                "constrain model, field, record ownership, and token semantics",
                 sink,
             )
 
@@ -320,7 +324,9 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "Controller redirects to tokenized web content URL",
                 "high",
                 node.lineno,
-                "Controller redirects to a /web/content or /web/image URL containing access-token or signature-like material; avoid exposing document tokens in browser history, referrers, logs, and shared links",
+                "Controller redirects to a /web/content or /web/image URL containing "
+                "access-token or signature-like material; avoid exposing document tokens in "
+                "browser history, referrers, logs, and shared links",
                 sink,
             )
         if self._expr_is_tainted(location):
@@ -329,7 +335,8 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "Controller redirects to request-controlled web content URL",
                 "high",
                 node.lineno,
-                "Controller builds a /web/content or /web/image URL from request input; verify record ownership, access_token, and allowed model/field scope",
+                "Controller builds a /web/content or /web/image URL from request input; verify "
+                "record ownership, access_token, and allowed model/field scope",
                 sink,
             )
 
@@ -342,7 +349,9 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "Download filename contains sensitive marker",
                 "high",
                 node.lineno,
-                "content_disposition builds a download filename containing token, secret, password, or API-key-like material; avoid leaking credentials through headers, browser download history, logs, and shared files",
+                "content_disposition builds a download filename containing token, secret, "
+                "password, or API-key-like material; avoid leaking credentials through headers, "
+                "browser download history, logs, and shared files",
                 sink,
             )
         if _call_has_tainted_input(node, self._expr_is_tainted, constants):
@@ -351,7 +360,8 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "Download filename is request-controlled",
                 "medium",
                 node.lineno,
-                "content_disposition uses request-derived filename; validate CRLF, path separators, extension, and confusing Unicode/control characters",
+                "content_disposition uses request-derived filename; validate CRLF, path "
+                "separators, extension, and confusing Unicode/control characters",
                 sink,
             )
 
@@ -366,7 +376,8 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "Controller responds with attachment/binary data",
                 severity,
                 node.lineno,
-                "Controller response body contains attachment or binary field data; verify access checks, token validation, and cache/header policy",
+                "Controller response body contains attachment or binary field data; verify access "
+                "checks, token validation, and cache/header policy",
                 sink,
             )
             active_content = _active_response_content(node, constants)
@@ -376,7 +387,9 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                     "Controller serves attachment data as browser-active content",
                     severity,
                     node.lineno,
-                    f"Controller response contains attachment/binary data with browser-active content type ({active_content}) without forced attachment disposition; verify sanitization, ownership, and download headers",
+                    "Controller response contains attachment/binary data with browser-active "
+                    f"content type ({active_content}) without forced attachment disposition; "
+                    "verify sanitization, ownership, and download headers",
                     sink,
                 )
             if _response_content_disposition_has_sensitive_filename(node, constants):
@@ -385,7 +398,9 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                     "Download filename contains sensitive marker",
                     "high",
                     node.lineno,
-                    "Controller response sets Content-Disposition with a token, secret, password, or API-key-like filename; avoid leaking credentials through headers, browser download history, logs, and shared files",
+                    "Controller response sets Content-Disposition with a token, secret, password, "
+                    "or API-key-like filename; avoid leaking credentials through headers, browser "
+                    "download history, logs, and shared files",
                     sink,
                 )
 
@@ -723,6 +738,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -753,6 +770,45 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
