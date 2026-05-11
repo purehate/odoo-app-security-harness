@@ -2777,6 +2777,12 @@
       "capec": ["CAPEC-118"],
       "owasp": "A02:2021 Cryptographic Failures"
     },
+    "action_url_embedded_credentials": {
+      "label": "ir.actions.act_url embeds username, password, or token material in navigable URLs",
+      "cwe": ["CWE-598", "CWE-522", "CWE-798"],
+      "capec": ["CAPEC-191", "CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "database_listing_exposure": {
       "label": "Controller exposes available Odoo database names",
       "cwe": ["CWE-200", "CWE-203"],

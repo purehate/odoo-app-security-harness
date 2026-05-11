@@ -4670,6 +4670,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "action_url_embedded_credentials",
+        (
+            "act-url-embedded-credentials",
+            "url action embeds credentials",
+            "ir.actions.act_url embeds username, password, or token material",
+            "navigable url",
+            "browser history, referrers, logs, and shared links",
+        ),
+    ),
+    (
         "database_listing_exposure",
         (
             "database-listing-route",

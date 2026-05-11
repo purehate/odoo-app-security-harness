@@ -705,6 +705,31 @@ def test_flags_external_xml_act_url_without_groups(tmp_path: Path) -> None:
     assert "odoo-act-url-sensitive-url" in rule_ids
 
 
+def test_flags_xml_act_url_embedded_credentials(tmp_path: Path) -> None:
+    """XML URL actions should not embed credentials in browser navigation URLs."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "actions.xml").write_text(
+        """<odoo>
+  <record id="action_credential_url" model="ir.actions.act_url">
+    <field name="name">Credential URL</field>
+    <field name="url">https://nav_user:secret@example.com/path</field>
+    <field name="target">self</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-act-url-embedded-credentials"
+        and f.record_id == "action_credential_url"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
 def test_flags_broad_sensitive_xml_act_url_markers(tmp_path: Path) -> None:
     """URL actions should catch reset/signup/key-shaped data in URLs."""
     views = tmp_path / "module" / "views"
@@ -740,6 +765,25 @@ def test_flags_external_csv_act_url_without_groups(tmp_path: Path) -> None:
     assert "odoo-act-url-external-no-groups" in rule_ids
     assert "odoo-act-url-external-new-window" in rule_ids
     assert "odoo-act-url-sensitive-url" in rule_ids
+
+
+def test_flags_csv_act_url_embedded_credentials(tmp_path: Path) -> None:
+    """CSV URL action declarations should not carry embedded credentials."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_act_url.csv").write_text(
+        "id,name,url,target\naction_credential_url,Credential URL,https://nav_user:secret@example.com/path,self\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-act-url-embedded-credentials"
+        and f.record_id == "action_credential_url"
+        and f.sink == "ir.actions.act_url"
+        for f in findings
+    )
 
 
 def test_flags_unsafe_scheme_csv_act_url(tmp_path: Path) -> None:
@@ -936,6 +980,36 @@ class Redirect(http.Controller):
     assert any(f.rule_id == "odoo-act-url-public-route" for f in findings)
     assert any(f.rule_id == "odoo-act-url-external-new-window" for f in findings)
     assert any(f.rule_id == "odoo-act-url-sensitive-url" for f in findings)
+
+
+def test_flags_python_act_url_embedded_credentials(tmp_path: Path) -> None:
+    """Python URL actions should not embed credentials in browser navigation URLs."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "redirect.py").write_text(
+        """
+from odoo import http
+
+class Redirect(http.Controller):
+    @http.route('/go/external', auth='user')
+    def go(self):
+        return {
+            'type': 'ir.actions.act_url',
+            'url': 'https://nav_user:secret@example.com/path',
+            'target': 'self',
+        }
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-act-url-embedded-credentials"
+        and f.sink == "python-dict"
+        and f.severity == "high"
+        for f in findings
+    )
 
 
 def test_local_constant_alias_mutated_action_url_is_reported(tmp_path: Path) -> None:
@@ -1180,6 +1254,32 @@ class Document(models.Model):
     findings = scan_action_urls(tmp_path)
 
     assert any(f.rule_id == "odoo-act-url-sensitive-url" for f in findings)
+
+
+def test_flags_mutated_act_url_embedded_credentials(tmp_path: Path) -> None:
+    """Mutated act_url dictionaries should be scanned for embedded URL credentials."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "document.py").write_text(
+        """
+from odoo import models
+
+class Document(models.Model):
+    _name = 'x.document'
+
+    def action_share(self):
+        action = {'type': 'ir.actions.act_url', 'target': 'new'}
+        action.update({'url': 'https://nav_user:secret@example.com/path'})
+        return action
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-act-url-embedded-credentials" and f.sink == "python-dict-update" for f in findings
+    )
 
 
 def test_flags_annotated_mutated_unsafe_act_url(tmp_path: Path) -> None:

@@ -2102,6 +2102,24 @@ def test_taxonomy_coverage_classifies_action_url_sensitive_url_material() -> Non
     assert "CWE-598" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_action_url_embedded_credentials() -> None:
+    """Credential-bearing act_url targets should map to credential leakage taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-act-url-embedded-credentials",
+                "source": "action-urls",
+                "title": "URL action embeds credentials",
+                "message": "ir.actions.act_url embeds username, password, or token material in a navigable URL",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "action_url_embedded_credentials"
+    assert "CWE-798" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_database_listing_and_manager_exposure() -> None:
     """Database list and manager routes should map to database-manager taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(

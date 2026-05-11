@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from defusedxml import ElementTree
 from odoo_security_harness.base_scanner import _line_for, _record_fields, _should_skip
@@ -321,6 +322,20 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "python-dict",
             )
 
+        if _has_url_embedded_credentials(url) or (
+            url_node is not None and _expr_contains_url_embedded_credentials(url_node)
+        ):
+            self._add(
+                "odoo-act-url-embedded-credentials",
+                "URL action embeds credentials",
+                "high",
+                node.lineno,
+                "ir.actions.act_url embeds username, password, or token material in a navigable URL; keep credentials out of browser history, referrers, logs, and shared links",
+                url,
+                route,
+                "python-dict",
+            )
+
     def _scan_action_url_record(self, record: ElementTree.Element) -> None:
         fields = _record_fields(record)
         record_id = record.get("id", "")
@@ -382,6 +397,19 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "high",
                 line,
                 f"ir.actions.act_url '{record_id}' URL appears to contain token, secret, password, or API-key material",
+                url,
+                RouteContext(is_route=False),
+                "ir.actions.act_url",
+                record_id,
+            )
+
+        if _has_url_embedded_credentials(url):
+            self._add(
+                "odoo-act-url-embedded-credentials",
+                "URL action embeds credentials",
+                "high",
+                line,
+                f"ir.actions.act_url '{record_id}' embeds username, password, or token material in a navigable URL",
                 url,
                 RouteContext(is_route=False),
                 "ir.actions.act_url",
@@ -457,6 +485,18 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "high",
                 line,
                 "ir.actions.act_url URL appears to contain token, secret, password, or API-key material; avoid exposing secrets in browser history and referrers",
+                url,
+                route,
+                sink,
+            )
+
+        if _has_url_embedded_credentials(url) or _expr_contains_url_embedded_credentials(url_node):
+            self._add(
+                "odoo-act-url-embedded-credentials",
+                "URL action embeds credentials",
+                "high",
+                line,
+                "ir.actions.act_url URL embeds username, password, or token material; keep credentials out of browser history, referrers, logs, and shared links",
                 url,
                 route,
                 sink,
@@ -950,6 +990,18 @@ def _contains_sensitive_url_marker(url: str) -> bool:
 
 def _expr_contains_sensitive_url_marker(node: ast.AST) -> bool:
     return _contains_sensitive_url_marker(_safe_unparse(node))
+
+
+def _has_url_embedded_credentials(url: str) -> bool:
+    for match in re.finditer(r"https?://[^\s'\"<>)]+", url, re.IGNORECASE):
+        parsed = urlparse(match.group(0).rstrip(".,;"))
+        if parsed.hostname and (parsed.username is not None or parsed.password is not None):
+            return True
+    return False
+
+
+def _expr_contains_url_embedded_credentials(node: ast.AST) -> bool:
+    return _has_url_embedded_credentials(_safe_unparse(node))
 
 
 def _looks_route_id_arg(name: str) -> bool:
