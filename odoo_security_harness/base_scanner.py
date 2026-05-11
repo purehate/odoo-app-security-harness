@@ -213,7 +213,7 @@ def _is_odoo_model(node: ast.ClassDef, model_base_names: set[str] | None = None)
     """Return True if a class definition inherits from an Odoo model base."""
     bases = model_base_names or _DEFAULT_MODEL_BASES
     return any(
-        (isinstance(base, ast.Attribute) and base.attr in _DEFAULT_MODEL_BASES)
+        (isinstance(base, ast.Attribute) and base.attr in bases)
         or (isinstance(base, ast.Name) and base.id in bases)
         for base in node.bases
     )
