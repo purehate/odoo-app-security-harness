@@ -457,6 +457,42 @@ env['ir.config_parameter'].set_param('auth_signup.invitation_scope', 'b2c')
     assert "odoo-xml-server-action-sensitive-model-mutation" in rule_ids
 
 
+def test_xml_config_parameter_security_toggle_is_reported(tmp_path: Path) -> None:
+    """Module XML data should not silently enable unsafe global config toggles."""
+    xml = tmp_path / "config.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="config_allow_uninvited_signup" model="ir.config_parameter">
+    <field name="key">auth_signup.allow_uninvited</field>
+    <field name="value">True</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(
+        finding.rule_id == "odoo-xml-config-param-security-toggle-enabled"
+        and finding.record_id == "config_allow_uninvited_signup"
+        and "auth_signup.allow_uninvited" in finding.message
+        for finding in findings
+    )
+
+
+def test_csv_config_parameter_security_toggle_is_reported(tmp_path: Path) -> None:
+    """CSV config parameters should get the same security-toggle review."""
+    csv_file = tmp_path / "ir.config_parameter.csv"
+    csv_file.write_text(
+        "id,key,value\nconfig_list_db,list_db,1\nconfig_freeze,web.base.url.freeze,false\n",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(csv_file).scan_csv_file()
+
+    assert sum(1 for finding in findings if finding.rule_id == "odoo-xml-config-param-security-toggle-enabled") == 2
+
+
 def test_server_action_constant_backed_sensitive_model_mutation(tmp_path: Path) -> None:
     """XML server action code should resolve env[...] model constants."""
     xml = tmp_path / "actions.xml"

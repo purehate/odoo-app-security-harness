@@ -4253,10 +4253,13 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "config_parameter_security_toggle_write",
         (
+            "xml-config-param-security-toggle-enabled",
             "config-param-tainted-security-toggle-write",
             "config-param-security-toggle-enabled",
+            "xml data enables security-sensitive config parameter",
             "security-sensitive config toggle receives request-controlled value",
             "security-sensitive config toggle is enabled",
+            "module data sets ir.config_parameter",
             "set_param writes a request-derived value to security-sensitive key",
             "set_param enables security-sensitive key",
             "runtime security posture",

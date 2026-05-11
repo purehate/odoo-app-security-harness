@@ -57,6 +57,15 @@ KNOWN_MODEL_EXTERNAL_IDS = {
     "payment.model_payment_transaction": "payment.transaction",
     "model_payment_transaction": "payment.transaction",
 }
+CONFIG_PARAMETER_MODELS = {"ir.config_parameter", "ir.config.parameter"}
+SECURITY_TOGGLE_UNSAFE_VALUES = {
+    "auth.signup.allow_uninvited": {"1", "true", "yes", "y"},
+    "auth_signup.allow_uninvited": {"1", "true", "yes", "y"},
+    "database.create": {"1", "true", "yes", "y"},
+    "database.drop": {"1", "true", "yes", "y"},
+    "list_db": {"1", "true", "yes", "y"},
+    "web.base.url.freeze": {"0", "false", "no", "n"},
+}
 
 
 @dataclass
@@ -117,6 +126,8 @@ class XmlDataScanner:
                 self._scan_user_record(record)
             elif model == "res.groups":
                 self._scan_group_record(record)
+            elif model in CONFIG_PARAMETER_MODELS:
+                self._scan_config_parameter_record(record)
         for function in root.iter("function"):
             self._scan_function(function)
 
@@ -140,6 +151,8 @@ class XmlDataScanner:
                 self._scan_user_fields(fields, line, record_id)
             elif model == "res.groups":
                 self._scan_group_fields(fields, line, record_id)
+            elif model in CONFIG_PARAMETER_MODELS:
+                self._scan_config_parameter_fields(fields, line, record_id)
         return self.findings
 
     def _scan_server_action(self, record: ElementTree.Element) -> None:
@@ -419,6 +432,24 @@ class XmlDataScanner:
             "res.groups",
             record_id,
         )
+
+    def _scan_config_parameter_record(self, record: ElementTree.Element) -> None:
+        fields = self._fields(record)
+        self._scan_config_parameter_fields(fields, self._line_for_record(record), record.get("id", ""))
+
+    def _scan_config_parameter_fields(self, fields: dict[str, str], line: int, record_id: str) -> None:
+        key = fields.get("key", "").strip().strip("'\"")
+        value = fields.get("value", "").strip().strip("'\"")
+        if key in SECURITY_TOGGLE_UNSAFE_VALUES and value.lower() in SECURITY_TOGGLE_UNSAFE_VALUES[key]:
+            self._add(
+                "odoo-xml-config-param-security-toggle-enabled",
+                "XML data enables security-sensitive config parameter",
+                "high",
+                line,
+                f"Module data sets ir.config_parameter '{key}' to '{value}'; verify install/update cannot silently weaken signup, database manager, or generated-link security posture",
+                "ir.config_parameter",
+                record_id,
+            )
 
     def _scan_function(self, function: ElementTree.Element) -> None:
         model = function.get("model", "")
