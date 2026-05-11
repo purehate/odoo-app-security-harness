@@ -2447,6 +2447,24 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "orm_context_bin_size_disabled",
+        (
+            "orm-context-bin-size-disabled",
+            "orm context forces binary field contents",
+            "with_context(bin_size=false)",
+            "binary fields return file contents instead of size metadata",
+        ),
+    ),
+    (
+        "orm_context_sudo_bin_size_read",
+        (
+            "orm-context-sudo-bin-size-read",
+            "privileged orm read forces binary field contents",
+            "orm read uses sudo()/with_user(superuser_id) with bin_size=false",
+            "binary fields may return file contents",
+        ),
+    ),
+    (
         "orm_context_privileged_mode",
         (
             "orm-context-privileged-mode",
@@ -2477,6 +2495,15 @@ _TAXONOMY_SHAPE_HINTS = (
             "request.update_context(active_test=false)",
             "current request environment",
             "archived/inactive records may become visible",
+        ),
+    ),
+    (
+        "orm_context_request_bin_size_disabled",
+        (
+            "orm-context-request-bin-size-disabled",
+            "request context forces binary field contents",
+            "request.update_context(bin_size=false)",
+            "later binary reads can return file contents",
         ),
     ),
     (

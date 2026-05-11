@@ -161,6 +161,21 @@ class OrmContextScanner(ast.NodeVisitor):
         if flags:
             if method in MUTATION_METHODS:
                 self._scan_mutation_with_context(node, sink, flags)
+            elif method in READ_METHODS and _flag_is_false(flags, "bin_size") and _is_sudo_expr(
+                node.func,
+                scope.sudo_vars if scope else set(),
+                self._effective_constants(),
+                self.superuser_names,
+            ):
+                self._add(
+                    "odoo-orm-context-sudo-bin-size-read",
+                    "Privileged ORM read forces binary field contents",
+                    "high",
+                    node.lineno,
+                    "ORM read uses sudo()/with_user(SUPERUSER_ID) with bin_size=False; binary fields may return file contents instead of size metadata outside normal record visibility",
+                    sink,
+                    "bin_size",
+                )
             elif (
                 method in READ_METHODS
                 and _flag_is_false(flags, "active_test")
@@ -201,6 +216,17 @@ class OrmContextScanner(ast.NodeVisitor):
                 "active_test",
             )
 
+        if _flag_is_false(flags, "bin_size"):
+            self._add(
+                "odoo-orm-context-bin-size-disabled",
+                "ORM context forces binary field contents",
+                "medium",
+                node.lineno,
+                "with_context(bin_size=False) can make binary fields return file contents instead of size metadata; verify downstream reads cannot expose attachments or large payloads",
+                sink,
+                "bin_size",
+            )
+
         for flag in sorted(PRIVILEGED_MODE_FLAGS & flags.keys()):
             if _flag_is_truthy(flags, flag):
                 self._add(
@@ -239,6 +265,17 @@ class OrmContextScanner(ast.NodeVisitor):
                 "request.update_context(active_test=False) changes the current request environment; archived/inactive records may become visible or processed later in the route",
                 sink,
                 "active_test",
+            )
+
+        if _flag_is_false(flags, "bin_size"):
+            self._add(
+                "odoo-orm-context-request-bin-size-disabled",
+                "Request context forces binary field contents",
+                "medium",
+                node.lineno,
+                "request.update_context(bin_size=False) changes the request environment so later binary reads can return file contents instead of size metadata",
+                sink,
+                "bin_size",
             )
 
         disabled_tracking = [flag for flag in TRACKING_DISABLE_FLAGS if _flag_is_truthy(flags, flag)]

@@ -55,6 +55,50 @@ class Sale(models.Model):
     assert "odoo-orm-context-sudo-active-test-read" in rule_ids
 
 
+def test_flags_bin_size_disabled_and_sudo_read(tmp_path: Path) -> None:
+    """bin_size=False can force binary contents through privileged reads."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachment.py").write_text(
+        """
+from odoo import models
+
+class AttachmentReview(models.Model):
+    _name = 'x.attachment.review'
+
+    def attachment_payloads(self):
+        return self.env['ir.attachment'].sudo().with_context(bin_size=False).search_read([], ['datas'])
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-orm-context-bin-size-disabled" in rule_ids
+    assert "odoo-orm-context-sudo-bin-size-read" in rule_ids
+
+
+def test_flags_request_bin_size_disabled(tmp_path: Path) -> None:
+    """request.update_context(bin_size=False) should be visible to reviewers."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo.http import request
+
+def download():
+    request.update_context(bin_size=False)
+    return request.env['ir.attachment'].search_read([], ['datas'])
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-context-request-bin-size-disabled" for f in findings)
+
+
 def test_flags_aliased_active_test_disabled_and_sudo_read(tmp_path: Path) -> None:
     """Context and sudo posture should survive local recordset aliases."""
     models = tmp_path / "module" / "models"

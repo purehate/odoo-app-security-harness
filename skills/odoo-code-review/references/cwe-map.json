@@ -2485,6 +2485,18 @@
       "capec": ["CAPEC-118", "CAPEC-122"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "orm_context_bin_size_disabled": {
+      "label": "Odoo ORM context forces binary fields to return file contents",
+      "cwe": ["CWE-200", "CWE-400", "CWE-284"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
+    "orm_context_sudo_bin_size_read": {
+      "label": "Odoo privileged ORM read forces binary field contents",
+      "cwe": ["CWE-200", "CWE-269", "CWE-284", "CWE-400"],
+      "capec": ["CAPEC-118", "CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "orm_context_privileged_mode": {
       "label": "Odoo ORM context enables install or uninstall framework modes",
       "cwe": ["CWE-269", "CWE-693", "CWE-840"],
@@ -2502,6 +2514,12 @@
       "cwe": ["CWE-200", "CWE-284", "CWE-670"],
       "capec": ["CAPEC-118"],
       "owasp": "A05:2021 Security Misconfiguration"
+    },
+    "orm_context_request_bin_size_disabled": {
+      "label": "Odoo request context forces binary fields to return file contents",
+      "cwe": ["CWE-200", "CWE-400", "CWE-284"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
     },
     "orm_context_request_tracking_disabled": {
       "label": "Odoo request context disables chatter, tracking, or subscription audit behavior",

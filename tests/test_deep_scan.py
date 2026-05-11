@@ -5963,6 +5963,18 @@ def test_taxonomy_coverage_classifies_orm_context_read_and_framework_flags() -> 
             },
             {
                 "source": "orm-context",
+                "rule_id": "odoo-orm-context-bin-size-disabled",
+                "title": "ORM context forces binary field contents",
+                "message": "with_context(bin_size=False) can make binary fields return file contents instead of size metadata; verify downstream reads cannot expose attachments or large payloads",
+            },
+            {
+                "source": "orm-context",
+                "rule_id": "odoo-orm-context-sudo-bin-size-read",
+                "title": "Privileged ORM read forces binary field contents",
+                "message": "ORM read uses sudo()/with_user(SUPERUSER_ID) with bin_size=False; binary fields may return file contents instead of size metadata outside normal record visibility",
+            },
+            {
+                "source": "orm-context",
                 "rule_id": "odoo-orm-context-privileged-mode",
                 "title": "ORM context enables privileged framework mode",
                 "message": "with_context(install_mode=True) enables a framework mode normally reserved for install/uninstall flows; verify it cannot bypass normal business safeguards",
@@ -5980,6 +5992,8 @@ def test_taxonomy_coverage_classifies_orm_context_read_and_framework_flags() -> 
     shapes = {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]}
     assert shapes["odoo-orm-context-active-test-disabled"] == "orm_context_active_test_disabled"
     assert shapes["odoo-orm-context-sudo-active-test-read"] == "orm_context_sudo_active_test_read"
+    assert shapes["odoo-orm-context-bin-size-disabled"] == "orm_context_bin_size_disabled"
+    assert shapes["odoo-orm-context-sudo-bin-size-read"] == "orm_context_sudo_bin_size_read"
     assert shapes["odoo-orm-context-privileged-mode"] == "orm_context_privileged_mode"
     assert shapes["odoo-orm-context-privileged-default"] == "orm_context_privileged_default"
 
@@ -5993,6 +6007,12 @@ def test_taxonomy_coverage_classifies_orm_context_request_scope() -> None:
                 "rule_id": "odoo-orm-context-request-active-test-disabled",
                 "title": "Request context disables active record filtering",
                 "message": "request.update_context(active_test=False) changes the current request environment; archived/inactive records may become visible or processed later in the route",
+            },
+            {
+                "source": "orm-context",
+                "rule_id": "odoo-orm-context-request-bin-size-disabled",
+                "title": "Request context forces binary field contents",
+                "message": "request.update_context(bin_size=False) changes the request environment so later binary reads can return file contents instead of size metadata",
             },
             {
                 "source": "orm-context",
@@ -6024,6 +6044,7 @@ def test_taxonomy_coverage_classifies_orm_context_request_scope() -> None:
     assert coverage["unmapped_rule_ids"] == []
     shapes = {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]}
     assert shapes["odoo-orm-context-request-active-test-disabled"] == "orm_context_request_active_test_disabled"
+    assert shapes["odoo-orm-context-request-bin-size-disabled"] == "orm_context_request_bin_size_disabled"
     assert shapes["odoo-orm-context-request-tracking-disabled"] == "orm_context_request_tracking_disabled"
     assert shapes["odoo-orm-context-request-notification-disabled"] == "orm_context_request_notification_disabled"
     assert shapes["odoo-orm-context-request-privileged-mode"] == "orm_context_request_privileged_mode"
