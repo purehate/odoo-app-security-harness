@@ -902,6 +902,19 @@ def test_company_scoped_normal_csv_sequence_is_ignored(tmp_path: Path) -> None:
     assert scan_sequences(tmp_path) == []
 
 
+def test_company_scoped_normal_csv_sequence_colon_company_is_ignored(tmp_path: Path) -> None:
+    """Company-scoped CSV sequences exported with colon headers should not be noisy."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_sequence.csv").write_text(
+        "id,name,code,company_id:id\n"
+        "seq_ticket,Helpdesk Ticket,helpdesk.ticket,base.main_company\n",
+        encoding="utf-8",
+    )
+
+    assert scan_sequences(tmp_path) == []
+
+
 def test_xml_entities_are_not_expanded_into_sequence_findings(tmp_path: Path) -> None:
     """XML entities must not synthesize sensitive sequence declarations."""
     data = tmp_path / "module" / "data"
