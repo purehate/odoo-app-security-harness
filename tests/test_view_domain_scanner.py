@@ -193,6 +193,19 @@ def test_grouped_sensitive_csv_action_broad_domain_is_ignored(tmp_path: Path) ->
     assert scan_view_domains(tmp_path) == []
 
 
+def test_grouped_sensitive_csv_action_with_colon_groups_is_ignored(tmp_path: Path) -> None:
+    """Colon-style groups headers should still suppress broad action findings."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_window.csv").write_text(
+        "id,res_model,domain,groups_id:id\n"
+        "action_partners,res.partner,[],base.group_user\n",
+        encoding="utf-8",
+    )
+
+    assert scan_view_domains(tmp_path) == []
+
+
 def test_empty_groups_eval_does_not_hide_sensitive_broad_action(tmp_path: Path) -> None:
     """Empty groups eval values still leave sensitive actions unrestricted."""
     views = tmp_path / "module" / "views"
@@ -282,6 +295,23 @@ def test_flags_global_sensitive_saved_filter_in_csv(tmp_path: Path) -> None:
     assert "odoo-view-filter-global-default-sensitive" in rule_ids
     assert "odoo-view-domain-default-sensitive-filter" in rule_ids
     assert "odoo-view-context-active-test-disabled" in rule_ids
+
+
+def test_flags_global_sensitive_saved_filter_with_colon_model_ref(tmp_path: Path) -> None:
+    """Colon-style filter model headers should normalize before sensitive checks."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_filters.csv").write_text(
+        "id,name,model_id:id,domain,is_default,user_id\n"
+        "filter_all_partners,All partners,res.partner,[],True,\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_view_domains(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-view-domain-global-sensitive-filter-broad-domain" in rule_ids
+    assert "odoo-view-filter-global-default-sensitive" in rule_ids
 
 
 def test_false_user_eval_is_treated_as_global_sensitive_filter(tmp_path: Path) -> None:
