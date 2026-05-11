@@ -186,6 +186,8 @@ class QueueJobScanner(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
         current = self.function_stack[-1] if self.function_stack else None
+        if current:
+            _mark_static_dict_update(node, self.local_constants)
 
         if _is_enqueue_call(node.func):
             if not _enqueue_has_keyword(node, "identity_key"):
@@ -194,7 +196,8 @@ class QueueJobScanner(ast.NodeVisitor):
                     "Delayed job enqueue lacks identity key",
                     "medium",
                     node.lineno,
-                    "with_delay/delayable enqueue has no identity_key; repeated requests can create duplicate background jobs and side effects",
+                    "with_delay/delayable enqueue has no identity_key; repeated requests can create duplicate "
+                    "background jobs and side effects",
                     current.name if current else sink,
                 )
             if current and current.route_auth in {"public", "none"}:
@@ -203,7 +206,8 @@ class QueueJobScanner(ast.NodeVisitor):
                     "Public route enqueues background job",
                     "high",
                     node.lineno,
-                    f"auth='{current.route_auth}' route enqueues a delayed job; verify authentication, CSRF, throttling, and idempotency",
+                    f"auth='{current.route_auth}' route enqueues a delayed job; verify authentication, CSRF, "
+                    "throttling, and idempotency",
                     current.name,
                 )
 
@@ -215,7 +219,8 @@ class QueueJobScanner(ast.NodeVisitor):
                     "Queue job performs elevated mutation",
                     "high",
                     node.lineno,
-                    "queue_job/delayed job mutates records through sudo()/with_user(SUPERUSER_ID); verify record rules, company isolation, and job input trust boundaries",
+                    "queue_job/delayed job mutates records through sudo()/with_user(SUPERUSER_ID); verify "
+                    "record rules, company isolation, and job input trust boundaries",
                     current.name,
                 )
             elif _is_sudo_business_method_call(node.func, current.sudo_vars, constants, self.superuser_names):
@@ -224,7 +229,9 @@ class QueueJobScanner(ast.NodeVisitor):
                     "Queue job calls elevated business method",
                     "high",
                     node.lineno,
-                    "queue_job/delayed job uses sudo()/with_user(SUPERUSER_ID) to call a business/action method; verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
+                    "queue_job/delayed job uses sudo()/with_user(SUPERUSER_ID) to call a business/action "
+                    "method; verify workflow side effects cannot bypass record rules, approvals, audit, or "
+                    "company isolation",
                     current.name,
                 )
             elif sink.rsplit(".", 1)[-1] in SENSITIVE_MODEL_MUTATION_METHODS:
@@ -235,7 +242,8 @@ class QueueJobScanner(ast.NodeVisitor):
                         "Queue job mutates sensitive model",
                         "high",
                         node.lineno,
-                        f"queue_job/delayed job mutates sensitive model '{sensitive_model}'; verify job input trust, retry idempotency, and audit trail",
+                        f"queue_job/delayed job mutates sensitive model '{sensitive_model}'; verify job input "
+                        "trust, retry idempotency, and audit trail",
                         current.name,
                     )
             elif _is_dynamic_eval(sink, self.dynamic_eval_names):
@@ -244,7 +252,8 @@ class QueueJobScanner(ast.NodeVisitor):
                     "Queue job performs dynamic evaluation",
                     "critical",
                     node.lineno,
-                    "queue_job/delayed job calls eval/exec/safe_eval; verify no queued payload or record field can control evaluated code",
+                    "queue_job/delayed job calls eval/exec/safe_eval; verify no queued payload or record "
+                    "field can control evaluated code",
                     current.name,
                 )
             elif _is_http_call(
@@ -256,7 +265,8 @@ class QueueJobScanner(ast.NodeVisitor):
                         "Queue job performs HTTP without timeout",
                         "medium",
                         node.lineno,
-                        "queue_job/delayed job performs outbound HTTP without timeout; slow upstreams can exhaust workers or stall job channels",
+                        "queue_job/delayed job performs outbound HTTP without timeout; slow upstreams can "
+                        "exhaust workers or stall job channels",
                         current.name,
                     )
                 if _keyword_is_false(node, "verify", constants):
@@ -265,7 +275,8 @@ class QueueJobScanner(ast.NodeVisitor):
                         "Queue job disables TLS verification",
                         "high",
                         node.lineno,
-                        "queue_job/delayed job passes verify=False to outbound HTTP; background integrations should not permit man-in-the-middle attacks",
+                        "queue_job/delayed job passes verify=False to outbound HTTP; background integrations "
+                        "should not permit man-in-the-middle attacks",
                         current.name,
                     )
                 for url_value in _http_url_values(node, sink, constants):
@@ -275,7 +286,9 @@ class QueueJobScanner(ast.NodeVisitor):
                             "Queue job uses cleartext HTTP URL",
                             "medium",
                             node.lineno,
-                            "queue_job/delayed job outbound HTTP targets a literal http:// URL; use HTTPS to protect background integration payloads and response data from interception or downgrade",
+                            "queue_job/delayed job outbound HTTP targets a literal http:// URL; use HTTPS to "
+                            "protect background integration payloads and response data from interception or "
+                            "downgrade",
                             current.name,
                         )
                     if _literal_url_has_embedded_credentials(url_value, constants):
@@ -284,7 +297,8 @@ class QueueJobScanner(ast.NodeVisitor):
                             "Queue job URL embeds credentials",
                             "high",
                             node.lineno,
-                            "queue_job/delayed job embeds username, password, or token material in an outbound HTTP URL authority; move credentials to server-side configuration",
+                            "queue_job/delayed job embeds username, password, or token material in an outbound "
+                            "HTTP URL authority; move credentials to server-side configuration",
                             current.name,
                         )
 
@@ -457,6 +471,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -523,6 +539,45 @@ def _resolve_static_dict(
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
