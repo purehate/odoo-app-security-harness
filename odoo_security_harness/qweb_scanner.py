@@ -247,7 +247,7 @@ class QWebScanner:
 
             # t-att with potential JS injection
             if attr_name.startswith("t-att-"):
-                self._check_t_att(tag, attr_name, value)
+                self._check_t_att(element, tag, attr_name, value)
 
             # t-att mappings can dynamically set arbitrary attributes.
             if attr_name == "t-att":
@@ -255,7 +255,7 @@ class QWebScanner:
 
             # t-attf formats attributes with string interpolation.
             if attr_name.startswith("t-attf-"):
-                self._check_t_attf(tag, attr_name, value)
+                self._check_t_attf(element, tag, attr_name, value)
 
             if attr_name == "t-options":
                 self._check_t_options(tag, attr_name, value)
@@ -285,10 +285,18 @@ class QWebScanner:
         for child in element:
             self._scan_element(child, depth + 1)
 
-    def _check_t_att(self, tag: str, attr: str, value: str) -> None:
+    def _check_t_att(self, element: ElementTree.Element, tag: str, attr: str, value: str) -> None:
         """Check t-att-* attributes for security issues."""
         # t-att URL attributes are especially dangerous.
         base_attr = attr.replace("t-att-", "")
+        if tag.lower() == "a" and base_attr == "target" and self._looks_blank_target(value):
+            self._check_target_blank_noopener(
+                tag,
+                attr,
+                "QWeb link dynamically opens a new tab without rel='noopener' or rel='noreferrer'",
+                element,
+            )
+            return
         if base_attr.startswith("on"):
             self._add_finding(
                 rule_id="odoo-qweb-dynamic-event-handler",
@@ -338,6 +346,16 @@ class QWebScanner:
 
     def _check_t_att_mapping(self, element: ElementTree.Element, tag: str, attr: str, value: str) -> None:
         """Check t-att mapping expressions for risky dynamic attributes."""
+        target_value = self._mapped_attribute_value(value, "target")
+        if tag.lower() == "a" and target_value is not None and self._looks_blank_target(target_value):
+            self._check_target_blank_noopener(
+                tag,
+                attr,
+                "QWeb link maps target='_blank' without rel='noopener' or rel='noreferrer'",
+                element,
+                mapped_rel_value=self._mapped_attribute_value(value, "rel"),
+            )
+
         style_value = self._mapped_attribute_value(value, "style")
         if style_value is not None and self._looks_dynamic_style_value(style_value):
             self._add_finding(
@@ -413,9 +431,17 @@ class QWebScanner:
         self._check_url_embedded_credentials(tag, attr, value)
         self._check_sensitive_url_token(tag, attr, value)
 
-    def _check_t_attf(self, tag: str, attr: str, value: str) -> None:
+    def _check_t_attf(self, element: ElementTree.Element, tag: str, attr: str, value: str) -> None:
         """Check t-attf-* formatted attributes for URL/script injection."""
         base_attr = attr.replace("t-attf-", "")
+        if tag.lower() == "a" and base_attr == "target" and self._looks_blank_target(value):
+            self._check_target_blank_noopener(
+                tag,
+                attr,
+                "QWeb link dynamically opens a new tab without rel='noopener' or rel='noreferrer'",
+                element,
+            )
+            return
         if base_attr.startswith("on"):
             self._add_finding(
                 rule_id="odoo-qweb-dynamic-event-handler",
@@ -744,7 +770,24 @@ class QWebScanner:
         target = _xml_attr(element, "target").strip().lower()
         if target != "_blank":
             return
+        self._check_target_blank_noopener(
+            tag,
+            "target",
+            "QWeb link uses target='_blank' without rel='noopener' or rel='noreferrer'; add opener isolation for external links",
+            element,
+        )
+
+    def _check_target_blank_noopener(
+        self,
+        tag: str,
+        attr: str,
+        message: str,
+        element: ElementTree.Element,
+        mapped_rel_value: str | None = None,
+    ) -> None:
         rel_tokens = set(_xml_attr(element, "rel").lower().split())
+        if mapped_rel_value:
+            rel_tokens.update(mapped_rel_value.lower().strip("'\"").split())
         if rel_tokens & {"noopener", "noreferrer"}:
             return
         self._add_finding(
@@ -752,9 +795,12 @@ class QWebScanner:
             title="QWeb link opens new tab without opener isolation",
             severity="medium",
             element=tag,
-            attribute="target",
-            message="QWeb link uses target='_blank' without rel='noopener' or rel='noreferrer'; add opener isolation for external links",
+            attribute=attr,
+            message=message,
         )
+
+    def _looks_blank_target(self, value: str) -> bool:
+        return bool(re.search(r"['\"]?_blank['\"]?", value, re.IGNORECASE))
 
     def _check_iframe_sandbox(self, element: ElementTree.Element, tag: str) -> None:
         """Check embedded frames for sandbox containment."""

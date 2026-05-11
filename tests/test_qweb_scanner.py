@@ -206,6 +206,34 @@ def test_target_blank_with_noopener_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-qweb-target-blank-no-noopener" for f in findings)
 
 
+def test_dynamic_target_blank_without_noopener_detected(tmp_path: Path) -> None:
+    """Dynamic QWeb target attributes should also isolate window.opener."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><a href="https://example.com" t-att-target="'_blank'">Open</a></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-qweb-target-blank-no-noopener" and f.attribute == "t-att-target" for f in findings
+    )
+
+
+def test_dynamic_target_blank_mapping_with_noopener_ignored(tmp_path: Path) -> None:
+    """Mapped dynamic target attributes can provide rel isolation in the same mapping."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><a href="https://example.com" t-att="{'target': '_blank', 'rel': 'noopener'}">Open</a></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-target-blank-no-noopener" for f in findings)
+
+
 def test_detects_dynamic_meta_refresh_redirect(tmp_path: Path) -> None:
     """Meta refresh redirects can become client-side open redirects."""
     template = tmp_path / "template.xml"
