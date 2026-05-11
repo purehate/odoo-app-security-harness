@@ -111,6 +111,56 @@ class Defaults(odoo_http.Controller):
     assert "odoo-default-sensitive-field-set" in rule_ids
 
 
+def test_imported_odoo_http_module_public_sudo_default_set_from_request(tmp_path: Path) -> None:
+    """Direct odoo.http imports should not hide public ir.default writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "defaults.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Defaults(odoo_http.Controller):
+    @odoo_http.route('/defaults/group', auth='public')
+    def set_group_default(self, **kwargs):
+        return odoo_http.request.env['ir.default'].sudo().set('res.users', 'groups_id', kwargs.get('groups_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-default-public-route-set" in rule_ids
+    assert "odoo-default-sudo-set" in rule_ids
+    assert "odoo-default-request-derived-set" in rule_ids
+    assert "odoo-default-sensitive-field-set" in rule_ids
+
+
+def test_imported_odoo_module_public_sudo_default_set_from_request(tmp_path: Path) -> None:
+    """Direct odoo module imports should not hide public ir.default writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "defaults.py").write_text(
+        """
+import odoo as od
+
+class Defaults(od.http.Controller):
+    @od.http.route('/defaults/group', auth='public')
+    def set_group_default(self, **kwargs):
+        return od.http.request.env['ir.default'].sudo().set('res.users', 'groups_id', kwargs.get('groups_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-default-public-route-set" in rule_ids
+    assert "odoo-default-sudo-set" in rule_ids
+    assert "odoo-default-request-derived-set" in rule_ids
+    assert "odoo-default-sensitive-field-set" in rule_ids
+
+
 def test_non_odoo_route_decorator_public_default_set_is_ignored(tmp_path: Path) -> None:
     """Local route-like decorators should not create Odoo route context."""
     controllers = tmp_path / "module" / "controllers"
@@ -336,6 +386,54 @@ class Defaults(http.Controller):
     assert "odoo-default-public-route-set" in rule_ids
     assert "odoo-default-sudo-set" in rule_ids
     assert "odoo-default-request-derived-set" in rule_ids
+
+
+def test_imported_odoo_http_module_direct_request_default_set(tmp_path: Path) -> None:
+    """Direct odoo.http request values should taint ir.default writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "defaults.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Defaults(odoo_http.Controller):
+    @odoo_http.route('/defaults/group', auth='user')
+    def set_group_default(self):
+        payload = odoo_http.request.get_http_params()
+        return odoo_http.request.env['ir.default'].set('res.users', 'groups_id', payload.get('groups_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-default-request-derived-set" in rule_ids
+    assert "odoo-default-sensitive-field-set" in rule_ids
+
+
+def test_imported_odoo_module_direct_request_default_set(tmp_path: Path) -> None:
+    """Direct odoo module request values should taint ir.default writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "defaults.py").write_text(
+        """
+import odoo as od
+
+class Defaults(od.http.Controller):
+    @od.http.route('/defaults/group', auth='user')
+    def set_group_default(self):
+        payload = od.http.request.get_http_params()
+        return od.http.request.env['ir.default'].set('res.users', 'groups_id', payload.get('groups_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-default-request-derived-set" in rule_ids
+    assert "odoo-default-sensitive-field-set" in rule_ids
 
 
 def test_flags_alias_default_set_for_sensitive_field(tmp_path: Path) -> None:
