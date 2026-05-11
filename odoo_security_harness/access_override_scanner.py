@@ -7,6 +7,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from odoo_security_harness.base_scanner import (
+    _call_chain_has_attr,
+    _call_chain_has_superuser_with_user,
+    _call_root_name,
+    _extract_model_name,
+    _is_odoo_model,
+    _is_static_literal,
+    _module_constants,
+    _returns_true,
+    _should_skip,
+    _static_constants_from_body,
+    _target_names,
+    _unpack_target_value_pairs,
+)
+
 
 @dataclass
 class AccessOverrideFinding:
@@ -53,7 +68,7 @@ class AccessOverrideScanner(ast.NodeVisitor):
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
-        self.model_base_names: set[str] = {"Model", "TransientModel", "AbstractModel"}
+        self.model_base_names: set[str] = set({"Model", "TransientModel", "AbstractModel"})
         self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_file(self) -> list[AccessOverrideFinding]:
@@ -273,29 +288,6 @@ class MethodContext:
             self.sudo_vars = set()
 
 
-def _is_odoo_model(node: ast.ClassDef, model_base_names: set[str] | None = None) -> bool:
-    model_base_names = model_base_names or {"Model", "TransientModel", "AbstractModel"}
-    return any(
-        isinstance(base, ast.Attribute)
-        and base.attr in {"Model", "TransientModel", "AbstractModel"}
-        or isinstance(base, ast.Name)
-        and base.id in model_base_names
-        for base in node.bases
-    )
-
-
-def _extract_model_name(node: ast.ClassDef, constants: dict[str, ast.AST] | None = None) -> str:
-    for item in node.body:
-        if not isinstance(item, ast.Assign):
-            continue
-        for target in item.targets:
-            if isinstance(target, ast.Name) and target.id in {"_name", "_inherit"}:
-                value = _resolve_constant(item.value, constants or {})
-                if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                    return value.value
-    return node.name
-
-
 def _is_sudo_read_call(
     node: ast.Call,
     sink: str,
@@ -324,119 +316,8 @@ def _is_sudo_expr(
     )
 
 
-def _unpack_target_value_pairs(
-    target: ast.Tuple | ast.List, value: ast.Tuple | ast.List
-) -> list[tuple[ast.expr, ast.AST]]:
-    starred_index = next((index for index, elt in enumerate(target.elts) if isinstance(elt, ast.Starred)), None)
-    if starred_index is None:
-        return list(zip(target.elts, value.elts, strict=False))
-
-    before = list(zip(target.elts[:starred_index], value.elts[:starred_index], strict=False))
-    after_count = len(target.elts) - starred_index - 1
-    after_values_start = max(len(value.elts) - after_count, starred_index)
-    rest_values = value.elts[starred_index:after_values_start]
-    rest_container: ast.expr = ast.List(elts=rest_values, ctx=ast.Load())
-    after = list(zip(target.elts[starred_index + 1 :], value.elts[after_values_start:], strict=False))
-    return [*before, (target.elts[starred_index], rest_container), *after]
-
-
-def _target_names(node: ast.AST) -> set[str]:
-    if isinstance(node, ast.Name):
-        return {node.id}
-    if isinstance(node, ast.Starred):
-        return _target_names(node.value)
-    if isinstance(node, ast.Tuple | ast.List):
-        names: set[str] = set()
-        for element in node.elts:
-            names |= _target_names(element)
-        return names
-    return set()
-
-
-def _returns_true(node: ast.Return, constants: dict[str, ast.AST] | None = None) -> bool:
-    value = _resolve_constant(node.value, constants or {}) if node.value is not None else None
-    return isinstance(value, ast.Constant) and value.value is True
-
-
 def _returns_self(node: ast.Return) -> bool:
     return isinstance(node.value, ast.Name) and node.value.id == "self"
-
-
-def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
-    current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
-        if isinstance(current, ast.Attribute):
-            if current.attr == attr:
-                return True
-            current = current.value
-        elif isinstance(current, ast.Call):
-            current = current.func
-        else:
-            current = current.value
-    return False
-
-
-def _call_chain_has_superuser_with_user(
-    node: ast.AST,
-    constants: dict[str, ast.AST] | None = None,
-    superuser_names: set[str] | None = None,
-) -> bool:
-    constants = constants or {}
-    current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
-        if isinstance(current, ast.Call):
-            if (
-                isinstance(current.func, ast.Attribute)
-                and current.func.attr == "with_user"
-                and (
-                    any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args)
-                    or any(
-                        keyword.arg in {"user", "uid"}
-                        and keyword.value is not None
-                        and _is_superuser_arg(keyword.value, constants, superuser_names)
-                        for keyword in _expanded_keywords(current, constants)
-                    )
-                )
-            ):
-                return True
-            current = current.func
-        elif isinstance(current, ast.Attribute):
-            current = current.value
-        else:
-            current = current.value
-    return False
-
-
-def _is_superuser_arg(
-    node: ast.AST,
-    constants: dict[str, ast.AST] | None = None,
-    superuser_names: set[str] | None = None,
-) -> bool:
-    superuser_names = superuser_names or {"SUPERUSER_ID"}
-    node = _resolve_constant(node, constants or {})
-    if isinstance(node, ast.Constant):
-        return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
-    if isinstance(node, ast.Name):
-        return node.id in superuser_names
-    if isinstance(node, ast.Attribute):
-        return node.attr == "SUPERUSER_ID"
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
-    return False
-
-
-def _call_root_name(node: ast.AST) -> str:
-    current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
-        if isinstance(current, ast.Attribute):
-            current = current.value
-        elif isinstance(current, ast.Call):
-            current = current.func
-        else:
-            current = current.value
-    if isinstance(current, ast.Name):
-        return current.id
-    return ""
 
 
 def _call_name(node: ast.AST) -> str:
@@ -450,123 +331,6 @@ def _call_name(node: ast.AST) -> str:
     if isinstance(node, ast.Subscript):
         return _call_name(node.value)
     return ""
-
-
-def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
-    return _static_constants_from_body(tree.body)
-
-
-def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
-    constants: dict[str, ast.AST] = {}
-    for statement in statements:
-        if isinstance(statement, ast.Assign):
-            for target in statement.targets:
-                if isinstance(target, ast.Name) and _is_static_literal(statement.value):
-                    constants[target.id] = statement.value
-        elif (
-            isinstance(statement, ast.AnnAssign)
-            and isinstance(statement.target, ast.Name)
-            and statement.value is not None
-            and _is_static_literal(statement.value)
-        ):
-            constants[statement.target.id] = statement.value
-    return constants
-
-
-def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
-    return _resolve_constant_seen(node, constants, set())
-
-
-def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: set[str]) -> ast.AST:
-    if isinstance(node, ast.Name):
-        if node.id in seen:
-            return node
-        resolved = constants.get(node.id)
-        if resolved is None:
-            return node
-        seen.add(node.id)
-        return _resolve_constant_seen(resolved, constants, seen)
-    return node
-
-
-def _is_static_literal(node: ast.AST) -> bool:
-    if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.Dict):
-        return all(key is None or _is_static_literal(key) for key in node.keys)
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-        return _is_static_literal(node.left) and _is_static_literal(node.right)
-    return isinstance(node, ast.Name)
-
-
-def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> ast.Dict | None:
-    constants = constants or {}
-    resolved = _resolve_constant(node, constants)
-    if resolved is not node:
-        return _resolve_static_dict(resolved, constants)
-    if isinstance(node, ast.Dict):
-        return node
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-        left = _resolve_static_dict(node.left, constants)
-        right = _resolve_static_dict(node.right, constants)
-        if left is not None and right is not None:
-            return _merge_static_dicts(left, right)
-    return None
-
-
-def _merge_static_dicts(left: ast.Dict, right: ast.Dict) -> ast.Dict:
-    merged = left
-    for key, value in zip(right.keys, right.values, strict=False):
-        if isinstance(key, ast.Constant) and isinstance(key.value, str):
-            merged = _dict_with_field(merged, key.value, value)
-        else:
-            merged = ast.Dict(keys=[*merged.keys, key], values=[*merged.values, value])
-    return merged
-
-
-def _dict_with_field(values: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
-    keys = list(values.keys)
-    values_list = list(values.values)
-    for index, existing_key in enumerate(keys):
-        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
-            values_list[index] = value
-            return ast.Dict(keys=keys, values=values_list)
-    keys.append(ast.Constant(value=key))
-    values_list.append(value)
-    return ast.Dict(keys=keys, values=values_list)
-
-
-def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> list[ast.keyword]:
-    expanded: list[ast.keyword] = []
-    for keyword in node.keywords:
-        if keyword.arg is not None:
-            expanded.append(keyword)
-            continue
-        expanded.extend(_expanded_dict_keywords(keyword.value, constants))
-    return expanded
-
-
-def _expanded_dict_keywords(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> list[ast.keyword]:
-    resolved = _resolve_static_dict(node, constants)
-    if resolved is None:
-        return []
-    keywords: list[ast.keyword] = []
-    for key, value in zip(resolved.keys, resolved.values, strict=False):
-        literal_key = _literal_string(key, constants) if key is not None else ""
-        if literal_key:
-            keywords.append(ast.keyword(arg=literal_key, value=value))
-    return keywords
-
-
-def _literal_string(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:
-    value = _resolve_constant(node, constants or {})
-    if isinstance(value, ast.Constant) and isinstance(value.value, str):
-        return value.value
-    return ""
-
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def findings_to_json(findings: list[AccessOverrideFinding]) -> list[dict[str, Any]]:
