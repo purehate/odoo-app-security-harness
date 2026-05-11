@@ -38,8 +38,8 @@ class QWebFinding:
 class QWebScanner:
     """Scanner for QWeb template security issues."""
 
-    URL_BEARING_ATTRIBUTES = ("href", "src", "action", "formaction", "poster", "srcset", "xlink:href")
-    URL_BEARING_ATTRIBUTE_RE = r"(?:href|src|action|formaction|poster|srcset|xlink:href)"
+    URL_BEARING_ATTRIBUTES = ("href", "src", "action", "formaction", "poster", "srcset", "ping", "xlink:href")
+    URL_BEARING_ATTRIBUTE_RE = r"(?:href|src|action|formaction|poster|srcset|ping|xlink:href)"
     DANGEROUS_URL_SCHEME_RE = re.compile(
         r"^\s*(?:javascript:|vbscript:|file:|data:(?:text/html|application/(?:javascript|xhtml\+xml)))",
         re.IGNORECASE,

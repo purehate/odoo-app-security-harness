@@ -601,6 +601,19 @@ def test_detects_formaction_dynamic_url(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-qweb-t-att-url" and f.attribute == "t-att-formaction" for f in findings)
 
 
+def test_detects_dynamic_anchor_ping_url(tmp_path: Path) -> None:
+    """Anchor ping endpoints can leak click and token data through browser beacons."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><a href="/portal" t-att-ping="record.tracking_url">Open</a></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-t-att-url" and f.attribute == "t-att-ping" for f in findings)
+
+
 def test_detects_javascript_formatted_url(tmp_path: Path) -> None:
     """t-attf URL attributes containing javascript: should be high severity."""
     template = tmp_path / "template.xml"
@@ -804,6 +817,19 @@ def test_detects_dynamic_attribute_mapping_url(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(f.rule_id == "odoo-qweb-t-att-mapping-url" and f.severity == "medium" for f in findings)
+
+
+def test_detects_dynamic_attribute_mapping_ping_url(tmp_path: Path) -> None:
+    """Generic t-att mappings should include beacon-style URL-bearing attributes."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><a href="/portal" t-att="{'ping': record.tracking_url}">Open</a></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-t-att-mapping-url" and f.attribute == "t-att" for f in findings)
 
 
 def test_detects_javascript_dynamic_attribute_mapping_url(tmp_path: Path) -> None:
