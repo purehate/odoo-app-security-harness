@@ -332,19 +332,19 @@ class ControllerResponseScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _redirect_target_is_tainted(self, node: ast.Call) -> bool:
+        constants = self._effective_constants()
         if node.args and self._expr_is_tainted(node.args[0]):
             return True
         return any(
-            keyword.arg in REDIRECT_TARGET_KEYWORDS
-            and keyword.value is not None
-            and self._expr_is_tainted(keyword.value)
-            for keyword in node.keywords
+            key in REDIRECT_TARGET_KEYWORDS and self._expr_is_tainted(keyword_value)
+            for key, keyword_value in _expanded_keywords(node, constants)
         )
 
     def _redirect_target_embeds_credentials(self, node: ast.Call) -> bool:
+        constants = self._effective_constants()
         return any(
-            _expr_has_url_embedded_credentials(target, self._effective_constants())
-            for target in _redirect_target_nodes(node)
+            _expr_has_url_embedded_credentials(target, constants)
+            for target in _redirect_target_nodes(node, constants)
         )
 
     def _file_response_target_is_tainted(self, node: ast.Call) -> bool:
@@ -791,7 +791,7 @@ class ControllerResponseScanner(ast.NodeVisitor):
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
         if isinstance(target, ast.Name):
-            if _is_static_literal(value):
+            if _is_static_literal(value) or _is_static_dict_shape(value):
                 self.local_constants[target.id] = value
             else:
                 self.local_constants.pop(target.id, None)
@@ -1010,6 +1010,14 @@ def _is_static_literal(node: ast.AST) -> bool:
     return False
 
 
+def _is_static_dict_shape(node: ast.AST) -> bool:
+    if isinstance(node, ast.Dict):
+        return all(key is None or _is_static_literal(key) for key in node.keys)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_dict_shape(node.left) and _is_static_dict_shape(node.right)
+    return False
+
+
 def _is_http_route(
     node: ast.AST,
     route_names: set[str] | None = None,
@@ -1136,15 +1144,11 @@ def _is_headers_mutation(node: ast.Call) -> bool:
     )
 
 
-def _redirect_target_nodes(node: ast.Call) -> list[ast.AST]:
+def _redirect_target_nodes(node: ast.Call, constants: dict[str, ast.AST]) -> list[ast.AST]:
     targets: list[ast.AST] = []
     if node.args:
         targets.append(node.args[0])
-    targets.extend(
-        keyword.value
-        for keyword in node.keywords
-        if keyword.arg in REDIRECT_TARGET_KEYWORDS and keyword.value is not None
-    )
+    targets.extend(value for key, value in _expanded_keywords(node, constants) if key in REDIRECT_TARGET_KEYWORDS)
     return targets
 
 

@@ -416,6 +416,29 @@ class Controller(http.Controller):
     assert sum(1 for finding in findings if finding.rule_id == "odoo-controller-open-redirect") == 3
 
 
+def test_flags_static_unpack_redirect_keyword(tmp_path: Path) -> None:
+    """Static **kwargs passed to redirect sinks should not hide tainted targets."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/go', auth='public')
+    def go(self, **kwargs):
+        options = {'location': kwargs.get('next')}
+        return request.redirect(**options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
+
+
 def test_aliased_werkzeug_redirect_is_reported(tmp_path: Path) -> None:
     """Aliased Werkzeug redirect helpers should still scan tainted targets."""
     controllers = tmp_path / "module" / "controllers"
