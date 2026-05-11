@@ -34,15 +34,28 @@ class FieldDef:
 
 SENSITIVE_FIELD_MARKERS = (
     "access_token",
+    "access_key",
     "api_key",
     "apikey",
+    "auth_token",
+    "bearer_token",
     "client_secret",
+    "csrf_token",
+    "hmac_secret",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
     "password",
     "passwd",
     "private_key",
     "refresh_token",
+    "secret_key",
+    "session_token",
     "secret",
+    "signature_secret",
+    "totp_secret",
     "token",
+    "webhook_secret",
 )
 PUBLIC_GROUPS = {"base.group_public", "base.group_portal"}
 ADMIN_GROUP_MARKERS = ("base.group_system", "base.group_erp_manager", "base.group_no_one")

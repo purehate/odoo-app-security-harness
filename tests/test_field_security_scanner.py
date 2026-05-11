@@ -28,6 +28,46 @@ class Connector(models.Model):
     assert any(f.rule_id == "odoo-field-sensitive-no-groups" for f in findings)
 
 
+def test_flags_common_integration_secret_field_names(tmp_path: Path) -> None:
+    """Integration token/secret aliases should get sensitive-field review."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "connector.py").write_text(
+        """
+from odoo import fields, models
+
+class Connector(models.Model):
+    _name = 'x.connector'
+
+    oauth_token = fields.Char()
+    jwt_secret = fields.Char()
+    webhook_secret = fields.Char()
+    hmac_secret = fields.Char()
+    totp_secret = fields.Char()
+    license_key = fields.Char()
+    access_key = fields.Char()
+    session_token = fields.Char()
+    csrf_token = fields.Char()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+    fields = {finding.field for finding in findings if finding.rule_id == "odoo-field-sensitive-no-groups"}
+
+    assert {
+        "oauth_token",
+        "jwt_secret",
+        "webhook_secret",
+        "hmac_secret",
+        "totp_secret",
+        "license_key",
+        "access_key",
+        "session_token",
+        "csrf_token",
+    } <= fields
+
+
 def test_flags_direct_field_constructor_sensitive_field(tmp_path: Path) -> None:
     """Directly imported field constructors should still be scanned."""
     models = tmp_path / "module" / "models"
