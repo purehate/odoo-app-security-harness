@@ -1688,6 +1688,12 @@
       "capec": ["CAPEC-122"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "loose_python_sudo_method_call": {
+      "label": "Server action or loose Python script calls workflow methods through sudo or superuser",
+      "cwe": ["CWE-269", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "loose_python_sensitive_model_mutation": {
       "label": "Server action or loose Python script mutates a sensitive model",
       "cwe": ["CWE-269", "CWE-284", "CWE-732"],

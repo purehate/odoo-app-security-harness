@@ -154,6 +154,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "loose_python_sudo_method_call",
+        (
+            "odoo-loose-python-sudo-method-call",
+            "privileged business method call in loose script",
+            "sudo()/with_user(superuser_id) is used to call a business/action method",
+            "workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
+        ),
+    ),
+    (
         "loose_python_sensitive_model_mutation",
         (
             "odoo-loose-python-sensitive-model-mutation",

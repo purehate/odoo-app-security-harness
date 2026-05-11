@@ -53,6 +53,7 @@ class LoosePythonScanner(ast.NodeVisitor):
     HTTP_CLIENT_METHODS = {"delete", "get", "head", "patch", "post", "put", "request"}
     HTTP_CLIENT_CONSTRUCTORS = {"aiohttp.ClientSession", "httpx.AsyncClient", "httpx.Client", "requests.Session"}
     SENSITIVE_MUTATION_METHODS = {"create", "set", "set_param", "unlink", "write"}
+    ELEVATED_BUSINESS_METHOD_PREFIXES = ("_action_", "_button_", "action_", "button_", "do_", "post_", "run_", "send_")
     SENSITIVE_MUTATION_MODELS = {
         "account.move",
         "ir.attachment",
@@ -196,6 +197,15 @@ class LoosePythonScanner(ast.NodeVisitor):
                 message="sudo()/with_user(SUPERUSER_ID) is chained into write/create/unlink; verify this cannot bypass intended record rules or company isolation",
             )
 
+        if self._is_elevated_business_method_call(node):
+            self._add_finding(
+                rule_id="odoo-loose-python-sudo-method-call",
+                title="Privileged business method call in loose script",
+                severity="high",
+                line=node.lineno,
+                message="sudo()/with_user(SUPERUSER_ID) is used to call a business/action method; verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
+            )
+
         sensitive_model = self._sensitive_mutation_model(node)
         if sensitive_model:
             self._add_finding(
@@ -295,6 +305,14 @@ class LoosePythonScanner(ast.NodeVisitor):
 
     def _is_sudo_write(self, node: ast.Call) -> bool:
         if not (isinstance(node.func, ast.Attribute) and node.func.attr in {"write", "create", "unlink"}):
+            return False
+        return self._expr_has_elevated_record(node.func.value)
+
+    def _is_elevated_business_method_call(self, node: ast.Call) -> bool:
+        if not isinstance(node.func, ast.Attribute):
+            return False
+        method = node.func.attr
+        if not method.startswith(self.ELEVATED_BUSINESS_METHOD_PREFIXES):
             return False
         return self._expr_has_elevated_record(node.func.value)
 

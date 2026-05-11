@@ -321,6 +321,42 @@ elevated.write({'state': 'done'})
     assert any(f.rule_id == "odoo-loose-python-sudo-write" for f in findings)
 
 
+def test_server_action_detects_sudo_business_method_call(tmp_path: Path) -> None:
+    """Workflow methods called through sudo should stand out from normal ORM reads."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+records.sudo().action_confirm()
+records.sudo().mapped('name')
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+    method_findings = [f for f in findings if f.rule_id == "odoo-loose-python-sudo-method-call"]
+
+    assert len(method_findings) == 1
+    assert method_findings[0].line == 2
+
+
+def test_server_action_detects_aliased_superuser_business_method_call(tmp_path: Path) -> None:
+    """with_user(SUPERUSER_ID) aliases should flag privileged workflow methods."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+from odoo import SUPERUSER_ID
+
+elevated = pickings.with_user(SUPERUSER_ID)
+elevated.button_validate()
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-sudo-method-call" for f in findings)
+
+
 def test_server_action_detects_annotated_aliased_superuser_write(tmp_path: Path) -> None:
     """Annotated with_user(1) aliases should keep privileged mutation state."""
     script = tmp_path / "action.py"

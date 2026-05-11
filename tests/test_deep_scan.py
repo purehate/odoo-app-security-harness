@@ -4394,6 +4394,12 @@ def test_taxonomy_coverage_classifies_loose_python_mutation_and_runtime_shapes()
             },
             {
                 "source": "loose-python",
+                "rule_id": "odoo-loose-python-sudo-method-call",
+                "title": "Privileged business method call in loose script",
+                "message": "sudo()/with_user(SUPERUSER_ID) is used to call a business/action method; verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
+            },
+            {
+                "source": "loose-python",
                 "rule_id": "odoo-loose-python-sensitive-model-mutation",
                 "title": "Sensitive model mutation in loose script",
                 "message": "Server action or loose script mutates sensitive model 'res.users'; verify actor, trigger scope, idempotency, and audit trail",
@@ -4422,6 +4428,7 @@ def test_taxonomy_coverage_classifies_loose_python_mutation_and_runtime_shapes()
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-loose-python-sudo-write": "loose_python_sudo_write",
+        "odoo-loose-python-sudo-method-call": "loose_python_sudo_method_call",
         "odoo-loose-python-sensitive-model-mutation": "loose_python_sensitive_model_mutation",
         "odoo-loose-python-manual-transaction": "loose_python_manual_transaction",
         "odoo-loose-python-http-no-timeout": "loose_python_http_no_timeout",
