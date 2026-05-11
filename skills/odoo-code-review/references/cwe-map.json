@@ -2536,6 +2536,12 @@
       "capec": ["CAPEC-118"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "integration_hardcoded_auth_header": {
+      "label": "Outbound integration sends a hardcoded Authorization, API key, cookie, or token header",
+      "cwe": ["CWE-798", "CWE-522", "CWE-321"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
     "integration_http_no_timeout": {
       "label": "Outbound integration HTTP call lacks an explicit timeout",
       "cwe": ["CWE-400", "CWE-770"],

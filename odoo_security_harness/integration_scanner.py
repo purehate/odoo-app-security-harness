@@ -56,6 +56,7 @@ SENSITIVE_OUTBOUND_HEADER_NAMES = {
     "x-csrf-token",
     "x-forwarded-authorization",
 }
+LOW_VALUE_SECRET_PLACEHOLDERS = {"changeme", "change_me", "example", "dummy", "password", "secret", "token", "admin"}
 METADATA_HOSTS = {
     "169.254.169.254",
     "metadata.google.internal",
@@ -86,6 +87,7 @@ class IntegrationScanner(ast.NodeVisitor):
         self.http_function_names: dict[str, str] = {}
         self.http_client_names: set[str] = set()
         self.tainted_auth_header_names: set[str] = set()
+        self.hardcoded_auth_header_names: set[str] = set()
         self.command_module_names: dict[str, str] = {"os": "os", "subprocess": "subprocess"}
         self.command_function_names: dict[str, str] = {}
         self.request_names: set[str] = {"request"}
@@ -116,6 +118,7 @@ class IntegrationScanner(ast.NodeVisitor):
         previous_tainted = set(self.tainted_names)
         previous_http_clients = set(self.http_client_names)
         previous_tainted_auth_headers = set(self.tainted_auth_header_names)
+        previous_hardcoded_auth_headers = set(self.hardcoded_auth_header_names)
         previous_local_constants = self.local_constants
         self.local_constants = {}
         for arg in [*node.args.args, *node.args.kwonlyargs]:
@@ -130,6 +133,7 @@ class IntegrationScanner(ast.NodeVisitor):
         self.tainted_names = previous_tainted
         self.http_client_names = previous_http_clients
         self.tainted_auth_header_names = previous_tainted_auth_headers
+        self.hardcoded_auth_header_names = previous_hardcoded_auth_headers
         self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
@@ -169,6 +173,7 @@ class IntegrationScanner(ast.NodeVisitor):
             self._mark_tainted_target(target, node.value)
             self._mark_http_client_target(target, node.value, previous_http_clients)
             self._mark_tainted_auth_header_target(target, node.value)
+            self._mark_hardcoded_auth_header_target(target, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
@@ -178,6 +183,7 @@ class IntegrationScanner(ast.NodeVisitor):
             self._mark_tainted_target(node.target, node.value)
             self._mark_http_client_target(node.target, node.value, previous_http_clients)
             self._mark_tainted_auth_header_target(node.target, node.value)
+            self._mark_hardcoded_auth_header_target(node.target, node.value)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
@@ -186,6 +192,7 @@ class IntegrationScanner(ast.NodeVisitor):
         self._mark_tainted_target(node.target, node.value)
         self._mark_http_client_target(node.target, node.value, previous_http_clients)
         self._mark_tainted_auth_header_target(node.target, node.value)
+        self._mark_hardcoded_auth_header_target(node.target, node.value)
         self.generic_visit(node)
 
     def visit_For(self, node: ast.For) -> Any:
@@ -285,6 +292,15 @@ class IntegrationScanner(ast.NodeVisitor):
                 "high",
                 node.lineno,
                 "Outbound HTTP forwards request-derived Authorization, Cookie, API key, or token header material; ensure credentials come from trusted server-side configuration and cannot be attacker supplied",
+                sink,
+            )
+        if headers_keyword and self._expr_contains_hardcoded_sensitive_header(headers_keyword.value):
+            self._add(
+                "odoo-integration-hardcoded-auth-header",
+                "Outbound HTTP auth header is hardcoded",
+                "high",
+                node.lineno,
+                "Outbound HTTP sends literal Authorization, Cookie, API key, or token header material; move integration credentials to trusted server-side configuration and rotate any value committed to source",
                 sink,
             )
         auth_keyword = _keyword(node, "auth")
@@ -459,6 +475,17 @@ class IntegrationScanner(ast.NodeVisitor):
         else:
             self._discard_name_target(target, self.tainted_auth_header_names)
 
+    def _mark_hardcoded_auth_header_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target, value):
+                self._mark_hardcoded_auth_header_target(target_element, value_element)
+            return
+
+        if self._expr_contains_hardcoded_sensitive_header(value):
+            self._mark_name_target(target, self.hardcoded_auth_header_names)
+        else:
+            self._discard_name_target(target, self.hardcoded_auth_header_names)
+
     def _expr_contains_tainted_sensitive_header(self, node: ast.AST) -> bool:
         if isinstance(node, ast.Starred):
             return self._expr_contains_tainted_sensitive_header(node.value)
@@ -471,6 +498,21 @@ class IntegrationScanner(ast.NodeVisitor):
                 return True
         for header_name, value in _literal_header_pairs_with_constants(node, self._effective_constants()):
             if _is_sensitive_outbound_header(header_name) and self._expr_is_tainted(value):
+                return True
+        return False
+
+    def _expr_contains_hardcoded_sensitive_header(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Starred):
+            return self._expr_contains_hardcoded_sensitive_header(node.value)
+        if isinstance(node, ast.Name):
+            return node.id in self.hardcoded_auth_header_names
+        if isinstance(node, ast.Subscript):
+            return self._expr_contains_hardcoded_sensitive_header(node.value)
+        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+            if any(self._expr_contains_hardcoded_sensitive_header(element) for element in node.elts):
+                return True
+        for header_name, value in _literal_header_pairs_with_constants(node, self._effective_constants()):
+            if _is_sensitive_outbound_header(header_name) and _is_hardcoded_secret_value(value, self._effective_constants()):
                 return True
         return False
 
@@ -672,6 +714,29 @@ def _literal_header_pairs_with_constants(node: ast.AST, constants: dict[str, ast
 
 def _is_sensitive_outbound_header(name: str) -> bool:
     return name.strip().lower() in SENSITIVE_OUTBOUND_HEADER_NAMES
+
+
+def _is_hardcoded_secret_value(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _constant_string(node, constants).strip()
+    if not value:
+        return False
+    lowered = value.lower()
+    for prefix in ("bearer ", "basic ", "token "):
+        if lowered.startswith(prefix):
+            value = value[len(prefix) :].strip()
+            lowered = value.lower()
+            break
+    if _looks_low_value_secret_placeholder(lowered):
+        return False
+    return len(value) >= 12 or any(marker in lowered for marker in ("sk_live", "ghp_", "xoxb-", "eyj"))
+
+
+def _looks_low_value_secret_placeholder(value: str) -> bool:
+    return (
+        value in LOW_VALUE_SECRET_PLACEHOLDERS
+        or value.startswith(("example_", "dummy_", "test_"))
+        or value.endswith(("_example", "_dummy", "_test"))
+    )
 
 
 def _is_internal_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bool:

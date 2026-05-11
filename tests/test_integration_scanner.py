@@ -696,6 +696,72 @@ def sync(**kwargs):
     assert any(f.rule_id == "odoo-integration-tainted-auth-header" for f in findings)
 
 
+def test_hardcoded_authorization_header_is_reported(tmp_path: Path) -> None:
+    """Committed outbound Authorization values should be visible in integration review."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+def sync():
+    return requests.post(
+        'https://api.example.test/sync',
+        headers={'Authorization': 'Bearer sk_live_1234567890abcdef'},
+        timeout=5,
+    )
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-hardcoded-auth-header" for f in findings)
+
+
+def test_hardcoded_api_key_header_alias_is_reported(tmp_path: Path) -> None:
+    """Header aliases should keep hardcoded outbound credential findings."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+API_KEY_HEADER = 'X-Api-Key'
+API_KEY_VALUE = 'prod_1234567890abcdef'
+
+def sync():
+    outbound_headers = {API_KEY_HEADER: API_KEY_VALUE}
+    return requests.post('https://api.example.test/sync', headers=outbound_headers, timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-hardcoded-auth-header" for f in findings)
+
+
+def test_placeholder_authorization_header_is_ignored(tmp_path: Path) -> None:
+    """Placeholder auth header examples should not create hardcoded secret noise."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+def sync():
+    return requests.post(
+        'https://api.example.test/sync',
+        headers={'Authorization': 'Bearer example_token'},
+        timeout=5,
+    )
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-integration-hardcoded-auth-header" for f in findings)
+
+
 def test_starred_tainted_api_key_header_alias_is_reported(tmp_path: Path) -> None:
     """Starred header aliases should keep outbound auth-header taint."""
     py = tmp_path / "integration.py"

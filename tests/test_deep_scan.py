@@ -7019,12 +7019,22 @@ def test_taxonomy_coverage_classifies_outbound_integration_credential_forwarding
                 "title": "Outbound HTTP auth parameter uses request-controlled value",
                 "message": "Outbound HTTP auth= material is request-derived",
             },
+            {
+                "source": "integrations",
+                "rule_id": "odoo-integration-hardcoded-auth-header",
+                "title": "Outbound HTTP auth header is hardcoded",
+                "message": "Outbound HTTP sends literal Authorization, Cookie, API key, or token header material",
+            },
         ]
     )
 
-    assert coverage["mapped_rules"] == 2
+    assert coverage["mapped_rules"] == 3
     assert coverage["unmapped_rule_ids"] == []
-    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"outbound_integration_credential_forwarding"}
+    assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
+        "odoo-integration-tainted-auth-header": "outbound_integration_credential_forwarding",
+        "odoo-integration-tainted-http-auth": "outbound_integration_credential_forwarding",
+        "odoo-integration-hardcoded-auth-header": "integration_hardcoded_auth_header",
+    }
     assert all("CWE-522" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
