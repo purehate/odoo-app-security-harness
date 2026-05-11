@@ -48,7 +48,36 @@ REQUEST_MARKERS = (
     "kw.get",
     "post.get",
 )
-SENSITIVE_URL_MARKERS = ("access_token", "api_key", "apikey", "password", "secret", "token")
+SENSITIVE_URL_MARKERS = (
+    "access_key",
+    "access_link",
+    "access_token",
+    "access_url",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "bearer_token",
+    "client_secret",
+    "csrf_token",
+    "hmac_secret",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
+    "partner_signup_url",
+    "private_key",
+    "reset_password_token",
+    "reset_password_url",
+    "secret",
+    "secret_key",
+    "session_token",
+    "signature_secret",
+    "signup_token",
+    "signup_url",
+    "signing_key",
+    "token",
+    "totp_secret",
+    "webhook_secret",
+)
 
 
 def scan_action_urls(repo_path: Path) -> list[ActionUrlFinding]:

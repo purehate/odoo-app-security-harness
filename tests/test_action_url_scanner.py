@@ -252,9 +252,7 @@ class Redirect(http.Controller):
     findings = scan_action_urls(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-act-url-tainted-url"
-        and f.severity == "critical"
-        and f.route == "/go/action,/go/action/alt"
+        f.rule_id == "odoo-act-url-tainted-url" and f.severity == "critical" and f.route == "/go/action,/go/action/alt"
         for f in findings
     )
     assert any(f.rule_id == "odoo-act-url-public-route" for f in findings)
@@ -680,13 +678,32 @@ def test_flags_external_xml_act_url_without_groups(tmp_path: Path) -> None:
     assert "odoo-act-url-sensitive-url" in rule_ids
 
 
+def test_flags_broad_sensitive_xml_act_url_markers(tmp_path: Path) -> None:
+    """URL actions should catch reset/signup/key-shaped data in URLs."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "actions.xml").write_text(
+        """<odoo>
+  <record id="action_reset_link" model="ir.actions.act_url">
+    <field name="name">Reset Link</field>
+    <field name="url">/web/reset_password?reset_password_url=/web/reset&amp;private_key=abc</field>
+    <field name="target">self</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+
+    assert any(f.rule_id == "odoo-act-url-sensitive-url" and f.record_id == "action_reset_link" for f in findings)
+
+
 def test_flags_external_csv_act_url_without_groups(tmp_path: Path) -> None:
     """CSV URL action declarations should get the same exposure checks as XML."""
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir_actions_act_url.csv").write_text(
-        "id,name,url,target\n"
-        "action_external_docs,External Docs,https://evil.example.com/path?access_token=abc,new\n",
+        "id,name,url,target\naction_external_docs,External Docs,https://evil.example.com/path?access_token=abc,new\n",
         encoding="utf-8",
     )
 
@@ -799,10 +816,7 @@ class Redirect(http.Controller):
 
     findings = scan_action_urls(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-act-url-public-route" and f.route == "/go/external"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-act-url-public-route" and f.route == "/go/external" for f in findings)
     assert any(f.rule_id == "odoo-act-url-external-new-window" for f in findings)
 
 
@@ -841,8 +855,7 @@ class Redirect(http.Controller):
     findings = scan_action_urls(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-act-url-public-route" and f.route == "/go/external,/go/external-alt"
-        for f in findings
+        f.rule_id == "odoo-act-url-public-route" and f.route == "/go/external,/go/external-alt" for f in findings
     )
     assert any(f.rule_id == "odoo-act-url-external-new-window" for f in findings)
     assert any(f.rule_id == "odoo-act-url-sensitive-url" for f in findings)
