@@ -1448,6 +1448,54 @@ class Controller(http.Controller):
     assert not any(f.rule_id == "odoo-oauth-tainted-redirect-uri" for f in findings)
 
 
+def test_incremental_token_payload_tainted_redirect_uri_is_reported(tmp_path: Path) -> None:
+    """Incrementally built token payloads should not hide tainted redirect_uri values."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import requests
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, code, **kwargs):
+        payload = {'grant_type': 'authorization_code', 'code': code}
+        payload['redirect_uri'] = kwargs.get('redirect_uri')
+        return requests.post('https://idp.example.com/oauth/token', timeout=10, data=payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(f.rule_id == "odoo-oauth-tainted-redirect-uri" for f in findings)
+
+
+def test_updated_token_payload_tainted_redirect_uri_is_reported(tmp_path: Path) -> None:
+    """dict.update token payload construction should keep redirect_uri taint visible."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import requests
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, code, **kwargs):
+        payload = {'grant_type': 'authorization_code', 'code': code}
+        payload.update({'redirect_uri': kwargs.get('redirect_uri')})
+        return requests.post('https://idp.example.com/oauth/token', timeout=10, data=payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(f.rule_id == "odoo-oauth-tainted-redirect-uri" for f in findings)
+
+
 def test_scanner_skips_test_fixtures(tmp_path: Path) -> None:
     """Repository tests can contain intentionally insecure OAuth examples."""
     tests = tmp_path / "tests"

@@ -195,6 +195,7 @@ class OAuthScanner(ast.NodeVisitor):
             self._mark_oauth_identity_payload_target(target, node.value)
             self._mark_tainted_redirect_uri_payload_target(target, node.value)
             self._track_oauth_identity_payload_subscript_assignment(target, node.value)
+            self._track_tainted_redirect_uri_payload_subscript_assignment(target, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
@@ -227,6 +228,7 @@ class OAuthScanner(ast.NodeVisitor):
         route = self._current_route()
         constants = self._effective_constants()
         self._track_oauth_identity_payload_update_call(node)
+        self._track_tainted_redirect_uri_payload_update_call(node)
 
         if _is_oauth_http_call(node, canonical_sink) or (
             _is_oauth_route(route, "")
@@ -484,6 +486,26 @@ class OAuthScanner(ast.NodeVisitor):
         self.oauth_identity_payload_names.add(root_name)
         if any(value is not None and self._expr_is_tainted(value) for value in update_values.values):
             self.tainted_names.add(root_name)
+
+    def _track_tainted_redirect_uri_payload_subscript_assignment(self, target: ast.AST, value: ast.AST) -> None:
+        if not isinstance(target, ast.Subscript):
+            return
+        key = _literal_subscript_key(target.slice, self._effective_constants())
+        if key != "redirect_uri" or not self._expr_is_tainted(value):
+            return
+        root_name = _call_root_name(target)
+        if root_name:
+            self.tainted_redirect_uri_payload_names.add(root_name)
+
+    def _track_tainted_redirect_uri_payload_update_call(self, node: ast.Call) -> None:
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+            return
+        root_name = _call_root_name(node.func.value)
+        if not root_name:
+            return
+        update_values = node.args[0] if node.args else None
+        if update_values is not None and self._expr_contains_tainted_redirect_uri(update_values, self._effective_constants()):
+            self.tainted_redirect_uri_payload_names.add(root_name)
 
     def _call_contains_tainted_redirect_uri(self, node: ast.Call) -> bool:
         constants = self._effective_constants()
