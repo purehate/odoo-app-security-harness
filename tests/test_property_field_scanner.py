@@ -283,6 +283,32 @@ class AccountConfig(models.Model):
     assert "odoo-property-sensitive-field-no-groups" in rule_ids
 
 
+def test_dict_union_company_dependent_field_options_are_reported(tmp_path: Path) -> None:
+    """Dict-union static field options should not hide company-dependent property fields."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "account.py").write_text(
+        """
+from odoo import fields, models
+
+BASE_OPTIONS = {'company_dependent': True}
+FIELD_OPTIONS = BASE_OPTIONS | {'required': False}
+
+class AccountConfig(models.Model):
+    _name = 'x.account.config'
+    property_journal_id = fields.Many2one('account.journal', **FIELD_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    field_findings = [finding for finding in findings if finding.field == "property_journal_id"]
+    rule_ids = {finding.rule_id for finding in field_findings}
+
+    assert "odoo-property-field-no-company-field" in rule_ids
+    assert "odoo-property-sensitive-field-no-groups" in rule_ids
+
+
 def test_flags_global_ir_property_record(tmp_path: Path) -> None:
     """Global property records can leak defaults across companies."""
     data = tmp_path / "module" / "data"
@@ -779,6 +805,38 @@ from odoo.http import request
 
 BASE_OPTIONS = {'auth': 'public'}
 ROUTE_OPTIONS = {**BASE_OPTIONS, 'csrf': False}
+
+class Properties(http.Controller):
+    @http.route('/properties/account', **ROUTE_OPTIONS)
+    def set_property(self, **kwargs):
+        return request.env['ir.property'].sudo().create({
+            'fields_id': 'account.field_res_partner__property_account_receivable_id',
+            'value_reference': kwargs.get('account'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-property-public-route-mutation" in rule_ids
+    assert "odoo-property-sudo-mutation" in rule_ids
+    assert "odoo-property-request-derived-mutation" in rule_ids
+    assert "odoo-property-runtime-sensitive-value" in rule_ids
+
+
+def test_dict_union_public_route_options_property_create(tmp_path: Path) -> None:
+    """Dict-union route option unpacking should preserve public mutation context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "properties.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public'}
+ROUTE_OPTIONS = BASE_OPTIONS | {'csrf': False}
 
 class Properties(http.Controller):
     @http.route('/properties/account', **ROUTE_OPTIONS)
