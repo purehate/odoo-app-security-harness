@@ -377,6 +377,10 @@ def test_flags_integration_key_property_values(tmp_path: Path) -> None:
     <field name="fields_id" ref="x_connector.field_x_connector__license_key"/>
     <field name="value_text">lic_live_abcdef1234567890</field>
   </record>
+  <record id="property_connector_access_url" model="ir.property">
+    <field name="fields_id" ref="x_connector.field_x_connector__access_url"/>
+    <field name="value_text">https://example.test/private</field>
+  </record>
 </odoo>""",
         encoding="utf-8",
     )
@@ -387,6 +391,7 @@ def test_flags_integration_key_property_values(tmp_path: Path) -> None:
     assert {
         "x_connector.field_x_connector__access_key",
         "x_connector.field_x_connector__license_key",
+        "x_connector.field_x_connector__access_url",
     } <= sensitive_fields
 
 

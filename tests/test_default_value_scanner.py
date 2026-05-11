@@ -1069,6 +1069,7 @@ class Defaults:
     def set_defaults(self):
         self.env['ir.default'].set('x.connector', 'access_key', 'ak_live_abcdef1234567890')
         self.env['ir.default'].set('x.connector', 'license_key', 'lic_live_abcdef1234567890')
+        self.env['ir.default'].set('x.connector', 'reset_password_url', 'https://example.test/reset')
 """,
         encoding="utf-8",
     )
@@ -1076,7 +1077,7 @@ class Defaults:
     findings = scan_default_values(tmp_path)
     sensitive_fields = {finding.field for finding in findings if finding.rule_id == "odoo-default-sensitive-field-set"}
 
-    assert {"access_key", "license_key"} <= sensitive_fields
+    assert {"access_key", "license_key", "reset_password_url"} <= sensitive_fields
 
 
 def test_flags_global_sensitive_xml_default(tmp_path: Path) -> None:
