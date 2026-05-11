@@ -1151,6 +1151,20 @@ def test_api_key_csv_record_is_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-api-key-csv-record" and f.record_id == "seeded_api_key" for f in findings)
 
 
+def test_api_key_csv_colon_header_record_is_reported(tmp_path: Path) -> None:
+    """API-key CSV records with colon-suffixed export headers should still be reported."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "res.users.apikeys.csv").write_text(
+        "id:id,name,user_id:id,key:raw\nseeded_api_key,Seeded Key,base.user_admin,sk_live_1234567890abcdef\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+
+    assert any(f.rule_id == "odoo-api-key-csv-record" and f.record_id == "seeded_api_key" for f in findings)
+
+
 def test_api_key_underscore_csv_record_is_reported(tmp_path: Path) -> None:
     """Underscore-style CSV model filenames should also be recognized."""
     data = tmp_path / "module" / "data"
