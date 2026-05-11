@@ -333,6 +333,30 @@ def test_flags_token_visibility_and_relational_website_form_fields(tmp_path: Pat
     } <= sensitive_fields
 
 
+def test_flags_broad_sensitive_website_form_fields(tmp_path: Path) -> None:
+    """Public website forms should catch key-shaped fields beyond exact names."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "forms.xml").write_text(
+        """<odoo>
+  <template id="lead">
+    <form action="/website/form/crm.lead" method="post">
+      <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+      <input name="license_key"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-website-form-sensitive-field" and finding.field == "license_key"
+        for finding in findings
+    )
+
+
 def test_flags_data_model_name_dash_variant(tmp_path: Path) -> None:
     """data-model-name should be treated like Odoo's data-model_name."""
     views = tmp_path / "module" / "views"
@@ -513,6 +537,32 @@ class Lead(models.Model):
         f.rule_id == "odoo-website-form-field-allowlisted-sensitive"
         and f.model == "crm.lead"
         and f.field == "partner_id"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_flags_broad_sensitive_field_allowlisted_for_website_form(tmp_path: Path) -> None:
+    """website_form_blacklisted=False should catch key-shaped custom fields."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "lead.py").write_text(
+        """
+from odoo import fields, models
+
+class Lead(models.Model):
+    _inherit = 'crm.lead'
+
+    license_key = fields.Char(website_form_blacklisted=False)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-website-form-field-allowlisted-sensitive"
+        and f.field == "license_key"
         and f.severity == "high"
         for f in findings
     )

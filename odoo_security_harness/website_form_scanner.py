@@ -80,6 +80,37 @@ SENSITIVE_FIELD_NAMES = {
     "website_published",
     "write_uid",
 }
+SENSITIVE_FIELD_MARKERS = (
+    "access_key",
+    "access_link",
+    "access_token",
+    "access_url",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "bearer_token",
+    "client_secret",
+    "csrf_token",
+    "hmac_secret",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
+    "partner_signup_url",
+    "password",
+    "private_key",
+    "reset_password_token",
+    "reset_password_url",
+    "secret",
+    "secret_key",
+    "session_token",
+    "signature_secret",
+    "signup_token",
+    "signup_url",
+    "signing_key",
+    "token",
+    "totp_secret",
+    "webhook_secret",
+)
 SUCCESS_PAGE_ATTRS = {
     "data-success-page",
     "data-success_page",
@@ -215,7 +246,7 @@ class WebsiteFormScanner:
                 "success_page",
             )
 
-        for field in sorted(fields & SENSITIVE_FIELD_NAMES):
+        for field in sorted(field for field in fields if _is_sensitive_field_name(field)):
             self._add(
                 "odoo-website-form-sensitive-field",
                 "Website form exposes sensitive model field",
@@ -418,13 +449,14 @@ class WebsiteFormFieldScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _add_exposed_field(self, model: str, field: str, line: int) -> None:
-        if field not in SENSITIVE_FIELD_NAMES and model not in SENSITIVE_MODELS:
+        field_is_sensitive = _is_sensitive_field_name(field)
+        if not field_is_sensitive and model not in SENSITIVE_MODELS:
             return
         self.findings.append(
             WebsiteFormFinding(
                 rule_id="odoo-website-form-field-allowlisted-sensitive",
                 title="Sensitive field is allowlisted for website forms",
-                severity="high" if field in SENSITIVE_FIELD_NAMES else "medium",
+                severity="high" if field_is_sensitive else "medium",
                 file=str(self.path),
                 line=line,
                 message=(
@@ -842,6 +874,11 @@ def _is_http_module_expr(
 
 def _assigned_field_name(node: ast.AST) -> str:
     return node.id if isinstance(node, ast.Name) else ""
+
+
+def _is_sensitive_field_name(field: str) -> bool:
+    lowered = field.lower()
+    return field in SENSITIVE_FIELD_NAMES or any(marker in lowered for marker in SENSITIVE_FIELD_MARKERS)
 
 
 def _constant_string(node: ast.AST) -> str:
