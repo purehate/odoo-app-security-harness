@@ -31,7 +31,10 @@ TAINTED_ARG_NAMES = {
     "login",
     "password",
     "post",
+    "invite_token",
+    "invitation_token",
     "reset_password_token",
+    "reset_token",
     "signup_token",
     "token",
 }

@@ -836,6 +836,24 @@ def apply_token(self, token):
     )
 
 
+def test_helper_reset_and_invitation_token_arguments_are_tainted(tmp_path: Path) -> None:
+    """Common reset/invitation aliases should stay tainted outside route handlers."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "users.py").write_text(
+        """
+def apply_tokens(self, reset_token, invitation_token):
+    user = self.env['res.users'].browse(self.env.context.get('uid'))
+    user.write({'signup_token': reset_token, 'access_token': invitation_token})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+
+    assert any(f.rule_id == "odoo-signup-tainted-identity-token-write" for f in findings)
+
+
 def test_flags_keyword_vals_identity_token_write(tmp_path: Path) -> None:
     """Odoo write/create helpers often pass mutation dictionaries through vals=."""
     controllers = tmp_path / "module" / "controllers"
