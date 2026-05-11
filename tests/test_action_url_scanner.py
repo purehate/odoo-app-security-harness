@@ -101,6 +101,54 @@ class Redirect(odoo_http.Controller):
     assert "odoo-act-url-public-route" in rule_ids
 
 
+def test_imported_odoo_http_module_route_public_tainted_act_url(tmp_path: Path) -> None:
+    """Direct odoo.http imports should not hide public act_url redirects."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "redirect.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Redirect(odoo_http.Controller):
+    @odoo_http.route('/go/action', auth='public')
+    def go(self):
+        payload = odoo_http.request.get_http_params()
+        return {'type': 'ir.actions.act_url', 'url': payload.get('next'), 'target': 'self'}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-url-tainted-url" in rule_ids
+    assert "odoo-act-url-public-route" in rule_ids
+
+
+def test_imported_odoo_module_route_public_tainted_act_url(tmp_path: Path) -> None:
+    """Direct odoo imports should not hide public act_url redirects."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "redirect.py").write_text(
+        """
+import odoo as od
+
+class Redirect(od.http.Controller):
+    @od.http.route('/go/action', auth='public')
+    def go(self):
+        payload = od.http.request.get_http_params()
+        return {'type': 'ir.actions.act_url', 'url': payload.get('next'), 'target': 'self'}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-url-tainted-url" in rule_ids
+    assert "odoo-act-url-public-route" in rule_ids
+
+
 def test_flags_common_redirect_parameter_aliases(tmp_path: Path) -> None:
     """Common redirect URL parameter names should be treated as request-controlled."""
     controllers = tmp_path / "module" / "controllers"
