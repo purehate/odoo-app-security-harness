@@ -965,6 +965,16 @@ def test_taxonomy_coverage_classifies_core_analyzer_and_multicompany_rules() -> 
     assert any("CWE-639" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
+def test_taxonomy_exact_rule_id_wins_over_substring_collision() -> None:
+    """Exact rule IDs should beat unrelated shape hints in title/message text."""
+    taxonomy = odoo_deep_scan._taxonomy_for_text(
+        "odoo-model-method-onchange-cleartext-http-url title mentions model method cleartext",
+        rule_id="odoo-integration-cleartext-http-url",
+    )
+
+    assert taxonomy["taxonomy_shape"] == "integration_cleartext_http_url"
+
+
 def test_taxonomy_coverage_maps_all_package_finding_rule_constants() -> None:
     """All non-script package finding rule constants should have CWE taxonomy coverage."""
     seen: set[str] = set()

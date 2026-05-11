@@ -8394,7 +8394,7 @@ def _security_taxonomy_for_rule(rule_id: str, findings: list[dict]) -> dict[str,
             " ".join(str(finding.get("message") or "") for finding in findings[:3]),
         ]
     ).lower()
-    return _taxonomy_for_text(text)
+    return _taxonomy_for_text(text, rule_id=rule_id)
 
 
 def _security_taxonomy_for_finding(finding: dict) -> dict[str, object]:
@@ -8404,7 +8404,7 @@ def _security_taxonomy_for_finding(finding: dict) -> dict[str, object]:
     text = " ".join(
         str(finding.get(key) or "") for key in ("rule_id", "source", "title", "message", "sink", "flag")
     ).lower()
-    return _taxonomy_for_text(text)
+    return _taxonomy_for_text(text, rule_id=str(finding.get("rule_id") or ""))
 
 
 def _explicit_taxonomy(findings: list[dict]) -> dict[str, object]:
@@ -8421,14 +8421,34 @@ def _explicit_taxonomy(findings: list[dict]) -> dict[str, object]:
     return {"cwe": cwes}
 
 
-def _taxonomy_for_text(text: str) -> dict[str, object]:
+def _taxonomy_for_text(text: str, rule_id: str = "") -> dict[str, object]:
     mappings = _cwe_shape_mappings()
+    rule_id_lower = rule_id.lower()
+    # First pass: prioritize exact rule_id matches so more specific shapes
+    # win over generic substring collisions (e.g. integration cleartext vs model-method cleartext).
+    if rule_id_lower:
+        for shape, hints in _TAXONOMY_SHAPE_HINTS:
+            if shape not in mappings:
+                continue
+            if any(hint == rule_id_lower for hint in hints):
+                mapping = mappings[shape]
+                taxonomy: dict[str, object] = {
+                    "taxonomy_shape": shape,
+                    "taxonomy_label": mapping.get("label", shape),
+                    "cwe": list(mapping.get("cwe", [])),
+                }
+                if mapping.get("capec"):
+                    taxonomy["capec"] = list(mapping["capec"])
+                if mapping.get("owasp"):
+                    taxonomy["owasp"] = mapping["owasp"]
+                return taxonomy
+    # Second pass: substring matching
     for shape, hints in _TAXONOMY_SHAPE_HINTS:
         if shape not in mappings:
             continue
         if any(hint in text for hint in hints):
             mapping = mappings[shape]
-            taxonomy: dict[str, object] = {
+            taxonomy = {
                 "taxonomy_shape": shape,
                 "taxonomy_label": mapping.get("label", shape),
                 "cwe": list(mapping.get("cwe", [])),
