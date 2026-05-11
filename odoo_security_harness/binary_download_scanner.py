@@ -1155,8 +1155,8 @@ def _call_chain_has_superuser_with_user(
                 and (
                     any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args)
                     or any(
-                        keyword.value is not None and _is_superuser_arg(keyword.value, constants, superuser_names)
-                        for keyword in current.keywords
+                        _is_superuser_arg(keyword_value, constants, superuser_names)
+                        for _, keyword_value in _expanded_keywords(current, constants)
                     )
                 )
             ):

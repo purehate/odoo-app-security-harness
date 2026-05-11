@@ -1095,6 +1095,35 @@ class Binary(http.Controller):
     assert "odoo-binary-tainted-binary-content-args" in rule_ids
 
 
+def test_flags_unpack_keyword_superuser_binary_content_with_tainted_arguments(tmp_path: Path) -> None:
+    """Static **kwargs passed to with_user should not hide SUPERUSER_ID elevation."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "binary.py").write_text(
+        """
+from odoo import SUPERUSER_ID, http
+from odoo.http import request
+
+class Binary(http.Controller):
+    @http.route('/public/binary', auth='public')
+    def binary(self, **kwargs):
+        user_options = {'user': SUPERUSER_ID}
+        return request.env['ir.http'].with_user(**user_options).binary_content(
+            model=kwargs.get('model'),
+            id=kwargs.get('id'),
+            field='datas',
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-binary-ir-http-binary-content-sudo" in rule_ids
+    assert "odoo-binary-tainted-binary-content-args" in rule_ids
+
+
 def test_flags_constant_alias_superuser_binary_content_with_tainted_arguments(tmp_path: Path) -> None:
     """Recursive superuser aliases should keep with_user binary_content elevated."""
     controllers = tmp_path / "module" / "controllers"
