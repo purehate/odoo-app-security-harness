@@ -120,6 +120,62 @@ class Window(odoo_http.Controller):
     assert any(f.rule_id == "odoo-act-window-tainted-context" and f.route == "/window/orders" for f in findings)
 
 
+def test_imported_odoo_http_module_route_public_tainted_domain_and_context(tmp_path: Path) -> None:
+    """Direct odoo.http imports should preserve public route context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "window.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Window(odoo_http.Controller):
+    @odoo_http.route('/window/orders', auth='public')
+    def orders(self):
+        payload = odoo_http.request.get_http_params()
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'sale.order',
+            'domain': payload.get('domain'),
+            'context': payload.get('context'),
+        }
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+
+    assert any(f.rule_id == "odoo-act-window-tainted-domain" and f.severity == "critical" for f in findings)
+    assert any(f.rule_id == "odoo-act-window-tainted-context" and f.route == "/window/orders" for f in findings)
+
+
+def test_imported_odoo_module_route_public_tainted_domain_and_context(tmp_path: Path) -> None:
+    """Direct odoo imports should preserve public route context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "window.py").write_text(
+        """
+import odoo as od
+
+class Window(od.http.Controller):
+    @od.http.route('/window/orders', auth='public')
+    def orders(self):
+        payload = od.http.request.get_http_params()
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'sale.order',
+            'domain': payload.get('domain'),
+            'context': payload.get('context'),
+        }
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+
+    assert any(f.rule_id == "odoo-act-window-tainted-domain" and f.severity == "critical" for f in findings)
+    assert any(f.rule_id == "odoo-act-window-tainted-context" and f.route == "/window/orders" for f in findings)
+
+
 def test_non_odoo_route_decorator_does_not_make_action_window_public(tmp_path: Path) -> None:
     """Local route decorators should not create public action-window route context."""
     controllers = tmp_path / "module" / "controllers"
