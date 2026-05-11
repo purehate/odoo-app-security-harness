@@ -592,6 +592,11 @@ def _route_auth_from_keyword(keyword: ast.keyword, auth: str, constants: dict[st
 
 def _route_auth_from_options(options: ast.Dict, auth: str, constants: dict[str, ast.AST]) -> str:
     for key_node, value_node in zip(options.keys, options.values, strict=False):
+        if key_node is None:
+            value = _resolve_constant(value_node, constants)
+            if isinstance(value, ast.Dict):
+                auth = _route_auth_from_options(value, auth, constants)
+            continue
         key = _literal_string(_resolve_constant(key_node, constants)) if key_node is not None else ""
         if key != "auth":
             continue

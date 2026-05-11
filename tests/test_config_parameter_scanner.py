@@ -253,6 +253,37 @@ class Config(http.Controller):
     assert any(f.rule_id == "odoo-config-param-sudo-sensitive-read" for f in findings)
 
 
+def test_nested_static_unpack_route_options_public_sensitive_config_read(tmp_path: Path) -> None:
+    """Nested static route option dictionaries should preserve public config posture."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "config.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public'}
+CONFIG_OPTIONS = {**BASE_OPTIONS}
+
+class Config(http.Controller):
+    @http.route('/public/config', **CONFIG_OPTIONS)
+    def config(self):
+        return request.env['ir.config_parameter'].sudo().get_param('payment.provider.secret')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-config-param-public-sensitive-read"
+        and f.severity == "critical"
+        and f.key == "payment.provider.secret"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-config-param-sudo-sensitive-read" for f in findings)
+
+
 def test_class_constant_static_unpack_route_options_public_sensitive_config_read(tmp_path: Path) -> None:
     """Class-scoped route option dictionaries should preserve public config read posture."""
     controllers = tmp_path / "module" / "controllers"
