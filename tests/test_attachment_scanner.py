@@ -427,6 +427,47 @@ class Controller(http.Controller):
     )
 
 
+def test_dict_union_static_unpack_public_attachment_create_is_reported(tmp_path: Path) -> None:
+    """Dict-union **route options should keep public attachment mutations critical."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "attachments.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public', 'csrf': False}
+ATTACH_OPTIONS = BASE_OPTIONS | {'route': '/public/attach/unpacked-options'}
+
+class Controller(http.Controller):
+    @http.route(**ATTACH_OPTIONS)
+    def attach(self, **kwargs):
+        return request.env['ir.attachment'].sudo().create({
+            'name': kwargs.get('name'),
+            'datas': kwargs.get('payload'),
+            'res_model': kwargs.get('model'),
+            'res_id': kwargs.get('id'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-attachment-public-route-mutation"
+        and f.severity == "critical"
+        and f.route == "/public/attach/unpacked-options"
+        for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-attachment-tainted-res-model"
+        and f.severity == "critical"
+        and f.route == "/public/attach/unpacked-options"
+        for f in findings
+    )
+
+
 def test_class_constant_static_unpack_public_attachment_create_is_reported(tmp_path: Path) -> None:
     """Class-scoped static **route options should keep public attachment mutations critical."""
     controllers = tmp_path / "module" / "controllers"
