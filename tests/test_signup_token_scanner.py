@@ -646,6 +646,28 @@ class Controller(http.Controller):
     assert "odoo-signup-public-sudo-identity-flow" in rule_ids
 
 
+def test_flags_import_aliased_superuser_identity_access_in_public_reset_flow(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should remain privileged reset-flow signals."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/web/reset_password', auth='public', csrf=False)
+    def reset_password(self, **kwargs):
+        return request.env['res.users'].with_user(ROOT_UID).search([('login', '=', kwargs.get('login'))], limit=1)
+""",
+        encoding="utf-8",
+    )
+
+    rule_ids = {finding.rule_id for finding in scan_signup_tokens(tmp_path)}
+
+    assert "odoo-signup-public-sudo-identity-flow" in rule_ids
+
+
 def test_flags_keyword_superuser_identity_access_in_public_reset_flow(tmp_path: Path) -> None:
     """Public reset flows should treat keyword with_user(user=SUPERUSER_ID) as sudo."""
     controllers = tmp_path / "module" / "controllers"

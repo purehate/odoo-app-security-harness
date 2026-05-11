@@ -457,9 +457,7 @@ class Controller(http.Controller):
 
     findings = scan_api_keys(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-api-key-tainted-lookup" and f.sink.endswith(".search_read") for f in findings
-    )
+    assert any(f.rule_id == "odoo-api-key-tainted-lookup" and f.sink.endswith(".search_read") for f in findings)
 
 
 def test_tainted_api_key_browse_lookup_is_reported(tmp_path: Path) -> None:
@@ -515,6 +513,27 @@ from odoo import SUPERUSER_ID
 class ApiKeyWizard:
     def create_key(self, values):
         return self.env['res.users.apikeys'].with_user(SUPERUSER_ID).create(values)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-api-key-sudo-mutation" in rule_ids
+
+
+def test_flags_import_aliased_superuser_api_key_mutation(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should keep API-key mutations elevated."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "apikey.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID
+
+class ApiKeyWizard:
+    def create_key(self, values):
+        return self.env['res.users.apikeys'].with_user(ROOT_UID).create(values)
 """,
         encoding="utf-8",
     )

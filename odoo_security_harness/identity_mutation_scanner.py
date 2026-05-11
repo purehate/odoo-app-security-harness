@@ -70,6 +70,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
@@ -101,6 +102,8 @@ class IdentityMutationScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -216,7 +219,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
                 sink,
             )
 
-        if _is_elevated_call(node.func, constants) or _uses_elevated_identity_var(
+        if _is_elevated_call(node.func, constants, self.superuser_names) or _uses_elevated_identity_var(
             node.func, self.elevated_identity_vars
         ):
             self._add(
@@ -373,7 +376,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
                 self.elevated_identity_vars.discard(name)
             return
 
-        is_elevated = _is_elevated_call(value, constants) or _uses_elevated_identity_var(
+        is_elevated = _is_elevated_call(value, constants, self.superuser_names) or _uses_elevated_identity_var(
             value, elevated_identity_vars
         )
         for name in names:
@@ -705,52 +708,65 @@ def _unpack_target_value_pairs(
     return pairs
 
 
-def _is_elevated_call(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_elevated_call(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return any(_is_elevated_call(element, constants) for element in node.elts)
+        return any(_is_elevated_call(element, constants, superuser_names) for element in node.elts)
     if isinstance(node, ast.Starred):
-        return _is_elevated_call(node.value, constants)
+        return _is_elevated_call(node.value, constants, superuser_names)
     text = _safe_unparse(node)
     return (
         _call_chain_has_attr(node, "sudo")
-        or _call_chain_has_superuser_with_user(node, constants)
+        or _call_chain_has_superuser_with_user(node, constants, superuser_names)
         or "SUPERUSER_ID" in text
     )
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
     for child in ast.walk(node):
         if not isinstance(child, ast.Call):
             continue
         if not (isinstance(child.func, ast.Attribute) and child.func.attr == "with_user"):
             continue
-        if any(_is_admin_user_arg(arg, constants) for arg in child.args):
+        if any(_is_admin_user_arg(arg, constants, superuser_names) for arg in child.args):
             return True
         if any(
             keyword.arg in {"user", "uid"}
             and keyword.value is not None
-            and _is_admin_user_arg(keyword.value, constants)
+            and _is_admin_user_arg(keyword.value, constants, superuser_names)
             for keyword in child.keywords
         ):
             return True
     return False
 
 
-def _is_admin_user_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_admin_user_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
     resolved = _resolve_constant(node, constants)
     if resolved is not node:
-        return _is_admin_user_arg(resolved, constants)
+        return _is_admin_user_arg(resolved, constants, superuser_names)
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_admin_user_arg(arg, constants) for arg in node.args)
+        return any(_is_admin_user_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 

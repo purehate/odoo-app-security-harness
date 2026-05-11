@@ -96,7 +96,9 @@ class Users(http.Controller):
         and finding.route == "/signup/promote,/public/promote"
         for finding in findings
     )
-    assert any(finding.rule_id == "odoo-identity-elevated-mutation" and finding.severity == "critical" for finding in findings)
+    assert any(
+        finding.rule_id == "odoo-identity-elevated-mutation" and finding.severity == "critical" for finding in findings
+    )
     assert any(finding.rule_id == "odoo-identity-request-derived-mutation" for finding in findings)
 
 
@@ -131,8 +133,7 @@ class Users(http.Controller):
     findings = scan_identity_mutations(tmp_path)
 
     assert any(
-        finding.rule_id == "odoo-identity-public-route-mutation"
-        and finding.route == "/signup/promote,/public/promote"
+        finding.rule_id == "odoo-identity-public-route-mutation" and finding.route == "/signup/promote,/public/promote"
         for finding in findings
     )
     assert any(finding.rule_id == "odoo-identity-elevated-mutation" for finding in findings)
@@ -153,6 +154,29 @@ class UserTool(models.Model):
 
     def rename_user(self, user_id):
         user = self.env['res.users'].with_user(user=SUPERUSER_ID).browse(user_id)
+        return user.write({'name': 'Reviewed'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_identity_mutations(tmp_path)
+
+    assert any(finding.rule_id == "odoo-identity-elevated-mutation" for finding in findings)
+
+
+def test_import_aliased_superuser_with_user_identity_write_is_elevated(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should be treated like sudo for identity mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "users.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+
+class UserTool(models.Model):
+    _name = 'x.user.tool'
+
+    def rename_user(self, user_id):
+        user = self.env['res.users'].with_user(user=ROOT_UID).browse(user_id)
         return user.write({'name': 'Reviewed'})
 """,
         encoding="utf-8",
@@ -407,7 +431,9 @@ class Users(http.Controller):
         and finding.route == "/signup/promote"
         for finding in findings
     )
-    assert any(finding.rule_id == "odoo-identity-elevated-mutation" and finding.severity == "critical" for finding in findings)
+    assert any(
+        finding.rule_id == "odoo-identity-elevated-mutation" and finding.severity == "critical" for finding in findings
+    )
     assert any(finding.rule_id == "odoo-identity-privilege-field-write" for finding in findings)
 
 
@@ -440,7 +466,9 @@ class Users(http.Controller):
         and finding.route == "/signup/promote"
         for finding in findings
     )
-    assert any(finding.rule_id == "odoo-identity-elevated-mutation" and finding.severity == "critical" for finding in findings)
+    assert any(
+        finding.rule_id == "odoo-identity-elevated-mutation" and finding.severity == "critical" for finding in findings
+    )
     assert any(finding.rule_id == "odoo-identity-privilege-field-write" for finding in findings)
 
 
@@ -475,8 +503,7 @@ class Users(http.Controller):
     findings = scan_identity_mutations(tmp_path)
 
     assert any(
-        finding.rule_id == "odoo-identity-public-route-mutation"
-        and finding.route == "/signup/promote,/public/promote"
+        finding.rule_id == "odoo-identity-public-route-mutation" and finding.route == "/signup/promote,/public/promote"
         for finding in findings
     )
     assert any(finding.rule_id == "odoo-identity-elevated-mutation" for finding in findings)
@@ -513,7 +540,9 @@ class Users(http.Controller):
         and finding.route == "/signup/promote"
         for finding in findings
     )
-    assert any(finding.rule_id == "odoo-identity-elevated-mutation" and finding.severity == "critical" for finding in findings)
+    assert any(
+        finding.rule_id == "odoo-identity-elevated-mutation" and finding.severity == "critical" for finding in findings
+    )
     assert any(finding.rule_id == "odoo-identity-privilege-field-write" for finding in findings)
 
 

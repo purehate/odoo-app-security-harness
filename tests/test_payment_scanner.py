@@ -357,10 +357,7 @@ class PaymentController(http.Controller):
 
     findings = PaymentScanner(py).scan_file()
 
-    assert any(
-        f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "webhook"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "webhook" for f in findings)
 
 
 def test_keyword_constant_backed_payment_callback_without_signature_is_reported(tmp_path: Path) -> None:
@@ -384,10 +381,7 @@ class PaymentController(http.Controller):
 
     findings = PaymentScanner(py).scan_file()
 
-    assert any(
-        f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "callback"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "callback" for f in findings)
 
 
 def test_static_unpack_payment_callback_without_signature_is_reported(tmp_path: Path) -> None:
@@ -413,10 +407,7 @@ class PaymentController(http.Controller):
 
     findings = PaymentScanner(py).scan_file()
 
-    assert any(
-        f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "webhook"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "webhook" for f in findings)
 
 
 def test_recursive_static_unpack_payment_callback_without_signature_is_reported(tmp_path: Path) -> None:
@@ -449,10 +440,7 @@ class PaymentController(http.Controller):
 
     findings = PaymentScanner(py).scan_file()
 
-    assert any(
-        f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "notify"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "notify" for f in findings)
 
 
 def test_nested_static_unpack_payment_callback_without_signature_is_reported(tmp_path: Path) -> None:
@@ -481,10 +469,7 @@ class PaymentController(http.Controller):
 
     findings = PaymentScanner(py).scan_file()
 
-    assert any(
-        f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "notify"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "notify" for f in findings)
 
 
 def test_class_constant_backed_payment_callback_without_signature_is_reported(tmp_path: Path) -> None:
@@ -509,10 +494,7 @@ class PaymentController(http.Controller):
 
     findings = PaymentScanner(py).scan_file()
 
-    assert any(
-        f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "webhook"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "webhook" for f in findings)
 
 
 def test_class_constant_static_unpack_payment_callback_without_signature_is_reported(tmp_path: Path) -> None:
@@ -541,10 +523,7 @@ class PaymentController(http.Controller):
 
     findings = PaymentScanner(py).scan_file()
 
-    assert any(
-        f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "notify"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "notify" for f in findings)
 
 
 def test_constant_alias_payment_route_state_and_lookup_are_reported(tmp_path: Path) -> None:
@@ -968,6 +947,29 @@ class PaymentTransaction(models.Model):
 
     def _get_tx_from_notification_data(self, provider_code, notification_data):
         return self.with_user(user=SUPERUSER_ID).search([('reference', '=', notification_data['reference'])])
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-payment-transaction-lookup-weak" for f in findings)
+
+
+def test_import_aliased_superuser_self_transaction_lookup_without_provider_scope_is_reported(
+    tmp_path: Path,
+) -> None:
+    """Imported SUPERUSER_ID aliases should keep self.with_user lookups weakly scoped."""
+    py = tmp_path / "models.py"
+    py.write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+
+class PaymentTransaction(models.Model):
+    _inherit = 'payment.transaction'
+
+    def _get_tx_from_notification_data(self, provider_code, notification_data):
+        return self.with_user(user=ROOT_UID).search([('reference', '=', notification_data['reference'])])
 """,
         encoding="utf-8",
     )

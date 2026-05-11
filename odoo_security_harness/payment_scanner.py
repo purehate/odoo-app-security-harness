@@ -64,6 +64,7 @@ class PaymentScanner(ast.NodeVisitor):
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_file(self) -> list[PaymentFinding]:
         """Scan the file."""
@@ -92,6 +93,8 @@ class PaymentScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "route":
@@ -166,7 +169,7 @@ class PaymentScanner(ast.NodeVisitor):
                     node.name,
                 )
 
-            if _has_weak_payment_transaction_lookup(node, constants):
+            if _has_weak_payment_transaction_lookup(node, constants, self.superuser_names):
                 self._add(
                     "odoo-payment-transaction-lookup-weak",
                     "Payment transaction lookup lacks provider/reference scoping",
@@ -416,9 +419,7 @@ def _expr_uses_constant_time_compare(node: ast.AST) -> bool:
     return "compare_digest" in text
 
 
-def _calls_payment_state_transition(
-    node: ast.FunctionDef, constants: dict[str, ast.AST] | None = None
-) -> bool:
+def _calls_payment_state_transition(node: ast.FunctionDef, constants: dict[str, ast.AST] | None = None) -> bool:
     visitor = _PaymentStateTransitionVisitor(constants or {})
     visitor.visit(node)
     return visitor.changes_payment_state
@@ -608,16 +609,20 @@ def _filters_provider_reference(node: ast.FunctionDef) -> bool:
 
 
 def _has_weak_payment_transaction_lookup(
-    node: ast.FunctionDef, constants: dict[str, ast.AST] | None = None
+    node: ast.FunctionDef,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
-    scopes = _payment_transaction_search_scopes(node, constants)
+    scopes = _payment_transaction_search_scopes(node, constants, superuser_names)
     return any(not is_scoped for is_scoped in scopes)
 
 
 def _payment_transaction_search_scopes(
-    node: ast.FunctionDef, constants: dict[str, ast.AST] | None = None
+    node: ast.FunctionDef,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> list[bool]:
-    visitor = _PaymentTransactionLookupVisitor(node.name, constants or {})
+    visitor = _PaymentTransactionLookupVisitor(node.name, constants or {}, superuser_names)
     visitor.visit(node)
     return visitor.search_scopes
 
@@ -625,9 +630,15 @@ def _payment_transaction_search_scopes(
 class _PaymentTransactionLookupVisitor(ast.NodeVisitor):
     """Inspects payment.transaction search domains in one handler function."""
 
-    def __init__(self, function_name: str, constants: dict[str, ast.AST]) -> None:
+    def __init__(
+        self,
+        function_name: str,
+        constants: dict[str, ast.AST],
+        superuser_names: set[str] | None = None,
+    ) -> None:
         self.function_name = function_name
         self.constants = constants
+        self.superuser_names = superuser_names or {"SUPERUSER_ID"}
         self.local_constants: dict[str, ast.AST] = {}
         self.domain_names: dict[str, ast.AST] = {}
         self.search_scopes: list[bool] = []
@@ -659,7 +670,7 @@ class _PaymentTransactionLookupVisitor(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Any:
         constants = self._effective_constants()
-        if _is_payment_transaction_lookup_call(node, self.function_name, constants):
+        if _is_payment_transaction_lookup_call(node, self.function_name, constants, self.superuser_names):
             if isinstance(node.func, ast.Attribute) and node.func.attr == "browse":
                 self.search_scopes.append(False)
                 self.generic_visit(node)
@@ -694,7 +705,10 @@ class _PaymentTransactionLookupVisitor(ast.NodeVisitor):
 
 
 def _is_payment_transaction_lookup_call(
-    node: ast.Call, function_name: str, constants: dict[str, ast.AST] | None = None
+    node: ast.Call,
+    function_name: str,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
     constants = constants or {}
     if not isinstance(node.func, ast.Attribute) or node.func.attr not in PAYMENT_TRANSACTION_LOOKUP_METHODS:
@@ -705,7 +719,9 @@ def _is_payment_transaction_lookup_call(
         return True
     if _is_payment_transaction_env_receiver(receiver, constants):
         return True
-    return function_name in NOTIFICATION_METHODS and _is_notification_self_search_receiver(receiver, constants)
+    return function_name in NOTIFICATION_METHODS and _is_notification_self_search_receiver(
+        receiver, constants, superuser_names
+    )
 
 
 def _is_payment_transaction_env_receiver(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
@@ -721,7 +737,9 @@ def _is_payment_transaction_env_receiver(node: ast.AST, constants: dict[str, ast
 
 
 def _is_notification_self_search_receiver(
-    node: ast.AST, constants: dict[str, ast.AST] | None = None
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
     """Check self/self.sudo()/self.with_user(admin-root) receiver patterns."""
     constants = constants or {}
@@ -735,26 +753,34 @@ def _is_notification_self_search_receiver(
         return True
     if node.func.attr != "with_user":
         return False
-    return any(_is_admin_user_arg(arg, constants) for arg in node.args) or any(
+    return any(_is_admin_user_arg(arg, constants, superuser_names) for arg in node.args) or any(
         keyword.arg in {"user", "uid"}
         and keyword.value is not None
-        and _is_admin_user_arg(keyword.value, constants)
+        and _is_admin_user_arg(keyword.value, constants, superuser_names)
         for keyword in node.keywords
     )
 
 
-def _is_admin_user_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_admin_user_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     """Check if an expression names Odoo's root/admin user."""
     constants = constants or {}
-    node = _resolve_constant(node, constants)
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _is_admin_user_arg(resolved, constants, superuser_names)
+    node = resolved
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_admin_user_arg(arg, constants) for arg in node.args)
+        return any(_is_admin_user_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 
@@ -776,9 +802,7 @@ def _looks_like_domain(node: ast.AST, constants: dict[str, ast.AST] | None = Non
     return False
 
 
-def _domain_has_provider_reference_scope(
-    node: ast.AST | None, constants: dict[str, ast.AST] | None = None
-) -> bool:
+def _domain_has_provider_reference_scope(node: ast.AST | None, constants: dict[str, ast.AST] | None = None) -> bool:
     if node is None:
         return False
     constants = constants or {}

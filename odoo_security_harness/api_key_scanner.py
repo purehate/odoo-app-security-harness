@@ -98,6 +98,7 @@ class ApiKeyScanner(ast.NodeVisitor):
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_python_file(self) -> list[ApiKeyFinding]:
         """Scan Python code for API-key model use."""
@@ -126,6 +127,8 @@ class ApiKeyScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -278,7 +281,7 @@ class ApiKeyScanner(ast.NodeVisitor):
                     route=route.display_path(),
                     sink=sink,
                 )
-            if _is_elevated_expr(node.func, self.sudo_api_key_vars, constants):
+            if _is_elevated_expr(node.func, self.sudo_api_key_vars, constants, self.superuser_names):
                 self._add(
                     "odoo-api-key-sudo-mutation",
                     "API key mutation runs with elevated environment",
@@ -445,7 +448,7 @@ class ApiKeyScanner(ast.NodeVisitor):
     def _mark_api_key_model_target(self, target: ast.AST, value: ast.AST) -> None:
         constants = self._effective_constants()
         model = _api_key_model_in_expr(value, self.api_key_vars, constants)
-        is_sudo_api_key = _is_elevated_expr(value, self.sudo_api_key_vars, constants)
+        is_sudo_api_key = _is_elevated_expr(value, self.sudo_api_key_vars, constants, self.superuser_names)
         if isinstance(target, ast.Name):
             if model:
                 self.api_key_vars.add(target.id)
@@ -987,11 +990,12 @@ def _is_elevated_expr(
     node: ast.AST,
     sudo_vars: set[str],
     constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
     constants = constants or {}
     return (
         _expr_has_sudo(node)
-        or _expr_has_superuser_with_user(node, constants)
+        or _expr_has_superuser_with_user(node, constants, superuser_names)
         or _call_root_name(node) in sudo_vars
     )
 
@@ -1000,11 +1004,19 @@ def _expr_has_sudo(node: ast.AST) -> bool:
     return any(_call_chain_has_attr(child, "sudo") for child in ast.walk(node))
 
 
-def _expr_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
-    return any(_call_chain_has_superuser_with_user(child, constants) for child in ast.walk(node))
+def _expr_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST],
+    superuser_names: set[str] | None = None,
+) -> bool:
+    return any(_call_chain_has_superuser_with_user(child, constants, superuser_names) for child in ast.walk(node))
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST],
+    superuser_names: set[str] | None = None,
+) -> bool:
     current: ast.AST | None = node
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
         if isinstance(current, ast.Call):
@@ -1012,11 +1024,11 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
                 isinstance(current.func, ast.Attribute)
                 and current.func.attr == "with_user"
                 and (
-                    any(_is_superuser_arg(arg, constants) for arg in current.args)
+                    any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args)
                     or any(
                         keyword.arg in {"user", "uid"}
                         and keyword.value is not None
-                        and _is_superuser_arg(keyword.value, constants)
+                        and _is_superuser_arg(keyword.value, constants, superuser_names)
                         for keyword in current.keywords
                     )
                 )
@@ -1030,17 +1042,25 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
     return False
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
-    node = _resolve_constant(node, constants)
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _is_superuser_arg(resolved, constants, superuser_names)
+    node = resolved
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 

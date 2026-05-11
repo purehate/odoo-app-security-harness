@@ -91,6 +91,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_file(self) -> list[SignupTokenFinding]:
         """Scan the file."""
@@ -119,6 +120,8 @@ class SignupTokenScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -331,6 +334,7 @@ class SignupTokenScanner(ast.NodeVisitor):
                 self.identity_model_names,
                 self.elevated_identity_names,
                 self._effective_constants(),
+                self.superuser_names,
             )
             and (_is_signup_context(node) or _is_signup_route(route, ""))
         ):
@@ -348,8 +352,10 @@ class SignupTokenScanner(ast.NodeVisitor):
 
     def visit_Return(self, node: ast.Return) -> Any:
         route = self._current_route()
-        if route.is_public and node.value is not None and _expr_mentions_token_field(
-            node.value, self._effective_constants()
+        if (
+            route.is_public
+            and node.value is not None
+            and _expr_mentions_token_field(node.value, self._effective_constants())
         ):
             self._add(
                 "odoo-signup-token-exposed",
@@ -489,9 +495,7 @@ class SignupTokenScanner(ast.NodeVisitor):
             )
             return
 
-        if _is_identity_record_expr(
-            value, identity_model_names, identity_record_names, self._effective_constants()
-        ):
+        if _is_identity_record_expr(value, identity_model_names, identity_record_names, self._effective_constants()):
             self._mark_name_target(target, self.identity_record_names)
         else:
             self._discard_name_target(target, self.identity_record_names)
@@ -518,7 +522,7 @@ class SignupTokenScanner(ast.NodeVisitor):
             return
 
         if _is_elevated_identity_expr(
-            value, identity_model_names, elevated_identity_names, self._effective_constants()
+            value, identity_model_names, elevated_identity_names, self._effective_constants(), self.superuser_names
         ):
             self._mark_name_target(target, self.elevated_identity_names)
         else:
@@ -1001,7 +1005,9 @@ def _is_identity_token_assignment(
     constants = constants or {}
     if not isinstance(target, ast.Attribute):
         return False
-    target_field = _literal_string(_resolve_constant(ast.Name(id=target.attr, ctx=ast.Load()), constants)) or target.attr
+    target_field = (
+        _literal_string(_resolve_constant(ast.Name(id=target.attr, ctx=ast.Load()), constants)) or target.attr
+    )
     if target_field not in TOKEN_MUTATION_FIELDS:
         return False
     return _call_root_name(target.value) in identity_record_names
@@ -1075,15 +1081,26 @@ def _is_elevated_identity_access(
     identity_model_names: set[str] | None = None,
     elevated_identity_names: set[str] | None = None,
     constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
     constants = constants or {}
     if isinstance(node.func, ast.Attribute):
-        if node.func.attr in {"browse", "create", "read", "read_group", "search", "search_count", "search_read", "write"}:
+        if node.func.attr in {
+            "browse",
+            "create",
+            "read",
+            "read_group",
+            "search",
+            "search_count",
+            "search_read",
+            "write",
+        }:
             return _is_elevated_identity_expr(
                 node.func.value,
                 identity_model_names,
                 elevated_identity_names,
                 constants,
+                superuser_names,
             )
         return _call_root_name(node.func.value) in (elevated_identity_names or set())
     return False
@@ -1094,6 +1111,7 @@ def _is_elevated_identity_expr(
     identity_model_names: set[str] | None = None,
     elevated_identity_names: set[str] | None = None,
     constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
     constants = constants or {}
     node = _resolve_constant(node, constants)
@@ -1103,11 +1121,15 @@ def _is_elevated_identity_expr(
         return _call_root_name(node) in (elevated_identity_names or set())
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
         return any(
-            _is_elevated_identity_expr(element, identity_model_names, elevated_identity_names, constants)
+            _is_elevated_identity_expr(
+                element, identity_model_names, elevated_identity_names, constants, superuser_names
+            )
             for element in node.elts
         )
     if isinstance(node, ast.Starred):
-        return _is_elevated_identity_expr(node.value, identity_model_names, elevated_identity_names, constants)
+        return _is_elevated_identity_expr(
+            node.value, identity_model_names, elevated_identity_names, constants, superuser_names
+        )
     if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
         return False
     sink = _call_name(node.func)
@@ -1119,28 +1141,42 @@ def _is_elevated_identity_expr(
         or _is_identity_model_expr(node.func, identity_model_names, constants)
     )
     return has_identity_receiver and (
-        node.func.attr == "sudo" or (node.func.attr == "with_user" and _call_has_superuser_arg(node, constants))
+        node.func.attr == "sudo"
+        or (node.func.attr == "with_user" and _call_has_superuser_arg(node, constants, superuser_names))
     )
 
 
-def _call_has_superuser_arg(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+def _call_has_superuser_arg(
+    node: ast.Call,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
-    return any(_is_superuser_arg(arg, constants) for arg in node.args) or any(
-        keyword.value is not None and _is_superuser_arg(keyword.value, constants) for keyword in node.keywords
+    return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args) or any(
+        keyword.value is not None and _is_superuser_arg(keyword.value, constants, superuser_names)
+        for keyword in node.keywords
     )
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
-    node = _resolve_constant(node, constants)
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _is_superuser_arg(resolved, constants, superuser_names)
+    node = resolved
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 
@@ -1167,7 +1203,9 @@ def _expr_mentions_any_token_field(
     if isinstance(node, ast.Dict):
         return any(
             key is not None and _expr_mentions_any_token_field(key, fields, constants) for key in node.keys
-        ) or any(value is not None and _expr_mentions_any_token_field(value, fields, constants) for value in node.values)
+        ) or any(
+            value is not None and _expr_mentions_any_token_field(value, fields, constants) for value in node.values
+        )
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
         return any(_expr_mentions_any_token_field(element, fields, constants) for element in node.elts)
     if isinstance(node, ast.Subscript):
@@ -1179,11 +1217,13 @@ def _expr_mentions_any_token_field(
     if isinstance(node, ast.Attribute):
         return node.attr in fields or _expr_mentions_any_token_field(node.value, fields, constants)
     if isinstance(node, ast.Call):
-        return _expr_mentions_any_token_field(node.func, fields, constants) or any(
-            _expr_mentions_any_token_field(arg, fields, constants) for arg in node.args
-        ) or any(
-            keyword.value is not None and _expr_mentions_any_token_field(keyword.value, fields, constants)
-            for keyword in node.keywords
+        return (
+            _expr_mentions_any_token_field(node.func, fields, constants)
+            or any(_expr_mentions_any_token_field(arg, fields, constants) for arg in node.args)
+            or any(
+                keyword.value is not None and _expr_mentions_any_token_field(keyword.value, fields, constants)
+                for keyword in node.keywords
+            )
         )
     text = _safe_unparse(node).lower()
     return any(marker in text for marker in fields)
