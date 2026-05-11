@@ -43,7 +43,38 @@ class ModelStructureScanner(ast.NodeVisitor):
     """AST scanner for Odoo model declarations."""
 
     IDENTIFIER_FIELDS = {"code", "ref", "reference", "external_id", "uuid", "slug"}
-    SECRET_FIELD_MARKERS = ("token", "secret", "password", "passwd", "api_key", "apikey", "private_key")
+    SECRET_FIELD_MARKERS = (
+        "access_key",
+        "access_link",
+        "access_token",
+        "access_url",
+        "api_key",
+        "apikey",
+        "auth_token",
+        "bearer_token",
+        "client_secret",
+        "csrf_token",
+        "hmac_secret",
+        "jwt_secret",
+        "license_key",
+        "oauth_token",
+        "partner_signup_url",
+        "passwd",
+        "password",
+        "private_key",
+        "reset_password_token",
+        "reset_password_url",
+        "secret",
+        "secret_key",
+        "session_token",
+        "signature_secret",
+        "signup_token",
+        "signup_url",
+        "signing_key",
+        "token",
+        "totp_secret",
+        "webhook_secret",
+    )
     SENSITIVE_DELEGATED_MODELS = {
         "account.move",
         "account.payment",

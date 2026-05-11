@@ -32,6 +32,24 @@ class Thing(models.Model):
     assert any(f.rule_id == "odoo-model-secret-copyable" for f in findings)
 
 
+def test_broad_secret_like_field_should_not_be_copyable(tmp_path: Path) -> None:
+    """Key-shaped secret fields should also set copy=False."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+class Thing(models.Model):
+    _name = 'x.thing'
+    license_key = fields.Char()
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+
+    assert any(f.rule_id == "odoo-model-secret-copyable" and f.field == "license_key" for f in findings)
+
+
 def test_direct_field_constructor_secret_like_field_should_not_be_copyable(tmp_path: Path) -> None:
     """Directly imported field constructors should still be scanned."""
     model = _write_model(
@@ -421,6 +439,26 @@ class ApiCredential(models.Model):
     findings = ModelStructureScanner(str(model)).scan_file()
 
     assert any(f.rule_id == "odoo-model-rec-name-sensitive" for f in findings)
+
+
+def test_broad_sensitive_rec_name_is_reported(tmp_path: Path) -> None:
+    """Display names should not use key-shaped secret fields."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields, models
+
+class ApiCredential(models.Model):
+    _name = 'x.api.credential'
+    _rec_name = 'license_key'
+
+    license_key = fields.Char(copy=False, groups='base.group_system')
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+
+    assert any(f.rule_id == "odoo-model-rec-name-sensitive" and f.field == "license_key" for f in findings)
 
 
 def test_constant_backed_sensitive_rec_name_is_reported(tmp_path: Path) -> None:
