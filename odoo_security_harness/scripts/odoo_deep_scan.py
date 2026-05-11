@@ -8888,9 +8888,18 @@ class _RouteInventoryVisitor(ast.NodeVisitor):
         self.path = path
         self.module_constants = module_constants
         self.http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.routes: list[dict[str, str | int]] = []
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
+        self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         if node.module == "odoo":
@@ -8923,6 +8932,7 @@ class _RouteInventoryVisitor(ast.NodeVisitor):
                 decorator,
                 constants,
                 http_module_names=self.http_module_names,
+                odoo_module_names=self.odoo_module_names,
                 route_decorator_names=self.route_decorator_names,
             )
             if route is None:
@@ -8955,11 +8965,13 @@ def _route_from_decorator(
     constants: dict[str, ast.AST] | None = None,
     *,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
     route_decorator_names: set[str] | None = None,
 ) -> dict[str, str] | None:
     if not _is_http_route(
         node,
         http_module_names=http_module_names,
+        odoo_module_names=odoo_module_names,
         route_decorator_names=route_decorator_names,
     ):
         return None
@@ -9006,20 +9018,38 @@ def _is_http_route(
     node: ast.AST,
     *,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
     route_decorator_names: set[str] | None = None,
 ) -> bool:
     http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     route_decorator_names = route_decorator_names or set()
     target = node.func if isinstance(node, ast.Call) else node
     if isinstance(target, ast.Attribute):
-        return (
-            target.attr == "route"
-            and isinstance(target.value, ast.Name)
-            and target.value.id in http_module_names
+        return target.attr == "route" and _is_odoo_http_expr(
+            target.value,
+            http_module_names=http_module_names,
+            odoo_module_names=odoo_module_names,
         )
     if isinstance(target, ast.Name):
         return target.id in route_decorator_names
     return False
+
+
+def _is_odoo_http_expr(
+    node: ast.AST,
+    *,
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in http_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "http"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in odoo_module_names
+    )
 
 
 def _route_text(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:

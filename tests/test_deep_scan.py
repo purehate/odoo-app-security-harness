@@ -7893,6 +7893,42 @@ class TestController(odoo_http.Controller):
     ]
 
 
+def test_route_inventory_resolves_imported_odoo_module_route_metadata(tmp_path: Path) -> None:
+    """Route inventory should preserve odoo.http.route decorator metadata."""
+    controllers = tmp_path / "test_module" / "controllers"
+    controllers.mkdir(parents=True)
+    controller = controllers / "main.py"
+    controller.write_text(
+        """
+import odoo as od
+
+AUTH = 'public'
+
+class TestController(od.http.Controller):
+    @od.http.route('/public/imported-odoo', auth=AUTH, csrf=False)
+    def imported(self):
+        return {}
+""",
+        encoding="utf-8",
+    )
+
+    routes = odoo_deep_scan._route_inventory(tmp_path, [controller])
+
+    assert routes == [
+        {
+            "file": "test_module/controllers/main.py",
+            "line": 7,
+            "end_line": 9,
+            "function": "imported",
+            "route": "/public/imported-odoo",
+            "auth": "public",
+            "csrf": "False",
+            "type": "http",
+            "methods": "",
+        }
+    ]
+
+
 def test_route_inventory_ignores_non_odoo_route_decorators(tmp_path: Path) -> None:
     """Route inventory should not count arbitrary non-Odoo route decorators."""
     controllers = tmp_path / "test_module" / "controllers"
