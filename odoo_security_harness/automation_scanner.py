@@ -303,6 +303,10 @@ class _AutomationCodeScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name in HTTP_METHODS:
                     self.http_function_aliases.add(alias.asname or alias.name)
+        elif node.module == "urllib":
+            for alias in node.names:
+                if alias.name == "request":
+                    self.http_module_aliases.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
