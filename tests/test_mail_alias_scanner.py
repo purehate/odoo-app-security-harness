@@ -81,6 +81,48 @@ def test_flags_partners_alias_as_broad_sender_policy(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-mail-alias-broad-contact-policy" for f in findings)
 
 
+def test_flags_alias_mixin_record_fields(tmp_path: Path) -> None:
+    """Alias policy fields on mail.alias.mixin records should be scanned too."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "projects.xml").write_text(
+        """<odoo>
+  <record id="project_email_ingress" model="project.project">
+    <field name="name">Inbox project</field>
+    <field name="alias_contact">everyone</field>
+    <field name="alias_defaults">{'user_id': 1}</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_aliases(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+    models = {finding.model for finding in findings}
+
+    assert "odoo-mail-alias-broad-contact-policy" in rule_ids
+    assert "odoo-mail-alias-elevated-defaults" in rule_ids
+    assert "project.project" in models
+
+
+def test_flags_alias_mixin_csv_fields(tmp_path: Path) -> None:
+    """CSV exports for alias mixin models can also configure broad inbound aliases."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "project_project.csv").write_text(
+        "id,name,alias_contact\nproject_email_ingress,Inbox project,partners\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_aliases(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-mail-alias-broad-contact-policy"
+        and finding.model == "project.project"
+        for finding in findings
+    )
+
+
 def test_flags_csv_privileged_alias_owner_and_defaults(tmp_path: Path) -> None:
     """CSV aliases should expose privileged owners and default assignments."""
     data = tmp_path / "module" / "data"

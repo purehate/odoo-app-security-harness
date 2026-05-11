@@ -114,17 +114,26 @@ class MailAliasScanner(XmlScanner):
         for record in self.root.iter("record"):
             if record.get("model") == "mail.alias":
                 self._scan_alias(record)
+            else:
+                fields = _record_fields(record)
+                if _has_alias_policy_fields(fields):
+                    self._scan_alias_fields(
+                        fields,
+                        record.get("id", ""),
+                        self._line_for_record(record),
+                        owner_model=record.get("model", ""),
+                    )
 
     def scan_csv_file(self) -> list[MailAliasFinding]:
         """Scan mail.alias CSV data records."""
-        if _csv_model_name(self.path) != "mail.alias":
-            return []
+        model = _csv_model_name(self.path)
         try:
             self.content = self.path.read_text(encoding="utf-8", errors="replace")
         except Exception:
             return []
         for fields, line_number in _csv_dict_rows(self.content):
-            self._scan_alias_fields(fields, fields.get("id", ""), line_number)
+            if model == "mail.alias" or _has_alias_policy_fields(fields):
+                self._scan_alias_fields(fields, fields.get("id", ""), line_number, owner_model=model)
         return self.findings
 
     def _scan_alias(self, record: ElementTree.Element) -> None:
@@ -133,8 +142,12 @@ class MailAliasScanner(XmlScanner):
         line = self._line_for_record(record)
         self._scan_alias_fields(fields, alias_id, line)
 
-    def _scan_alias_fields(self, fields: dict[str, str], alias_id: str, line: int) -> None:
+    def _scan_alias_fields(
+        self, fields: dict[str, str], alias_id: str, line: int, *, owner_model: str = ""
+    ) -> None:
         target_model = _model_value(fields.get("alias_model_id", "") or fields.get("alias_model", ""))
+        if not target_model and owner_model != "mail.alias":
+            target_model = owner_model
         alias_contact = fields.get("alias_contact", "").strip("'\"").lower()
         defaults = fields.get("alias_defaults", "")
         alias_user = fields.get("alias_user_id", "")
@@ -254,10 +267,23 @@ def _is_privileged_alias_user(value: str) -> bool:
     return lowered in PRIVILEGED_ALIAS_USER_HINTS or lowered.endswith(".user_admin") or lowered.endswith(".user_root")
 
 
+def _has_alias_policy_fields(fields: dict[str, str]) -> bool:
+    return any(name.startswith("alias_") for name in fields) and any(
+        name in fields
+        for name in (
+            "alias_contact",
+            "alias_defaults",
+            "alias_force_thread_id",
+            "alias_model",
+            "alias_model_id",
+            "alias_user_id",
+        )
+    )
+
+
 def _csv_model_name(path: Path) -> str:
     stem = path.stem.strip().lower()
-    dotted = stem.replace("_", ".")
-    return dotted if dotted == "mail.alias" else stem
+    return stem.replace("_", ".")
 
 
 def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
