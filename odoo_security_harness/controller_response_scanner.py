@@ -1363,7 +1363,7 @@ def _samesite_is_set(node: ast.AST | None, constants: dict[str, ast.AST] | None 
     node = _resolve_constant(node, constants or {}) if node is not None else node
     if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
         return False
-    return node.value.lower() in {"lax", "strict", "none"}
+    return node.value.lower() in {"lax", "strict"}
 
 
 def _call_name(node: ast.AST) -> str:

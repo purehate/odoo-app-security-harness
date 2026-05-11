@@ -2507,6 +2507,30 @@ class Controller(http.Controller):
     assert scan_controller_responses(tmp_path) == []
 
 
+def test_sensitive_cookie_with_samesite_none_is_reported(tmp_path: Path) -> None:
+    """SameSite=None keeps sensitive cookies cross-site and should not count as restricted."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/export', auth='user')
+    def export(self):
+        response = request.make_response('ok')
+        response.set_cookie('session_token', 'fixed', httponly=True, secure=True, samesite='None')
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(f.rule_id == "odoo-controller-cookie-missing-security-flags" for f in findings)
+
+
 def test_sensitive_cookie_with_constant_alias_security_flags_is_ignored(tmp_path: Path) -> None:
     """Constant-backed cookie hardening flags should suppress the posture warning."""
     controllers = tmp_path / "module" / "controllers"
