@@ -232,6 +232,28 @@ def test_server_action_keyword_with_user_mutation_is_reported(tmp_path: Path) ->
     assert "odoo-xml-server-action-sudo-mutation" in rule_ids
 
 
+def test_server_action_aliased_import_with_user_mutation_is_reported(tmp_path: Path) -> None:
+    """XML server actions should resolve imported SUPERUSER_ID aliases."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_with_user_alias_import" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+from odoo import SUPERUSER_ID as ROOT_UID
+records.with_user(ROOT_UID).write({'state': 'done'})
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+    rule_ids = {f.rule_id for f in findings}
+
+    assert "odoo-xml-server-action-sudo-mutation" in rule_ids
+
+
 def test_server_action_constant_backed_with_user_mutation_is_reported(tmp_path: Path) -> None:
     """XML server action code should resolve simple superuser constants."""
     xml = tmp_path / "actions.xml"
@@ -660,8 +682,7 @@ def test_public_mail_channel_csv(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "mail_channel.csv").write_text(
-        "id,name,allow_public_users\n"
-        "channel_public,Public Channel,True\n",
+        "id,name,allow_public_users\nchannel_public,Public Channel,True\n",
         encoding="utf-8",
     )
 
@@ -693,8 +714,7 @@ def test_user_admin_group_assignment_csv(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "res_users.csv").write_text(
-        "id,login,groups_id/id\n"
-        "demo_promoted_user,demo-admin,base.group_system\n",
+        "id,login,groups_id/id\ndemo_promoted_user,demo-admin,base.group_system\n",
         encoding="utf-8",
     )
 
@@ -745,8 +765,7 @@ def test_group_record_implies_admin_privilege_csv(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "res_groups.csv").write_text(
-        "id,name,implied_ids/id\n"
-        "group_support,Support,base.group_system\n",
+        "id,name,implied_ids/id\ngroup_support,Support,base.group_system\n",
         encoding="utf-8",
     )
 

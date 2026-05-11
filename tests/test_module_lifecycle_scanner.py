@@ -98,7 +98,9 @@ class Controller(http.Controller):
         and finding.route == "/public/install,/public/modules/install"
         for finding in findings
     )
-    assert any(finding.rule_id == "odoo-module-tainted-selection" and finding.severity == "critical" for finding in findings)
+    assert any(
+        finding.rule_id == "odoo-module-tainted-selection" and finding.severity == "critical" for finding in findings
+    )
 
 
 def test_recursive_constant_route_and_module_model_lifecycle_is_reported(tmp_path: Path) -> None:
@@ -549,6 +551,27 @@ class ModuleHelper:
 
     assert "odoo-module-sudo-lifecycle" in rule_ids
     assert "odoo-module-public-route-lifecycle" not in rule_ids
+
+
+def test_aliased_import_superuser_upgrade_on_module_model_is_reported(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases in module lifecycle calls are elevated."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "modules.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID
+
+class ModuleHelper:
+    def upgrade_sale(self):
+        return self.env['ir.module.module'].with_user(ROOT_UID).search([('name', '=', 'sale')]).button_upgrade()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_module_lifecycle(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-module-sudo-lifecycle" in rule_ids
 
 
 def test_keyword_superuser_upgrade_on_module_model_is_reported(tmp_path: Path) -> None:

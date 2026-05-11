@@ -74,6 +74,7 @@ class LoosePythonScanner(ast.NodeVisitor):
         self.unsafe_sql_vars: set[str] = set()
         self.http_client_names: set[str] = set()
         self.elevated_record_names: set[str] = set()
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.module_aliases: dict[str, str] = {}
         self.function_aliases: dict[str, str] = {}
         self.constants: dict[str, ast.AST] = {}
@@ -119,6 +120,10 @@ class LoosePythonScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "request":
                     self.module_aliases[alias.asname or alias.name] = "urllib.request"
+        elif node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -421,7 +426,10 @@ class LoosePythonScanner(ast.NodeVisitor):
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute) and (
                 node.func.attr == "sudo"
-                or (node.func.attr == "with_user" and _call_has_superuser_arg(node, self._effective_constants()))
+                or (
+                    node.func.attr == "with_user"
+                    and _call_has_superuser_arg(node, self._effective_constants(), self.superuser_names)
+                )
             ):
                 return True
             return self._expr_has_elevated_record(node.func)
@@ -602,9 +610,14 @@ def _call_name(node: ast.AST) -> str:
     return ""
 
 
-def _call_has_superuser_arg(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
-    return any(_is_superuser_arg(arg, constants) for arg in node.args) or any(
-        keyword.value is not None and _is_superuser_arg(keyword.value, constants) for keyword in node.keywords
+def _call_has_superuser_arg(
+    node: ast.Call,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args) or any(
+        keyword.value is not None and _is_superuser_arg(keyword.value, constants, superuser_names)
+        for keyword in node.keywords
     )
 
 
@@ -656,17 +669,22 @@ def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST
     return values
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
     if constants:
         node = _resolve_constant(node, constants)
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 

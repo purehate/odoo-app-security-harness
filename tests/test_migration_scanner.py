@@ -169,6 +169,24 @@ def migrate(env):
     assert any(f.rule_id == "odoo-migration-sudo-mutation" for f in findings)
 
 
+def test_aliased_import_with_user_superuser_mutation_is_reported(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases in migrations should trigger mutation review."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID
+
+def migrate(env):
+    env['res.partner'].with_user(ROOT_UID).search([]).write({'active': False})
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(f.rule_id == "odoo-migration-sudo-mutation" for f in findings)
+
+
 def test_constant_backed_with_user_mutation_is_reported(tmp_path: Path) -> None:
     """Migration scanners should resolve simple constants used for superuser aliases."""
     py = tmp_path / "post-migrate.py"

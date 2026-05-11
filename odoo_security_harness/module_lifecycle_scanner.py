@@ -70,6 +70,7 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
         self.request_names: set[str] = {"request"}
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.route_names: set[str] = set()
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
@@ -141,6 +142,8 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -176,7 +179,7 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
             for name in target_names:
                 self.module_vars.add(name)
                 if _uses_sudo_module_var(node.iter, self.sudo_module_vars) or _is_elevated_expr(
-                    node.iter, constants
+                    node.iter, constants, self.superuser_names
                 ):
                     self.sudo_module_vars.add(name)
                 else:
@@ -220,7 +223,9 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
                 route.display_path(),
                 sink,
             )
-        if _is_elevated_expr(node.func, constants) or _uses_sudo_module_var(node.func, self.sudo_module_vars):
+        if _is_elevated_expr(node.func, constants, self.superuser_names) or _uses_sudo_module_var(
+            node.func, self.sudo_module_vars
+        ):
             self._add(
                 "odoo-module-sudo-lifecycle",
                 "Module lifecycle operation runs with an elevated environment",
@@ -281,7 +286,9 @@ class ModuleLifecycleScanner(ast.NodeVisitor):
         for name in _target_names(target):
             if is_module_expr:
                 self.module_vars.add(name)
-                if _is_elevated_expr(value, constants) or _uses_sudo_module_var(value, self.sudo_module_vars):
+                if _is_elevated_expr(value, constants, self.superuser_names) or _uses_sudo_module_var(
+                    value, self.sudo_module_vars
+                ):
                     self.sudo_module_vars.add(name)
                 else:
                     self.sudo_module_vars.discard(name)
@@ -615,13 +622,15 @@ def _is_request_derived(
     if isinstance(node, ast.Starred):
         return _is_request_derived(node.value, request_names, http_module_names, odoo_module_names)
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return any(_is_request_derived(element, request_names, http_module_names, odoo_module_names) for element in node.elts)
+        return any(
+            _is_request_derived(element, request_names, http_module_names, odoo_module_names) for element in node.elts
+        )
     if isinstance(node, ast.Attribute):
         return _is_request_derived(node.value, request_names, http_module_names, odoo_module_names)
     if isinstance(node, ast.Subscript):
-        return _is_request_derived(node.value, request_names, http_module_names, odoo_module_names) or _is_request_derived(
-            node.slice, request_names, http_module_names, odoo_module_names
-        )
+        return _is_request_derived(
+            node.value, request_names, http_module_names, odoo_module_names
+        ) or _is_request_derived(node.slice, request_names, http_module_names, odoo_module_names)
     if isinstance(node, ast.Call):
         return (
             _is_request_derived(node.func, request_names, http_module_names, odoo_module_names)
@@ -696,12 +705,16 @@ def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     return False
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
     if isinstance(node, ast.Starred):
-        return _call_chain_has_superuser_with_user(node.value, constants)
+        return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return any(_call_chain_has_superuser_with_user(element, constants) for element in node.elts)
+        return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     current: ast.AST | None = node
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
         if isinstance(current, ast.Call):
@@ -709,9 +722,9 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
                 isinstance(current.func, ast.Attribute)
                 and current.func.attr == "with_user"
                 and (
-                    any(_is_superuser_arg(arg, constants) for arg in current.args)
+                    any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args)
                     or any(
-                        keyword.value is not None and _is_superuser_arg(keyword.value, constants)
+                        keyword.value is not None and _is_superuser_arg(keyword.value, constants, superuser_names)
                         for keyword in current.keywords
                     )
                 )
@@ -725,24 +738,33 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
     return False
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
     resolved = _resolve_constant(node, constants)
     if resolved is not node:
-        return _is_superuser_arg(resolved, constants)
+        return _is_superuser_arg(resolved, constants, superuser_names)
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 
-def _is_elevated_expr(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
-    return _call_chain_has_attr(node, "sudo") or _call_chain_has_superuser_with_user(node, constants)
+def _is_elevated_expr(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    return _call_chain_has_attr(node, "sudo") or _call_chain_has_superuser_with_user(node, constants, superuser_names)
 
 
 def _call_name(node: ast.AST) -> str:

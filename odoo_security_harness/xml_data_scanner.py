@@ -324,7 +324,9 @@ class XmlDataScanner:
 
     def _scan_mail_channel(self, record: ElementTree.Element) -> None:
         fields = self._fields(record)
-        self._scan_mail_channel_fields(record.get("model", ""), fields, self._line_for_record(record), record.get("id", ""))
+        self._scan_mail_channel_fields(
+            record.get("model", ""), fields, self._line_for_record(record), record.get("id", "")
+        )
 
     def _scan_mail_channel_fields(self, model: str, fields: dict[str, str], line: int, record_id: str) -> None:
         if fields.get("allow_public_users") in {"1", "True", "true"}:
@@ -601,6 +603,7 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
         self.constants = constants
         self.risks = _ServerActionCodeRisks()
         self.elevated_names: set[str] = set()
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.module_aliases: dict[str, str] = {}
         self.function_aliases: dict[str, str] = {}
 
@@ -621,6 +624,10 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "request":
                     self.module_aliases[alias.asname or alias.name] = "urllib.request"
+        elif node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> Any:
@@ -639,7 +646,9 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Any:
         method = _call_name(node.func).rsplit(".", 1)[-1]
-        if method in {"write", "create", "unlink"} and _is_elevated_expr(node.func, self.elevated_names, self.constants):
+        if method in {"write", "create", "unlink"} and _is_elevated_expr(
+            node.func, self.elevated_names, self.constants, self.superuser_names
+        ):
             self.risks.sudo_mutation = True
         if method in SECURITY_MUTATION_FUNCTIONS:
             model = _call_receiver_env_model(node.func, self.constants)
@@ -714,7 +723,7 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
             return
         if not isinstance(target, ast.Name):
             return
-        if _is_elevated_expr(value, self.elevated_names, self.constants):
+        if _is_elevated_expr(value, self.elevated_names, self.constants, self.superuser_names):
             self.elevated_names.add(target.id)
         else:
             self.elevated_names.discard(target.id)
@@ -728,17 +737,22 @@ def _regex_sudo_mutation(code: str) -> bool:
     return bool(re.search(rf"\.(?:sudo\(\)|{superuser_with_user}).*?\.(write|create|unlink)\s*\(", code, re.DOTALL))
 
 
-def _is_elevated_expr(node: ast.AST, elevated_names: set[str], constants: dict[str, ast.AST]) -> bool:
+def _is_elevated_expr(
+    node: ast.AST,
+    elevated_names: set[str],
+    constants: dict[str, ast.AST],
+    superuser_names: set[str] | None = None,
+) -> bool:
     if isinstance(node, ast.Starred):
-        return _is_elevated_expr(node.value, elevated_names, constants)
+        return _is_elevated_expr(node.value, elevated_names, constants, superuser_names)
     if isinstance(node, ast.Name):
         return node.id in elevated_names
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return any(_is_elevated_expr(element, elevated_names, constants) for element in node.elts)
+        return any(_is_elevated_expr(element, elevated_names, constants, superuser_names) for element in node.elts)
     return (
         _call_root_name(node) in elevated_names
         or _call_chain_has_attr(node, "sudo")
-        or _call_chain_has_superuser_with_user(node, constants)
+        or _call_chain_has_superuser_with_user(node, constants, superuser_names)
     )
 
 
@@ -756,13 +770,17 @@ def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     return False
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST],
+    superuser_names: set[str] | None = None,
+) -> bool:
     current: ast.AST | None = node
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
         if isinstance(current, ast.Call):
             if isinstance(current.func, ast.Attribute) and current.func.attr == "with_user":
-                return any(_is_superuser_arg(arg, constants) for arg in current.args) or any(
-                    keyword.value is not None and _is_superuser_arg(keyword.value, constants)
+                return any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args) or any(
+                    keyword.value is not None and _is_superuser_arg(keyword.value, constants, superuser_names)
                     for keyword in current.keywords
                 )
             current = current.func
@@ -773,16 +791,21 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
     return False
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST],
+    superuser_names: set[str] | None = None,
+) -> bool:
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
     node = _resolve_constant(node, constants)
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 

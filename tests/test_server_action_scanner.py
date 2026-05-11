@@ -212,6 +212,23 @@ records.with_user(SUPERUSER_ID).write({'state': 'done'})
     assert any(f.rule_id == "odoo-loose-python-sudo-write" for f in findings)
 
 
+def test_server_action_detects_aliased_import_superuser_write(tmp_path: Path) -> None:
+    """with_user imported SUPERUSER_ID aliases should be treated as privileged writes."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID
+
+records.with_user(ROOT_UID).write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-sudo-write" for f in findings)
+
+
 def test_server_action_detects_constant_backed_superuser_write(tmp_path: Path) -> None:
     """with_user constants should be treated as privileged writes."""
     script = tmp_path / "action.py"
@@ -848,8 +865,7 @@ def test_repository_scan_detects_csv_server_action_code(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir_actions_server.csv").write_text(
-        "id,name,state,code\n"
-        "action_eval,Eval,code,safe_eval(record.domain)\n",
+        "id,name,state,code\naction_eval,Eval,code,safe_eval(record.domain)\n",
         encoding="utf-8",
     )
 
@@ -880,8 +896,7 @@ def test_repository_scan_ignores_non_code_csv_server_actions(tmp_path: Path) -> 
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.actions.server.csv").write_text(
-        "id,name,state,code\n"
-        "action_email,Email,email,eval(record.expression)\n",
+        "id,name,state,code\naction_email,Email,email,eval(record.expression)\n",
         encoding="utf-8",
     )
 

@@ -49,16 +49,13 @@ def test_broad_sensitive_automation_in_csv_is_reported(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "base_automation.csv").write_text(
-        "id,name,model_id/id,trigger\n"
-        "auto_sale,Sale,sale.model_sale_order,on_create_or_write\n",
+        "id,name,model_id/id,trigger\nauto_sale,Sale,sale.model_sale_order,on_create_or_write\n",
         encoding="utf-8",
     )
 
     findings = scan_automations(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-automation-broad-sensitive-trigger" and f.record_id == "auto_sale" for f in findings
-    )
+    assert any(f.rule_id == "odoo-automation-broad-sensitive-trigger" and f.record_id == "auto_sale" for f in findings)
 
 
 def test_automation_csv_code_risks_are_reported(tmp_path: Path) -> None:
@@ -66,8 +63,7 @@ def test_automation_csv_code_risks_are_reported(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "base.automation.csv").write_text(
-        "id,name,code\n"
-        "auto_eval,Eval,safe_eval(record.expression)\n",
+        "id,name,code\nauto_eval,Eval,safe_eval(record.expression)\n",
         encoding="utf-8",
     )
 
@@ -151,6 +147,26 @@ def test_with_user_superuser_mutation_in_automation_is_reported(tmp_path: Path) 
   <record id="auto_with_user" model="base.automation">
     <field name="code"><![CDATA[
 record.with_user(SUPERUSER_ID).write({'active': False})
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-sudo-mutation" for f in findings)
+
+
+def test_aliased_import_with_user_superuser_mutation_in_automation_is_reported(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases in automated actions should be elevated."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_with_user_alias_import" model="base.automation">
+    <field name="code"><![CDATA[
+from odoo import SUPERUSER_ID as ROOT_UID
+record.with_user(ROOT_UID).write({'active': False})
     ]]></field>
   </record>
 </odoo>""",
