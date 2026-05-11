@@ -623,6 +623,39 @@ class AttachmentHelper:
     assert "odoo-attachment-public-sensitive-binding" in rule_ids
 
 
+def test_local_constant_public_sensitive_attachment_is_reported(tmp_path: Path) -> None:
+    """Function-local attachment constants should not hide risky public bindings."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachments.py").write_text(
+        """
+from odoo import SUPERUSER_ID
+
+class AttachmentHelper:
+    def create_public_invoice(self):
+        attachment_model = 'ir.attachment'
+        root = SUPERUSER_ID
+        public_attachment = True
+        attach_model = 'account.move'
+        attachments = self.env[attachment_model].with_user(root)
+        attachments.create({
+            'name': 'invoice.pdf',
+            'datas': self.payload,
+            'res_model': attach_model,
+            'public': public_attachment,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-attachment-sudo-mutation" in rule_ids
+    assert "odoo-attachment-public-orphan" in rule_ids
+    assert "odoo-attachment-public-sensitive-binding" in rule_ids
+
+
 def test_public_security_model_attachment_bindings_are_reported(tmp_path: Path) -> None:
     """Public attachments bound to security/payment records should be critical."""
     models = tmp_path / "module" / "models"
@@ -1402,6 +1435,26 @@ class AttachmentHelper:
     def publish_attachment(self, attachment_id):
         attachment = self.env['ir.attachment'].browse(attachment_id)
         return attachment.write({'public': PUBLIC_ATTACHMENT})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(f.rule_id == "odoo-attachment-public-write" for f in findings)
+
+
+def test_local_constant_public_attachment_write_is_reported(tmp_path: Path) -> None:
+    """Function-local public flags should not hide attachment write exposure."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachments.py").write_text(
+        """
+class AttachmentHelper:
+    def publish_attachment(self, attachment_id):
+        public_attachment = True
+        attachment = self.env['ir.attachment'].browse(attachment_id)
+        return attachment.write({'public': public_attachment})
 """,
         encoding="utf-8",
     )

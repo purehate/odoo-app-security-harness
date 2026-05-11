@@ -96,6 +96,7 @@ class AttachmentScanner(ast.NodeVisitor):
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[AttachmentFinding]:
         """Scan the file."""
@@ -139,6 +140,8 @@ class AttachmentScanner(ast.NodeVisitor):
         previous_sudo_attachment_vars = set(self.sudo_attachment_vars)
         previous_attachment_values = dict(self.attachment_value_names)
         previous_tainted = set(self.tainted_names)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         route = _route_info(
             node,
             self._effective_constants(),
@@ -162,6 +165,7 @@ class AttachmentScanner(ast.NodeVisitor):
         self.sudo_attachment_vars = previous_sudo_attachment_vars
         self.attachment_value_names = previous_attachment_values
         self.tainted_names = previous_tainted
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -173,6 +177,7 @@ class AttachmentScanner(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_attachment_target(target, node.value)
             self._mark_attachment_value_target(target, node.value)
             self._mark_attachment_value_item_target(target, node.value)
@@ -181,6 +186,7 @@ class AttachmentScanner(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_attachment_target(node.target, node.value)
             self._mark_attachment_value_target(node.target, node.value)
             self._mark_tainted_target(node.target, node.value)
@@ -197,6 +203,7 @@ class AttachmentScanner(ast.NodeVisitor):
         self.visit_For(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_attachment_target(node.target, node.value)
         self._mark_attachment_value_target(node.target, node.value)
         self._mark_attachment_value_item_target(node.target, node.value)
@@ -552,15 +559,35 @@ class AttachmentScanner(ast.NodeVisitor):
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                if isinstance(element, ast.Name):
+                    self.local_constants.pop(element.id, None)
+
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, route: str, sink: str) -> None:
