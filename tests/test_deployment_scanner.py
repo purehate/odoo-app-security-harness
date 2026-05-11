@@ -155,6 +155,26 @@ ODOO_AUTH_SIGNUP_ALLOW_UNINVITED=true
     assert "odoo-deploy-open-signup" in rule_ids
 
 
+def test_scan_deployment_config_flags_dockerfile_odoo_env_keys(tmp_path: Path) -> None:
+    """Dockerfile ARG/ENV layers can bake risky Odoo production settings."""
+    config = tmp_path / "Dockerfile"
+    config.write_text(
+        """FROM odoo:18
+ARG ODOO_LIST_DB=true
+ENV ODOO_PROXY_MODE=false
+ENV ODOO_WEB_BASE_URL http://localhost:8069
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_deployment_config(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deploy-list-db-enabled" in rule_ids
+    assert "odoo-deploy-proxy-mode-disabled" in rule_ids
+    assert "odoo-deploy-insecure-base-url" in rule_ids
+
+
 def test_scan_deployment_config_flags_signup_and_base_url_xml(tmp_path: Path) -> None:
     """XML config parameters should flag open signup and mutable base URL settings."""
     data_dir = tmp_path / "module" / "data"

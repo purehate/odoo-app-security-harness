@@ -29,6 +29,7 @@ class DeploymentFinding:
 
 
 CONFIG_EXTENSIONS = {".conf", ".cfg", ".ini", ".env"}
+DOCKERFILE_NAMES = {"containerfile", "dockerfile"}
 TRUTHY = {"1", "true", "yes", "y", "on"}
 FALSY = {"0", "false", "no", "n", "off"}
 SENSITIVE_DEBUG_LOGGERS = {"odoo.http", "odoo.sql_db", "odoo.addons", "werkzeug"}
@@ -70,6 +71,8 @@ class DeploymentScanner:
             self._scan_config_parameter_xml()
         elif suffix == ".csv":
             self._scan_config_parameter_csv()
+        elif _is_dockerfile(self.path):
+            self._scan_dockerfile_config_lines()
         else:
             self._scan_config_lines()
         return self.findings
@@ -77,6 +80,14 @@ class DeploymentScanner:
     def _scan_config_lines(self) -> None:
         for line_number, line in enumerate(self.content.splitlines(), start=1):
             parsed = _parse_assignment(line)
+            if not parsed:
+                continue
+            key, value = parsed
+            self._scan_config_value(key, value, line_number)
+
+    def _scan_dockerfile_config_lines(self) -> None:
+        for line_number, line in enumerate(self.content.splitlines(), start=1):
+            parsed = _parse_dockerfile_env_assignment(line)
             if not parsed:
                 continue
             key, value = parsed
@@ -417,6 +428,21 @@ def _parse_assignment(line: str) -> tuple[str, str] | None:
     return key.strip(), value.split("#", 1)[0].split(";", 1)[0].strip()
 
 
+def _parse_dockerfile_env_assignment(line: str) -> tuple[str, str] | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    directive, sep, rest = stripped.partition(" ")
+    if not sep or directive.upper() not in {"ARG", "ENV"}:
+        return None
+    key, equals, value = rest.strip().partition("=")
+    if not equals:
+        key, _, value = rest.strip().partition(" ")
+    if not key or not value:
+        return None
+    return key.strip(), value.split("#", 1)[0].strip()
+
+
 def _normalize_config_key(key: str) -> str:
     normalized = key.strip().lower().replace("-", "_")
     if normalized.startswith("odoo_"):
@@ -475,7 +501,12 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
 
 def _looks_config_file(path: Path) -> bool:
     suffix = path.suffix.lower()
-    return suffix in CONFIG_EXTENSIONS or path.name.startswith(".env") or path.name == "odoo.conf"
+    return suffix in CONFIG_EXTENSIONS or path.name.startswith(".env") or path.name == "odoo.conf" or _is_dockerfile(path)
+
+
+def _is_dockerfile(path: Path) -> bool:
+    name = path.name.lower()
+    return name in DOCKERFILE_NAMES or name.startswith(("dockerfile.", "containerfile."))
 
 
 def _is_truthy(value: str) -> bool:
