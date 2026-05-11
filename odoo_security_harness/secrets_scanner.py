@@ -27,13 +27,40 @@ class SecretFinding:
     redacted: str = ""
 
 
+SECRET_KEY_PATTERNS = (
+    "access[_-]?key",
+    "api[_-]?key",
+    "apikey",
+    "auth[_-]?token",
+    "bearer[_-]?token",
+    "client[_-]?secret",
+    "csrf[_-]?token",
+    "hmac[_-]?secret",
+    "jwt[_-]?secret",
+    "license[_-]?key",
+    "oauth[_-]?token",
+    "password",
+    "passwd",
+    "private[_-]?key",
+    "pwd",
+    "secret",
+    "secret[_-]?key",
+    "session[_-]?token",
+    "signature[_-]?secret",
+    "signing[_-]?key",
+    "smtp[_-]?password",
+    "token",
+    "totp[_-]?secret",
+    "webhook[_-]?secret",
+)
+SENSITIVE_KEY_MARKERS = tuple(pattern.replace("[_-]?", "_").replace("\\", "") for pattern in SECRET_KEY_PATTERNS)
+SECRET_KEY_PATTERN = "|".join(SECRET_KEY_PATTERNS)
 SECRET_ASSIGNMENT_RE = re.compile(
-    r"['\"]?(?P<name>api[_-]?key|secret|token|password|passwd|pwd|signing[_-]?key|private[_-]?key)"
-    r"(?P<suffix>[\w.-]*)['\"]?\s*[:=]\s*['\"](?P<value>[^'\"]{8,})['\"]",
+    rf"['\"]?(?P<name>{SECRET_KEY_PATTERN})(?P<suffix>[\w.-]*)['\"]?\s*[:=]\s*['\"](?P<value>[^'\"]{{8,}})['\"]",
     re.IGNORECASE,
 )
 CONFIG_PARAMETER_CALL_RE = re.compile(
-    r"\.set_param\(\s*['\"](?P<key>[^'\"]*(?:secret|token|password|passwd|api[_-]?key|apikey|signing[_-]?key)[^'\"]*)['\"]"
+    rf"\.set_param\(\s*['\"](?P<key>[^'\"]*(?:{SECRET_KEY_PATTERN})[^'\"]*)['\"]"
     r"\s*,\s*['\"](?P<value>[^'\"]{8,})['\"]",
     re.IGNORECASE,
 )
@@ -295,10 +322,8 @@ class SecretScanner:
 
 
 def _is_sensitive_key(key: str) -> bool:
-    lowered = key.lower()
-    return any(
-        marker in lowered for marker in ("secret", "token", "password", "passwd", "api_key", "apikey", "signing_key")
-    )
+    lowered = key.lower().replace("-", "_")
+    return any(marker in lowered for marker in SENSITIVE_KEY_MARKERS)
 
 
 def _looks_placeholder(value: str) -> bool:

@@ -37,6 +37,24 @@ def test_quoted_key_secret_is_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-secret-hardcoded-value" for f in findings)
 
 
+def test_common_integration_key_assignments_are_reported(tmp_path: Path) -> None:
+    """Access/license key shaped assignments should be treated as secrets."""
+    path = tmp_path / "settings.py"
+    path.write_text(
+        """
+access_key = 'ak_live_abcdef1234567890'
+license_key = 'lic_live_abcdef1234567890'
+webhook_secret = 'whsec_abcdef1234567890'
+""",
+        encoding="utf-8",
+    )
+
+    findings = SecretScanner(path).scan_file()
+    kinds = {finding.secret_kind for finding in findings if finding.rule_id == "odoo-secret-hardcoded-value"}
+
+    assert {"access_key", "license_key", "webhook_secret"} <= kinds
+
+
 def test_set_param_secret_in_python_is_reported(tmp_path: Path) -> None:
     """Modules should not ship production ir.config_parameter values through code."""
     path = tmp_path / "settings.py"
@@ -51,6 +69,24 @@ def configure(env):
     findings = SecretScanner(path).scan_file()
 
     assert any(f.rule_id == "odoo-secret-config-parameter-set-param" for f in findings)
+
+
+def test_set_param_integration_key_in_python_is_reported(tmp_path: Path) -> None:
+    """set_param with key-shaped integration secrets should be reported."""
+    path = tmp_path / "settings.py"
+    path.write_text(
+        """
+def configure(env):
+    env['ir.config_parameter'].sudo().set_param('connector.access_key', 'ak_live_abcdef1234567890')
+    env['ir.config_parameter'].sudo().set_param('connector.license_key', 'lic_live_abcdef1234567890')
+""",
+        encoding="utf-8",
+    )
+
+    findings = SecretScanner(path).scan_file()
+    keys = {finding.secret_kind for finding in findings if finding.rule_id == "odoo-secret-config-parameter-set-param"}
+
+    assert {"connector.access_key", "connector.license_key"} <= keys
 
 
 def test_set_param_placeholder_is_ignored(tmp_path: Path) -> None:
@@ -80,6 +116,27 @@ def test_ir_config_parameter_secret_in_xml(tmp_path: Path) -> None:
     findings = SecretScanner(path).scan_file()
 
     assert any(f.rule_id == "odoo-secret-config-parameter" for f in findings)
+
+
+def test_ir_config_parameter_integration_key_in_xml(tmp_path: Path) -> None:
+    """XML data should report key-shaped integration secrets."""
+    path = tmp_path / "data.xml"
+    path.write_text(
+        """<odoo>
+  <record id="connector_access_key" model="ir.config_parameter">
+    <field name="key">connector.access_key</field>
+    <field name="value">ak_live_abcdef1234567890</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = SecretScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "access_key"
+        for f in findings
+    )
 
 
 def test_res_users_password_in_xml(tmp_path: Path) -> None:
@@ -165,6 +222,22 @@ def test_ir_config_parameter_secret_in_csv(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-secret-config-parameter" and f.severity == "high" for f in findings)
 
 
+def test_ir_config_parameter_integration_key_in_csv(tmp_path: Path) -> None:
+    """CSV data should report key-shaped integration secrets."""
+    path = tmp_path / "ir.config_parameter.csv"
+    path.write_text(
+        "id,key,value\nconnector_license,connector.license_key,lic_live_abcdef1234567890\n",
+        encoding="utf-8",
+    )
+
+    findings = SecretScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "license_key"
+        for f in findings
+    )
+
+
 def test_res_users_password_matching_login_is_reported(tmp_path: Path) -> None:
     """Account passwords equal to the login or email local part are weak defaults."""
     path = tmp_path / "users.xml"
@@ -212,6 +285,19 @@ def test_weak_admin_passwd_in_config(tmp_path: Path) -> None:
     findings = SecretScanner(path).scan_file()
 
     assert any(f.rule_id == "odoo-secret-weak-admin-passwd" for f in findings)
+
+
+def test_integration_key_in_config_file_is_reported(tmp_path: Path) -> None:
+    """Config files should report key-shaped integration secrets."""
+    path = tmp_path / "odoo.conf"
+    path.write_text("[options]\nconnector_access_key = ak_live_abcdef1234567890\n", encoding="utf-8")
+
+    findings = SecretScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-secret-config-file-value" and f.secret_kind == "connector_" + "access_key"
+        for f in findings
+    )
 
 
 def test_repository_secret_scan_skips_virtualenv(tmp_path: Path) -> None:
