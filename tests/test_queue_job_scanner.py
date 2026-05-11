@@ -635,6 +635,31 @@ class SaleJob(models.Model):
     assert any(f.rule_id == "odoo-queue-job-tls-verify-disabled" for f in findings)
 
 
+def test_flags_queue_job_cleartext_http_url(tmp_path: Path) -> None:
+    """Background integrations should not call literal cleartext HTTP endpoints."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+import requests
+
+LEGACY_CALLBACK = 'http://jobs.example.test/callback'
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        requests.post(LEGACY_CALLBACK, timeout=10)
+        return requests.request('POST', url='http://partner.example.test/jobs', timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert sum(f.rule_id == "odoo-queue-job-cleartext-http-url" for f in findings) == 2
+
+
 def test_flags_sensitive_model_queue_mutation_without_sudo(tmp_path: Path) -> None:
     """Queue jobs mutating sensitive models deserve review even without inline sudo."""
     module = tmp_path / "module" / "models"

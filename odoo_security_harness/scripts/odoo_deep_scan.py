@@ -1312,7 +1312,6 @@ _TAXONOMY_SHAPE_HINTS = (
             "scheduled job uses cleartext http url",
             "scheduled job outbound http targets a literal http:// url",
             "protect recurring integration payloads and response data",
-            "interception or downgrade",
         ),
     ),
     (
@@ -1478,6 +1477,15 @@ _TAXONOMY_SHAPE_HINTS = (
             "queue-job-tls-verify-disabled",
             "queue job disables tls verification",
             "queue_job/delayed job passes verify=false to outbound http",
+        ),
+    ),
+    (
+        "queue_job_cleartext_http_url",
+        (
+            "queue-job-cleartext-http-url",
+            "queue job uses cleartext http url",
+            "queue_job/delayed job outbound http targets a literal http:// url",
+            "protect background integration payloads and response data",
         ),
     ),
     (

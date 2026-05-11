@@ -6549,6 +6549,12 @@ def test_taxonomy_coverage_classifies_queue_job_execution_risks() -> None:
                 "title": "Queue job disables TLS verification",
                 "message": "queue_job/delayed job passes verify=False to outbound HTTP; background integrations should not permit man-in-the-middle attacks",
             },
+            {
+                "source": "queue-jobs",
+                "rule_id": "odoo-queue-job-cleartext-http-url",
+                "title": "Queue job uses cleartext HTTP URL",
+                "message": "queue_job/delayed job outbound HTTP targets a literal http:// URL; use HTTPS to protect background integration payloads and response data from interception or downgrade",
+            },
         ]
     )
 
@@ -6560,6 +6566,7 @@ def test_taxonomy_coverage_classifies_queue_job_execution_risks() -> None:
     assert shapes["odoo-queue-job-dynamic-eval"] == "queue_job_dynamic_evaluation"
     assert shapes["odoo-queue-job-http-no-timeout"] == "queue_job_http_without_timeout"
     assert shapes["odoo-queue-job-tls-verify-disabled"] == "queue_job_tls_verification_disabled"
+    assert shapes["odoo-queue-job-cleartext-http-url"] == "queue_job_cleartext_http_url"
     assert any("CWE-295" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 

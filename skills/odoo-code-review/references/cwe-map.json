@@ -1499,6 +1499,12 @@
       "capec": ["CAPEC-94"],
       "owasp": "A02:2021 Cryptographic Failures"
     },
+    "queue_job_cleartext_http_url": {
+      "label": "Odoo queue job uses cleartext HTTP transport",
+      "cwe": ["CWE-319", "CWE-311", "CWE-200"],
+      "capec": ["CAPEC-117", "CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "serialization_unsafe_deserialization": {
       "label": "Odoo addon deserializes pickle-backed or object-capable data",
       "cwe": ["CWE-502", "CWE-94", "CWE-20"],

@@ -265,6 +265,16 @@ class QueueJobScanner(ast.NodeVisitor):
                         "queue_job/delayed job passes verify=False to outbound HTTP; background integrations should not permit man-in-the-middle attacks",
                         current.name,
                     )
+                for url_value in _http_url_values(node, sink, constants):
+                    if _is_cleartext_literal_url(url_value, constants):
+                        self._add(
+                            "odoo-queue-job-cleartext-http-url",
+                            "Queue job uses cleartext HTTP URL",
+                            "medium",
+                            node.lineno,
+                            "queue_job/delayed job outbound HTTP targets a literal http:// URL; use HTTPS to protect background integration payloads and response data from interception or downgrade",
+                            current.name,
+                        )
 
         self.generic_visit(node)
 
@@ -465,6 +475,18 @@ def _expanded_dict_keywords(node: ast.Dict, constants: dict[str, ast.AST]) -> li
     return keywords
 
 
+def _http_url_values(node: ast.Call, sink: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    if node.args:
+        method = sink.rsplit(".", 1)[-1]
+        if method == "request" and len(node.args) >= 2:
+            values.append(node.args[1])
+        else:
+            values.append(node.args[0])
+    values.extend(keyword_value for name, keyword_value in _expanded_keywords(node, constants) if name == "url")
+    return values
+
+
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.AST:
     if isinstance(node, ast.Name):
         seen = seen or set()
@@ -473,6 +495,15 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[st
         seen.add(node.id)
         return _resolve_constant(constants[node.id], constants, seen)
     return node
+
+
+def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    return (
+        isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+        and value.value.strip().lower().startswith("http://")
+    )
 
 
 def _is_static_literal(node: ast.AST) -> bool:
