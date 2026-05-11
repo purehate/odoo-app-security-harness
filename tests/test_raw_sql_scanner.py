@@ -366,6 +366,33 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-raw-sql-request-derived-input" for f in findings)
 
 
+def test_flags_dict_union_keyword_request_derived_sql_parameter(tmp_path: Path) -> None:
+    """Dict-union execute **kwargs should surface request-derived input."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/lookup', auth='user')
+    def lookup(self, **kwargs):
+        partner_id = kwargs.get('partner_id')
+        execute_kwargs = {
+            'sql': 'SELECT * FROM res_partner WHERE id = %s',
+            'params': (),
+        } | {'params': (partner_id,)}
+        request.env.cr.execute(**execute_kwargs)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_raw_sql(tmp_path)
+
+    assert any(f.rule_id == "odoo-raw-sql-request-derived-input" for f in findings)
+
+
 def test_boolop_derived_sql_parameter_is_reported(tmp_path: Path) -> None:
     """Boolean fallback expressions should not clear request taint."""
     controllers = tmp_path / "module" / "controllers"
@@ -836,6 +863,29 @@ class Cleanup(models.Model):
     def cleanup(self):
         query = "DELETE FROM sale_order"
         self.env.cr.execute(query)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_raw_sql(tmp_path)
+
+    assert any(f.rule_id == "odoo-raw-sql-broad-destructive-query" for f in findings)
+
+
+def test_flags_dict_union_keyword_broad_destructive_runtime_sql(tmp_path: Path) -> None:
+    """Dict-union execute **kwargs should not hide destructive SQL literals."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "cleanup.py").write_text(
+        """
+from odoo import models
+
+class Cleanup(models.Model):
+    _name = 'x.cleanup'
+
+    def cleanup(self):
+        execute_kwargs = {'query': 'SELECT 1'} | {'query': 'DELETE FROM sale_order'}
+        self.env.cr.execute(**execute_kwargs)
 """,
         encoding="utf-8",
     )

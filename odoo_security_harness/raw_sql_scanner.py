@@ -60,6 +60,8 @@ class RawSqlScanner(ast.NodeVisitor):
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
+        self.constants: dict[str, ast.AST] = {}
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[RawSqlFinding]:
         """Scan the file."""
@@ -71,6 +73,7 @@ class RawSqlScanner(ast.NodeVisitor):
         except Exception:
             return []
 
+        self.constants = _module_constants(tree)
         self.visit(tree)
         return self.findings
 
@@ -97,6 +100,8 @@ class RawSqlScanner(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_vars)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         if _function_is_http_route(
             node,
             self.route_decorator_names,
@@ -113,6 +118,7 @@ class RawSqlScanner(ast.NodeVisitor):
 
         self.generic_visit(node)
         self.tainted_vars = previous_tainted
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -123,6 +129,7 @@ class RawSqlScanner(ast.NodeVisitor):
         previous_sql_literal_vars = dict(self.sql_literal_vars)
         is_tainted = self._expr_is_tainted(node.value)
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_cursor_target(target, node.value, previous_cursor_vars)
             self._mark_unsafe_sql_target(target, node.value, previous_unsafe_sql_vars)
             self._mark_sql_literal_target(target, node.value, previous_sql_literal_vars)
@@ -131,6 +138,7 @@ class RawSqlScanner(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_cursor_target(node.target, node.value, set(self.cursor_vars))
             self._mark_unsafe_sql_target(node.target, node.value, set(self.unsafe_sql_vars))
             self._mark_sql_literal_target(node.target, node.value, dict(self.sql_literal_vars))
@@ -145,6 +153,7 @@ class RawSqlScanner(ast.NodeVisitor):
         self.visit_For(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_cursor_target(node.target, node.value, set(self.cursor_vars))
         self._mark_unsafe_sql_target(node.target, node.value, set(self.unsafe_sql_vars))
         self._mark_sql_literal_target(node.target, node.value, dict(self.sql_literal_vars))
@@ -167,7 +176,7 @@ class RawSqlScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _scan_execute(self, node: ast.Call, sink: str) -> None:
-        query = _execute_query_arg(node)
+        query = _execute_query_arg(node, self._effective_constants())
         if query is None:
             return
 
@@ -181,7 +190,9 @@ class RawSqlScanner(ast.NodeVisitor):
                 sink,
             )
 
-        if self._expr_is_tainted(query) or any(self._expr_is_tainted(arg) for arg in _execute_param_args(node)):
+        if self._expr_is_tainted(query) or any(
+            self._expr_is_tainted(arg) for arg in _execute_param_args(node, self._effective_constants())
+        ):
             self._add(
                 "odoo-raw-sql-request-derived-input",
                 "Request-derived value reaches raw SQL",
@@ -233,7 +244,10 @@ class RawSqlScanner(ast.NodeVisitor):
             return (
                 self._expr_is_tainted(node.func)
                 or any(self._expr_is_tainted(arg) for arg in node.args)
-                or any(keyword.value is not None and self._expr_is_tainted(keyword.value) for keyword in node.keywords)
+                or any(
+                    keyword.value is not None and self._expr_is_tainted(keyword.value)
+                    for keyword in _expanded_keywords(node, self._effective_constants())
+                )
             )
         if isinstance(node, ast.JoinedStr):
             return any(self._expr_is_tainted(value) for value in node.values)
@@ -378,7 +392,7 @@ class RawSqlScanner(ast.NodeVisitor):
         return self._literal_sql_with_vars(node, self.sql_literal_vars)
 
     def _literal_sql_with_vars(self, node: ast.AST, sql_literal_vars: dict[str, str]) -> str:
-        literal = _literal_string(node)
+        literal = _literal_string(node, self._effective_constants())
         if literal:
             return literal
         if isinstance(node, ast.Name):
@@ -410,6 +424,38 @@ class RawSqlScanner(ast.NodeVisitor):
             self._mark_name_target(target, self.tainted_vars)
         else:
             self._discard_name_target(target, self.tainted_vars)
+
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
+    def _discard_local_constant_target(self, target: ast.AST) -> None:
+        if isinstance(target, ast.Name):
+            self.local_constants.pop(target.id, None)
+        elif isinstance(target, ast.Starred):
+            self._discard_local_constant_target(target.value)
+        elif isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
+    def _effective_constants(self) -> dict[str, ast.AST]:
+        if not self.local_constants:
+            return self.constants
+        return {**self.constants, **self.local_constants}
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, sink: str) -> None:
         self.findings.append(
@@ -474,36 +520,150 @@ def _is_request_expr(
     )
 
 
-def _literal_string(node: ast.AST) -> str:
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
+def _literal_string(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:
+    value = _resolve_constant(node, constants or {})
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        return value.value
     return ""
 
 
-def _execute_query_arg(node: ast.Call) -> ast.AST | None:
+def _execute_query_arg(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> ast.AST | None:
     if _call_name(node.func).split(".")[-1] in BULK_SQL_HELPERS and node.args:
         if len(node.args) >= 2:
             return node.args[1]
-        for keyword in node.keywords:
+        for keyword in _expanded_keywords(node, constants):
             if keyword.arg in EXECUTE_QUERY_KEYWORDS:
                 return keyword.value
         return None
     if node.args:
         return node.args[0]
-    for keyword in node.keywords:
+    for keyword in _expanded_keywords(node, constants):
         if keyword.arg in EXECUTE_QUERY_KEYWORDS:
             return keyword.value
     return None
 
 
-def _execute_param_args(node: ast.Call) -> list[ast.AST]:
+def _execute_param_args(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> list[ast.AST]:
     if _call_name(node.func).split(".")[-1] in BULK_SQL_HELPERS and node.args:
         params = list(node.args[2:])
-        params.extend(keyword.value for keyword in node.keywords if keyword.arg in EXECUTE_PARAMS_KEYWORDS)
+        params.extend(
+            keyword.value for keyword in _expanded_keywords(node, constants) if keyword.arg in EXECUTE_PARAMS_KEYWORDS
+        )
         return params
     params = list(node.args[1:])
-    params.extend(keyword.value for keyword in node.keywords if keyword.arg in EXECUTE_PARAMS_KEYWORDS)
+    params.extend(
+        keyword.value for keyword in _expanded_keywords(node, constants) if keyword.arg in EXECUTE_PARAMS_KEYWORDS
+    )
     return params
+
+
+def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
+    return _static_constants_from_body(tree.body)
+
+
+def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST]:
+    constants: dict[str, ast.AST] = {}
+    for statement in statements:
+        if isinstance(statement, ast.Assign):
+            for target in statement.targets:
+                if isinstance(target, ast.Name) and _is_static_literal(statement.value):
+                    constants[target.id] = statement.value
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and statement.value is not None
+            and _is_static_literal(statement.value)
+        ):
+            constants[statement.target.id] = statement.value
+    return constants
+
+
+def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
+    return _resolve_constant_seen(node, constants, set())
+
+
+def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: set[str]) -> ast.AST:
+    if isinstance(node, ast.Name):
+        if node.id in seen:
+            return node
+        value = constants.get(node.id)
+        if value is None:
+            return node
+        return _resolve_constant_seen(value, constants, {*seen, node.id})
+    return node
+
+
+def _is_static_literal(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return True
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str | bool | int | float | type(None))
+    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+        return all(_is_static_literal(element) for element in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(key is None or _is_static_literal(key) for key in node.keys)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_literal(node.left) and _is_static_literal(node.right)
+    return False
+
+
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> ast.Dict | None:
+    constants = constants or {}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _resolve_static_dict(resolved, constants)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants)
+        right = _resolve_static_dict(node.right, constants)
+        if left is not None and right is not None:
+            return _merge_static_dicts(left, right)
+    return None
+
+
+def _merge_static_dicts(left: ast.Dict, right: ast.Dict) -> ast.Dict:
+    merged = left
+    for key, value in zip(right.keys, right.values, strict=False):
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            merged = _dict_with_field(merged, key.value, value)
+        else:
+            merged = ast.Dict(keys=[*merged.keys, key], values=[*merged.values, value])
+    return merged
+
+
+def _dict_with_field(values: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values.keys)
+    values_list = list(values.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values_list[index] = value
+            return ast.Dict(keys=keys, values=values_list)
+    keys.append(ast.Constant(value=key))
+    values_list.append(value)
+    return ast.Dict(keys=keys, values=values_list)
+
+
+def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> list[ast.keyword]:
+    expanded: list[ast.keyword] = []
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            expanded.append(keyword)
+            continue
+        expanded.extend(_expanded_dict_keywords(keyword.value, constants))
+    return expanded
+
+
+def _expanded_dict_keywords(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> list[ast.keyword]:
+    resolved = _resolve_static_dict(node, constants)
+    if resolved is None:
+        return []
+    keywords: list[ast.keyword] = []
+    for key, value in zip(resolved.keys, resolved.values, strict=False):
+        literal_key = _literal_string(key, constants) if key is not None else ""
+        if literal_key:
+            keywords.append(ast.keyword(arg=literal_key, value=value))
+    return keywords
 
 
 def _destructive_without_where(sql: str) -> bool:
