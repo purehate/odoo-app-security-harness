@@ -307,6 +307,28 @@ class Product(models.Model):
     assert any(f.rule_id == "odoo-access-override-sudo-search" for f in findings)
 
 
+def test_flags_import_aliased_superuser_search_override(tmp_path: Path) -> None:
+    """Search overrides should treat imported SUPERUSER_ID aliases as elevated."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "product.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+
+class Product(models.Model):
+    _inherit = 'product.template'
+
+    def name_search(self, name='', args=None, operator='ilike', limit=100):
+        return self.env['product.template'].with_user(ROOT_UID).search([]).name_get()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_access_overrides(tmp_path)
+
+    assert any(f.rule_id == "odoo-access-override-sudo-search" for f in findings)
+
+
 def test_flags_keyword_with_user_superuser_search_override(tmp_path: Path) -> None:
     """Keyword with_user(user=SUPERUSER_ID) search overrides are elevated."""
     models = tmp_path / "module" / "models"
@@ -426,10 +448,7 @@ class Product(models.Model):
 
     findings = scan_access_overrides(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-access-override-sudo-search" and f.model == "product.template"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-access-override-sudo-search" and f.model == "product.template" for f in findings)
 
 
 def test_flags_env_ref_admin_search_override(tmp_path: Path) -> None:

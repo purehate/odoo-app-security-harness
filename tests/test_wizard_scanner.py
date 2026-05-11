@@ -139,10 +139,7 @@ class RetentionWizard(models.TransientModel):
 
     findings = scan_wizards(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-wizard-long-transient-retention" and f.model == "retention.wizard"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-wizard-long-transient-retention" and f.model == "retention.wizard" for f in findings)
 
 
 def test_flags_constant_backed_disabled_transient_count_retention(tmp_path: Path) -> None:
@@ -369,6 +366,32 @@ class ApproveWizard(models.TransientModel):
     def action_apply(self):
         records = self.env['sale.order'].browse(self.env.context.get('active_ids'))
         return records.with_user(SUPERUSER_ID).write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_wizards(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-wizard-sudo-mutation" in rule_ids
+    assert "odoo-wizard-active-ids-bulk-mutation" in rule_ids
+    assert "odoo-wizard-mutation-no-access-check" in rule_ids
+
+
+def test_flags_active_ids_import_aliased_superuser_mutation(tmp_path: Path) -> None:
+    """Wizards mutating active_ids through imported SUPERUSER_ID aliases are privileged."""
+    wizards = tmp_path / "module" / "wizards"
+    wizards.mkdir(parents=True)
+    (wizards / "approve_superuser.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+
+class ApproveWizard(models.TransientModel):
+    _name = 'approve.superuser.wizard'
+
+    def action_apply(self):
+        records = self.env['sale.order'].browse(self.env.context.get('active_ids'))
+        return records.with_user(ROOT_UID).write({'state': 'done'})
 """,
         encoding="utf-8",
     )

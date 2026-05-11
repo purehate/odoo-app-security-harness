@@ -82,6 +82,7 @@ class ButtonActionScanner(ast.NodeVisitor):
         self.method_stack: list[MethodContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_file(self) -> list[ButtonActionFinding]:
         """Scan the file."""
@@ -96,6 +97,13 @@ class ButtonActionScanner(ast.NodeVisitor):
         self.constants = _module_constants(tree)
         self.visit(tree)
         return self.findings
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
+        self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
         if not _is_odoo_model(node):
@@ -169,7 +177,7 @@ class ButtonActionScanner(ast.NodeVisitor):
                     "Button/action method writes approval/payment/posting-like state; verify ACLs, record rules, and groups enforce the workflow boundary",
                     context.name,
                 )
-        if _is_privileged_mutation(node.func, context.sudo_vars, self._effective_constants()):
+        if _is_privileged_mutation(node.func, context.sudo_vars, self._effective_constants(), self.superuser_names):
             context.has_sudo_mutation = True
             self._add(
                 "odoo-button-action-sudo-mutation",
@@ -219,7 +227,7 @@ class ButtonActionScanner(ast.NodeVisitor):
             return
         if not isinstance(target, ast.Name):
             return
-        if _is_sudo_expr(value, context.sudo_vars, self._effective_constants()):
+        if _is_sudo_expr(value, context.sudo_vars, self._effective_constants(), self.superuser_names):
             context.sudo_vars.add(target.id)
         else:
             context.sudo_vars.discard(target.id)
@@ -294,27 +302,37 @@ def _is_privileged_mutation(
     node: ast.AST,
     sudo_vars: set[str],
     constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
     sink = _call_name(node)
     if sink.rsplit(".", 1)[-1] not in MUTATION_METHODS:
         return False
-    return _is_sudo_expr(node, sudo_vars, constants)
+    return _is_sudo_expr(node, sudo_vars, constants, superuser_names)
 
 
-def _is_sudo_expr(node: ast.AST, sudo_vars: set[str], constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_sudo_expr(
+    node: ast.AST,
+    sudo_vars: set[str],
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
     if isinstance(node, ast.Starred):
-        return _is_sudo_expr(node.value, sudo_vars, constants)
+        return _is_sudo_expr(node.value, sudo_vars, constants, superuser_names)
     if isinstance(node, ast.Tuple | ast.List | ast.Set):
-        return any(_is_sudo_expr(item, sudo_vars, constants) for item in node.elts)
+        return any(_is_sudo_expr(item, sudo_vars, constants, superuser_names) for item in node.elts)
     return (
         _call_chain_has_attr(node, "sudo")
-        or _call_chain_has_superuser_with_user(node, constants)
+        or _call_chain_has_superuser_with_user(node, constants, superuser_names)
         or _call_root_name(node) in sudo_vars
     )
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
     current: ast.AST | None = node
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
@@ -323,11 +341,11 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
                 isinstance(current.func, ast.Attribute)
                 and current.func.attr == "with_user"
                 and (
-                    any(_is_superuser_arg(arg, constants) for arg in current.args)
+                    any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args)
                     or any(
                         keyword.arg in {"user", "uid"}
                         and keyword.value is not None
-                        and _is_superuser_arg(keyword.value, constants)
+                        and _is_superuser_arg(keyword.value, constants, superuser_names)
                         for keyword in current.keywords
                     )
                 )
@@ -341,16 +359,21 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
     return False
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
     node = _resolve_constant(node, constants or {})
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 

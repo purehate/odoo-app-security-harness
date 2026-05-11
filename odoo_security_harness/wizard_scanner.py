@@ -79,6 +79,7 @@ class WizardScanner(ast.NodeVisitor):
         self.function_aliases: dict[str, str] = {}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_file(self) -> list[WizardFinding]:
         """Scan the file."""
@@ -105,6 +106,10 @@ class WizardScanner(ast.NodeVisitor):
         if node.module in {"base64", "csv", "openpyxl", "xlrd"}:
             for alias in node.names:
                 self.function_aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+        elif node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
@@ -248,7 +253,7 @@ class WizardScanner(ast.NodeVisitor):
             if (
                 "sudo" in sink.split(".")[:-1]
                 or _uses_name(receiver, context.sudo_vars)
-                or _is_elevated_expr(receiver, self._effective_constants())
+                or _is_elevated_expr(receiver, self._effective_constants(), self.superuser_names)
             ):
                 self._add(
                     "odoo-wizard-sudo-mutation",
@@ -341,7 +346,9 @@ class WizardScanner(ast.NodeVisitor):
             return
         if not isinstance(target, ast.Name):
             return
-        if _is_elevated_expr(value, self._effective_constants()) or _uses_name(value, context.sudo_vars):
+        if _is_elevated_expr(value, self._effective_constants(), self.superuser_names) or _uses_name(
+            value, context.sudo_vars
+        ):
             context.sudo_vars.add(target.id)
         else:
             context.sudo_vars.discard(target.id)
@@ -448,9 +455,7 @@ def _numeric_class_attr(node: ast.ClassDef, attr: str, constants: dict[str, ast.
 
 
 def _has_long_transient_retention(hours: int | float | None, count: int | float | None) -> bool:
-    return (hours is not None and (hours == 0 or hours > 24)) or (
-        count is not None and (count == 0 or count > 10000)
-    )
+    return (hours is not None and (hours == 0 or hours > 24)) or (count is not None and (count == 0 or count > 10000))
 
 
 def _is_binary_field_assignment(node: ast.AST) -> bool:
@@ -557,12 +562,16 @@ def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     return False
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
     if isinstance(node, ast.Starred):
-        return _call_chain_has_superuser_with_user(node.value, constants)
+        return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return any(_call_chain_has_superuser_with_user(element, constants) for element in node.elts)
+        return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     current: ast.AST | None = node
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
         if isinstance(current, ast.Call):
@@ -570,9 +579,9 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
                 isinstance(current.func, ast.Attribute)
                 and current.func.attr == "with_user"
                 and (
-                    any(_is_superuser_arg(arg, constants) for arg in current.args)
+                    any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args)
                     or any(
-                        keyword.value is not None and _is_superuser_arg(keyword.value, constants)
+                        keyword.value is not None and _is_superuser_arg(keyword.value, constants, superuser_names)
                         for keyword in current.keywords
                     )
                 )
@@ -586,22 +595,31 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
     return False
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
     node = _resolve_constant(node, constants)
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 
-def _is_elevated_expr(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
-    return _call_chain_has_attr(node, "sudo") or _call_chain_has_superuser_with_user(node, constants)
+def _is_elevated_expr(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    return _call_chain_has_attr(node, "sudo") or _call_chain_has_superuser_with_user(node, constants, superuser_names)
 
 
 def _target_names(node: ast.AST) -> set[str]:
@@ -679,9 +697,7 @@ def _is_static_literal(node: ast.AST) -> bool:
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         keys = [key for key in node.keys if key is not None]
-        return all(_is_static_literal(key) for key in keys) and all(
-            _is_static_literal(value) for value in node.values
-        )
+        return all(_is_static_literal(key) for key in keys) and all(_is_static_literal(value) for value in node.values)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
         return _is_static_literal(node.operand)
     return False

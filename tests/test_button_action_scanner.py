@@ -104,6 +104,30 @@ class Sale(models.Model):
     assert "odoo-button-action-mutation-no-access-check" in rule_ids
 
 
+def test_flags_import_aliased_superuser_mutation_and_missing_access_check(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases in button methods should be treated like sudo."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    def action_approve(self):
+        self.env['sale.order'].with_user(ROOT_UID).write({'state': 'approved'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_button_actions(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-button-action-sudo-mutation" in rule_ids
+    assert "odoo-button-action-mutation-no-access-check" in rule_ids
+
+
 def test_flags_keyword_with_user_superuser_mutation_and_missing_access_check(
     tmp_path: Path,
 ) -> None:
@@ -480,9 +504,9 @@ class Settings(models.Model):
 
     findings = scan_button_actions(tmp_path)
 
-    assert len(
-        [finding for finding in findings if finding.rule_id == "odoo-button-action-sensitive-model-mutation"]
-    ) == 2
+    assert (
+        len([finding for finding in findings if finding.rule_id == "odoo-button-action-sensitive-model-mutation"]) == 2
+    )
 
 
 def test_flags_recursive_constant_sensitive_model_mutation(tmp_path: Path) -> None:
