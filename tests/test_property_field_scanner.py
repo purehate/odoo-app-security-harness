@@ -70,6 +70,70 @@ class Product(models.Model):
     assert any(f.rule_id == "odoo-property-field-no-company-field" for f in findings)
 
 
+def test_flags_aliased_odoo_fields_module_company_dependent_field(tmp_path: Path) -> None:
+    """Aliased Odoo fields modules should still be scanned."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "product.py").write_text(
+        """
+from odoo import fields as odoo_fields, models
+
+class Product(models.Model):
+    _name = 'x.product'
+
+    property_account_income_id = odoo_fields.Many2one('account.account', company_dependent=True)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+
+    assert any(f.rule_id == "odoo-property-field-no-company-field" for f in findings)
+
+
+def test_flags_imported_odoo_fields_module_company_dependent_field(tmp_path: Path) -> None:
+    """Direct odoo.fields imports should still be scanned."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "product.py").write_text(
+        """
+from odoo import models
+import odoo.fields as odoo_fields
+
+class Product(models.Model):
+    _name = 'x.product'
+
+    property_account_income_id = odoo_fields.Many2one('account.account', company_dependent=True)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+
+    assert any(f.rule_id == "odoo-property-field-no-company-field" for f in findings)
+
+
+def test_flags_imported_odoo_module_fields_company_dependent_field(tmp_path: Path) -> None:
+    """Direct odoo module imports should still expose company-dependent fields."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "product.py").write_text(
+        """
+import odoo as od
+
+class Product(od.models.Model):
+    _name = 'x.product'
+
+    property_account_income_id = od.fields.Many2one('account.account', company_dependent=True)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+
+    assert any(f.rule_id == "odoo-property-field-no-company-field" for f in findings)
+
+
 def test_flags_direct_model_base_company_dependent_field(tmp_path: Path) -> None:
     """Direct Model bases should not hide company-dependent property fields."""
     models = tmp_path / "module" / "models"
