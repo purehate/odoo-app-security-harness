@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -322,6 +323,7 @@ class ModelMethodScanner(ast.NodeVisitor):
             self.generic_visit(node)
             return
 
+        _mark_static_dict_update(node, self.local_constants)
         context = self.method_stack[-1]
         if not context.kind:
             self.generic_visit(node)
@@ -334,7 +336,8 @@ class ModelMethodScanner(ast.NodeVisitor):
                 "Odoo model method performs dynamic evaluation",
                 "critical",
                 node.lineno,
-                f"{context.kind} model method calls eval/exec/safe_eval; verify no record field or context value can control evaluated code",
+                f"{context.kind} model method calls eval/exec/safe_eval; verify no record field "
+                "or context value can control evaluated code",
                 context.name,
             )
         sensitive_model = _call_receiver_sensitive_model(node.func, self._effective_constants())
@@ -344,7 +347,8 @@ class ModelMethodScanner(ast.NodeVisitor):
                 "Odoo model method mutates sensitive model",
                 "high",
                 node.lineno,
-                f"{context.kind} model method mutates sensitive model '{sensitive_model}'; verify lifecycle side effects, caller access, and audit trail",
+                f"{context.kind} model method mutates sensitive model '{sensitive_model}'; verify "
+                "lifecycle side effects, caller access, and audit trail",
                 context.name,
             )
         elif _is_privileged_mutation(node.func, context.sudo_vars, self._effective_constants(), self.superuser_names):
@@ -353,7 +357,8 @@ class ModelMethodScanner(ast.NodeVisitor):
                 "Odoo model method performs elevated mutation",
                 "high",
                 node.lineno,
-                f"{context.kind} model method mutates records through sudo()/with_user(SUPERUSER_ID); verify record rules, company isolation, and form-triggered side effects",
+                f"{context.kind} model method mutates records through sudo()/with_user(SUPERUSER_ID); "
+                "verify record rules, company isolation, and form-triggered side effects",
                 context.name,
             )
         elif _is_http_call(sink, self.http_modules, self.http_functions) or _is_http_client_call(
@@ -366,7 +371,8 @@ class ModelMethodScanner(ast.NodeVisitor):
                     "Odoo model method performs HTTP without timeout",
                     "medium",
                     node.lineno,
-                    f"{context.kind} model method performs outbound HTTP without timeout; form/render/background flows can block Odoo workers",
+                    f"{context.kind} model method performs outbound HTTP without timeout; "
+                    "form/render/background flows can block Odoo workers",
                     context.name,
                 )
             if _keyword_is_false(node, "verify", constants):
@@ -375,7 +381,8 @@ class ModelMethodScanner(ast.NodeVisitor):
                     "Odoo model method disables TLS verification",
                     "high",
                     node.lineno,
-                    f"{context.kind} model method passes verify=False to outbound HTTP; user-triggered integrations should not permit man-in-the-middle attacks",
+                    f"{context.kind} model method passes verify=False to outbound HTTP; "
+                    "user-triggered integrations should not permit man-in-the-middle attacks",
                     context.name,
                 )
             for url_value in _http_url_values(node, sink, constants):
@@ -385,7 +392,8 @@ class ModelMethodScanner(ast.NodeVisitor):
                         "Odoo model method uses cleartext HTTP URL",
                         "medium",
                         node.lineno,
-                        f"{context.kind} model method targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+                        f"{context.kind} model method targets a literal http:// URL; use HTTPS "
+                        "to protect integration payloads and response data from interception or downgrade",
                         context.name,
                     )
                 if _literal_url_has_embedded_credentials(url_value, constants):
@@ -394,7 +402,8 @@ class ModelMethodScanner(ast.NodeVisitor):
                         "Odoo model method URL embeds credentials",
                         "high",
                         node.lineno,
-                        f"{context.kind} model method embeds username, password, or token material in an outbound HTTP URL authority; move credentials to server-side configuration",
+                        f"{context.kind} model method embeds username, password, or token material "
+                        "in an outbound HTTP URL authority; move credentials to server-side configuration",
                         context.name,
                     )
 
@@ -821,6 +830,59 @@ def _resolve_static_dict(
     return None
 
 
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            items.append((resolved_key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
+
+
 def _unpack_target_value_pairs(
     targets: list[ast.expr],
     values: list[ast.expr],
@@ -860,6 +922,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
