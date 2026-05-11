@@ -557,6 +557,62 @@ class Properties(odoo_http.Controller):
     assert "odoo-property-runtime-sensitive-value" in rule_ids
 
 
+def test_imported_odoo_http_module_public_sudo_runtime_property_create(tmp_path: Path) -> None:
+    """Direct odoo.http imports should not hide public property mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "properties.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Properties(odoo_http.Controller):
+    @odoo_http.route('/properties/account', auth='public', csrf=False)
+    def set_property(self, **kwargs):
+        return odoo_http.request.env['ir.property'].sudo().create({
+            'fields_id': 'account.field_res_partner__property_account_receivable_id',
+            'value_reference': kwargs.get('account'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-property-public-route-mutation" in rule_ids
+    assert "odoo-property-sudo-mutation" in rule_ids
+    assert "odoo-property-request-derived-mutation" in rule_ids
+    assert "odoo-property-runtime-sensitive-value" in rule_ids
+
+
+def test_imported_odoo_module_public_sudo_runtime_property_create(tmp_path: Path) -> None:
+    """Direct odoo module imports should not hide public property mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "properties.py").write_text(
+        """
+import odoo as od
+
+class Properties(od.http.Controller):
+    @od.http.route('/properties/account', auth='public', csrf=False)
+    def set_property(self, **kwargs):
+        return od.http.request.env['ir.property'].sudo().create({
+            'fields_id': 'account.field_res_partner__property_account_receivable_id',
+            'value_reference': kwargs.get('account'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-property-public-route-mutation" in rule_ids
+    assert "odoo-property-sudo-mutation" in rule_ids
+    assert "odoo-property-request-derived-mutation" in rule_ids
+    assert "odoo-property-runtime-sensitive-value" in rule_ids
+
+
 def test_non_odoo_route_decorator_runtime_property_create_is_not_public(tmp_path: Path) -> None:
     """Local route decorators should not make property mutations public routes."""
     controllers = tmp_path / "module" / "controllers"
@@ -888,6 +944,60 @@ class Properties(http.Controller):
             'company_id': req.env.company.id,
             'res_id': 'res.partner,%s' % req.env.user.partner_id.id,
             'value_reference': req.params.get('account'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+
+    assert any(f.rule_id == "odoo-property-request-derived-mutation" for f in findings)
+
+
+def test_imported_odoo_http_module_direct_property_value_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http request values should taint property writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "properties.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Properties(odoo_http.Controller):
+    @odoo_http.route('/properties/account', auth='user', csrf=False)
+    def set_property(self):
+        props = odoo_http.request.env['ir.property']
+        return props.create({
+            'fields_id': 'account.field_res_partner__property_account_receivable_id',
+            'company_id': odoo_http.request.env.company.id,
+            'res_id': 'res.partner,%s' % odoo_http.request.env.user.partner_id.id,
+            'value_reference': odoo_http.request.params.get('account'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+
+    assert any(f.rule_id == "odoo-property-request-derived-mutation" for f in findings)
+
+
+def test_imported_odoo_module_direct_property_value_is_reported(tmp_path: Path) -> None:
+    """Direct odoo module request values should taint property writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "properties.py").write_text(
+        """
+import odoo as od
+
+class Properties(od.http.Controller):
+    @od.http.route('/properties/account', auth='user', csrf=False)
+    def set_property(self):
+        props = od.http.request.env['ir.property']
+        return props.create({
+            'fields_id': 'account.field_res_partner__property_account_receivable_id',
+            'company_id': od.http.request.env.company.id,
+            'res_id': 'res.partner,%s' % od.http.request.env.user.partner_id.id,
+            'value_reference': od.http.request.params.get('account'),
         })
 """,
         encoding="utf-8",
