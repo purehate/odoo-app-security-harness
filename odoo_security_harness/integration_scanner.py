@@ -21,8 +21,8 @@ class IntegrationFinding:
     sink: str = ""
 
 
-HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request", "head"}
-REQUEST_MODULES = {"requests", "httpx"}
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request", "head", "urlopen"}
+REQUEST_MODULES = {"requests", "httpx", "urllib.request"}
 TAINTED_ARG_NAMES = {
     "args",
     "cmd",
@@ -500,7 +500,8 @@ class IntegrationScanner(ast.NodeVisitor):
 
     def _is_http_call(self, sink: str) -> bool:
         parts = sink.split(".")
-        if len(parts) >= 2 and parts[0] in REQUEST_MODULES and parts[-1] in HTTP_METHODS:
+        module = ".".join(parts[:-1])
+        if len(parts) >= 2 and module in REQUEST_MODULES and parts[-1] in HTTP_METHODS:
             return True
         return (
             len(parts) >= 2
@@ -583,7 +584,8 @@ def _is_request_expr(node: ast.AST, request_names: set[str]) -> bool:
 
 def _is_http_call(sink: str) -> bool:
     parts = sink.split(".")
-    if len(parts) >= 2 and parts[0] in REQUEST_MODULES and parts[-1] in HTTP_METHODS:
+    module = ".".join(parts[:-1])
+    if len(parts) >= 2 and module in REQUEST_MODULES and parts[-1] in HTTP_METHODS:
         return True
     return len(parts) >= 2 and parts[-1] in HTTP_METHODS and parts[-2] in {"Session", "Client"}
 

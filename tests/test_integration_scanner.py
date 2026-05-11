@@ -205,6 +205,46 @@ def webhook(**kwargs):
     assert any(f.rule_id == "odoo-integration-tainted-url-ssrf" for f in findings)
 
 
+def test_urllib_urlopen_is_reported(tmp_path: Path) -> None:
+    """urllib.request.urlopen should receive the same timeout and SSRF review."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+from urllib.request import urlopen
+
+def webhook(**kwargs):
+    return urlopen(kwargs.get('callback_url'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+    rule_ids = {f.rule_id for f in findings}
+
+    assert "odoo-integration-http-no-timeout" in rule_ids
+    assert "odoo-integration-tainted-url-ssrf" in rule_ids
+
+
+def test_aliased_urllib_module_urlopen_is_reported(tmp_path: Path) -> None:
+    """Aliased urllib.request imports should still be outbound HTTP sinks."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import urllib.request as urlreq
+
+def webhook(**kwargs):
+    return urlreq.urlopen(kwargs.get('callback_url'), timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+    rule_ids = {f.rule_id for f in findings}
+
+    assert "odoo-integration-tainted-url-ssrf" in rule_ids
+    assert "odoo-integration-http-no-timeout" not in rule_ids
+
+
 def test_endpoint_argument_url_is_reported(tmp_path: Path) -> None:
     """Endpoint-like function arguments should still seed outbound URL taint."""
     py = tmp_path / "controller.py"
