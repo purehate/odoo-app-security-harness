@@ -611,6 +611,33 @@ class SaleJob(models.Model):
     assert any(f.rule_id == "odoo-queue-job-tls-verify-disabled" for f in findings)
 
 
+def test_flags_queue_job_tls_verification_disabled_dict_union_static_kwargs(
+    tmp_path: Path,
+) -> None:
+    """Dict-union static **kwargs should not hide queue job TLS verification disabling."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+import requests
+
+BASE_HTTP_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_HTTP_OPTIONS | {'verify': False}
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        requests.post(record.callback_url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-queue-job-tls-verify-disabled" for f in findings)
+
+
 def test_flags_queue_job_local_constant_tls_verification_disabled(tmp_path: Path) -> None:
     """Function-local verify=False kwargs should still flag queue job HTTP integrations."""
     module = tmp_path / "module" / "models"
@@ -872,6 +899,34 @@ from odoo import http
 
 BASE_OPTIONS = {'auth': 'public', 'csrf': False}
 ROUTE_OPTIONS = {**BASE_OPTIONS, 'route': '/sync'}
+
+class Controller(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def sync(self, **kwargs):
+        self.env['sale.order'].with_delay().sync_order(kwargs.get('id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-queue-job-missing-identity-key" in rule_ids
+    assert "odoo-queue-job-public-enqueue" in rule_ids
+
+
+def test_dict_union_static_unpack_public_route_enqueue_without_identity_key(
+    tmp_path: Path,
+) -> None:
+    """Dict-union route option unpacking should keep public queue enqueue context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+
+BASE_OPTIONS = {'auth': 'public', 'csrf': False}
+ROUTE_OPTIONS = BASE_OPTIONS | {'route': '/sync'}
 
 class Controller(http.Controller):
     @http.route(**ROUTE_OPTIONS)
