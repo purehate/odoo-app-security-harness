@@ -67,6 +67,7 @@ SENSITIVE_KEY_HINTS = {
 SECURITY_TOGGLE_UNSAFE_VALUES = {
     "auth.signup.allow_uninvited": {"1", "true", "yes", "y"},
     "auth_signup.allow_uninvited": {"1", "true", "yes", "y"},
+    "auth_signup.invitation_scope": {"b2c", "public"},
     "database.create": {"1", "true", "yes", "y"},
     "database.drop": {"1", "true", "yes", "y"},
     "list_db": {"1", "true", "yes", "y"},

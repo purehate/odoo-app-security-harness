@@ -1102,6 +1102,27 @@ def set_values(self):
     assert any(f.rule_id == "odoo-config-param-security-toggle-enabled" for f in findings)
 
 
+def test_flags_public_signup_invitation_scope(tmp_path: Path) -> None:
+    """Literal writes that enable public signup should be explicit review leads."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+def set_values(self):
+    self.env['ir.config_parameter'].sudo().set_param('auth_signup.invitation_scope', 'b2c')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-config-param-security-toggle-enabled"
+        and f.key == "auth_signup.invitation_scope"
+        for f in findings
+    )
+
+
 def test_flags_base_url_freeze_disabled(tmp_path: Path) -> None:
     """Literal writes that unfreeze web.base.url should be explicit review leads."""
     models = tmp_path / "module" / "models"
