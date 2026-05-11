@@ -315,7 +315,10 @@ OWL_XML_TEMPLATE_RE = re.compile(r"\bxml\s*`(?P<body>(?:\\`|[^`])*)`", re.IGNORE
 OWL_TEMPLATE_T_RAW_RE = re.compile(r"\bt-raw\s*=", re.IGNORECASE)
 OWL_TEMPLATE_RAW_OUTPUT_MODE_RE = re.compile(r"\bt-out-mode\s*=\s*['\"]raw['\"]", re.IGNORECASE)
 OWL_TEMPLATE_DYNAMIC_EVENT_RE = re.compile(r"\b(?:on\w+|t-attf?-on\w+)\s*=", re.IGNORECASE)
-OWL_TEMPLATE_SRCDOC_RE = re.compile(r"\bt-attf?-srcdoc\s*=", re.IGNORECASE)
+OWL_TEMPLATE_SRCDOC_RE = re.compile(
+    r"\bt-attf?-srcdoc\s*=|\bt-att\s*=\s*['\"][^>]*['\"]srcdoc['\"]\s*:",
+    re.IGNORECASE,
+)
 OWL_TEMPLATE_DYNAMIC_SCRIPT_SRC_RE = re.compile(
     r"<script\b[^>]*\bt-attf?-src\s*=",
     re.IGNORECASE,

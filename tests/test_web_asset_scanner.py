@@ -1365,6 +1365,24 @@ def test_owl_inline_template_srcdoc_detected(tmp_path: Path) -> None:
     )
 
 
+def test_owl_inline_template_srcdoc_mapping_detected(tmp_path: Path) -> None:
+    """OWL t-att mappings can also feed dynamic HTML into iframe srcdoc."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "export const template = xml`<iframe sandbox=\"\" t-att=\"{'srcdoc': props.preview_html}\"/>`;\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-srcdoc-html"
+        and f.sink == "owl-template"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
 def test_owl_inline_template_dynamic_script_src_detected(tmp_path: Path) -> None:
     """OWL inline script src attributes should not import runtime-selected code."""
     path = tmp_path / "widget.js"
