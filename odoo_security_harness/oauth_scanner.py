@@ -235,7 +235,7 @@ class OAuthScanner(ast.NodeVisitor):
             and _is_http_client_sink(canonical_sink)
             and _call_has_tainted_url(node, self._expr_is_tainted)
         ):
-            if not _has_keyword(node, "timeout"):
+            if not _has_effective_timeout(node, constants):
                 self._add(
                     "odoo-oauth-http-no-timeout",
                     "OAuth token/userinfo HTTP call lacks timeout",
@@ -1030,6 +1030,11 @@ def _is_false_constant(node: ast.AST, constants: dict[str, ast.AST] | None = Non
     return isinstance(value, ast.Constant) and value.value is False
 
 
+def _is_none_constant(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+    value = _resolve_constant(node, constants or {})
+    return isinstance(value, ast.Constant) and value.value is None
+
+
 def _is_identity_write(
     node: ast.Call,
     user_model_names: set[str] | None = None,
@@ -1103,8 +1108,16 @@ def _call_has_tainted_input(node: ast.Call, is_tainted: Any) -> bool:
     )
 
 
-def _has_keyword(node: ast.Call, name: str) -> bool:
-    return any(keyword.arg == name for keyword in node.keywords)
+def _keyword(node: ast.Call, name: str) -> ast.keyword | None:
+    for keyword in node.keywords:
+        if keyword.arg == name:
+            return keyword
+    return None
+
+
+def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+    timeout_keyword = _keyword(node, "timeout")
+    return timeout_keyword is not None and not _is_none_constant(timeout_keyword.value, constants)
 
 
 def _call_name(node: ast.AST) -> str:

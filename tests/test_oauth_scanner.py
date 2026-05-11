@@ -74,6 +74,52 @@ class Controller(http.Controller):
     assert "odoo-oauth-http-verify-disabled" in rule_ids
 
 
+def test_oauth_http_timeout_none_is_reported(tmp_path: Path) -> None:
+    """timeout=None should not satisfy OAuth provider HTTP timeout requirements."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import requests
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        return requests.get(kwargs.get('userinfo_url'), timeout=None)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(f.rule_id == "odoo-oauth-http-no-timeout" for f in findings)
+
+
+def test_oauth_http_timeout_none_constant_is_reported(tmp_path: Path) -> None:
+    """OAuth timeout constants should not hide unbounded provider HTTP calls."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import requests
+
+OAUTH_TIMEOUT = None
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        return requests.get(kwargs.get('userinfo_url'), timeout=OAUTH_TIMEOUT)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(f.rule_id == "odoo-oauth-http-no-timeout" for f in findings)
+
+
 def test_urllib_oauth_validation_url_is_reported(tmp_path: Path) -> None:
     """urllib URL fetches in OAuth callbacks should receive timeout and SSRF review."""
     controllers = tmp_path / "module" / "controllers"
