@@ -153,10 +153,15 @@ BROWSER_HTTP_REQUEST_RE = re.compile(
     r"(?:\bfetch|\baxios\.(?:request|get|post|put|patch|delete)|(?:\$|jQuery)\.(?:ajax|get|post|getJSON))\s*\(",
     re.IGNORECASE,
 )
-RAW_HTTP_REQUEST_RE = re.compile(r"\b(?:fetch|axios\.(?:post|put|patch|delete)|(?:\$|jQuery)\.ajax)\s*\(")
+RAW_HTTP_REQUEST_RE = re.compile(
+    r"(?:\bfetch|\baxios\.(?:request|post|put|patch|delete)|(?:\$|jQuery)\.(?:ajax|post))\s*\(",
+    re.IGNORECASE,
+)
 HTTP_URL_LITERAL_RE = re.compile(r"['\"]http://", re.IGNORECASE)
 UNSAFE_HTTP_METHOD_RE = re.compile(
-    r"(?:method|type)\s*:\s*['\"](?:POST|PUT|PATCH|DELETE)['\"]|" r"\baxios\.(?:post|put|patch|delete)\s*\(",
+    r"(?:method|type)\s*:\s*['\"](?:POST|PUT|PATCH|DELETE)['\"]|"
+    r"\baxios\.(?:post|put|patch|delete)\s*\(|"
+    r"(?:\$|jQuery)\.post\s*\(",
     re.IGNORECASE,
 )
 CSRF_TOKEN_RE = re.compile(r"\b(?:csrf_token|csrfToken|csrf-token|X-CSRFToken|X-CSRF-Token)\b", re.IGNORECASE)

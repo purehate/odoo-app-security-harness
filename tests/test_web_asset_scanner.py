@@ -819,6 +819,26 @@ def test_axios_delete_without_visible_csrf_detected(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-web-unsafe-request-without-csrf" and f.sink == "http-request" for f in findings)
 
 
+def test_axios_request_post_without_visible_csrf_detected(tmp_path: Path) -> None:
+    """Generic axios.request calls should be checked when they carry unsafe methods."""
+    path = tmp_path / "widget.js"
+    path.write_text("axios.request({ url: '/portal/order', method: 'POST', data: payload });\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-unsafe-request-without-csrf" and f.sink == "http-request" for f in findings)
+
+
+def test_jquery_post_without_visible_csrf_detected(tmp_path: Path) -> None:
+    """jQuery shorthand POST requests should be covered by the CSRF review rule."""
+    path = tmp_path / "widget.js"
+    path.write_text("$.post('/portal/order/update', payload);\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-unsafe-request-without-csrf" and f.sink == "http-request" for f in findings)
+
+
 def test_fetch_insecure_http_url_detected(tmp_path: Path) -> None:
     """Raw frontend requests should not use cleartext remote endpoints."""
     path = tmp_path / "widget.js"
