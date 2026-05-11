@@ -58,6 +58,20 @@ def test_broad_sensitive_automation_in_csv_is_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-automation-broad-sensitive-trigger" and f.record_id == "auto_sale" for f in findings)
 
 
+def test_broad_sensitive_automation_with_colon_csv_ref_is_reported(tmp_path: Path) -> None:
+    """Colon-style model relation headers should not hide broad automations."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "base_automation.csv").write_text(
+        "id,name,model_id:id,trigger\nauto_sale,Sale,sale.model_sale_order,on_create_or_write\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_automations(tmp_path)
+
+    assert any(f.rule_id == "odoo-automation-broad-sensitive-trigger" and f.record_id == "auto_sale" for f in findings)
+
+
 def test_automation_csv_code_risks_are_reported(tmp_path: Path) -> None:
     """CSV automated action code should use the same sink checks as XML."""
     data = tmp_path / "module" / "data"
