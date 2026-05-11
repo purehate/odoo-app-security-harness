@@ -131,6 +131,52 @@ class Config(odoo_http.Controller):
     assert "odoo-config-param-sudo-sensitive-read" in rule_ids
 
 
+def test_imported_odoo_http_module_public_sensitive_config_read(tmp_path: Path) -> None:
+    """Direct odoo.http imports should still expose public config reads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "config.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Config(odoo_http.Controller):
+    @odoo_http.route('/public/config', auth='public')
+    def config(self):
+        return odoo_http.request.env['ir.config_parameter'].sudo().get_param('payment.provider.secret')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-config-param-public-sensitive-read" in rule_ids
+    assert "odoo-config-param-sudo-sensitive-read" in rule_ids
+
+
+def test_imported_odoo_module_public_sensitive_config_read(tmp_path: Path) -> None:
+    """Direct odoo imports should still expose public config reads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "config.py").write_text(
+        """
+import odoo as od
+
+class Config(od.http.Controller):
+    @od.http.route('/public/config', auth='public')
+    def config(self):
+        return od.http.request.env['ir.config_parameter'].sudo().get_param('payment.provider.secret')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-config-param-public-sensitive-read" in rule_ids
+    assert "odoo-config-param-sudo-sensitive-read" in rule_ids
+
+
 def test_non_odoo_route_decorator_public_config_read_is_ignored(tmp_path: Path) -> None:
     """Local route-like decorators should not create Odoo route context."""
     controllers = tmp_path / "module" / "controllers"
