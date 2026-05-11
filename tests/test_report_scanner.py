@@ -42,6 +42,56 @@ def test_sensitive_report_without_groups_is_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-report-sensitive-no-groups" for f in findings)
 
 
+def test_sensitive_report_without_groups_in_csv_is_reported(tmp_path: Path) -> None:
+    """CSV report actions should get the same exposure checks as XML records."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_report.csv").write_text(
+        "id,name,model\n"
+        "action_users_report,Users,res.users\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_reports(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-report-sensitive-no-groups"
+        and finding.report == "action_users_report"
+        for finding in findings
+    )
+
+
+def test_sensitive_csv_report_with_groups_is_ignored(tmp_path: Path) -> None:
+    """Grouped CSV report actions should not be broad-exposure findings."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.report.csv").write_text(
+        "id,name,model,groups_id/id\n"
+        "action_users_report,Users,res.users,base.group_system\n",
+        encoding="utf-8",
+    )
+
+    assert scan_reports(tmp_path) == []
+
+
+def test_csv_report_sudo_and_filename_risks_are_reported(tmp_path: Path) -> None:
+    """CSV report action metadata should feed existing report-risk rules."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_report.csv").write_text(
+        "id,name,model,report_sudo,attachment_use,attachment,print_report_name\n"
+        "action_token_report,Token,sale.order,True,1,object.name,object.access_token\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_reports(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-report-sudo-enabled" in rule_ids
+    assert "odoo-report-dynamic-attachment-cache" in rule_ids
+    assert "odoo-report-sensitive-filename-expression" in rule_ids
+
+
 def test_sensitive_report_model_external_ids_are_normalized(tmp_path: Path) -> None:
     """Report models supplied as model external IDs should normalize to Odoo model names."""
     xml = tmp_path / "reports.xml"

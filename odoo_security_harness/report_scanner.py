@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import ast
 import re
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +86,10 @@ def scan_reports(repo_path: Path) -> list[ReportFinding]:
         if _should_skip(path):
             continue
         findings.extend(ReportScanner(path).scan_file())
+    for path in repo_path.rglob("*.csv"):
+        if _should_skip(path):
+            continue
+        findings.extend(ReportScanner(path).scan_csv_file())
     for path in repo_path.rglob("*.py"):
         if _should_skip(path) or "tests" in path.parts:
             continue
@@ -114,6 +120,28 @@ class ReportScanner:
                 self._scan_report_record(record)
         for report in root.iter("report"):
             self._scan_report_tag(report)
+        return self.findings
+
+    def scan_csv_file(self) -> list[ReportFinding]:
+        """Scan CSV report actions."""
+        if _csv_model_name(self.path) != "ir.actions.report":
+            return []
+        try:
+            self.content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+        for fields, line in _csv_dict_rows(self.content):
+            self._scan_report_values(
+                fields.get("id", ""),
+                _model_value(fields.get("model", "")),
+                fields.get("groups_id", "") or fields.get("groups", ""),
+                fields.get("report_sudo", ""),
+                fields.get("attachment_use", ""),
+                fields.get("attachment", ""),
+                fields.get("print_report_name", ""),
+                line,
+            )
         return self.findings
 
     def _scan_report_record(self, record: ElementTree.Element) -> None:
@@ -872,6 +900,41 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("ref") or field.get("eval") or (field.text or "").strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    aliases = {
+        "ir_actions_report": "ir.actions.report",
+        "ir.actions.report": "ir.actions.report",
+    }
+    return aliases.get(stem, stem.replace("_", "."))
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _truthy(value: str) -> bool:
