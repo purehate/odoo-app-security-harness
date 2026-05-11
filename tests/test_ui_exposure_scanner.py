@@ -49,6 +49,27 @@ def test_public_object_button_is_high_severity(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-ui-public-object-button" and f.severity == "high" for f in findings)
 
 
+def test_portal_object_button_is_high_severity(tmp_path: Path) -> None:
+    """Portal object buttons are externally reachable and need server-side checks."""
+    xml = tmp_path / "views.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="portal_form" model="ir.ui.view">
+    <field name="arch" type="xml">
+      <form>
+        <button name="action_cancel" type="object" groups="base.group_portal"/>
+      </form>
+    </field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = UIExposureScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-ui-public-object-button" and f.severity == "high" for f in findings)
+
+
 def test_sensitive_action_and_menu_without_groups_are_reported(tmp_path: Path) -> None:
     """Sensitive actions and menus without groups should be flagged together."""
     xml = tmp_path / "menus.xml"

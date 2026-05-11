@@ -175,10 +175,10 @@ class UIExposureScanner:
                 if _includes_public_group(groups):
                     self._add(
                         "odoo-ui-public-object-button",
-                        "Object button exposed to public users",
+                        "Object button exposed to public or portal users",
                         "high",
                         _line_for_button(self.content, name),
-                        "View exposes an object-method button to public users; verify the method enforces record access and rejects forged calls",
+                        "View exposes an object-method button to public or portal users; verify the method enforces record access and rejects forged calls",
                         "button",
                         name,
                     )
@@ -342,7 +342,7 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
 
 
 def _includes_public_group(groups: str) -> bool:
-    return "base.group_public" in groups
+    return "base.group_public" in groups or "base.group_portal" in groups
 
 
 def _normalize_action_ref(action: str) -> str:
