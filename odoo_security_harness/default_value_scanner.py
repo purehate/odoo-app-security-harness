@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _record_fields, _should_skip
 
 
@@ -303,7 +304,8 @@ class DefaultValueScanner(ast.NodeVisitor):
                 "Public route writes ir.default",
                 "critical",
                 node.lineno,
-                "Public route writes ir.default; verify unauthenticated users cannot alter persisted defaults for future create flows",
+                "Public route writes ir.default; "
+                "verify unauthenticated users cannot alter persisted defaults for future create flows",
                 model,
                 field,
                 sink,
@@ -317,7 +319,8 @@ class DefaultValueScanner(ast.NodeVisitor):
                 "ir.default is written through privileged context",
                 "high",
                 node.lineno,
-                "sudo()/with_user(SUPERUSER_ID).set() writes persisted defaults; verify explicit admin checks and user/company scoping",
+                "sudo()/with_user(SUPERUSER_ID).set() writes persisted defaults; "
+                "verify explicit admin checks and user/company scoping",
                 model,
                 field,
                 sink,
@@ -331,7 +334,8 @@ class DefaultValueScanner(ast.NodeVisitor):
                 "Request-derived data reaches ir.default",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "Request-derived field or value reaches ir.default.set(); whitelist fields and reject user, group, company, pricing, and accounting defaults",
+                "Request-derived field or value reaches ir.default.set(); "
+                "whitelist fields and reject user, group, company, pricing, and accounting defaults",
                 model,
                 field,
                 sink,
@@ -343,7 +347,8 @@ class DefaultValueScanner(ast.NodeVisitor):
                 "Sensitive ir.default field is set at runtime",
                 "high",
                 node.lineno,
-                f"Runtime ir.default.set() writes sensitive field '{field}'; verify scope, permissions, and company isolation",
+                f"Runtime ir.default.set() writes sensitive field '{field}'; "
+                "verify scope, permissions, and company isolation",
                 model,
                 field,
                 sink,
@@ -355,7 +360,8 @@ class DefaultValueScanner(ast.NodeVisitor):
                 "Sensitive model default is set at runtime",
                 "high",
                 node.lineno,
-                f"Runtime ir.default.set() writes a default for sensitive model '{model}'; verify this cannot seed configuration, security, payment, or identity state unexpectedly",
+                f"Runtime ir.default.set() writes a default for sensitive model '{model}'; "
+                "verify this cannot seed configuration, security, payment, or identity state unexpectedly",
                 model,
                 field,
                 sink,
@@ -379,7 +385,8 @@ class DefaultValueScanner(ast.NodeVisitor):
                 "ir.default record has global scope",
                 "medium",
                 line,
-                f"ir.default '{record_id}' has no user_id or company_id; verify the default is safe globally for every user and company",
+                f"ir.default '{record_id}' has no user_id or company_id; "
+                "verify the default is safe globally for every user and company",
                 model,
                 field,
                 "ir.default",
@@ -392,7 +399,8 @@ class DefaultValueScanner(ast.NodeVisitor):
                 "Sensitive ir.default value is preconfigured",
                 "high",
                 line,
-                f"ir.default '{record_id}' configures sensitive field '{field}'; verify it cannot seed privilege, accounting, company, or pricing values unexpectedly",
+                f"ir.default '{record_id}' configures sensitive field '{field}'; "
+                "verify it cannot seed privilege, accounting, company, or pricing values unexpectedly",
                 model,
                 field,
                 "ir.default",
@@ -405,7 +413,8 @@ class DefaultValueScanner(ast.NodeVisitor):
                 "Sensitive model default value is preconfigured",
                 "high",
                 line,
-                f"ir.default '{record_id}' configures a default for sensitive model '{model}'; verify it cannot seed configuration, security, payment, or identity state unexpectedly",
+                f"ir.default '{record_id}' configures a default for sensitive model '{model}'; "
+                "verify it cannot seed configuration, security, payment, or identity state unexpectedly",
                 model,
                 field,
                 "ir.default",
@@ -654,7 +663,64 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _expanded_dict_items(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key_node, value_node in zip(node.keys, node.values, strict=False):
+        if key_node is None:
+            value = _resolve_static_dict(value_node, constants)
+            if value is not None:
+                items.extend(_expanded_dict_items(value, constants))
+            continue
+        key = _literal_string(key_node, constants)
+        if key:
+            items.append((key, value_node))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str | None, value: ast.AST) -> ast.Dict:
+    if key is None:
+        return values_node
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:

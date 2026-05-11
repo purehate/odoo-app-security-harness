@@ -273,6 +273,37 @@ class Defaults(http.Controller):
     assert "odoo-default-request-derived-set" in rule_ids
 
 
+def test_updated_route_options_public_sudo_default_set_from_request(tmp_path: Path) -> None:
+    """Updated route option dictionaries should not hide public ir.default writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "defaults.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+DEFAULT_OPTIONS = {'auth': 'user', 'csrf': True}
+DEFAULT_OPTIONS.update({'auth': 'none', 'csrf': False})
+
+class Defaults(http.Controller):
+    @http.route('/defaults/group', **DEFAULT_OPTIONS)
+    def set_group(self, **kwargs):
+        return request.env['ir.default'].sudo().set('res.users', 'groups_id', kwargs.get('groups_id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-default-public-route-set" in rule_ids
+    assert "odoo-default-request-derived-set" in rule_ids
+    assert any(
+        finding.rule_id == "odoo-default-public-route-set" and finding.severity == "critical"
+        for finding in findings
+    )
+
+
 def test_class_constant_backed_public_sudo_default_set_from_request(tmp_path: Path) -> None:
     """Class-scoped public auth constants should still expose ir.default writes."""
     controllers = tmp_path / "module" / "controllers"
