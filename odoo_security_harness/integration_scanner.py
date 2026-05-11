@@ -92,6 +92,8 @@ class IntegrationScanner(ast.NodeVisitor):
         self.command_module_names: dict[str, str] = {"os": "os", "subprocess": "subprocess"}
         self.command_function_names: dict[str, str] = {}
         self.request_names: set[str] = {"request"}
+        self.odoo_http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.constants: dict[str, ast.AST] = {}
         self.local_constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
@@ -149,6 +151,10 @@ class IntegrationScanner(ast.NodeVisitor):
                 self.http_module_names[local_name] = alias.name
             elif alias.name in {"os", "subprocess"}:
                 self.command_module_names[local_name] = alias.name
+            elif alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.odoo_http_module_names.add(alias.asname)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
@@ -162,6 +168,10 @@ class IntegrationScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "request":
                     self.http_module_names[alias.asname or alias.name] = "urllib.request"
+        elif node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.odoo_http_module_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -650,7 +660,9 @@ class IntegrationScanner(ast.NodeVisitor):
         return self._is_http_client_factory(node) or isinstance(node, ast.Name) and node.id in http_client_names
 
     def _is_request_derived(self, node: ast.AST) -> bool:
-        return _is_request_derived(node, self.request_names)
+        return _is_request_derived(
+            node, self.request_names, self.odoo_http_module_names, self.odoo_module_names
+        )
 
     def _add(
         self,
@@ -674,19 +686,29 @@ class IntegrationScanner(ast.NodeVisitor):
         )
 
 
-def _is_request_derived(node: ast.AST, request_names: set[str]) -> bool:
-    if _is_request_source_expr(node, request_names):
+def _is_request_derived(
+    node: ast.AST,
+    request_names: set[str],
+    odoo_http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
+) -> bool:
+    odoo_http_module_names = odoo_http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
+    if _is_request_source_expr(node, request_names, odoo_http_module_names, odoo_module_names):
         return True
     if isinstance(node, ast.Attribute):
-        return _is_request_derived(node.value, request_names)
+        return _is_request_derived(node.value, request_names, odoo_http_module_names, odoo_module_names)
     if isinstance(node, ast.Subscript):
-        return _is_request_derived(node.value, request_names) or _is_request_derived(node.slice, request_names)
+        return _is_request_derived(
+            node.value, request_names, odoo_http_module_names, odoo_module_names
+        ) or _is_request_derived(node.slice, request_names, odoo_http_module_names, odoo_module_names)
     if isinstance(node, ast.Call):
         return (
-            _is_request_derived(node.func, request_names)
-            or any(_is_request_derived(arg, request_names) for arg in node.args)
+            _is_request_derived(node.func, request_names, odoo_http_module_names, odoo_module_names)
+            or any(_is_request_derived(arg, request_names, odoo_http_module_names, odoo_module_names) for arg in node.args)
             or any(
-                keyword.value is not None and _is_request_derived(keyword.value, request_names)
+                keyword.value is not None
+                and _is_request_derived(keyword.value, request_names, odoo_http_module_names, odoo_module_names)
                 for keyword in node.keywords
             )
         )
@@ -694,16 +716,47 @@ def _is_request_derived(node: ast.AST, request_names: set[str]) -> bool:
     return any(marker in text for marker in REQUEST_TEXT_MARKERS)
 
 
-def _is_request_source_expr(node: ast.AST, request_names: set[str]) -> bool:
+def _is_request_source_expr(
+    node: ast.AST,
+    request_names: set[str],
+    odoo_http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
     return (
         isinstance(node, ast.Attribute)
-        and _is_request_expr(node.value, request_names)
+        and _is_request_expr(node.value, request_names, odoo_http_module_names, odoo_module_names)
         and node.attr in REQUEST_SOURCE_ATTRS | REQUEST_SOURCE_METHODS
     )
 
 
-def _is_request_expr(node: ast.AST, request_names: set[str]) -> bool:
-    return isinstance(node, ast.Name) and node.id in request_names
+def _is_request_expr(
+    node: ast.AST,
+    request_names: set[str],
+    odoo_http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in request_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "request"
+        and _is_odoo_http_module_expr(node.value, odoo_http_module_names, odoo_module_names)
+    )
+
+
+def _is_odoo_http_module_expr(
+    node: ast.AST,
+    odoo_http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in odoo_http_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "http"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in odoo_module_names
+    )
 
 
 def _is_http_call(sink: str) -> bool:

@@ -320,6 +320,46 @@ def webhook():
     assert any(f.rule_id == "odoo-integration-tainted-url-ssrf" for f in findings)
 
 
+def test_imported_odoo_http_request_controlled_url_is_reported_as_ssrf(tmp_path: Path) -> None:
+    """Direct odoo.http request access should still taint outbound URLs."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import requests
+import odoo.http as odoo_http
+
+def webhook():
+    params = odoo_http.request.get_http_params()
+    return requests.get(params.get('callback_url'), timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-tainted-url-ssrf" for f in findings)
+
+
+def test_imported_odoo_request_controlled_url_is_reported_as_ssrf(tmp_path: Path) -> None:
+    """Direct odoo module request access should still taint outbound URLs."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import requests
+import odoo as od
+
+def webhook():
+    params = od.http.request.get_http_params()
+    return requests.get(params.get('callback_url'), timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-tainted-url-ssrf" for f in findings)
+
+
 def test_aliased_requests_module_url_is_reported(tmp_path: Path) -> None:
     """Aliased requests imports should still be treated as outbound HTTP."""
     py = tmp_path / "controller.py"
