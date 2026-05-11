@@ -412,8 +412,7 @@ class BusController(http.Controller):
     findings = scan_realtime(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-realtime-broad-or-tainted-channel-subscription" and f.severity == "high"
-        for f in findings
+        f.rule_id == "odoo-realtime-broad-or-tainted-channel-subscription" and f.severity == "high" for f in findings
     )
 
 
@@ -761,6 +760,25 @@ from odoo import SUPERUSER_ID
 
 def notify(self):
     self.env['bus.bus'].with_user(SUPERUSER_ID)._sendmany([('global', {'message': 'done'})])
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+
+    assert any(f.rule_id == "odoo-realtime-bus-send-sudo" for f in findings)
+
+
+def test_flags_aliased_import_with_user_superuser_bus_send(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should keep bus sends elevated."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID
+
+def notify(self):
+    self.env['bus.bus'].with_user(ROOT_UID)._sendmany([('global', {'message': 'done'})])
 """,
         encoding="utf-8",
     )

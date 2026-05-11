@@ -583,6 +583,29 @@ class Message(models.Model):
     assert "odoo-mail-chatter-sudo-post" in rule_ids
 
 
+def test_flags_aliased_import_with_user_superuser_message_post(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should keep chatter posts elevated."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "message.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+
+class Message(models.Model):
+    _name = 'x.message'
+
+    def post(self):
+        return self.with_user(ROOT_UID).message_post(body='Internal update')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-chatter-sudo-post" in rule_ids
+
+
 def test_constant_with_user_message_post_is_reported(tmp_path: Path) -> None:
     """Constant-backed superuser IDs should still mark chatter posts elevated."""
     models = tmp_path / "module" / "models"
