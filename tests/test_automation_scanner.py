@@ -857,6 +857,28 @@ requests.post(record.callback_url, **HTTP_OPTIONS)
     assert not any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
 
 
+def test_http_dict_union_static_kwargs_timeout_in_automation_is_ignored(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should satisfy automation HTTP timeout checks."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_union_kwargs_timeout" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'headers': {}}
+requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert not any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
+
+
 def test_http_local_constant_kwargs_timeout_in_automation_is_ignored(tmp_path: Path) -> None:
     """Function-local **kwargs dictionaries should satisfy automation HTTP timeout checks."""
     xml = tmp_path / "automation.xml"
@@ -939,6 +961,28 @@ requests.post(record.callback_url, **HTTP_OPTIONS)
     assert any(f.rule_id == "odoo-automation-tls-verify-disabled" for f in findings)
 
 
+def test_tls_verification_disabled_dict_union_kwargs_in_automation_is_reported(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should not hide automation TLS disabling."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_tls_union_kwargs" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'verify': False}
+requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-tls-verify-disabled" for f in findings)
+
+
 def test_tls_verification_disabled_local_constant_kwargs_in_automation_is_reported(tmp_path: Path) -> None:
     """Function-local **kwargs dictionaries should not hide disabled TLS verification."""
     xml = tmp_path / "automation.xml"
@@ -973,6 +1017,28 @@ import requests
 CALLBACK_URL = 'http://hooks.example.test/automation'
 HTTP_OPTIONS = {'url': 'http://partner.example.test/automation', 'timeout': 10}
 requests.post(CALLBACK_URL, timeout=10)
+requests.request('POST', **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-cleartext-http-url" for f in findings)
+
+
+def test_cleartext_http_url_dict_union_kwargs_in_automation_is_reported(tmp_path: Path) -> None:
+    """Dict-union static url= kwargs should not hide cleartext automation URLs."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_cleartext_union_kwargs" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+BASE_OPTIONS = {'url': 'http://partner.example.test/automation'}
+HTTP_OPTIONS = BASE_OPTIONS | {'timeout': 10}
 requests.request('POST', **HTTP_OPTIONS)
     ]]></field>
   </record>

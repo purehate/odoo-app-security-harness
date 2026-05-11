@@ -762,6 +762,8 @@ def _is_static_literal(node: ast.AST) -> bool:
         return all(_is_static_literal(key) for key in keys) and all(_is_static_literal(value) for value in node.values)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
         return _is_static_literal(node.operand)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_literal(node.left) and _is_static_literal(node.right)
     return False
 
 
@@ -819,8 +821,8 @@ def _keyword_values(node: ast.Call, name: str, constants: dict[str, ast.AST] | N
             continue
         if keyword.arg is not None:
             continue
-        value = _resolve_constant(keyword.value, constants)
-        if isinstance(value, ast.Dict):
+        value = _resolve_static_dict(keyword.value, constants)
+        if value is not None:
             values.extend(_dict_keyword_values(value, name, constants))
     return values
 
@@ -829,14 +831,30 @@ def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST
     values: list[ast.AST] = []
     for key, item_value in zip(node.keys, node.values, strict=False):
         if key is None:
-            value = _resolve_constant(item_value, constants)
-            if isinstance(value, ast.Dict):
+            value = _resolve_static_dict(item_value, constants)
+            if value is not None:
                 values.extend(_dict_keyword_values(value, name, constants))
             continue
         resolved_key = _resolve_constant(key, constants)
         if isinstance(resolved_key, ast.Constant) and resolved_key.value == name:
             values.append(item_value)
     return values
+
+
+def _resolve_static_dict(
+    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
+) -> ast.Dict | None:
+    seen = seen or set()
+    node = _resolve_constant(node, constants, seen)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants, set(seen))
+        right = _resolve_static_dict(node.right, constants, set(seen))
+        if left is None or right is None:
+            return None
+        return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
+    return None
 
 
 def _mark_target_names(target: ast.AST, names: set[str]) -> None:
