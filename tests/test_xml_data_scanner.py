@@ -109,6 +109,29 @@ aiohttp.request("GET", record.status_url)
     assert len([f for f in findings if f.rule_id == "odoo-xml-server-action-http-no-timeout"]) == 1
 
 
+def test_server_action_tls_verification_disabled(tmp_path: Path) -> None:
+    """Executable server actions should surface disabled HTTP TLS verification."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_http_tls" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+TLS_VERIFY = False
+requests.post(record.callback_url, timeout=10, verify=TLS_VERIFY)
+httpx.post(record.audit_url, timeout=10, verify=True)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+    tls_findings = [f for f in findings if f.rule_id == "odoo-xml-server-action-tls-verify-disabled"]
+
+    assert len(tls_findings) == 1
+
+
 def test_server_action_keyword_with_user_mutation_is_reported(tmp_path: Path) -> None:
     """XML server actions should surface keyword with_user superuser mutations."""
     xml = tmp_path / "actions.xml"

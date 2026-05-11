@@ -181,7 +181,6 @@ _TAXONOMY_SHAPE_HINTS = (
             "odoo-loose-python-tls-verify-disabled",
             "loose script disables tls verification",
             "server actions or loose scripts pass verify=false to outbound http",
-            "man-in-the-middle attacks",
         ),
     ),
     (
@@ -1070,7 +1069,6 @@ _TAXONOMY_SHAPE_HINTS = (
             "migration-tls-verify-disabled",
             "migration/hook disables tls verification",
             "migration or lifecycle hook passes verify=false to outbound http",
-            "man-in-the-middle attacks",
         ),
     ),
     (
@@ -1179,7 +1177,6 @@ _TAXONOMY_SHAPE_HINTS = (
             "automation-tls-verify-disabled",
             "automated action disables tls verification",
             "base.automation code passes verify=false to outbound http",
-            "man-in-the-middle attacks",
         ),
     ),
     (
@@ -1389,7 +1386,6 @@ _TAXONOMY_SHAPE_HINTS = (
             "queue-job-tls-verify-disabled",
             "queue job disables tls verification",
             "queue_job/delayed job passes verify=false to outbound http",
-            "man-in-the-middle attacks",
         ),
     ),
     (
@@ -1938,7 +1934,6 @@ _TAXONOMY_SHAPE_HINTS = (
             "model-method-inverse-tls-verify-disabled",
             "odoo model method disables tls verification",
             "model method passes verify=false to outbound http",
-            "man-in-the-middle attacks",
         ),
     ),
     (
@@ -2860,6 +2855,15 @@ _TAXONOMY_SHAPE_HINTS = (
             "xml declares public mail channel",
             "public mail channel",
             "mail.channel is public",
+        ),
+    ),
+    (
+        "xml_data_server_action_tls_verification_disabled",
+        (
+            "odoo-xml-server-action-tls-verify-disabled",
+            "server action disables tls verification",
+            "ir.actions.server code passes verify=false to outbound http",
+            "man-in-the-middle attacks",
         ),
     ),
     (

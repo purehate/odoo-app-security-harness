@@ -7533,6 +7533,12 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
                 "title": "XML declares public mail channel",
                 "message": "mail.channel is public",
             },
+            {
+                "source": "xml-data",
+                "rule_id": "odoo-xml-server-action-tls-verify-disabled",
+                "title": "Server action disables TLS verification",
+                "message": "ir.actions.server code passes verify=False to outbound HTTP; install/update automation should not permit man-in-the-middle attacks",
+            },
         ]
     )
 
@@ -7550,6 +7556,7 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
     assert shapes["odoo-xml-function-user-group-assignment"] == "xml_data_user_admin_group_assignment"
     assert shapes["odoo-xml-function-security-model-mutation"] == "xml_data_function_security_model_mutation"
     assert shapes["odoo-xml-public-mail-channel"] == "xml_data_public_mail_channel"
+    assert shapes["odoo-xml-server-action-tls-verify-disabled"] == "xml_data_server_action_tls_verification_disabled"
     assert all(entry["cwe"] for entry in coverage["mapped_entries"])
 
 

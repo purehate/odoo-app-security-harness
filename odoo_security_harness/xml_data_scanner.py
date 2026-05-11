@@ -193,6 +193,17 @@ class XmlDataScanner:
                 record_id,
             )
 
+        if code_risks.tls_verify_disabled:
+            self._add(
+                "odoo-xml-server-action-tls-verify-disabled",
+                "Server action disables TLS verification",
+                "high",
+                self._line_for_record(record),
+                "ir.actions.server code passes verify=False to outbound HTTP; install/update automation should not permit man-in-the-middle attacks",
+                "ir.actions.server",
+                record_id,
+            )
+
     def _scan_cron(self, record: ElementTree.Element) -> None:
         fields = self._fields(record)
         state = fields.get("state", "")
@@ -490,6 +501,7 @@ def _sensitive_env_mutation_model(code: str) -> str:
 class _ServerActionCodeRisks:
     sudo_mutation: bool = False
     sensitive_model: str = ""
+    tls_verify_disabled: bool = False
 
 
 def _server_action_code_risks(code: str) -> _ServerActionCodeRisks:
@@ -532,6 +544,8 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
             model = _call_receiver_env_model(node.func, self.constants)
             if model in SECURITY_FUNCTION_MODELS:
                 self.risks.sensitive_model = model
+        if _is_http_call(node.func) and _keyword_is_false(node, "verify", self.constants):
+            self.risks.tls_verify_disabled = True
         self.generic_visit(node)
 
     def _track_elevated_target(self, target: ast.AST, value: ast.AST) -> None:
@@ -634,6 +648,55 @@ def _call_receiver_env_model(node: ast.AST, constants: dict[str, ast.AST]) -> st
     if isinstance(key, ast.Constant) and isinstance(key.value, str):
         return key.value
     return ""
+
+
+def _is_http_call(node: ast.AST) -> bool:
+    call_name = _call_name(node)
+    if call_name in {
+        "requests.delete",
+        "requests.get",
+        "requests.head",
+        "requests.patch",
+        "requests.post",
+        "requests.put",
+        "requests.request",
+        "httpx.delete",
+        "httpx.get",
+        "httpx.head",
+        "httpx.patch",
+        "httpx.post",
+        "httpx.put",
+        "httpx.request",
+        "aiohttp.delete",
+        "aiohttp.get",
+        "aiohttp.head",
+        "aiohttp.patch",
+        "aiohttp.post",
+        "aiohttp.put",
+        "aiohttp.request",
+    }:
+        return True
+    return call_name.endswith(
+        (
+            ".delete",
+            ".get",
+            ".head",
+            ".patch",
+            ".post",
+            ".put",
+            ".request",
+        )
+    ) and _call_root_name(node) in {"client", "session"}
+
+
+def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST]) -> bool:
+    for keyword in node.keywords:
+        if keyword.arg != name:
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Constant) and value.value is False:
+            return True
+    return False
 
 
 def _call_name(node: ast.AST) -> str:
