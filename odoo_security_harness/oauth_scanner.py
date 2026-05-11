@@ -764,7 +764,7 @@ def _is_http_client_call(node: ast.Call) -> bool:
     sink = _call_name(node.func)
     method = sink.rsplit(".", 1)[-1]
     return method in HTTP_METHODS and (
-        sink.startswith(("requests.", "httpx."))
+        sink.startswith(("aiohttp.", "requests.", "httpx."))
         or sink in {"urllib.request.urlopen", "urlopen"}
         or sink.endswith(".urlopen")
     )
@@ -802,6 +802,8 @@ def _has_verify_false(node: ast.Call, constants: dict[str, ast.AST] | None = Non
 
 def _call_has_tainted_url(node: ast.Call, is_tainted: Any) -> bool:
     if node.args and is_tainted(node.args[0]):
+        return True
+    if _call_name(node.func).rsplit(".", 1)[-1] == "request" and len(node.args) > 1 and is_tainted(node.args[1]):
         return True
     return any(
         keyword.arg in {"url", "endpoint"} and keyword.value is not None and is_tainted(keyword.value)
