@@ -858,7 +858,7 @@ def extract_route_paths(args_text: str) -> list[str]:
     if node.body.args:
         candidates.append(node.body.args[0])
     for keyword in node.body.keywords:
-        if keyword.arg == "route":
+        if keyword.arg in {"route", "routes"}:
             candidates.append(keyword.value)
     for candidate in candidates:
         if isinstance(candidate, ast.Constant) and isinstance(candidate.value, str):
