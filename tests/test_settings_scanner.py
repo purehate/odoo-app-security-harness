@@ -220,6 +220,33 @@ class ResConfigSettings(models.TransientModel):
     assert "odoo-settings-config-field-public-groups" in rule_ids
 
 
+def test_flags_dict_union_static_unpack_config_parameter_and_groups(tmp_path: Path) -> None:
+    """Dict-union static **field options should not hide settings metadata."""
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "settings.py").write_text(
+        """
+from odoo import fields, models
+
+SECRET_KEY = 'payment.provider.api_secret'
+BASE_OPTIONS = {'config_parameter': SECRET_KEY}
+FIELD_OPTIONS = BASE_OPTIONS | {'groups': 'base.group_portal'}
+
+class ResConfigSettings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    api_secret = fields.Char(**FIELD_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_settings(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-settings-sensitive-config-field-no-admin-groups" in rule_ids
+    assert "odoo-settings-config-field-public-groups" in rule_ids
+
+
 def test_flags_class_constant_backed_config_parameter_and_groups(tmp_path: Path) -> None:
     """Class-level config_parameter and groups metadata should be scanned."""
     models = tmp_path / "module" / "models"
@@ -412,6 +439,30 @@ class ResConfigSettings(models.TransientModel):
     findings = scan_settings(tmp_path)
 
     assert len([f for f in findings if f.rule_id == "odoo-settings-security-toggle-unsafe-default"]) == 3
+
+
+def test_flags_dict_union_static_security_toggle_unsafe_default(tmp_path: Path) -> None:
+    """Dict-union static **field options should not hide unsafe security toggle defaults."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import fields, models
+
+BASE_OPTIONS = {'config_parameter': 'auth.signup.allow_uninvited'}
+FIELD_OPTIONS = BASE_OPTIONS | {'default': True}
+
+class ResConfigSettings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    allow_uninvited_signup = fields.Boolean(**FIELD_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_settings(tmp_path)
+
+    assert any(f.rule_id == "odoo-settings-security-toggle-unsafe-default" for f in findings)
 
 
 def test_flags_sudo_set_param_in_settings_method(tmp_path: Path) -> None:
