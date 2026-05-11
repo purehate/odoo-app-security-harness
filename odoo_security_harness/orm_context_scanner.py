@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -148,6 +149,8 @@ class OrmContextScanner(ast.NodeVisitor):
         sink = _call_name(node.func)
         method = sink.split(".")[-1]
         scope = self.scope_stack[-1] if self.scope_stack else None
+        if scope is not None:
+            self._track_context_dict_update_call(node, scope)
 
         if _is_with_context_call(node):
             self._scan_with_context_call(node, sink)
@@ -174,7 +177,8 @@ class OrmContextScanner(ast.NodeVisitor):
                     "Privileged ORM read forces binary field contents",
                     "high",
                     node.lineno,
-                    "ORM read uses sudo()/with_user(SUPERUSER_ID) with bin_size=False; binary fields may return file contents instead of size metadata outside normal record visibility",
+                    "ORM read uses sudo()/with_user(SUPERUSER_ID) with bin_size=False; binary fields may return "
+                    "file contents instead of size metadata outside normal record visibility",
                     sink,
                     "bin_size",
                 )
@@ -193,7 +197,8 @@ class OrmContextScanner(ast.NodeVisitor):
                     "Privileged ORM read disables active record filtering",
                     "medium",
                     node.lineno,
-                    "ORM read uses sudo()/with_user(SUPERUSER_ID) with active_test=False; archived/inactive records may be exposed outside normal record visibility",
+                    "ORM read uses sudo()/with_user(SUPERUSER_ID) with active_test=False; archived/inactive "
+                    "records may be exposed outside normal record visibility",
                     sink,
                     "active_test",
                 )
@@ -213,7 +218,8 @@ class OrmContextScanner(ast.NodeVisitor):
                 "ORM context disables active record filtering",
                 "low",
                 node.lineno,
-                "with_context(active_test=False) can include archived/inactive records in later ORM operations; verify this is intentional and access-safe",
+                "with_context(active_test=False) can include archived/inactive records in later ORM operations; "
+                "verify this is intentional and access-safe",
                 sink,
                 "active_test",
             )
@@ -224,7 +230,8 @@ class OrmContextScanner(ast.NodeVisitor):
                 "ORM context forces binary field contents",
                 "medium",
                 node.lineno,
-                "with_context(bin_size=False) can make binary fields return file contents instead of size metadata; verify downstream reads cannot expose attachments or large payloads",
+                "with_context(bin_size=False) can make binary fields return file contents instead of size metadata; "
+                "verify downstream reads cannot expose attachments or large payloads",
                 sink,
                 "bin_size",
             )
@@ -236,7 +243,8 @@ class OrmContextScanner(ast.NodeVisitor):
                     "ORM context disables accounting move validation",
                     "medium",
                     node.lineno,
-                    f"with_context({flag}=False) disables accounting move validation; verify the surrounding flow preserves balanced moves, taxes, and reconciliation invariants",
+                    f"with_context({flag}=False) disables accounting move validation; verify the surrounding flow "
+                    "preserves balanced moves, taxes, and reconciliation invariants",
                     sink,
                     flag,
                 )
@@ -248,7 +256,8 @@ class OrmContextScanner(ast.NodeVisitor):
                     "ORM context enables privileged framework mode",
                     "high",
                     node.lineno,
-                    f"with_context({flag}=True) enables a framework mode normally reserved for install/uninstall flows; verify it cannot bypass normal business safeguards",
+                    f"with_context({flag}=True) enables a framework mode normally reserved for install/uninstall "
+                    "flows; verify it cannot bypass normal business safeguards",
                     sink,
                     flag,
                 )
@@ -259,7 +268,8 @@ class OrmContextScanner(ast.NodeVisitor):
                 "ORM context seeds privilege-bearing default",
                 "high",
                 node.lineno,
-                f"with_context({flag}=...) seeds a privilege-bearing default; verify create flows cannot assign user, group, company, share, or active-state fields unexpectedly",
+                f"with_context({flag}=...) seeds a privilege-bearing default; verify create flows cannot assign "
+                "user, group, company, share, or active-state fields unexpectedly",
                 sink,
                 flag,
             )
@@ -276,7 +286,8 @@ class OrmContextScanner(ast.NodeVisitor):
                 "Request context disables active record filtering",
                 "medium",
                 node.lineno,
-                "request.update_context(active_test=False) changes the current request environment; archived/inactive records may become visible or processed later in the route",
+                "request.update_context(active_test=False) changes the current request environment; "
+                "archived/inactive records may become visible or processed later in the route",
                 sink,
                 "active_test",
             )
@@ -287,7 +298,8 @@ class OrmContextScanner(ast.NodeVisitor):
                 "Request context forces binary field contents",
                 "medium",
                 node.lineno,
-                "request.update_context(bin_size=False) changes the request environment so later binary reads can return file contents instead of size metadata",
+                "request.update_context(bin_size=False) changes the request environment so later binary reads can "
+                "return file contents instead of size metadata",
                 sink,
                 "bin_size",
             )
@@ -299,7 +311,8 @@ class OrmContextScanner(ast.NodeVisitor):
                     "Request context disables accounting move validation",
                     "high",
                     node.lineno,
-                    f"request.update_context({flag}=False) disables accounting move validation for later route work; verify callers cannot persist unbalanced or invalid accounting entries",
+                    f"request.update_context({flag}=False) disables accounting move validation for later route work; "
+                    "verify callers cannot persist unbalanced or invalid accounting entries",
                     sink,
                     flag,
                 )
@@ -311,7 +324,8 @@ class OrmContextScanner(ast.NodeVisitor):
                 "Request context disables chatter/tracking",
                 "medium",
                 node.lineno,
-                "request.update_context disables tracking or subscription context for later ORM work in the request; verify auditability and follower notifications are preserved",
+                "request.update_context disables tracking or subscription context for later ORM work in the request; "
+                "verify auditability and follower notifications are preserved",
                 sink,
                 ",".join(sorted(disabled_tracking)),
             )
@@ -323,7 +337,8 @@ class OrmContextScanner(ast.NodeVisitor):
                     "Request context disables user notifications",
                     "medium",
                     node.lineno,
-                    f"request.update_context({flag}=True) suppresses later account, password, or mail notifications in the route",
+                    f"request.update_context({flag}=True) suppresses later account, password, or mail notifications "
+                    "in the route",
                     sink,
                     flag,
                 )
@@ -335,7 +350,8 @@ class OrmContextScanner(ast.NodeVisitor):
                     "Request context enables privileged framework mode",
                     "high",
                     node.lineno,
-                    f"request.update_context({flag}=True) enables a framework mode for later ORM work in the request; verify it cannot bypass normal validation or workflow controls",
+                    f"request.update_context({flag}=True) enables a framework mode for later ORM work in the "
+                    "request; verify it cannot bypass normal validation or workflow controls",
                     sink,
                     flag,
                 )
@@ -359,7 +375,8 @@ class OrmContextScanner(ast.NodeVisitor):
                 "ORM mutation disables chatter/tracking context",
                 "medium",
                 node.lineno,
-                "ORM create/write/unlink runs with tracking or subscription context disabled; verify auditability, followers, and security notifications are not suppressed for sensitive records",
+                "ORM create/write/unlink runs with tracking or subscription context disabled; verify auditability, "
+                "followers, and security notifications are not suppressed for sensitive records",
                 sink,
                 ",".join(sorted(disabled_tracking)),
             )
@@ -371,7 +388,8 @@ class OrmContextScanner(ast.NodeVisitor):
                     "ORM mutation disables user notification context",
                     "medium",
                     node.lineno,
-                    f"ORM create/write/unlink runs with {flag}=True; verify account, password, or mail notifications are not suppressed in a security-sensitive flow",
+                    f"ORM create/write/unlink runs with {flag}=True; verify account, password, or mail "
+                    "notifications are not suppressed in a security-sensitive flow",
                     sink,
                     flag,
                 )
@@ -383,7 +401,8 @@ class OrmContextScanner(ast.NodeVisitor):
                     "ORM mutation runs in privileged framework mode",
                     "high",
                     node.lineno,
-                    f"ORM mutation runs with {flag}=True; verify install/uninstall-only behavior cannot bypass normal validation or workflow controls",
+                    f"ORM mutation runs with {flag}=True; verify install/uninstall-only behavior cannot bypass "
+                    "normal validation or workflow controls",
                 sink,
                 flag,
             )
@@ -395,7 +414,8 @@ class OrmContextScanner(ast.NodeVisitor):
                     "ORM mutation disables accounting move validation",
                     "high",
                     node.lineno,
-                    f"ORM create/write/unlink runs with {flag}=False; verify callers cannot persist unbalanced or invalid accounting entries",
+                    f"ORM create/write/unlink runs with {flag}=False; verify callers cannot persist unbalanced or "
+                    "invalid accounting entries",
                     sink,
                     flag,
                 )
@@ -406,7 +426,8 @@ class OrmContextScanner(ast.NodeVisitor):
                 "ORM mutation uses privilege-bearing default context",
                 "high",
                 node.lineno,
-                f"ORM mutation runs with {flag}=... in context; verify callers cannot create records with elevated ownership, groups, companies, or visibility",
+                f"ORM mutation runs with {flag}=... in context; verify callers cannot create records with elevated "
+                "ownership, groups, companies, or visibility",
                 sink,
                 flag,
             )
@@ -448,6 +469,22 @@ class OrmContextScanner(ast.NodeVisitor):
                 scope.sudo_vars.add(target.id)
             else:
                 scope.sudo_vars.discard(target.id)
+
+    def _track_context_dict_update_call(self, node: ast.Call, scope: ContextScope) -> None:
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+            return
+        if not isinstance(node.func.value, ast.Name):
+            return
+        name = node.func.value.id
+        constants = self._effective_constants()
+        if _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants) is None:
+            return
+        flags = dict(scope.context_dict_vars.get(name, _dict_flags(ast.Name(id=name, ctx=ast.Load()), constants)))
+        flags.update(_context_update_flags(node, scope.context_dict_vars, constants))
+        if flags:
+            scope.context_dict_vars[name] = flags
+        else:
+            scope.context_dict_vars.pop(name, None)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
         if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
@@ -581,6 +618,23 @@ def _context_flags(
     return flags
 
 
+def _context_update_flags(
+    node: ast.Call,
+    context_dict_vars: dict[str, dict[str, ast.AST]] | None = None,
+    constants: dict[str, ast.AST] | None = None,
+) -> dict[str, ast.AST]:
+    flags: dict[str, ast.AST] = {}
+    constants = constants or {}
+    for arg in node.args:
+        flags.update(_dict_or_alias_flags(arg, context_dict_vars, constants))
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            flags[keyword.arg] = _resolve_constant(keyword.value, constants)
+        else:
+            flags.update(_dict_or_alias_flags(keyword.value, context_dict_vars, constants))
+    return flags
+
+
 def _dict_or_alias_flags(
     node: ast.AST,
     context_dict_vars: dict[str, dict[str, ast.AST]] | None = None,
@@ -592,8 +646,8 @@ def _dict_or_alias_flags(
 
 
 def _dict_flags(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> dict[str, ast.AST]:
-    node = _resolve_constant(node, constants or {})
-    if not isinstance(node, ast.Dict):
+    node = _resolve_static_dict(node, constants or {})
+    if node is None:
         return {}
     flags: dict[str, ast.AST] = {}
     for key, value in zip(node.keys, node.values, strict=False):
@@ -602,6 +656,19 @@ def _dict_flags(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> d
         if isinstance(key, ast.Constant) and isinstance(key.value, str):
             flags[key.value] = value
     return flags
+
+
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST]) -> ast.Dict | None:
+    node = _resolve_constant(node, constants)
+    if not isinstance(node, ast.Dict):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            left = _resolve_static_dict(node.left, constants)
+            right = _resolve_static_dict(node.right, constants)
+            if left is None or right is None:
+                return None
+            return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
+        return None
+    return node
 
 
 def _flag_is_false(flags: dict[str, ast.AST], flag: str) -> bool:
@@ -789,6 +856,8 @@ def _is_static_literal(node: ast.AST) -> bool:
             (key is None or _is_static_literal(key)) and _is_static_literal(value)
             for key, value in zip(node.keys, node.values)
         )
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_literal(node.left) and _is_static_literal(node.right)
     return False
 
 

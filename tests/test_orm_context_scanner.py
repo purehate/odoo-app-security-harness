@@ -548,6 +548,56 @@ class Partner(models.Model):
     assert any(f.rule_id == "odoo-orm-context-notification-disabled-mutation" for f in findings)
 
 
+def test_flags_updated_context_dict_tracking_disabled_mutation(tmp_path: Path) -> None:
+    """Updated local context dictionaries should preserve risky flags."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "partner.py").write_text(
+        """
+from odoo import models
+
+class Partner(models.Model):
+    _name = 'x.partner'
+
+    def quiet_update(self):
+        ctx = {'lang': 'en_US'}
+        changes = {'tracking_disable': True}
+        ctx.update(changes)
+        return self.with_context(ctx).write({'name': 'x'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-context-tracking-disabled-mutation" for f in findings)
+
+
+def test_flags_unpacked_updated_context_dict_notification_disabled_mutation(tmp_path: Path) -> None:
+    """Unpacked context dictionary updates should preserve risky flags."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "partner.py").write_text(
+        """
+from odoo import models
+
+class Partner(models.Model):
+    _name = 'x.partner'
+
+    def quiet_update(self):
+        ctx = {'lang': 'en_US'}
+        changes = {'no_reset_password': True}
+        ctx.update(**changes)
+        return self.with_context(**ctx).write({'name': 'x'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-context-notification-disabled-mutation" for f in findings)
+
+
 def test_flags_context_dict_named_expression_tracking_disabled_mutation(tmp_path: Path) -> None:
     """Walrus-assigned context dictionaries should preserve risky flags."""
     models = tmp_path / "module" / "models"
@@ -798,6 +848,34 @@ class Controller(http.Controller):
         module_key = 'module_uninstall'
         enabled = True
         request_context = {active_key: disabled, module_key: enabled}
+        request.update_context(request_context)
+        return request.env['res.users'].create({'name': 'Admin'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-orm-context-request-active-test-disabled" in rule_ids
+    assert "odoo-orm-context-request-privileged-mode" in rule_ids
+
+
+def test_flags_request_update_context_updated_dict(tmp_path: Path) -> None:
+    """request.update_context should resolve context dictionaries populated by update."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/quiet-admin', auth='user')
+    def quiet_admin(self):
+        request_context = {'lang': 'en_US'}
+        changes = {'active_test': False, 'module_uninstall': True}
+        request_context.update(changes)
         request.update_context(request_context)
         return request.env['res.users'].create({'name': 'Admin'})
 """,
