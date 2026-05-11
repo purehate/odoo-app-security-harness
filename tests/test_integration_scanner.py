@@ -125,6 +125,27 @@ def sync():
     assert not any(f.rule_id == "odoo-integration-http-no-timeout" for f in findings)
 
 
+def test_http_call_with_updated_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """Updated static **kwargs dictionaries should satisfy outbound HTTP timeout checks."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+HTTP_OPTIONS = {}
+HTTP_OPTIONS.update({'timeout': 10})
+
+def sync():
+    return requests.post('https://api.example.test/sync', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-integration-http-no-timeout" for f in findings)
+
+
 def test_tls_verification_disabled_is_reported(tmp_path: Path) -> None:
     """verify=False should be visible in review output."""
     py = tmp_path / "integration.py"
@@ -192,6 +213,27 @@ import requests
 
 BASE_OPTIONS = {'timeout': 10}
 HTTP_OPTIONS = BASE_OPTIONS | {'verify': False}
+
+def sync():
+    return requests.get('https://api.example.test', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-tls-verify-disabled" for f in findings)
+
+
+def test_tls_verification_disabled_updated_static_kwargs_is_reported(tmp_path: Path) -> None:
+    """Updated static **kwargs dictionaries should not hide disabled TLS verification."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+HTTP_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS.update({'verify': False})
 
 def sync():
     return requests.get('https://api.example.test', **HTTP_OPTIONS)
@@ -1228,7 +1270,11 @@ def test_hardcoded_http_auth_tuple_is_reported(tmp_path: Path) -> None:
 import requests
 
 def sync():
-    return requests.get('https://api.example.test/user', auth=('integration_user', 'sk_live_1234567890abcdef'), timeout=5)
+    return requests.get(
+        'https://api.example.test/user',
+        auth=('integration_user', 'sk_live_1234567890abcdef'),
+        timeout=5,
+    )
 """,
         encoding="utf-8",
     )

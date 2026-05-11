@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -237,6 +238,7 @@ class IntegrationScanner(ast.NodeVisitor):
         self.visit_With(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
+        _mark_static_dict_update(node, self.local_constants)
         sink = _call_name(node.func)
         canonical_sink = self._canonical_sink(sink)
         if self._is_http_call(canonical_sink):
@@ -264,7 +266,8 @@ class IntegrationScanner(ast.NodeVisitor):
                 "Outbound HTTP disables TLS verification",
                 "high",
                 node.lineno,
-                "Outbound HTTP call passes verify=False; this permits man-in-the-middle attacks against integration traffic",
+                "Outbound HTTP call passes verify=False; this permits man-in-the-middle attacks against "
+                "integration traffic",
                 sink,
             )
         for url_arg in _positional_http_url_args(node, canonical_sink):
@@ -274,7 +277,8 @@ class IntegrationScanner(ast.NodeVisitor):
                     "Outbound HTTP URL is request-controlled",
                     "high",
                     node.lineno,
-                    "Outbound HTTP URL is derived from request/controller input; validate scheme, host, and private-network reachability to prevent SSRF",
+                    "Outbound HTTP URL is derived from request/controller input; validate scheme, host, and "
+                    "private-network reachability to prevent SSRF",
                     sink,
                 )
             if _is_internal_literal_url(url_arg, self._effective_constants()):
@@ -283,7 +287,8 @@ class IntegrationScanner(ast.NodeVisitor):
                     "Outbound HTTP targets internal URL",
                     "high",
                     node.lineno,
-                    "Outbound HTTP call targets a literal loopback, private, link-local, or metadata URL; verify the integration cannot expose cloud metadata or internal Odoo/admin services",
+                    "Outbound HTTP call targets a literal loopback, private, link-local, or metadata URL; "
+                    "verify the integration cannot expose cloud metadata or internal Odoo/admin services",
                     sink,
                 )
             if _is_cleartext_literal_url(url_arg, self._effective_constants()):
@@ -292,7 +297,8 @@ class IntegrationScanner(ast.NodeVisitor):
                     "Outbound integration uses cleartext HTTP URL",
                     "medium",
                     node.lineno,
-                    "Outbound HTTP call targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+                    "Outbound HTTP call targets a literal http:// URL; use HTTPS to protect integration "
+                    "payloads and response data from interception or downgrade",
                     sink,
                 )
             if _literal_url_has_embedded_credentials(url_arg, self._effective_constants()):
@@ -301,7 +307,9 @@ class IntegrationScanner(ast.NodeVisitor):
                     "Outbound integration URL embeds credentials",
                     "high",
                     node.lineno,
-                    "Outbound HTTP URL embeds username, password, or token material in the URL authority; move credentials to server-side configuration and send them through explicit auth/header handling",
+                    "Outbound HTTP URL embeds username, password, or token material in the URL authority; "
+                    "move credentials to server-side configuration and send them through explicit auth/header "
+                    "handling",
                     sink,
                 )
         for url_value in _keyword_values(node, "url", self._effective_constants()):
@@ -311,7 +319,8 @@ class IntegrationScanner(ast.NodeVisitor):
                     "Outbound HTTP URL is request-controlled",
                     "high",
                     node.lineno,
-                    "Outbound HTTP url= value is derived from request/controller input; validate scheme, host, and private-network reachability to prevent SSRF",
+                    "Outbound HTTP url= value is derived from request/controller input; validate scheme, "
+                    "host, and private-network reachability to prevent SSRF",
                     sink,
                 )
             if _is_internal_literal_url(url_value, self._effective_constants()):
@@ -320,7 +329,8 @@ class IntegrationScanner(ast.NodeVisitor):
                     "Outbound HTTP targets internal URL",
                     "high",
                     node.lineno,
-                    "Outbound HTTP url= targets a literal loopback, private, link-local, or metadata URL; verify the integration cannot expose cloud metadata or internal Odoo/admin services",
+                    "Outbound HTTP url= targets a literal loopback, private, link-local, or metadata URL; "
+                    "verify the integration cannot expose cloud metadata or internal Odoo/admin services",
                     sink,
                 )
             if _is_cleartext_literal_url(url_value, self._effective_constants()):
@@ -329,7 +339,8 @@ class IntegrationScanner(ast.NodeVisitor):
                     "Outbound integration uses cleartext HTTP URL",
                     "medium",
                     node.lineno,
-                    "Outbound HTTP url= targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+                    "Outbound HTTP url= targets a literal http:// URL; use HTTPS to protect integration "
+                    "payloads and response data from interception or downgrade",
                     sink,
                 )
             if _literal_url_has_embedded_credentials(url_value, self._effective_constants()):
@@ -338,17 +349,23 @@ class IntegrationScanner(ast.NodeVisitor):
                     "Outbound integration URL embeds credentials",
                     "high",
                     node.lineno,
-                    "Outbound HTTP url= embeds username, password, or token material in the URL authority; move credentials to server-side configuration and send them through explicit auth/header handling",
+                    "Outbound HTTP url= embeds username, password, or token material in the URL authority; "
+                    "move credentials to server-side configuration and send them through explicit auth/header "
+                    "handling",
                     sink,
                 )
         for proxy_keyword_name in ("proxy", "proxies"):
-            if any(self._expr_is_tainted(value) for value in _keyword_values(node, proxy_keyword_name, self._effective_constants())):
+            if any(
+                self._expr_is_tainted(value)
+                for value in _keyword_values(node, proxy_keyword_name, self._effective_constants())
+            ):
                 self._add(
                     "odoo-integration-tainted-proxy",
                     "Outbound HTTP proxy is request-controlled",
                     "high",
                     node.lineno,
-                    "Outbound HTTP proxy configuration is derived from request/controller input; ensure attackers cannot redirect integration traffic through controlled proxies",
+                    "Outbound HTTP proxy configuration is derived from request/controller input; ensure "
+                    "attackers cannot redirect integration traffic through controlled proxies",
                     sink,
                 )
         self._scan_auth_material(node, sink)
@@ -361,7 +378,9 @@ class IntegrationScanner(ast.NodeVisitor):
                 "Outbound HTTP auth header uses request-controlled value",
                 "high",
                 node.lineno,
-                "Outbound HTTP forwards request-derived Authorization, Cookie, API key, or token header material; ensure credentials come from trusted server-side configuration and cannot be attacker supplied",
+                "Outbound HTTP forwards request-derived Authorization, Cookie, API key, or token header "
+                "material; ensure credentials come from trusted server-side configuration and cannot be "
+                "attacker supplied",
                 sink,
             )
         if any(self._expr_contains_hardcoded_sensitive_header(value) for value in header_values):
@@ -370,7 +389,9 @@ class IntegrationScanner(ast.NodeVisitor):
                 "Outbound HTTP auth header is hardcoded",
                 "high",
                 node.lineno,
-                "Outbound HTTP sends literal Authorization, Cookie, API key, or token header material; move integration credentials to trusted server-side configuration and rotate any value committed to source",
+                "Outbound HTTP sends literal Authorization, Cookie, API key, or token header material; move "
+                "integration credentials to trusted server-side configuration and rotate any value committed "
+                "to source",
                 sink,
             )
         auth_values = _keyword_values(node, "auth", self._effective_constants())
@@ -380,7 +401,8 @@ class IntegrationScanner(ast.NodeVisitor):
                 "Outbound HTTP auth parameter uses request-controlled value",
                 "high",
                 node.lineno,
-                "Outbound HTTP auth= material is request-derived; ensure upstream credentials come from trusted server-side configuration and cannot be attacker supplied",
+                "Outbound HTTP auth= material is request-derived; ensure upstream credentials come from "
+                "trusted server-side configuration and cannot be attacker supplied",
                 sink,
             )
         if any(self._expr_contains_hardcoded_http_auth(value) for value in auth_values):
@@ -389,7 +411,8 @@ class IntegrationScanner(ast.NodeVisitor):
                 "Outbound HTTP auth parameter is hardcoded",
                 "high",
                 node.lineno,
-                "Outbound HTTP auth= material contains literal credential-like values; move integration credentials to trusted server-side configuration and rotate any value committed to source",
+                "Outbound HTTP auth= material contains literal credential-like values; move integration "
+                "credentials to trusted server-side configuration and rotate any value committed to source",
                 sink,
             )
 
@@ -397,7 +420,10 @@ class IntegrationScanner(ast.NodeVisitor):
         command = node.args[0] if node.args else None
         command_is_tainted = command is not None and self._expr_is_tainted(command)
 
-        if any(_value_is(value, True, self._effective_constants()) for value in _keyword_values(node, "shell", self._effective_constants())):
+        if any(
+            _value_is(value, True, self._effective_constants())
+            for value in _keyword_values(node, "shell", self._effective_constants())
+        ):
             severity = "high" if command_is_tainted else "medium"
             self._add(
                 "odoo-integration-subprocess-shell-true",
@@ -415,7 +441,8 @@ class IntegrationScanner(ast.NodeVisitor):
                 "OS command execution sink",
                 severity,
                 node.lineno,
-                f"{sink} executes through the shell; replace with bounded subprocess argument lists and validate command inputs",
+                f"{sink} executes through the shell; replace with bounded subprocess argument lists and "
+                "validate command inputs",
                 sink,
             )
 
@@ -425,7 +452,8 @@ class IntegrationScanner(ast.NodeVisitor):
                 "Process command uses request-controlled input",
                 "high",
                 node.lineno,
-                "Process command or arguments are derived from request/controller input; validate allowlisted commands, arguments, paths, and environment",
+                "Process command or arguments are derived from request/controller input; validate allowlisted "
+                "commands, arguments, paths, and environment",
                 sink,
             )
 
@@ -445,7 +473,8 @@ class IntegrationScanner(ast.NodeVisitor):
                 "External report/document converter command",
                 "medium",
                 node.lineno,
-                "Command invokes an external report/document converter; verify input file control, output path safety, timeout, and sandboxing",
+                "Command invokes an external report/document converter; verify input file control, output "
+                "path safety, timeout, and sandboxing",
                 sink,
             )
 
@@ -590,7 +619,9 @@ class IntegrationScanner(ast.NodeVisitor):
             if any(self._expr_contains_hardcoded_sensitive_header(element) for element in node.elts):
                 return True
         for header_name, value in _literal_header_pairs_with_constants(node, self._effective_constants()):
-            if _is_sensitive_outbound_header(header_name) and _is_hardcoded_secret_value(value, self._effective_constants()):
+            if _is_sensitive_outbound_header(header_name) and _is_hardcoded_secret_value(
+                value, self._effective_constants()
+            ):
                 return True
         return False
 
@@ -741,7 +772,10 @@ def _is_request_derived(
     if isinstance(node, ast.Call):
         return (
             _is_request_derived(node.func, request_names, odoo_http_module_names, odoo_module_names)
-            or any(_is_request_derived(arg, request_names, odoo_http_module_names, odoo_module_names) for arg in node.args)
+            or any(
+                _is_request_derived(arg, request_names, odoo_http_module_names, odoo_module_names)
+                for arg in node.args
+            )
             or any(
                 keyword.value is not None
                 and _is_request_derived(keyword.value, request_names, odoo_http_module_names, odoo_module_names)
@@ -1035,6 +1069,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -1067,6 +1103,59 @@ def _resolve_static_dict(
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            items.append((resolved_key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
