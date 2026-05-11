@@ -104,6 +104,27 @@ def sync():
     assert not any(f.rule_id == "odoo-integration-http-no-timeout" for f in findings)
 
 
+def test_http_call_with_dict_union_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should satisfy outbound HTTP timeout checks."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'headers': {}}
+
+def sync():
+    return requests.post('https://api.example.test/sync', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-integration-http-no-timeout" for f in findings)
+
+
 def test_tls_verification_disabled_is_reported(tmp_path: Path) -> None:
     """verify=False should be visible in review output."""
     py = tmp_path / "integration.py"
@@ -150,6 +171,27 @@ def test_tls_verification_disabled_static_kwargs_is_reported(tmp_path: Path) -> 
 import requests
 
 HTTP_OPTIONS = {'timeout': 10, 'verify': False}
+
+def sync():
+    return requests.get('https://api.example.test', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-tls-verify-disabled" for f in findings)
+
+
+def test_tls_verification_disabled_dict_union_static_kwargs_is_reported(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should not hide disabled TLS verification."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'verify': False}
 
 def sync():
     return requests.get('https://api.example.test', **HTTP_OPTIONS)
@@ -281,6 +323,27 @@ def sync():
     findings = IntegrationScanner(py).scan_file()
 
     assert sum(f.rule_id == "odoo-integration-cleartext-http-url" for f in findings) == 2
+
+
+def test_cleartext_http_integration_url_dict_union_kwargs_is_reported(tmp_path: Path) -> None:
+    """Dict-union static url= kwargs should not hide cleartext integration URLs."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'url': 'http://partner.example.test/orders'}
+HTTP_OPTIONS = BASE_OPTIONS | {'timeout': 5}
+
+def sync():
+    return requests.request('POST', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-cleartext-http-url" for f in findings)
 
 
 def test_requests_request_positional_url_is_reported(tmp_path: Path) -> None:
@@ -1017,6 +1080,27 @@ def sync():
     assert any(f.rule_id == "odoo-integration-hardcoded-auth-header" for f in findings)
 
 
+def test_hardcoded_auth_header_dict_union_kwargs_is_reported(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should not hide hardcoded outbound auth headers."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'timeout': 5}
+HTTP_OPTIONS = BASE_OPTIONS | {'headers': {'Authorization': 'Bearer sk_live_1234567890abcdef'}}
+
+def sync():
+    return requests.post('https://api.example.test/sync', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-hardcoded-auth-header" for f in findings)
+
+
 def test_placeholder_authorization_header_is_ignored(tmp_path: Path) -> None:
     """Placeholder auth header examples should not create hardcoded secret noise."""
     py = tmp_path / "integration.py"
@@ -1113,6 +1197,27 @@ def sync():
     assert any(f.rule_id == "odoo-integration-hardcoded-http-auth" and f.sink == "requests.get" for f in findings)
 
 
+def test_hardcoded_http_auth_dict_union_kwargs_is_reported(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should not hide hardcoded HTTP auth tuples."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'timeout': 5}
+HTTP_OPTIONS = BASE_OPTIONS | {'auth': ('integration_user', 'sk_live_1234567890abcdef')}
+
+def sync():
+    return requests.get('https://api.example.test/user', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-hardcoded-http-auth" for f in findings)
+
+
 def test_hardcoded_http_basic_auth_constructor_is_reported(tmp_path: Path) -> None:
     """requests.auth.HTTPBasicAuth literals should get hardcoded auth coverage."""
     py = tmp_path / "integration.py"
@@ -1203,6 +1308,28 @@ USE_SHELL = True
 def run(**kwargs):
     cmd = kwargs.get('cmd')
     return subprocess.run(cmd, shell=USE_SHELL)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-subprocess-shell-true" and f.severity == "high" for f in findings)
+
+
+def test_shell_true_dict_union_kwargs_with_tainted_command_is_high_severity(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should not hide shell=True subprocess review findings."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import subprocess
+
+BASE_OPTIONS = {'timeout': 5}
+RUN_OPTIONS = BASE_OPTIONS | {'shell': True}
+
+def run(**kwargs):
+    cmd = kwargs.get('cmd')
+    return subprocess.run(cmd, **RUN_OPTIONS)
 """,
         encoding="utf-8",
     )
