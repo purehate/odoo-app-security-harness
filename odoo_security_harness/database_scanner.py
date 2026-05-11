@@ -455,10 +455,17 @@ def _apply_route_keyword(
     constants: dict[str, ast.AST],
 ) -> str:
     if keyword.arg is None:
-        options = _resolve_constant(keyword.value, constants)
+        options = _resolve_static_dict(keyword.value, constants)
         if isinstance(options, ast.Dict):
             for key_node, value_node in zip(options.keys, options.values, strict=False):
-                key = _literal_string(key_node, constants) if key_node is not None else ""
+                if key_node is None:
+                    nested = _resolve_static_dict(value_node, constants)
+                    if isinstance(nested, ast.Dict):
+                        for nested_key, nested_value in zip(nested.keys, nested.values, strict=False):
+                            key = _literal_string(nested_key, constants) if nested_key is not None else ""
+                            auth = _apply_route_option(key, nested_value, auth, paths, constants)
+                    continue
+                key = _literal_string(key_node, constants)
                 auth = _apply_route_option(key, value_node, auth, paths, constants)
         return auth
     return _apply_route_option(keyword.arg, keyword.value, auth, paths, constants)
@@ -515,6 +522,22 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
     return node
 
 
+def _resolve_static_dict(
+    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
+) -> ast.Dict | None:
+    seen = seen or set()
+    node = _resolve_constant_seen(node, constants, seen)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants, set(seen))
+        right = _resolve_static_dict(node.right, constants, set(seen))
+        if left is None or right is None:
+            return None
+        return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
+    return None
+
+
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
@@ -527,6 +550,8 @@ def _is_static_literal(node: ast.AST) -> bool:
             (key is None or _is_static_literal(key)) and _is_static_literal(value)
             for key, value in zip(node.keys, node.values, strict=False)
         )
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_literal(node.left) and _is_static_literal(node.right)
     return False
 
 
