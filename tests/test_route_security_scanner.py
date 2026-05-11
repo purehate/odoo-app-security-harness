@@ -51,6 +51,53 @@ class Api(http.Controller):
     assert "odoo-route-public-all-methods" in rule_ids
 
 
+def test_flags_public_external_cors_origin(tmp_path: Path) -> None:
+    """Explicit external CORS origins on public routes still need review."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "cors.py").write_text(
+        """
+from odoo import http
+
+class Api(http.Controller):
+    @http.route('/public/profile', auth='public', cors='https://partner.example.com', methods=['GET'])
+    def profile(self):
+        return '{}'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_route_security(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-route-cors-external-origin"
+        and finding.severity == "medium"
+        and finding.attribute == "cors"
+        for finding in findings
+    )
+
+
+def test_ignores_authenticated_external_cors_origin(tmp_path: Path) -> None:
+    """Authenticated API CORS allowlists should avoid the public-origin finding."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "cors.py").write_text(
+        """
+from odoo import http
+
+class Api(http.Controller):
+    @http.route('/api/profile', auth='user', cors='https://app.example.com', methods=['GET'])
+    def profile(self):
+        return '{}'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_route_security(tmp_path)
+
+    assert not any(finding.rule_id == "odoo-route-cors-external-origin" for finding in findings)
+
+
 def test_flags_constant_backed_public_route_options(tmp_path: Path) -> None:
     """Route decorator options are often hoisted to module constants."""
     controllers = tmp_path / "module" / "controllers"

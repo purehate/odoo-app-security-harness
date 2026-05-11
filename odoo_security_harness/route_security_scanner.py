@@ -159,6 +159,17 @@ class RouteSecurityScanner(ast.NodeVisitor):
                 path,
                 "cors",
             )
+        elif route.auth in {"public", "none"} and _is_external_cors_origin(route.cors):
+            self._add(
+                "odoo-route-cors-external-origin",
+                "Public route allows external CORS origin",
+                "medium",
+                node.lineno,
+                f"Public route {path} sets cors='{route.cors}'; verify the origin is trusted and cannot use "
+                "ambient sessions, bearer tokens, or sensitive response data unexpectedly",
+                path,
+                "cors",
+            )
 
         if route.auth == "bearer" and route.save_session is True:
             self._add(
@@ -506,6 +517,11 @@ def _looks_mutating_route(path: str, function_name: str) -> bool:
 
 def _is_get_only_route(methods: set[str]) -> bool:
     return bool(methods) and "GET" in methods and methods <= {"GET", "HEAD"}
+
+
+def _is_external_cors_origin(value: str) -> bool:
+    normalized = value.strip().lower()
+    return normalized.startswith(("http://", "https://"))
 
 
 def _relaxes_inherited_route_security(route: RouteInfo) -> bool:

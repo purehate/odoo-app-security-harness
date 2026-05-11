@@ -74,6 +74,12 @@
       "capec": ["CAPEC-115", "CAPEC-118"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "route_cors_external_origin": {
+      "label": "Public Odoo route allows an external CORS origin",
+      "cwe": ["CWE-346", "CWE-942", "CWE-200"],
+      "capec": ["CAPEC-115", "CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
     "route_bearer_save_session": {
       "label": "Bearer-authenticated Odoo route explicitly saves a browser session",
       "cwe": ["CWE-384", "CWE-613", "CWE-287"],

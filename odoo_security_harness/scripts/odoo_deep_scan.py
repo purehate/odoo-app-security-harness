@@ -393,6 +393,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "route_cors_external_origin",
+        (
+            "odoo-route-cors-external-origin",
+            "public route allows external cors origin",
+            "verify the origin is trusted",
+            "cannot use ambient sessions",
+        ),
+    ),
+    (
         "route_bearer_save_session",
         (
             "odoo-route-bearer-save-session",

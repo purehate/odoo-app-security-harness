@@ -7234,6 +7234,12 @@ def test_taxonomy_coverage_classifies_route_decorator_posture() -> None:
             },
             {
                 "source": "route-security",
+                "rule_id": "odoo-route-cors-external-origin",
+                "title": "Public route allows external CORS origin",
+                "message": "Public route /api sets cors='https://partner.example.com'; verify the origin is trusted and cannot use ambient sessions unexpectedly",
+            },
+            {
+                "source": "route-security",
                 "rule_id": "odoo-route-bearer-save-session",
                 "title": "Bearer route explicitly saves browser session",
                 "message": "Bearer route /api/token-sync sets save_session=True; verify API-token requests cannot create or persist ambient browser sessions unexpectedly",
@@ -7271,11 +7277,12 @@ def test_taxonomy_coverage_classifies_route_decorator_posture() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 8
+    assert coverage["mapped_rules"] == 9
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-route-auth-none": "route_auth_none",
         "odoo-route-cors-wildcard": "route_cors_wildcard",
+        "odoo-route-cors-external-origin": "route_cors_external_origin",
         "odoo-route-bearer-save-session": "route_bearer_save_session",
         "odoo-route-csrf-disabled-all-methods": "route_csrf_disabled_all_methods",
         "odoo-route-unsafe-csrf-disabled": "route_unsafe_csrf_disabled",
