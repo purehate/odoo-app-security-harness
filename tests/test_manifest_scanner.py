@@ -337,6 +337,36 @@ def test_direct_python_dependency_references_are_reported(tmp_path: Path) -> Non
     )
 
 
+def test_insecure_python_dependency_references_are_reported(tmp_path: Path) -> None:
+    """Cleartext package sources can compromise install-time code."""
+    module = tmp_path / "insecure_direct_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Insecure Direct Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'python': [
+            'git+http://git.example.com/private-addon-helper.git@main',
+            'helper @ http://packages.example.com/helper-1.0.tar.gz',
+            'https://packages.example.com/safe-1.0.tar.gz',
+        ],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-insecure-python-dependency"
+        and f.severity == "high"
+        and "git+http://git.example.com/private-addon-helper.git@main" in f.message
+        and "helper @ http://packages.example.com/helper-1.0.tar.gz" in f.message
+        and "https://packages.example.com/safe-1.0.tar.gz" not in f.message
+        for f in findings
+    )
+
+
 def test_risky_binary_dependencies_are_reported(tmp_path: Path) -> None:
     """Security-sensitive binary dependency declarations should be visible in manifest review."""
     module = tmp_path / "risky_bin_deps"

@@ -261,6 +261,14 @@ class ManifestScanner:
                     "medium",
                     f"Manifest Python dependencies include direct URL, VCS, or local-file references: {', '.join(direct_refs)}; pin immutable artifacts and verify dependency provenance before deployment",
                 )
+            insecure_direct_refs = _insecure_direct_python_dependency_references(python_deps)
+            if insecure_direct_refs:
+                self._add(
+                    "odoo-manifest-insecure-python-dependency",
+                    "Manifest declares insecure HTTP Python dependency",
+                    "high",
+                    f"Manifest Python dependencies include cleartext http:// package references: {', '.join(insecure_direct_refs)}; fetch dependencies over HTTPS or a trusted internal package index with immutable pins",
+                )
             bin_deps = _as_string_list(external_dependencies.get("bin"))
             risky_bins = _risky_binary_dependencies(bin_deps)
             if risky_bins:
@@ -398,6 +406,16 @@ def _direct_python_dependency_references(dependencies: list[str]) -> list[str]:
         if normalized.startswith(DIRECT_PYTHON_DEPENDENCY_PREFIXES) or " @ " in normalized:
             direct.append(dependency)
     return sorted(set(direct), key=str.lower)
+
+
+def _insecure_direct_python_dependency_references(dependencies: list[str]) -> list[str]:
+    """Return direct Python dependency declarations fetched over cleartext HTTP."""
+    insecure: list[str] = []
+    for dependency in dependencies:
+        normalized = dependency.strip().lower()
+        if normalized.startswith("http://") or "+http://" in normalized or " @ http://" in normalized:
+            insecure.append(dependency)
+    return sorted(set(insecure), key=str.lower)
 
 
 def _risky_binary_dependencies(dependencies: list[str]) -> list[str]:
