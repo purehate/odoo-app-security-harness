@@ -319,16 +319,27 @@ class OAuthScanner(ast.NodeVisitor):
                     route.display_path(),
                     sink,
                 )
-            elif _call_has_tainted_input(node, self._expr_is_tainted):
-                self._add(
-                    "odoo-oauth-request-token-decode",
-                    "Request-derived token is decoded",
-                    "medium",
-                    node.lineno,
-                    "Request-derived OAuth/OIDC token is decoded; verify issuer, audience, nonce, expiry, algorithm, and key selection are constrained",
-                    route.display_path(),
-                    sink,
-                )
+            else:
+                if _jwt_decode_missing_algorithms(node, constants):
+                    self._add(
+                        "odoo-oauth-jwt-missing-algorithms",
+                        "JWT decode lacks explicit algorithm allowlist",
+                        "high" if route.auth in {"public", "none"} else "medium",
+                        node.lineno,
+                        "OAuth/OIDC JWT decode does not pass an explicit algorithms allowlist; pin expected algorithms and keys to avoid algorithm confusion or unsafe library defaults",
+                        route.display_path(),
+                        sink,
+                    )
+                if _call_has_tainted_input(node, self._expr_is_tainted):
+                    self._add(
+                        "odoo-oauth-request-token-decode",
+                        "Request-derived token is decoded",
+                        "medium",
+                        node.lineno,
+                        "Request-derived OAuth/OIDC token is decoded; verify issuer, audience, nonce, expiry, algorithm, and key selection are constrained",
+                        route.display_path(),
+                        sink,
+                    )
 
         if _is_identity_write(
             node,
@@ -1142,6 +1153,27 @@ def _jwt_decode_disables_verification(node: ast.Call, constants: dict[str, ast.A
                 if isinstance(key, ast.Constant) and str(key.value).startswith("verify_"):
                     if _is_false_constant(option_value, constants):
                         return True
+    return False
+
+
+def _jwt_decode_missing_algorithms(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for keyword in node.keywords:
+        if keyword.arg != "algorithms":
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        return _is_missing_algorithm_value(value)
+    if len(node.args) >= 3:
+        value = _resolve_constant(node.args[2], constants)
+        return _is_missing_algorithm_value(value)
+    return True
+
+
+def _is_missing_algorithm_value(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return node.value is None or node.value == ""
+    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        return not node.elts
     return False
 
 

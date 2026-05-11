@@ -3802,6 +3802,12 @@ def test_taxonomy_coverage_classifies_oauth_flow_specific_risks() -> None:
             },
             {
                 "source": "oauth-flows",
+                "rule_id": "odoo-oauth-jwt-missing-algorithms",
+                "title": "JWT decode lacks explicit algorithm allowlist",
+                "message": "OAuth/OIDC JWT decode does not pass an explicit algorithms allowlist",
+            },
+            {
+                "source": "oauth-flows",
                 "rule_id": "odoo-oauth-request-token-decode",
                 "title": "Request-derived token is decoded",
                 "message": "Request-derived OAuth/OIDC token is decoded",
@@ -3827,7 +3833,7 @@ def test_taxonomy_coverage_classifies_oauth_flow_specific_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 10
+    assert coverage["mapped_rules"] == 11
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-oauth-public-callback-route": "oauth_public_callback_route",
@@ -3836,6 +3842,7 @@ def test_taxonomy_coverage_classifies_oauth_flow_specific_risks() -> None:
         "odoo-oauth-cleartext-http-url": "oauth_cleartext_http_url",
         "odoo-oauth-tainted-validation-url": "oauth_tainted_validation_url",
         "odoo-oauth-jwt-verification-disabled": "oauth_jwt_verification_disabled",
+        "odoo-oauth-jwt-missing-algorithms": "oauth_jwt_missing_algorithms",
         "odoo-oauth-request-token-decode": "oauth_request_token_decode",
         "odoo-oauth-token-exchange-missing-pkce": "oauth_token_exchange_missing_pkce",
         "odoo-oauth-tainted-identity-write": "oauth_tainted_identity_write",

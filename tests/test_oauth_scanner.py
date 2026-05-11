@@ -74,6 +74,57 @@ class Controller(http.Controller):
     assert "odoo-oauth-http-verify-disabled" in rule_ids
 
 
+def test_oauth_jwt_decode_missing_algorithms_is_reported(tmp_path: Path) -> None:
+    """JWT decoders should pin expected algorithms instead of relying on defaults."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import jwt
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        token = kwargs.get('id_token')
+        return jwt.decode(token, 'secret', audience='client')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-oauth-jwt-missing-algorithms"
+        and f.severity == "high"
+        and f.sink == "jwt.decode"
+        for f in findings
+    )
+
+
+def test_oauth_jwt_decode_with_algorithms_is_ignored(tmp_path: Path) -> None:
+    """Explicit JWT algorithm allowlists suppress the algorithm finding."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import jwt
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        token = kwargs.get('id_token')
+        return jwt.decode(token, 'secret', algorithms=['RS256'], audience='client')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert not any(f.rule_id == "odoo-oauth-jwt-missing-algorithms" for f in findings)
+
+
 def test_oauth_http_timeout_none_is_reported(tmp_path: Path) -> None:
     """timeout=None should not satisfy OAuth provider HTTP timeout requirements."""
     controllers = tmp_path / "module" / "controllers"

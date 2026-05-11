@@ -1941,6 +1941,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "oauth_jwt_missing_algorithms",
+        (
+            "odoo-oauth-jwt-missing-algorithms",
+            "jwt decode lacks explicit algorithm allowlist",
+            "does not pass an explicit algorithms allowlist",
+            "pin expected algorithms and keys",
+            "algorithm confusion",
+        ),
+    ),
+    (
         "oauth_request_token_decode",
         (
             "odoo-oauth-request-token-decode",

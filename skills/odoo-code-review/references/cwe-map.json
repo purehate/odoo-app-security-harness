@@ -1866,6 +1866,12 @@
       "capec": ["CAPEC-115"],
       "owasp": "A07:2021 Identification and Authentication Failures"
     },
+    "oauth_jwt_missing_algorithms": {
+      "label": "OAuth/OIDC JWT decode lacks an explicit algorithm allowlist",
+      "cwe": ["CWE-347", "CWE-345", "CWE-327"],
+      "capec": ["CAPEC-115"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
     "oauth_request_token_decode": {
       "label": "Request-derived OAuth/OIDC token is decoded and needs constrained issuer, audience, nonce, expiry, algorithm, and key selection",
       "cwe": ["CWE-345", "CWE-347", "CWE-20"],
