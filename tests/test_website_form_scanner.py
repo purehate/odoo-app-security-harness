@@ -490,6 +490,27 @@ def test_flags_qweb_dangerous_success_redirect_scheme(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-website-form-dangerous-success-redirect" for f in findings)
 
 
+def test_flags_qweb_dangerous_svg_success_redirect_scheme(tmp_path: Path) -> None:
+    """QWeb success-page attributes should catch active SVG data-document redirects."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "forms.xml").write_text(
+        """<odoo>
+  <template id="lead">
+    <form action="/website/form/crm.lead" method="post" t-att-data-success-page="'data:image/svg+xml,&lt;svg onload=&quot;alert(1)&quot;/&gt;'">
+      <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+      <input name="name"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-dangerous-success-redirect" for f in findings)
+
+
 def test_flags_qweb_dynamic_website_form_action(tmp_path: Path) -> None:
     """QWeb action attributes can still post directly to website_form model creation."""
     views = tmp_path / "module" / "views"

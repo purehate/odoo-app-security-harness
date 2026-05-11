@@ -44,6 +44,21 @@ msgstr "<a href=\\"data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;\\">Ouvri
     assert {finding.rule_id for finding in findings} == {"odoo-i18n-dangerous-html"}
 
 
+def test_flags_data_svg_translated_url(tmp_path: Path) -> None:
+    """Translated links should not introduce active SVG data documents."""
+    write_po(
+        tmp_path / "module" / "i18n" / "fr.po",
+        """
+msgid "Open"
+msgstr "<a href=\\"data:image/svg+xml,&lt;svg onload='alert(1)'/&gt;\\">Ouvrir</a>"
+""",
+    )
+
+    findings = scan_translations(tmp_path)
+
+    assert {finding.rule_id for finding in findings} == {"odoo-i18n-dangerous-html"}
+
+
 def test_flags_file_translated_url(tmp_path: Path) -> None:
     """Translated links should not point users at local-file URLs."""
     write_po(

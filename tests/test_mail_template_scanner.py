@@ -519,6 +519,23 @@ def test_data_html_url_scheme_is_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-mail-template-dangerous-url-scheme" for f in findings)
 
 
+def test_data_svg_url_scheme_is_reported(tmp_path: Path) -> None:
+    """Email template links should not embed active SVG data documents."""
+    xml = tmp_path / "mail.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="template_data_link" model="mail.template">
+    <field name="body_html"><![CDATA[<a href="data:image/svg+xml,<svg onload='alert(1)'/>">Open</a>]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = MailTemplateScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-mail-template-dangerous-url-scheme" for f in findings)
+
+
 def test_sensitive_model_external_ids_are_normalized(tmp_path: Path) -> None:
     """Core model external IDs should not evade sensitive template checks."""
     xml = tmp_path / "mail.xml"

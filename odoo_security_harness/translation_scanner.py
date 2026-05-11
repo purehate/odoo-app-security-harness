@@ -23,7 +23,7 @@ class TranslationFinding:
 
 
 DANGEROUS_HTML_RE = re.compile(
-    r"<\s*script\b|(?:javascript|vbscript)\s*:|file\s*:|data\s*:\s*(?:text/html|application/(?:javascript|xhtml\+xml))|on[a-z]+\s*=|<\s*iframe\b|<\s*object\b|<\s*embed\b",
+    r"<\s*script\b|(?:javascript|vbscript)\s*:|file\s*:|data\s*:\s*(?:text/html|image/svg\+xml|application/(?:javascript|xhtml\+xml))|on[a-z]+\s*=|<\s*iframe\b|<\s*object\b|<\s*embed\b",
     re.IGNORECASE,
 )
 INSECURE_HTTP_URL_RE = re.compile(r"\bhttp://", re.IGNORECASE)

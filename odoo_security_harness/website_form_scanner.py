@@ -688,6 +688,7 @@ def _is_dangerous_url_scheme(value: str) -> bool:
             "vbscript:",
             "file:",
             "data:text/html",
+            "data:image/svg+xml",
             "data:application/javascript",
             "data:application/xhtml+xml",
         )

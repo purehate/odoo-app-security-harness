@@ -112,7 +112,7 @@ TOKEN_EXPRESSION_FIELDS = (
 PRIVILEGED_EXPRESSION_FIELDS = (*TOKEN_EXPRESSION_FIELDS, "lang", "scheduled_date")
 EXTERNAL_URL_RE = re.compile(r"\bhttps?://|//[a-zA-Z0-9.-]+")
 DANGEROUS_URL_SCHEME_RE = re.compile(
-    r"(?:javascript|vbscript)\s*:|file\s*:|data\s*:\s*(?:text/html|application/(?:javascript|xhtml\+xml))",
+    r"(?:javascript|vbscript)\s*:|file\s*:|data\s*:\s*(?:text/html|image/svg\+xml|application/(?:javascript|xhtml\+xml))",
     re.IGNORECASE,
 )
 SUPERUSER_WITH_USER_RE = re.compile(
