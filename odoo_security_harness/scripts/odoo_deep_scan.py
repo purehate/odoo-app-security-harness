@@ -1176,6 +1176,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "migration_url_embedded_credentials",
+        (
+            "migration-url-embedded-credentials",
+            "migration/hook url embeds credentials",
+            "migration or lifecycle hook embeds username, password, or token material",
+            "move credentials to server-side configuration",
+        ),
+    ),
+    (
         "migration_process_execution",
         (
             "migration-process-execution",

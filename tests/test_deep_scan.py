@@ -6442,6 +6442,12 @@ def test_taxonomy_coverage_classifies_migration_runtime_side_effects() -> None:
             },
             {
                 "source": "migrations",
+                "rule_id": "odoo-migration-url-embedded-credentials",
+                "title": "Migration/hook URL embeds credentials",
+                "message": "Migration or lifecycle hook embeds username, password, or token material in an outbound HTTP URL authority",
+            },
+            {
+                "source": "migrations",
                 "rule_id": "odoo-migration-process-execution",
                 "title": "Migration/hook executes a subprocess",
                 "message": "Migration or lifecycle hook executes a subprocess; review command injection, deployment portability, timeouts, and privilege assumptions",
@@ -6455,6 +6461,7 @@ def test_taxonomy_coverage_classifies_migration_runtime_side_effects() -> None:
     assert shapes["odoo-migration-manual-transaction"] == "migration_manual_transaction"
     assert shapes["odoo-migration-http-no-timeout"] == "migration_http_without_timeout"
     assert shapes["odoo-migration-cleartext-http-url"] == "migration_cleartext_http_url"
+    assert shapes["odoo-migration-url-embedded-credentials"] == "migration_url_embedded_credentials"
     assert shapes["odoo-migration-process-execution"] == "migration_process_execution"
 
 
