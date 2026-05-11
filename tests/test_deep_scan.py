@@ -4403,6 +4403,12 @@ def test_taxonomy_coverage_classifies_loose_python_mutation_and_runtime_shapes()
                 "title": "Outbound HTTP without timeout in loose script",
                 "message": "Server actions or loose scripts perform outbound HTTP without timeout; review SSRF, retry behavior, and worker exhaustion risk",
             },
+            {
+                "source": "loose-python",
+                "rule_id": "odoo-loose-python-tls-verify-disabled",
+                "title": "Loose script disables TLS verification",
+                "message": "Server actions or loose scripts pass verify=False to outbound HTTP; privileged automation should not permit man-in-the-middle attacks",
+            },
         ]
     )
 
@@ -4412,10 +4418,12 @@ def test_taxonomy_coverage_classifies_loose_python_mutation_and_runtime_shapes()
         "odoo-loose-python-sensitive-model-mutation": "loose_python_sensitive_model_mutation",
         "odoo-loose-python-manual-transaction": "loose_python_manual_transaction",
         "odoo-loose-python-http-no-timeout": "loose_python_http_no_timeout",
+        "odoo-loose-python-tls-verify-disabled": "loose_python_tls_verification_disabled",
     }
     assert any("CWE-269" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-664" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-918" in entry["cwe"] for entry in coverage["mapped_entries"])
+    assert any("CWE-295" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_runtime_config_security_misconfiguration() -> None:

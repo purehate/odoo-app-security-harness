@@ -213,6 +213,15 @@ class LoosePythonScanner(ast.NodeVisitor):
                 message="Server actions or loose scripts perform outbound HTTP without timeout; review SSRF, retry behavior, and worker exhaustion risk",
             )
 
+        if self._is_http_call(node) and _keyword_is_false(node, "verify", self._effective_constants()):
+            self._add_finding(
+                rule_id="odoo-loose-python-tls-verify-disabled",
+                title="Loose script disables TLS verification",
+                severity="high",
+                line=node.lineno,
+                message="Server actions or loose scripts pass verify=False to outbound HTTP; privileged automation should not permit man-in-the-middle attacks",
+            )
+
         self.generic_visit(node)
 
     def _is_cr_execute(self, node: ast.Call) -> bool:
@@ -318,7 +327,9 @@ class LoosePythonScanner(ast.NodeVisitor):
     def _is_http_call_without_timeout(self, node: ast.Call) -> bool:
         if any(keyword.arg == "timeout" for keyword in node.keywords):
             return False
+        return self._is_http_call(node)
 
+    def _is_http_call(self, node: ast.Call) -> bool:
         sink = self._canonical_call_name(node.func)
         if sink in self.HTTP_METHODS or sink in {"requests.request", "httpx.request", "urllib.request.urlopen"}:
             return True
@@ -535,6 +546,17 @@ def _call_has_superuser_arg(node: ast.Call, constants: dict[str, ast.AST] | None
     return any(_is_superuser_arg(arg, constants) for arg in node.args) or any(
         keyword.value is not None and _is_superuser_arg(keyword.value, constants) for keyword in node.keywords
     )
+
+
+def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for keyword in node.keywords:
+        if keyword.arg != name:
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Constant) and value.value is False:
+            return True
+    return False
 
 
 def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:

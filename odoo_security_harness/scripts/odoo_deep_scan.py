@@ -176,6 +176,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "loose_python_tls_verification_disabled",
+        (
+            "odoo-loose-python-tls-verify-disabled",
+            "loose script disables tls verification",
+            "server actions or loose scripts pass verify=false to outbound http",
+            "man-in-the-middle attacks",
+        ),
+    ),
+    (
         "loose_python_sql_injection",
         (
             "odoo-loose-python-sql-injection",

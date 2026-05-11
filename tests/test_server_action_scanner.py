@@ -628,6 +628,27 @@ requests.head(record.health_url, timeout=10)
     assert http_findings[0].line == 4
 
 
+def test_server_action_detects_tls_verification_disabled(tmp_path: Path) -> None:
+    """Loose Python outbound HTTP should not disable TLS verification."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+import requests
+
+TLS_VERIFY = False
+requests.post(record.callback_url, timeout=10, verify=TLS_VERIFY)
+requests.get(record.health_url, timeout=10, verify=True)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+    tls_findings = [f for f in findings if f.rule_id == "odoo-loose-python-tls-verify-disabled"]
+
+    assert len(tls_findings) == 1
+    assert tls_findings[0].line == 5
+
+
 def test_server_action_tracks_starred_rest_http_client_alias(tmp_path: Path) -> None:
     """Starred-rest HTTP client aliases should still require timeouts."""
     script = tmp_path / "action.py"
