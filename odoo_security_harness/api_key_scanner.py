@@ -33,6 +33,7 @@ MUTATION_METHODS = {"create", "write", "unlink"}
 LOOKUP_METHODS = {"browse", "read_group", "search", "search_count", "search_read"}
 API_KEY_NAME_MARKERS = (
     "access_key",
+    "access_token",
     "api_key",
     "apikey",
     "auth_token",
@@ -45,11 +46,15 @@ API_KEY_NAME_MARKERS = (
     "license_key",
     "oauth_token",
     "private_key",
+    "refresh_token",
+    "reset_password_token",
     "secret",
     "secret_key",
+    "session_id",
     "session_token",
     "signature_secret",
     "signing_key",
+    "signup_token",
     "token",
     "webhook_secret",
 )

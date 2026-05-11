@@ -1250,6 +1250,34 @@ class Controller(http.Controller):
     )
 
 
+def test_direct_route_access_token_arg_stored_in_config_parameter_is_reported(tmp_path: Path) -> None:
+    """Route args named like integration tokens should seed taint for config writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/provider/access-token', auth='public', csrf=False)
+    def set_provider_token(self, access_token):
+        request.env['ir.config_parameter'].sudo().set_param(
+            'connector.access_token',
+            access_token,
+        )
+        return {'ok': True}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-api-key-config-parameter-request-secret" and f.severity == "critical" for f in findings
+    )
+
+
 def test_direct_route_license_key_arg_stored_in_config_parameter_is_reported(tmp_path: Path) -> None:
     """Route args named like integration keys should seed taint for config writes."""
     controllers = tmp_path / "module" / "controllers"
