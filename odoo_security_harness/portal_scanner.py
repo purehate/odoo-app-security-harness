@@ -575,10 +575,18 @@ def _discard_local_constant_target(constants: dict[str, ast.AST], target: ast.AS
 
 def _call_mentions_access_token(node: ast.Call) -> bool:
     return any(_expr_mentions_name(arg, "access_token") for arg in node.args) or any(
-        keyword.arg == "access_token"
+        (
+            keyword.arg == "access_token"
+            and keyword.value is not None
+            and not _is_static_empty_token(keyword.value)
+        )
         or (keyword.value is not None and _expr_mentions_name(keyword.value, "access_token"))
         for keyword in node.keywords
     )
+
+
+def _is_static_empty_token(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value in {None, False, ""}
 
 
 def _call_reads_access_token_param(

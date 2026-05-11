@@ -58,6 +58,29 @@ class Portal(http.Controller):
     assert "odoo-portal-sudo-route-id-read" not in rule_ids
 
 
+def test_flags_empty_access_token_forwarding_to_document_check(tmp_path: Path) -> None:
+    """Passing an empty literal token is equivalent to not forwarding the route token."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "portal.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Portal(http.Controller):
+    @http.route('/my/invoices/<int:invoice_id>', auth='public', website=True)
+    def portal_invoice(self, invoice_id, access_token=None):
+        invoice = self._document_check_access('account.move', invoice_id, access_token=None)
+        return request.render('account.portal_invoice_page', {'invoice': invoice})
+""",
+        encoding="utf-8",
+    )
+
+    rule_ids = {finding.rule_id for finding in scan_portal_routes(tmp_path)}
+
+    assert "odoo-portal-document-check-missing-token" in rule_ids
+
+
 def test_flags_access_token_argument_without_access_helper(tmp_path: Path) -> None:
     """Portal token parameters should be visibly validated, not merely accepted."""
     controllers = tmp_path / "module" / "controllers"
