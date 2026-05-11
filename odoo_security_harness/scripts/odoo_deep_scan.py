@@ -4056,6 +4056,7 @@ _TAXONOMY_SHAPE_HINTS = (
             "mail-alias-broad-contact-policy",
             "inbound alias accepts broad senders",
             "mail.alias accepts everyone",
+            "mail.alias accepts everyone, partners",
             "no explicit alias_contact policy",
             "spam, spoofing, and unauthorized record creation",
         ),

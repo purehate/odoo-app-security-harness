@@ -1691,7 +1691,7 @@ def test_taxonomy_coverage_classifies_mail_alias_ingress_and_sender_policy() -> 
                 "rule_id": "odoo-mail-alias-broad-contact-policy",
                 "source": "mail-aliases",
                 "title": "Inbound alias accepts broad senders",
-                "message": "mail.alias accepts everyone or has no explicit alias_contact policy; verify spam, spoofing, and unauthorized record creation controls",
+                "message": "mail.alias accepts everyone, partners, or has no explicit alias_contact policy; verify spam, spoofing, and unauthorized record creation controls",
             },
         ]
     )

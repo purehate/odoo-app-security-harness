@@ -151,13 +151,13 @@ class MailAliasScanner(XmlScanner):
                 target_model,
             )
 
-        if alias_contact in {"everyone", ""}:
+        if alias_contact in {"everyone", "partners", ""}:
             self._add(
                 "odoo-mail-alias-broad-contact-policy",
                 "Inbound alias accepts broad senders",
                 "medium",
                 line,
-                "mail.alias accepts everyone or has no explicit alias_contact policy; verify spam, spoofing, and unauthorized record creation controls",
+                "mail.alias accepts everyone, partners, or has no explicit alias_contact policy; verify spam, spoofing, and unauthorized record creation controls",
                 alias_id,
                 target_model,
             )
@@ -195,7 +195,7 @@ class MailAliasScanner(XmlScanner):
                 target_model,
             )
 
-        if force_thread and alias_contact in {"everyone", ""}:
+        if force_thread and alias_contact in {"everyone", "partners", ""}:
             self._add(
                 "odoo-mail-alias-public-force-thread",
                 "Broad inbound alias forces messages into an existing thread",

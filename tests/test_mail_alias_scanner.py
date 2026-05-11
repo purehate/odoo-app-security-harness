@@ -61,6 +61,26 @@ def test_flags_public_alias_with_colon_csv_ref(tmp_path: Path) -> None:
     assert "odoo-mail-alias-broad-contact-policy" in rule_ids
 
 
+def test_flags_partners_alias_as_broad_sender_policy(tmp_path: Path) -> None:
+    """Partner-wide aliases are still broad ingress compared with followers-only aliases."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "aliases.xml").write_text(
+        """<odoo>
+  <record id="alias_partner_cases" model="mail.alias">
+    <field name="alias_name">cases</field>
+    <field name="alias_model">helpdesk.ticket</field>
+    <field name="alias_contact">partners</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_aliases(tmp_path)
+
+    assert any(f.rule_id == "odoo-mail-alias-broad-contact-policy" for f in findings)
+
+
 def test_flags_csv_privileged_alias_owner_and_defaults(tmp_path: Path) -> None:
     """CSV aliases should expose privileged owners and default assignments."""
     data = tmp_path / "module" / "data"
@@ -167,6 +187,29 @@ def test_flags_public_force_thread_alias(tmp_path: Path) -> None:
     findings = scan_mail_aliases(tmp_path)
 
     assert any(f.rule_id == "odoo-mail-alias-public-force-thread" for f in findings)
+
+
+def test_flags_partners_force_thread_alias(tmp_path: Path) -> None:
+    """Partner-wide forced-thread aliases can still permit external thread injection."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "aliases.xml").write_text(
+        """<odoo>
+  <record id="alias_forced_partner_thread" model="mail.alias">
+    <field name="alias_name">case</field>
+    <field name="alias_model">helpdesk.ticket</field>
+    <field name="alias_contact">partners</field>
+    <field name="alias_force_thread_id" eval="42"/>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_aliases(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-alias-broad-contact-policy" in rule_ids
+    assert "odoo-mail-alias-public-force-thread" in rule_ids
 
 
 def test_safe_restricted_alias_is_ignored(tmp_path: Path) -> None:

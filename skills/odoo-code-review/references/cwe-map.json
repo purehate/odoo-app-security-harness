@@ -557,7 +557,7 @@
       "owasp": "A01:2021 Broken Access Control"
     },
     "mail_alias_broad_sender_policy": {
-      "label": "Inbound mail alias accepts everyone or lacks an explicit sender policy",
+      "label": "Inbound mail alias accepts everyone, partners, or lacks an explicit sender policy",
       "cwe": ["CWE-862", "CWE-345", "CWE-284"],
       "capec": ["CAPEC-21", "CAPEC-115"],
       "owasp": "A01:2021 Broken Access Control"
