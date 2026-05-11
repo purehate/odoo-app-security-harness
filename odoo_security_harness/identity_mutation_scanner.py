@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -222,7 +223,8 @@ class IdentityMutationScanner(ast.NodeVisitor):
                 "Public route mutates users or groups",
                 "critical",
                 node.lineno,
-                f"Public route {route.display_path()} mutates {model}; verify only authenticated administrators can change identity, groups, and companies",
+                f"Public route {route.display_path()} mutates {model}; "
+                "verify only authenticated administrators can change identity, groups, and companies",
                 model,
                 route,
                 sink,
@@ -236,7 +238,8 @@ class IdentityMutationScanner(ast.NodeVisitor):
                 "Identity mutation runs in elevated context",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                f"{model} mutation uses sudo()/with_user(SUPERUSER_ID); verify explicit admin checks and audit trail before privilege changes",
+                f"{model} mutation uses sudo()/with_user(SUPERUSER_ID); "
+                "verify explicit admin checks and audit trail before privilege changes",
                 model,
                 route,
                 sink,
@@ -248,7 +251,8 @@ class IdentityMutationScanner(ast.NodeVisitor):
                 "Request-derived data reaches identity mutation",
                 "critical",
                 node.lineno,
-                f"Request-derived data reaches {model}.{method}; whitelist allowed fields and reject privilege, company, login, and password changes",
+                f"Request-derived data reaches {model}.{method}; "
+                "whitelist allowed fields and reject privilege, company, login, and password changes",
                 model,
                 route,
                 sink,
@@ -262,7 +266,8 @@ class IdentityMutationScanner(ast.NodeVisitor):
                 "Identity mutation writes privilege-bearing fields",
                 "critical" if {"groups_id", "implied_ids"} & privilege_fields else "high",
                 node.lineno,
-                f"{model}.{method} writes privilege-bearing field(s): {fields}; verify group/company/user activation changes are admin-only",
+                f"{model}.{method} writes privilege-bearing field(s): {fields}; "
+                "verify group/company/user activation changes are admin-only",
                 model,
                 route,
                 sink,
@@ -605,7 +610,50 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for keyword in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for expanded in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, expanded.arg, expanded.value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str | None, value: ast.AST) -> ast.Dict:
+    if key is None:
+        return values_node
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[ast.keyword]:
