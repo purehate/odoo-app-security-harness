@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -231,7 +232,8 @@ class RealtimeScanner(ast.NodeVisitor):
             "Bus subscription accepts broad or request-controlled channel",
             severity,
             node.lineno,
-            "Realtime bus subscription mutates channel lists with request-derived or broad channels; verify users can only subscribe to tenant/user-scoped channels they are authorized to receive",
+            "Realtime bus subscription mutates channel lists with request-derived or broad channels; "
+            "verify users can only subscribe to tenant/user-scoped channels they are authorized to receive",
             sink,
         )
 
@@ -244,7 +246,8 @@ class RealtimeScanner(ast.NodeVisitor):
                 "Public route sends bus notification",
                 "high",
                 node.lineno,
-                "Public/unauthenticated route sends realtime bus notifications; verify authorization, channel scope, and rate limiting",
+                "Public/unauthenticated route sends realtime bus notifications; verify authorization, channel scope, "
+                "and rate limiting",
                 sink,
             )
 
@@ -254,7 +257,8 @@ class RealtimeScanner(ast.NodeVisitor):
                 "Bus notification is sent through an elevated environment",
                 "high",
                 node.lineno,
-                "Realtime bus notification uses sudo()/with_user(SUPERUSER_ID); verify channel recipients and payload cannot bypass record rules or company boundaries",
+                "Realtime bus notification uses sudo()/with_user(SUPERUSER_ID); verify channel recipients and payload "
+                "cannot bypass record rules or company boundaries",
                 sink,
             )
 
@@ -279,7 +283,8 @@ class RealtimeScanner(ast.NodeVisitor):
                 "Bus notification may expose sensitive payload data",
                 "high",
                 node.lineno,
-                "Realtime bus payload appears request-derived or contains sensitive fields; verify recipients are authorized for every emitted field",
+                "Realtime bus payload appears request-derived or contains sensitive fields; verify recipients are "
+                "authorized for every emitted field",
                 sink,
             )
         for channel_item, payload_item in _sendmany_items(node):
@@ -298,7 +303,8 @@ class RealtimeScanner(ast.NodeVisitor):
                     "Bus notification may expose sensitive payload data",
                     "high",
                     node.lineno,
-                    "Realtime bus payload appears request-derived or contains sensitive fields; verify recipients are authorized for every emitted field",
+                    "Realtime bus payload appears request-derived or contains sensitive fields; verify recipients are "
+                    "authorized for every emitted field",
                     sink,
                 )
 
@@ -309,7 +315,8 @@ class RealtimeScanner(ast.NodeVisitor):
                 "Notification is sent through an elevated environment",
                 "medium",
                 node.lineno,
-                "Notification/message call uses sudo()/with_user(SUPERUSER_ID); verify followers, partners, and subtype routing cannot expose private records",
+                "Notification/message call uses sudo()/with_user(SUPERUSER_ID); verify followers, partners, and "
+                "subtype routing cannot expose private records",
                 sink,
             )
         if _call_has_tainted_input(node, self._expr_is_tainted):
@@ -318,7 +325,8 @@ class RealtimeScanner(ast.NodeVisitor):
                 "Notification content is request-controlled",
                 "medium",
                 node.lineno,
-                "Notification/message content includes request-derived data; verify escaping, recipient authorization, and spam/rate controls",
+                "Notification/message content includes request-derived data; verify escaping, recipient authorization, "
+                "and spam/rate controls",
                 sink,
             )
 
@@ -585,7 +593,50 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str | None, value: ast.AST) -> ast.Dict:
+    if key is None:
+        return values_node
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.AST:
