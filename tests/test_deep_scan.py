@@ -6341,6 +6341,12 @@ def test_taxonomy_coverage_classifies_queue_job_execution_risks() -> None:
             },
             {
                 "source": "queue-jobs",
+                "rule_id": "odoo-queue-job-sudo-method-call",
+                "title": "Queue job calls elevated business method",
+                "message": "queue_job/delayed job uses sudo()/with_user(SUPERUSER_ID) to call a business/action method; verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
+            },
+            {
+                "source": "queue-jobs",
                 "rule_id": "odoo-queue-job-sensitive-model-mutation",
                 "title": "Queue job mutates sensitive model",
                 "message": "queue_job/delayed job mutates sensitive model 'ir.config_parameter'; verify job input trust, retry idempotency, and audit trail",
@@ -6369,6 +6375,7 @@ def test_taxonomy_coverage_classifies_queue_job_execution_risks() -> None:
     assert coverage["unmapped_rule_ids"] == []
     shapes = {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]}
     assert shapes["odoo-queue-job-sudo-mutation"] == "queue_job_elevated_mutation"
+    assert shapes["odoo-queue-job-sudo-method-call"] == "queue_job_elevated_method_call"
     assert shapes["odoo-queue-job-sensitive-model-mutation"] == "queue_job_sensitive_model_mutation"
     assert shapes["odoo-queue-job-dynamic-eval"] == "queue_job_dynamic_evaluation"
     assert shapes["odoo-queue-job-http-no-timeout"] == "queue_job_http_without_timeout"

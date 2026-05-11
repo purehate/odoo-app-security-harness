@@ -1233,7 +1233,6 @@ _TAXONOMY_SHAPE_HINTS = (
             "odoo-scheduled-job-sudo-method-call",
             "scheduled job calls elevated business method",
             "scheduled job uses sudo()/with_user(superuser_id) to call a business/action method",
-            "workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
         ),
     ),
     (
@@ -1409,6 +1408,15 @@ _TAXONOMY_SHAPE_HINTS = (
             "queue job performs elevated mutation",
             "queue_job/delayed job mutates records through sudo()/with_user(superuser_id)",
             "record rules, company isolation, and job input trust boundaries",
+        ),
+    ),
+    (
+        "queue_job_elevated_method_call",
+        (
+            "odoo-queue-job-sudo-method-call",
+            "queue job calls elevated business method",
+            "queue_job/delayed job uses sudo()/with_user(superuser_id) to call a business/action method",
+            "workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
         ),
     ),
     (

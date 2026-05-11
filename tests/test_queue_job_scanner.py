@@ -221,6 +221,52 @@ class SaleJob(models.Model):
     assert "odoo-queue-job-sudo-mutation" in rule_ids
 
 
+def test_flags_queue_job_sudo_business_method_call(tmp_path: Path) -> None:
+    """Workflow methods called through sudo in queue jobs deserve review."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+
+class SaleJob(models.Model):
+    @job
+    def confirm_queue(self, record):
+        record.sudo().action_confirm()
+        record.sudo().mapped('name')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+    method_findings = [finding for finding in findings if finding.rule_id == "odoo-queue-job-sudo-method-call"]
+
+    assert len(method_findings) == 1
+
+
+def test_flags_queue_job_aliased_with_user_business_method_call(tmp_path: Path) -> None:
+    """Superuser aliases should flag elevated workflow methods in queue jobs."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo import SUPERUSER_ID
+from odoo.addons.queue_job.job import job
+
+class PickingJob(models.Model):
+    @job
+    def validate_queue(self, record):
+        pickings = record.with_user(SUPERUSER_ID)
+        pickings.button_validate()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert any(finding.rule_id == "odoo-queue-job-sudo-method-call" for finding in findings)
+
+
 def test_flags_queue_job_recursive_constant_with_user_mutation(tmp_path: Path) -> None:
     """Chained superuser ID aliases should not hide elevated queue mutations."""
     module = tmp_path / "module" / "models"
