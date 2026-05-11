@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
@@ -220,7 +221,8 @@ class ReportScanner:
                 "Report renders with sudo",
                 "high",
                 line,
-                "Report action enables report_sudo; verify templates cannot expose records or fields beyond the caller's access",
+                "Report action enables report_sudo; verify templates cannot expose records or "
+                "fields beyond the caller's access",
                 model,
                 report_id,
             )
@@ -231,7 +233,8 @@ class ReportScanner:
                 "Sensitive model report has no groups restriction",
                 "medium",
                 line,
-                f"Report action for sensitive model '{model}' has no groups restriction; verify access rules and report routes are sufficient",
+                f"Report action for sensitive model '{model}' has no groups restriction; verify "
+                "access rules and report routes are sufficient",
                 model,
                 report_id,
             )
@@ -242,7 +245,8 @@ class ReportScanner:
                 "Report caches dynamic attachment names",
                 "low",
                 line,
-                "Report caches attachments using an object-derived expression; verify cached PDFs cannot leak after record ownership/state changes",
+                "Report caches attachments using an object-derived expression; verify cached PDFs "
+                "cannot leak after record ownership/state changes",
                 model,
                 report_id,
             )
@@ -253,7 +257,9 @@ class ReportScanner:
                 "Report filename expression contains sensitive field",
                 "high",
                 line,
-                "Report attachment or print_report_name expression references token, secret, password, or API-key-like data; avoid leaking secrets through filenames, URLs, logs, and browser history",
+                "Report attachment or print_report_name expression references token, secret, "
+                "password, or API-key-like data; avoid leaking secrets through filenames, URLs, "
+                "logs, and browser history",
                 model,
                 report_id,
             )
@@ -435,7 +441,8 @@ class ReportPythonScanner(ast.NodeVisitor):
                 "Public route renders report",
                 "medium",
                 node.lineno,
-                "Public/unauthenticated controller route renders a report; verify record ownership, access tokens, and report groups before returning PDF/HTML",
+                "Public/unauthenticated controller route renders a report; verify record "
+                "ownership, access tokens, and report groups before returning PDF/HTML",
                 "",
                 sink,
             )
@@ -446,7 +453,8 @@ class ReportPythonScanner(ast.NodeVisitor):
                 "Report render uses request-controlled records",
                 "high",
                 node.lineno,
-                "Report rendering receives request-derived ids, records, data, or context; validate ownership and allowed model/report combinations first",
+                "Report rendering receives request-derived ids, records, data, or context; "
+                "validate ownership and allowed model/report combinations first",
                 "",
                 sink,
             )
@@ -457,7 +465,8 @@ class ReportPythonScanner(ast.NodeVisitor):
                 "Report render uses request-controlled data or context",
                 "high",
                 node.lineno,
-                "Report rendering receives request-derived data/context options; validate report model domains, filters, and generated output before rendering PDF/HTML",
+                "Report rendering receives request-derived data/context options; validate report "
+                "model domains, filters, and generated output before rendering PDF/HTML",
                 "",
                 sink,
             )
@@ -468,7 +477,8 @@ class ReportPythonScanner(ast.NodeVisitor):
                 "Report render uses request-controlled report action",
                 "high",
                 node.lineno,
-                "Report rendering is invoked on a request-derived report/action object; restrict selectable reports and models before rendering PDF/HTML",
+                "Report rendering is invoked on a request-derived report/action object; restrict "
+                "selectable reports and models before rendering PDF/HTML",
                 "",
                 sink,
             )
@@ -479,7 +489,9 @@ class ReportPythonScanner(ast.NodeVisitor):
                 "Report render uses an elevated environment",
                 "high",
                 node.lineno,
-                "Report rendering/report_action is invoked through sudo()/with_user(SUPERUSER_ID) or receives elevated records; verify report templates cannot disclose forbidden fields or records",
+                "Report rendering/report_action is invoked through sudo()/with_user(SUPERUSER_ID) "
+                "or receives elevated records; verify report templates cannot disclose forbidden "
+                "fields or records",
                 "",
                 sink,
             )
@@ -759,6 +771,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -784,6 +798,45 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
