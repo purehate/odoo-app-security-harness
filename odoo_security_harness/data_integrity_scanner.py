@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -43,12 +45,16 @@ SENSITIVE_MODELS = {
 
 
 def scan_data_integrity(repo_path: Path) -> list[DataIntegrityFinding]:
-    """Scan XML data files for risky external-ID and data update patterns."""
+    """Scan data files for risky external-ID and data update patterns."""
     findings: list[DataIntegrityFinding] = []
-    for path in repo_path.rglob("*.xml"):
-        if _should_skip(path):
+    for path in repo_path.rglob("*"):
+        if not path.is_file() or _should_skip(path):
             continue
-        findings.extend(DataIntegrityScanner(path).scan_file())
+        scanner = DataIntegrityScanner(path)
+        if path.suffix == ".xml":
+            findings.extend(scanner.scan_file())
+        elif path.suffix == ".csv":
+            findings.extend(scanner.scan_csv_file())
     return findings
 
 
@@ -71,6 +77,18 @@ class DataIntegrityScanner:
             return []
 
         self._walk(root, inherited_noupdate=False)
+        return self.findings
+
+    def scan_csv_file(self) -> list[DataIntegrityFinding]:
+        """Scan a CSV data file for risky external-ID patterns."""
+        try:
+            self.content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+        model = _csv_model_name(self.path)
+        for fields, line in _csv_dict_rows(self.content):
+            self._scan_csv_record(model, fields.get("id", ""), line)
         return self.findings
 
     def _walk(self, element: ElementTree.Element, inherited_noupdate: bool) -> None:
@@ -129,6 +147,29 @@ class DataIntegrityScanner:
                 "high",
                 line,
                 "Module data creates or changes ir.model.data directly; verify XML ID ownership, noupdate, and update semantics cannot hijack records",
+                model,
+                record_id,
+            )
+
+    def _scan_csv_record(self, model: str, record_id: str, line: int) -> None:
+        if _is_core_external_id(record_id):
+            self._add(
+                "odoo-data-core-xmlid-override",
+                "Module data overrides core external ID",
+                "high",
+                line,
+                f"CSV record id '{record_id}' appears to target a core module XML ID; verify this intentionally overrides upstream data and survives upgrades",
+                model,
+                record_id,
+            )
+
+        if model == "ir.model.data":
+            self._add(
+                "odoo-data-manual-ir-model-data",
+                "Module data writes ir.model.data directly",
+                "high",
+                line,
+                "CSV data creates or changes ir.model.data directly; verify XML ID ownership, noupdate, and update semantics cannot hijack records",
                 model,
                 record_id,
             )
@@ -264,6 +305,32 @@ def _is_core_external_id(record_id: str) -> bool:
 
 def _truthy(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes"}
+
+
+def _csv_model_name(path: Path) -> str:
+    return path.stem.strip().lower().replace("_", ".")
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                normalized[str(key).strip().lower()] = str(value or "").strip()
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _line_for(content: str, needle: str) -> int:

@@ -86,6 +86,36 @@ def test_flags_forcecreate_false_and_manual_ir_model_data(tmp_path: Path) -> Non
     assert "odoo-data-manual-ir-model-data" in rule_ids
 
 
+def test_flags_core_xmlid_override_in_csv(tmp_path: Path) -> None:
+    """CSV data can also target core external IDs."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "res.groups.csv").write_text(
+        "id,name\n"
+        "base.group_system,System Override\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_data_integrity(tmp_path)
+
+    assert any(f.rule_id == "odoo-data-core-xmlid-override" for f in findings)
+
+
+def test_flags_manual_ir_model_data_csv(tmp_path: Path) -> None:
+    """CSV writes to ir.model.data deserve the same integrity review as XML writes."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_model_data.csv").write_text(
+        "id,module,name,model,res_id\n"
+        "manual_xmlid,base,group_system,res.groups,1\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_data_integrity(tmp_path)
+
+    assert any(f.rule_id == "odoo-data-manual-ir-model-data" for f in findings)
+
+
 def test_flags_sensitive_delete_and_core_xmlid_delete(tmp_path: Path) -> None:
     """XML deletes of security data or core XML IDs should be review leads."""
     data = tmp_path / "module" / "data"
