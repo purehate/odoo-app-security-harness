@@ -1301,6 +1301,21 @@ export const template = xml`<div><span t-raw="props.html"/></div>`;
     )
 
 
+def test_owl_inline_template_t_js_detected(tmp_path: Path) -> None:
+    """OWL xml template literals can carry QWeb inline JavaScript blocks."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<t t-js=\"ctx\">console.log(ctx.record_name)</t>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-t-js-inline-script"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
 def test_owl_inline_template_raw_output_mode_detected(tmp_path: Path) -> None:
     """OWL inline templates should not disable QWeb escaping."""
     path = tmp_path / "widget.js"

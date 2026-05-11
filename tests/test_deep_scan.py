@@ -1069,7 +1069,13 @@ def test_taxonomy_coverage_classifies_qweb_inline_script_execution() -> None:
                 "source": "qweb",
                 "title": "QWeb expression rendered inside JavaScript block",
                 "message": "<script> contains t-out; HTML escaping is not JavaScript-context escaping",
-            }
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-t-js-inline-script",
+                "source": "web-assets",
+                "title": "OWL inline template uses QWeb t-js",
+                "message": "OWL xml template contains t-js and enables inline JavaScript in template context",
+            },
         ]
     )
 
@@ -1079,6 +1085,7 @@ def test_taxonomy_coverage_classifies_qweb_inline_script_execution() -> None:
     } == {
         "odoo-qweb-t-js-inline-script": "qweb_inline_script_execution",
         "odoo-qweb-script-expression-context": "qweb_inline_script_execution",
+        "odoo-web-owl-qweb-t-js-inline-script": "qweb_inline_script_execution",
     }
     assert all("CWE-79" in entry["cwe"] for entry in coverage["mapped_entries"])
 

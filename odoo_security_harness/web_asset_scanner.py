@@ -313,6 +313,7 @@ MESSAGE_ORIGIN_VALIDATION_RE = re.compile(
 )
 OWL_XML_TEMPLATE_RE = re.compile(r"\bxml\s*`(?P<body>(?:\\`|[^`])*)`", re.IGNORECASE | re.DOTALL)
 OWL_TEMPLATE_T_RAW_RE = re.compile(r"\bt-raw\s*=", re.IGNORECASE)
+OWL_TEMPLATE_T_JS_RE = re.compile(r"\bt-js\s*=", re.IGNORECASE)
 OWL_TEMPLATE_RAW_OUTPUT_MODE_RE = re.compile(r"\bt-out-mode\s*=\s*['\"]raw['\"]", re.IGNORECASE)
 OWL_TEMPLATE_DANGEROUS_TAG_RE = re.compile(r"<\s*(?:script|iframe|object|embed|form)\b", re.IGNORECASE)
 OWL_TEMPLATE_POST_FORM_RE = re.compile(r"<form\b(?P<attrs>[^>]*)>(?P<body>.*?)</form>", re.IGNORECASE | re.DOTALL)
@@ -1137,6 +1138,15 @@ class WebAssetScanner:
                     "medium",
                     line,
                     "OWL xml template contains t-raw and renders unsafe HTML; verify the expression is trusted or sanitized",
+                    "owl-template",
+                )
+            if OWL_TEMPLATE_T_JS_RE.search(body):
+                self._add(
+                    "odoo-web-owl-qweb-t-js-inline-script",
+                    "OWL inline template uses QWeb t-js",
+                    "medium",
+                    line,
+                    "OWL xml template contains t-js and enables inline JavaScript in template context; verify user data cannot reach script execution",
                     "owl-template",
                 )
             if OWL_TEMPLATE_RAW_OUTPUT_MODE_RE.search(body):

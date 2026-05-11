@@ -602,7 +602,9 @@ _TAXONOMY_SHAPE_HINTS = (
         (
             "qweb-script-expression-context",
             "qweb-t-js-inline-script",
+            "web-owl-qweb-t-js-inline-script",
             "qweb expression rendered inside javascript block",
+            "owl inline template uses qweb t-js",
             "t-js inline javascript",
             "t-js inline script",
             "inline javascript in a template",
