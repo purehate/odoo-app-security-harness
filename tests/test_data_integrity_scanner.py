@@ -101,6 +101,21 @@ def test_flags_core_xmlid_override_in_csv(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-data-core-xmlid-override" for f in findings)
 
 
+def test_flags_core_xmlid_override_in_csv_colon_id_header(tmp_path: Path) -> None:
+    """CSV id columns with colon suffixes should still drive XML-ID override checks."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "res.groups.csv").write_text(
+        "id:id,name\n"
+        "base.group_system,System Override\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_data_integrity(tmp_path)
+
+    assert any(f.rule_id == "odoo-data-core-xmlid-override" for f in findings)
+
+
 def test_flags_manual_ir_model_data_csv(tmp_path: Path) -> None:
     """CSV writes to ir.model.data deserve the same integrity review as XML writes."""
     data = tmp_path / "module" / "data"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from csv import DictReader
 from dataclasses import dataclass
 from io import StringIO
@@ -326,7 +327,11 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
             for key, value in row.items():
                 if key is None:
                     continue
-                normalized[str(key).strip().lower()] = str(value or "").strip()
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name or ":" in name:
+                    normalized.setdefault(re.split(r"[/:]", name, maxsplit=1)[0], text)
             rows.append((normalized, index))
     except Exception:
         return []
