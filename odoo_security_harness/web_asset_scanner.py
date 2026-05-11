@@ -256,6 +256,11 @@ DOM_IFRAME_SANDBOX_LITERAL_RE = re.compile(
     r"\.setAttribute\s*\(\s*['\"]sandbox['\"]\s*,\s*['\"](?P<attribute>[^'\"]*)['\"]\s*\)",
     re.IGNORECASE,
 )
+DOM_IFRAME_ALLOW_LITERAL_RE = re.compile(
+    r"\.allow\s*=\s*['\"](?P<property>[^'\"]*)['\"]|"
+    r"\.setAttribute\s*\(\s*['\"]allow['\"]\s*,\s*['\"](?P<attribute>[^'\"]*)['\"]\s*\)",
+    re.IGNORECASE,
+)
 DOM_IFRAME_CREATE_RE = re.compile(
     r"\b(?:const|let|var)?\s*(?P<name>[A-Za-z_$][\w$]*)\s*=\s*document\.createElement\s*\(\s*['\"]iframe['\"]\s*\)",
     re.IGNORECASE,
@@ -378,6 +383,17 @@ OWL_TEMPLATE_SENSITIVE_RENDER_RE = re.compile(
     r"csrf|password|secret|session|token)",
     re.IGNORECASE,
 )
+SENSITIVE_IFRAME_FEATURES = {
+    "camera",
+    "clipboard-read",
+    "clipboard-write",
+    "display-capture",
+    "geolocation",
+    "microphone",
+    "payment",
+    "serial",
+    "usb",
+}
 
 
 def scan_web_assets(repo_path: Path) -> list[WebAssetFinding]:
@@ -921,6 +937,20 @@ class WebAssetScanner:
                     "iframe.sandbox",
                 )
 
+            allow_match = DOM_IFRAME_ALLOW_LITERAL_RE.search(line)
+            if allow_match:
+                allow_value = " ".join(value or "" for value in allow_match.group("property", "attribute"))
+                broad_features = _broad_iframe_features(allow_value)
+                if broad_features:
+                    self._add(
+                        "odoo-web-iframe-broad-permissions",
+                        "DOM iframe allows sensitive browser features broadly",
+                        "medium",
+                        line_number,
+                        f"Frontend code sets iframe allow permissions broadly ({', '.join(broad_features)}); restrict camera, microphone, geolocation, payment, USB, serial, and clipboard access to trusted origins only",
+                        "iframe.allow",
+                    )
+
             for sink, pattern in DOM_URL_ATTRIBUTE_PATTERNS.items():
                 if pattern.search(line) and _uses_dangerous_static_dom_url_scheme(line):
                     self._add(
@@ -1330,6 +1360,16 @@ class WebAssetScanner:
                     "OWL xml template iframe sandbox combines allow-scripts with allow-same-origin; same-origin content can remove the sandbox or access parent-origin data",
                     "owl-template",
                 )
+            broad_iframe_features = _owl_template_broad_iframe_features(body)
+            if broad_iframe_features:
+                self._add(
+                    "odoo-web-owl-qweb-iframe-broad-permissions",
+                    "OWL inline template iframe allows sensitive browser features broadly",
+                    "medium",
+                    line,
+                    f"OWL xml template iframe allow permissions grant sensitive browser features broadly ({', '.join(broad_iframe_features)}); restrict camera, microphone, geolocation, payment, USB, serial, and clipboard access to trusted origins only",
+                    "owl-template",
+                )
             if _owl_template_has_external_script_without_sri(body):
                 self._add(
                     "odoo-web-owl-qweb-external-script-missing-sri",
@@ -1616,6 +1656,14 @@ def _owl_template_has_iframe_sandbox_escape(body: str) -> bool:
         if {"allow-scripts", "allow-same-origin"}.issubset(tokens):
             return True
     return False
+
+
+def _owl_template_broad_iframe_features(body: str) -> list[str]:
+    broad: list[str] = []
+    for match in OWL_TEMPLATE_IFRAME_RE.finditer(body):
+        allow = _html_attr_value(match.group("attrs"), "allow")
+        broad.extend(_broad_iframe_features(allow or ""))
+    return sorted(set(broad))
 
 
 def _html_attr_value(attrs: str, name: str) -> str | None:
@@ -1983,6 +2031,20 @@ def _has_iframe_sandbox_escape_tokens(values: tuple[str | None, ...]) -> bool:
     sandbox_value = " ".join(value or "" for value in values).lower()
     tokens = set(sandbox_value.split())
     return {"allow-scripts", "allow-same-origin"}.issubset(tokens)
+
+
+def _broad_iframe_features(allow_value: str) -> list[str]:
+    broad: list[str] = []
+    for policy in allow_value.lower().split(";"):
+        tokens = policy.strip().split()
+        if not tokens:
+            continue
+        feature = tokens[0]
+        if feature not in SENSITIVE_IFRAME_FEATURES:
+            continue
+        if len(tokens) == 1 or "*" in tokens:
+            broad.append(feature)
+    return sorted(set(broad))
 
 
 def _dom_iframe_has_sandbox(context: str, iframe_name: str) -> bool:

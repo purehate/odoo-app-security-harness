@@ -3544,6 +3544,10 @@ _TAXONOMY_SHAPE_HINTS = (
         "frontend_iframe_broad_permissions",
         (
             "odoo-qweb-iframe-broad-permissions",
+            "odoo-web-owl-qweb-iframe-broad-permissions",
+            "odoo-web-iframe-broad-permissions",
+            "owl inline template iframe allows sensitive browser features broadly",
+            "dom iframe allows sensitive browser features broadly",
             "iframe allows sensitive browser features broadly",
             "grants sensitive browser features broadly",
             "restrict camera, microphone, geolocation, payment, usb, serial, and clipboard access",

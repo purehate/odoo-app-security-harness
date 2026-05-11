@@ -2377,6 +2377,30 @@ def test_taxonomy_coverage_classifies_qweb_iframe_broad_permissions() -> None:
     assert "CWE-284" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_web_iframe_broad_permissions() -> None:
+    """JavaScript iframe feature delegation should map to frame containment taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-web-iframe-broad-permissions",
+                "source": "web-asset",
+                "title": "DOM iframe allows sensitive browser features broadly",
+                "message": "Frontend code sets iframe allow permissions broadly",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-iframe-broad-permissions",
+                "source": "web-asset",
+                "title": "OWL inline template iframe allows sensitive browser features broadly",
+                "message": "OWL xml template iframe allow permissions grant sensitive browser features broadly",
+            },
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_iframe_broad_permissions"}
+    assert all("CWE-284" in entry["cwe"] for entry in coverage["mapped_entries"])
+
+
 def test_taxonomy_coverage_classifies_qweb_external_script_missing_sri() -> None:
     """External script integrity leads should map to software integrity taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(

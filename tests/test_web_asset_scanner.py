@@ -1666,6 +1666,37 @@ def test_owl_inline_template_iframe_sandbox_escape_detected(tmp_path: Path) -> N
     )
 
 
+def test_owl_inline_template_iframe_broad_permissions_detected(tmp_path: Path) -> None:
+    """OWL iframe allow policies should scope sensitive browser features to trusted origins."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "export const template = xml`<iframe src=\"/my/widget\" sandbox=\"\" allow=\"camera *; geolocation; payment https://pay.example\"></iframe>`;\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-iframe-broad-permissions"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_iframe_origin_scoped_permissions_ignored(tmp_path: Path) -> None:
+    """Origin-scoped OWL iframe feature policies avoid the broad-permission lead."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "export const template = xml`<iframe src=\"/my/widget\" sandbox=\"\" allow=\"camera https://camera.example; payment https://pay.example\"></iframe>`;\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-iframe-broad-permissions" for f in findings)
+
+
 def test_owl_inline_template_iframe_safe_sandbox_tokens_ignored(tmp_path: Path) -> None:
     """OWL iframe sandbox tokens without the escape combination stay quiet."""
     path = tmp_path / "widget.js"
@@ -2311,6 +2342,36 @@ def test_dom_iframe_sandbox_escape_setattribute_detected(tmp_path: Path) -> None
     findings = WebAssetScanner(path).scan_file()
 
     assert any(f.rule_id == "odoo-web-iframe-sandbox-escape" and f.sink == "iframe.sandbox" for f in findings)
+
+
+def test_dom_iframe_broad_permissions_property_detected(tmp_path: Path) -> None:
+    """DOM iframe allow assignments should not broadly delegate sensitive features."""
+    path = tmp_path / "widget.js"
+    path.write_text("iframe.allow = 'camera *; clipboard-write; payment https://pay.example';\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-iframe-broad-permissions" and f.sink == "iframe.allow" for f in findings)
+
+
+def test_dom_iframe_broad_permissions_setattribute_detected(tmp_path: Path) -> None:
+    """setAttribute('allow', ...) should get the same sensitive-feature coverage."""
+    path = tmp_path / "widget.js"
+    path.write_text("iframe.setAttribute('allow', 'microphone; geolocation https://maps.example');\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-iframe-broad-permissions" for f in findings)
+
+
+def test_dom_iframe_origin_scoped_permissions_ignored(tmp_path: Path) -> None:
+    """Origin-scoped DOM iframe feature policies avoid the broad-permission lead."""
+    path = tmp_path / "widget.js"
+    path.write_text("iframe.allow = 'camera https://camera.example; payment https://pay.example';\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-iframe-broad-permissions" for f in findings)
 
 
 def test_dom_iframe_safe_sandbox_tokens_ignored(tmp_path: Path) -> None:
