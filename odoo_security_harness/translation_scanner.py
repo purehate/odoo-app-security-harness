@@ -26,6 +26,7 @@ DANGEROUS_HTML_RE = re.compile(
     r"<\s*script\b|(?:javascript|vbscript)\s*:|file\s*:|data\s*:\s*(?:text/html|application/(?:javascript|xhtml\+xml))|on[a-z]+\s*=|<\s*iframe\b|<\s*object\b|<\s*embed\b",
     re.IGNORECASE,
 )
+INSECURE_HTTP_URL_RE = re.compile(r"\bhttp://", re.IGNORECASE)
 QWEB_RAW_RE = re.compile(r"\bt-raw\s*=|\bt-out\s*=", re.IGNORECASE)
 TEMPLATE_EXPR_RE = re.compile(
     r"\$\{[^}]+\}|\{\{[^}]+\}\}|<\s*t\b[^>]*\bt-(?:call|foreach|if|set|att|attf)-?", re.IGNORECASE
@@ -73,6 +74,15 @@ class TranslationScanner:
                 "high",
                 entry.msgstr_line,
                 "Translated msgstr contains scriptable HTML, event handlers, or dangerous URL schemes such as javascript:, data:text/html, vbscript:, or file:; translated catalogs can bypass reviewed template text",
+                entry.msgid,
+            )
+        if INSECURE_HTTP_URL_RE.search(entry.msgstr):
+            self._add(
+                "odoo-i18n-insecure-url",
+                "Translation introduces insecure HTTP URL",
+                "medium",
+                entry.msgstr_line,
+                "Translated msgstr contains a literal http:// URL; use HTTPS or same-origin links to avoid downgrade, interception, and referrer leakage risk",
                 entry.msgid,
             )
         if QWEB_RAW_RE.search(entry.msgstr):

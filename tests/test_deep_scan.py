@@ -2443,6 +2443,12 @@ def test_taxonomy_coverage_classifies_owl_insecure_asset_url() -> None:
                 "title": "Mail template contains insecure HTTP URL",
                 "message": "mail.template body_html contains a literal http:// URL",
             },
+            {
+                "rule_id": "odoo-i18n-insecure-url",
+                "source": "translations",
+                "title": "Translation introduces insecure HTTP URL",
+                "message": "Translated msgstr contains a literal http:// URL",
+            },
         ]
     )
 

@@ -59,6 +59,41 @@ msgstr "<a href=\\"file:///etc/passwd\\">Ouvrir</a>"
     assert {finding.rule_id for finding in findings} == {"odoo-i18n-dangerous-html"}
 
 
+def test_flags_insecure_translated_http_url(tmp_path: Path) -> None:
+    """Translated links should not downgrade users to cleartext HTTP."""
+    write_po(
+        tmp_path / "module" / "i18n" / "fr.po",
+        """
+msgid "Pay now"
+msgstr "<a href=\\"http://portal.example.com/pay\\">Payer</a>"
+""",
+    )
+
+    findings = scan_translations(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-i18n-insecure-url"
+        and finding.severity == "medium"
+        and finding.locale == "fr"
+        for finding in findings
+    )
+
+
+def test_ignores_https_translated_url_for_insecure_url_rule(tmp_path: Path) -> None:
+    """HTTPS translated links should not create cleartext URL findings."""
+    write_po(
+        tmp_path / "module" / "i18n" / "fr.po",
+        """
+msgid "Pay now"
+msgstr "<a href=\\"https://portal.example.com/pay\\">Payer</a>"
+""",
+    )
+
+    findings = scan_translations(tmp_path)
+
+    assert not any(finding.rule_id == "odoo-i18n-insecure-url" for finding in findings)
+
+
 def test_flags_qweb_raw_output_in_translation(tmp_path: Path) -> None:
     """Translations should not be able to introduce raw QWeb output."""
     write_po(
