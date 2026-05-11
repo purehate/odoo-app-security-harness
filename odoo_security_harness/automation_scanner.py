@@ -152,6 +152,16 @@ class AutomationScanner:
                 model,
                 record_id,
             )
+        if "tls_verify_disabled" in code_risks:
+            self._add(
+                "odoo-automation-tls-verify-disabled",
+                "Automated action disables TLS verification",
+                "high",
+                line,
+                "base.automation code passes verify=False to outbound HTTP; record-triggered integrations should not permit man-in-the-middle attacks",
+                model,
+                record_id,
+            )
 
     def _line_for_record(self, record: ElementTree.Element) -> int:
         record_id = record.get("id")
@@ -288,10 +298,11 @@ class _AutomationCodeScanner(ast.NodeVisitor):
             node, constants
         ):
             self.risks.add("sensitive_model_mutation")
-        if _is_http_call(
-            node.func, self.http_module_aliases, self.http_function_aliases, self.http_client_vars
-        ) and not _has_keyword(node, "timeout"):
-            self.risks.add("http_no_timeout")
+        if _is_http_call(node.func, self.http_module_aliases, self.http_function_aliases, self.http_client_vars):
+            if not _has_keyword(node, "timeout"):
+                self.risks.add("http_no_timeout")
+            if _keyword_is_false(node, "verify", constants):
+                self.risks.add("tls_verify_disabled")
         self.generic_visit(node)
 
     def _record_alias_target(self, target: ast.AST, value: ast.AST) -> None:
@@ -351,6 +362,8 @@ class _AutomationCodeScanner(ast.NodeVisitor):
             or re.search(r"(?:urllib\.request\.)?urlopen\s*\(", code)
         ) and "timeout" not in code:
             risks.add("http_no_timeout")
+        if re.search(r"\bverify\s*=\s*False\b", code):
+            risks.add("tls_verify_disabled")
         return risks
 
     def _effective_constants(self) -> dict[str, ast.AST]:
@@ -595,6 +608,17 @@ def _is_static_literal(node: ast.AST) -> bool:
 
 def _has_keyword(node: ast.Call, name: str) -> bool:
     return any(keyword.arg == name for keyword in node.keywords)
+
+
+def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for keyword in node.keywords:
+        if keyword.arg != name:
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Constant) and value.value is False:
+            return True
+    return False
 
 
 def _mark_target_names(target: ast.AST, names: set[str]) -> None:

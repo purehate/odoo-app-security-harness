@@ -1316,6 +1316,12 @@
       "capec": ["CAPEC-125", "CAPEC-664"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "automation_tls_verification_disabled": {
+      "label": "Odoo automated action disables TLS verification for outbound HTTP",
+      "cwe": ["CWE-295", "CWE-319", "CWE-326"],
+      "capec": ["CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "scheduled_job_elevated_mutation": {
       "label": "Odoo scheduled job mutates records through sudo or superuser context",
       "cwe": ["CWE-269", "CWE-863", "CWE-732"],

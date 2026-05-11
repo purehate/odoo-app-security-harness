@@ -1165,6 +1165,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ("odoo-automation-http-no-timeout",),
     ),
     (
+        "automation_tls_verification_disabled",
+        (
+            "automation-tls-verify-disabled",
+            "automated action disables tls verification",
+            "base.automation code passes verify=false to outbound http",
+            "man-in-the-middle attacks",
+        ),
+    ),
+    (
         "scheduled_job_elevated_mutation",
         (
             "scheduled-job-sudo-mutation",
