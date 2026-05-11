@@ -2781,3 +2781,14 @@ def test_repository_scan_only_static_assets(tmp_path: Path) -> None:
 
     assert len(findings) == 1
     assert findings[0].file == str(asset)
+
+
+def test_repository_scan_includes_static_module_assets(tmp_path: Path) -> None:
+    """Modern JS module assets in static directories should be scanned."""
+    asset = tmp_path / "addon" / "static" / "src" / "js" / "widget.mjs"
+    asset.parent.mkdir(parents=True)
+    asset.write_text("this.el.innerHTML = payload;\n", encoding="utf-8")
+
+    findings = scan_web_assets(tmp_path)
+
+    assert any(f.rule_id == "odoo-web-dom-xss-sink" and f.file == str(asset) for f in findings)

@@ -386,7 +386,7 @@ def scan_web_assets(repo_path: Path) -> list[WebAssetFinding]:
     for path in repo_path.rglob("*"):
         if not path.is_file() or _should_skip(path):
             continue
-        if path.suffix.lower() not in {".js", ".ts", ".jsx", ".tsx"}:
+        if path.suffix.lower() not in {".cjs", ".cts", ".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx"}:
             continue
         if "static" not in path.parts:
             continue
