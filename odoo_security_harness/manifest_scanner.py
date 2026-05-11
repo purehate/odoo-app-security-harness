@@ -21,6 +21,26 @@ KNOWN_ODOO_LICENSES = {
 }
 SECURITY_DATA_HINTS = ("security/", "ir.model.access.csv", "ir_rule", "groups.xml", "access.xml")
 LIFECYCLE_HOOK_FIELDS = ("pre_init_hook", "post_init_hook", "uninstall_hook", "post_load")
+RISKY_PYTHON_DEPENDENCIES = {
+    "boto3",
+    "botocore",
+    "cryptography",
+    "fabric",
+    "grpcio",
+    "jwt",
+    "ldap3",
+    "openai",
+    "paramiko",
+    "pickle",
+    "pyjwt",
+    "pysftp",
+    "python-ldap",
+    "pyyaml",
+    "requests",
+    "sentry-sdk",
+    "suds",
+    "zeep",
+}
 
 
 @dataclass
@@ -160,7 +180,7 @@ class ManifestScanner:
         external_dependencies = data.get("external_dependencies")
         if isinstance(external_dependencies, dict):
             python_deps = _as_string_list(external_dependencies.get("python"))
-            risky = sorted(set(python_deps) & {"pickle", "yaml", "paramiko", "requests"})
+            risky = _risky_python_dependencies(python_deps)
             if risky:
                 self._add(
                     "odoo-manifest-risky-python-dependency",
@@ -241,6 +261,19 @@ def _suspicious_manifest_paths(paths: list[str]) -> list[str]:
         if path_obj.is_absolute() or ".." in path_obj.parts:
             suspicious.append(path)
     return suspicious
+
+
+def _risky_python_dependencies(dependencies: list[str]) -> list[str]:
+    """Return manifest dependencies whose usage deserves security review."""
+    risky: list[str] = []
+    for dependency in dependencies:
+        normalized = dependency.strip().lower().replace("_", "-")
+        package_name = normalized.split("[", 1)[0]
+        if package_name == "yaml":
+            package_name = "pyyaml"
+        if package_name in RISKY_PYTHON_DEPENDENCIES:
+            risky.append(dependency)
+    return sorted(set(risky), key=str.lower)
 
 
 def _should_skip(path: Path) -> bool:

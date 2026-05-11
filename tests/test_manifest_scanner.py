@@ -158,6 +158,33 @@ def test_legacy_remote_qweb_assets_are_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-manifest-remote-assets" for f in findings)
 
 
+def test_risky_python_dependencies_are_reported_with_common_spellings(tmp_path: Path) -> None:
+    """Security-sensitive Python dependency declarations should survive package spelling variants."""
+    module = tmp_path / "risky_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Risky Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'python': ['PyYAML', 'requests[security]', 'ldap3', 'openai', 'safe-package'],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-risky-python-dependency"
+        and "PyYAML" in f.message
+        and "requests[security]" in f.message
+        and "ldap3" in f.message
+        and "openai" in f.message
+        and "safe-package" not in f.message
+        for f in findings
+    )
+
+
 def test_lifecycle_hooks_are_reported(tmp_path: Path) -> None:
     """Install/uninstall hooks deserve explicit privileged-code review."""
     module = tmp_path / "hooks"
