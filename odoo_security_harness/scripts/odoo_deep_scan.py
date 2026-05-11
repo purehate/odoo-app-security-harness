@@ -4815,6 +4815,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "binary_sensitive_content_disposition_filename",
+        (
+            "odoo-binary-sensitive-content-disposition-filename",
+            "download filename contains sensitive marker",
+            "content_disposition builds a download filename containing token, secret, password, or api-key-like material",
+            "content-disposition with a token, secret, password, or api-key-like filename",
+            "browser download history, logs, and shared files",
+        ),
+    ),
+    (
         "open_redirect_portal",
         (
             "redirect",

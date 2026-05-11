@@ -1639,6 +1639,66 @@ class Headers(http.Controller):
     assert any(f.rule_id == "odoo-binary-tainted-content-disposition" for f in findings)
 
 
+def test_flags_sensitive_content_disposition_filename(tmp_path: Path) -> None:
+    """Download filenames should not include reusable tokens or secret-shaped data."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "headers.py").write_text(
+        """
+from odoo import http
+from odoo.http import content_disposition
+
+FILENAME = 'invoice-access_token-static.pdf'
+
+class Headers(http.Controller):
+    @http.route('/download', auth='user')
+    def download(self):
+        return content_disposition(FILENAME)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-sensitive-content-disposition-filename"
+        and f.severity == "high"
+        and f.sink == "content_disposition"
+        for f in findings
+    )
+
+
+def test_flags_sensitive_content_disposition_header_on_binary_response(tmp_path: Path) -> None:
+    """Static response headers should not use token-shaped download filenames."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Download(http.Controller):
+    @http.route('/download', auth='user')
+    def download(self):
+        attachment = request.env['ir.attachment'].browse(42)
+        return request.make_response(
+            attachment.datas,
+            headers={'Content-Disposition': 'attachment; filename="reset_password_token.pdf"'},
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-sensitive-content-disposition-filename"
+        and f.severity == "high"
+        and f.sink == "request.make_response"
+        for f in findings
+    )
+
+
 def test_flags_aliased_content_disposition_filename(tmp_path: Path) -> None:
     """Aliased content_disposition imports should still inspect filenames."""
     controllers = tmp_path / "module" / "controllers"

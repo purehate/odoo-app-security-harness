@@ -34,6 +34,22 @@ WEB_CONTENT_TOKEN_MARKERS = (
     "signature",
     "token=",
 )
+SENSITIVE_FILENAME_MARKERS = (
+    "access_key",
+    "access_token",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "client_secret",
+    "password",
+    "private_key",
+    "reset_password_token",
+    "secret",
+    "session_token",
+    "signature",
+    "signup_token",
+    "token",
+)
 ATTACHMENT_BINARY_ATTRS = {"datas", "raw", "db_datas"}
 ACTIVE_RESPONSE_CONTENT_TYPES = {
     "application/javascript",
@@ -317,6 +333,16 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             )
 
     def _scan_content_disposition(self, node: ast.Call, sink: str) -> None:
+        filename = _content_disposition_filename_node(node)
+        if filename is not None and _expr_has_sensitive_filename_marker(filename, self._effective_constants()):
+            self._add(
+                "odoo-binary-sensitive-content-disposition-filename",
+                "Download filename contains sensitive marker",
+                "high",
+                node.lineno,
+                "content_disposition builds a download filename containing token, secret, password, or API-key-like material; avoid leaking credentials through headers, browser download history, logs, and shared files",
+                sink,
+            )
         if _call_has_tainted_input(node, self._expr_is_tainted):
             self._add(
                 "odoo-binary-tainted-content-disposition",
@@ -348,6 +374,15 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                     severity,
                     node.lineno,
                     f"Controller response contains attachment/binary data with browser-active content type ({active_content}) without forced attachment disposition; verify sanitization, ownership, and download headers",
+                    sink,
+                )
+            if _response_content_disposition_has_sensitive_filename(node, self._effective_constants()):
+                self._add(
+                    "odoo-binary-sensitive-content-disposition-filename",
+                    "Download filename contains sensitive marker",
+                    "high",
+                    node.lineno,
+                    "Controller response sets Content-Disposition with a token, secret, password, or API-key-like filename; avoid leaking credentials through headers, browser download history, logs, and shared files",
                     sink,
                 )
 
@@ -928,6 +963,15 @@ def _response_forces_attachment_download(node: ast.Call, constants: dict[str, as
     return False
 
 
+def _response_content_disposition_has_sensitive_filename(node: ast.Call, constants: dict[str, ast.AST]) -> bool:
+    for header_name, header_value in _response_header_pairs(node, constants):
+        if header_name.lower() in {"content-disposition", "content_disposition"} and _has_sensitive_filename_marker(
+            header_value
+        ):
+            return True
+    return False
+
+
 def _response_header_pairs(node: ast.Call, constants: dict[str, ast.AST]) -> list[tuple[str, str]]:
     header_nodes: list[ast.AST] = []
     if len(node.args) >= 2:
@@ -969,6 +1013,30 @@ def _literal_header_pairs(node: ast.AST, constants: dict[str, ast.AST]) -> list[
 
 def _is_content_disposition_helper(node: ast.AST) -> bool:
     return isinstance(node, ast.Call) and _call_name(node.func).endswith("content_disposition")
+
+
+def _content_disposition_filename_node(node: ast.Call) -> ast.AST | None:
+    if node.args:
+        return node.args[0]
+    for keyword in node.keywords:
+        if keyword.arg in {"filename", "file_name", "fname", "name"}:
+            return keyword.value
+    return None
+
+
+def _expr_has_sensitive_filename_marker(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _expr_has_sensitive_filename_marker(resolved, constants)
+    for child in ast.walk(node):
+        if _has_sensitive_filename_marker(_constant_string(child, constants)):
+            return True
+    return _has_sensitive_filename_marker(_safe_unparse(node))
+
+
+def _has_sensitive_filename_marker(value: str) -> bool:
+    lowered = value.strip().lower()
+    return bool(lowered) and any(marker in lowered for marker in SENSITIVE_FILENAME_MARKERS)
 
 
 def _is_active_content_type(value: str) -> bool:

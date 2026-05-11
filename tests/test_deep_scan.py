@@ -3736,6 +3736,12 @@ def test_taxonomy_coverage_classifies_binary_download_specific_risks() -> None:
             },
             {
                 "source": "binary-downloads",
+                "rule_id": "odoo-binary-sensitive-content-disposition-filename",
+                "title": "Download filename contains sensitive marker",
+                "message": "content_disposition builds a download filename containing token, secret, password, or API-key-like material; avoid leaking credentials through headers, browser download history, logs, and shared files",
+            },
+            {
+                "source": "binary-downloads",
                 "rule_id": "odoo-binary-active-inline-response",
                 "title": "Controller serves attachment data as browser-active content",
                 "message": "Controller response contains attachment/binary data with browser-active content type (content-type=image/svg+xml) without forced attachment disposition; verify sanitization, ownership, and download headers",
@@ -3743,7 +3749,7 @@ def test_taxonomy_coverage_classifies_binary_download_specific_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 7
+    assert coverage["mapped_rules"] == 8
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-binary-attachment-data-response": "binary_attachment_data_response",
@@ -3752,6 +3758,7 @@ def test_taxonomy_coverage_classifies_binary_download_specific_risks() -> None:
         "odoo-binary-tainted-web-content-redirect": "binary_tainted_web_content_redirect",
         "odoo-binary-tokenized-web-content-redirect": "binary_tokenized_web_content_redirect",
         "odoo-binary-tainted-content-disposition": "binary_tainted_content_disposition",
+        "odoo-binary-sensitive-content-disposition-filename": "binary_sensitive_content_disposition_filename",
         "odoo-binary-active-inline-response": "binary_active_inline_response",
     }
     assert any("CWE-113" in entry["cwe"] for entry in coverage["mapped_entries"])

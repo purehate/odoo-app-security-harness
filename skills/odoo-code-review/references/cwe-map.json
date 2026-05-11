@@ -2400,6 +2400,12 @@
       "capec": ["CAPEC-105", "CAPEC-126"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "binary_sensitive_content_disposition_filename": {
+      "label": "Download filename contains token, secret, password, or API-key-like material",
+      "cwe": ["CWE-598", "CWE-522", "CWE-359"],
+      "capec": ["CAPEC-191", "CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "publication_sensitive_runtime_published": {
       "label": "Runtime code changes publication flags on sensitive records",
       "cwe": ["CWE-284", "CWE-862", "CWE-863"],
