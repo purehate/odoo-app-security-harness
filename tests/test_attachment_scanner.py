@@ -166,6 +166,70 @@ class Controller(odoo_http.Controller):
     assert "odoo-attachment-tainted-res-id" in rule_ids
 
 
+def test_imported_odoo_http_module_public_attachment_create_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http imports should expose public attachment mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "attachments.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/public/attach', auth='public', csrf=False)
+    def attach(self):
+        payload = odoo_http.request.get_http_params()
+        return odoo_http.request.env['ir.attachment'].sudo().create({
+            'name': 'x.pdf',
+            'datas': payload.get('payload'),
+            'res_model': payload.get('model'),
+            'res_id': payload.get('id'),
+            'public': True,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-attachment-public-route-mutation" in rule_ids
+    assert "odoo-attachment-sudo-mutation" in rule_ids
+    assert "odoo-attachment-tainted-res-model" in rule_ids
+    assert "odoo-attachment-tainted-res-id" in rule_ids
+
+
+def test_imported_odoo_module_public_attachment_create_is_reported(tmp_path: Path) -> None:
+    """Direct odoo imports should expose public attachment mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "attachments.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/public/attach', auth='public', csrf=False)
+    def attach(self):
+        payload = od.http.request.get_http_params()
+        return od.http.request.env['ir.attachment'].sudo().create({
+            'name': 'x.pdf',
+            'datas': payload.get('payload'),
+            'res_model': payload.get('model'),
+            'res_id': payload.get('id'),
+            'public': True,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-attachment-public-route-mutation" in rule_ids
+    assert "odoo-attachment-sudo-mutation" in rule_ids
+    assert "odoo-attachment-tainted-res-model" in rule_ids
+    assert "odoo-attachment-tainted-res-id" in rule_ids
+
+
 def test_non_odoo_route_decorator_public_attachment_create_is_ignored(tmp_path: Path) -> None:
     """Local route-like decorators should not create Odoo route context."""
     controllers = tmp_path / "module" / "controllers"
