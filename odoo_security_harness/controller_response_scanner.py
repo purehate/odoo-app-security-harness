@@ -249,7 +249,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Response header uses request-controlled value",
                     "medium",
                     node.lineno,
-                    "Controller writes request-derived data into response headers; validate against CRLF/header injection and unsafe filenames",
+                    "Controller writes request-derived data into response headers; validate "
+                    "against CRLF/header injection and unsafe filenames",
                     "headers",
                 )
             header_name = _response_header_assignment_name(target, self._effective_constants())
@@ -289,7 +290,9 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Controller redirect embeds credentials",
                     "high",
                     node.lineno,
-                    "Controller redirects to a URL with embedded username, password, or token material; keep credentials out of browser-visible redirects, history, referrers, and logs",
+                    "Controller redirects to a URL with embedded username, password, or token "
+                    "material; keep credentials out of browser-visible redirects, history, "
+                    "referrers, and logs",
                     sink,
                 )
             if self._redirect_target_is_tainted(node):
@@ -300,7 +303,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Controller redirects to request-controlled URL",
                     severity,
                     node.lineno,
-                    "Controller redirects to a request-derived URL; restrict redirects to local paths or an allowlisted host set",
+                    "Controller redirects to a request-derived URL; restrict redirects to local "
+                    "paths or an allowlisted host set",
                     sink,
                 )
         elif self._is_file_response_sink(node.func) and self._file_response_target_is_tainted(node):
@@ -309,7 +313,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller sends request-controlled file path",
                 "high",
                 node.lineno,
-                "Controller send_file path is request-controlled; validate basename, attachment ownership, traversal, and storage root",
+                "Controller send_file path is request-controlled; validate basename, attachment "
+                "ownership, traversal, and storage root",
                 sink,
             )
         elif self._is_tainted_file_read(node, sink):
@@ -377,7 +382,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
             "Controller reads request-controlled file path",
             "high" if route.auth in {"public", "none"} else "medium",
             node.lineno,
-            "Controller reads from a request-controlled filesystem path; validate attachment ownership, basename, traversal, symlinks, and storage root before returning data",
+            "Controller reads from a request-controlled filesystem path; validate attachment "
+            "ownership, basename, traversal, symlinks, and storage root before returning data",
             sink,
         )
 
@@ -393,11 +399,14 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Controller returns request-derived HTML response",
                     "high" if route.auth in {"public", "none"} else "medium",
                     node.lineno,
-                    "Controller returns request-derived data as text/html; sanitize or render through trusted QWeb templates before sending HTML",
+                    "Controller returns request-derived data as text/html; sanitize or render "
+                    "through trusted QWeb templates before sending HTML",
                     sink,
                 )
-            if self._expr_is_tainted(body) and _response_factory_is_javascript(node, constants) and _looks_jsonp_callback_body(
-                body
+            if (
+                self._expr_is_tainted(body)
+                and _response_factory_is_javascript(node, constants)
+                and _looks_jsonp_callback_body(body)
             ):
                 route = self._current_route()
                 self._add(
@@ -405,7 +414,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Controller returns request-controlled JSONP callback",
                     "high" if route.auth in {"public", "none"} else "medium",
                     node.lineno,
-                    "Controller builds a JavaScript/JSONP response from a request-controlled callback; remove JSONP or strictly validate callback names and response data",
+                    "Controller builds a JavaScript/JSONP response from a request-controlled "
+                    "callback; remove JSONP or strictly validate callback names and response data",
                     sink,
                 )
         for key, keyword_value in _expanded_keywords(node, constants):
@@ -415,7 +425,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Response headers include request-controlled value",
                     "medium",
                     node.lineno,
-                    "Controller response headers include request-derived data; validate against CRLF/header injection and unsafe filenames",
+                    "Controller response headers include request-derived data; validate against "
+                    "CRLF/header injection and unsafe filenames",
                     sink,
                 )
             if key in {"headers", "header"}:
@@ -426,7 +437,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Response headers include request-controlled value",
                 "medium",
                 node.lineno,
-                "Controller response header argument is request-derived; validate against CRLF/header injection and unsafe filenames",
+                "Controller response header argument is request-derived; validate against "
+                "CRLF/header injection and unsafe filenames",
                 sink,
             )
         if len(node.args) >= 2:
@@ -442,7 +454,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
             "Controller response returns sensitive token-shaped data",
             severity,
             line,
-            "Controller response includes token, password, API key, or secret-shaped data; avoid returning credential material and verify the route is authenticated and authorized",
+            "Controller response includes token, password, API key, or secret-shaped data; avoid "
+            "returning credential material and verify the route is authenticated and authorized",
             sink,
         )
 
@@ -461,7 +474,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
             "Controller returns request-derived HTML response",
             severity,
             line,
-            "Controller returns request-derived data from an HTTP route; sanitize or render through trusted QWeb templates before sending HTML",
+            "Controller returns request-derived data from an HTTP route; sanitize or render "
+            "through trusted QWeb templates before sending HTML",
             sink,
         )
 
@@ -477,7 +491,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Response headers include request-controlled value",
                     "medium",
                     node.lineno,
-                    "Controller response headers include request-derived data; validate against CRLF/header injection and unsafe filenames",
+                    "Controller response headers include request-derived data; validate against "
+                    "CRLF/header injection and unsafe filenames",
                     sink,
             )
             for arg in node.args:
@@ -490,7 +505,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Response header uses request-controlled value",
                 "medium",
                 node.lineno,
-                "Controller writes request-derived data into response headers; validate against CRLF/header injection and unsafe filenames",
+                "Controller writes request-derived data into response headers; validate against "
+                "CRLF/header injection and unsafe filenames",
                 sink,
             )
         elif len(node.args) >= 2:
@@ -512,7 +528,9 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller redirect embeds credentials",
                 "high",
                 line,
-                f"Controller sets {header_name} to a URL with embedded username, password, or token material; keep credentials out of browser-visible redirects, history, referrers, and logs",
+                f"Controller sets {header_name} to a URL with embedded username, password, or "
+                "token material; keep credentials out of browser-visible redirects, history, "
+                "referrers, and logs",
                 sink,
             )
         if lowered_header in FILE_OFFLOAD_HEADERS and self._expr_is_tainted(value):
@@ -522,7 +540,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "File offload header uses request-controlled path",
                 "high" if route.auth in {"public", "none"} else "medium",
                 line,
-                "Controller sets X-Accel-Redirect/X-Sendfile from request input; validate internal location mapping, traversal, attachment ownership, and storage root",
+                "Controller sets X-Accel-Redirect/X-Sendfile from request input; validate "
+                "internal location mapping, traversal, attachment ownership, and storage root",
                 sink,
             )
         weak_csp_reason = _weak_csp_reason(lowered_header, value, self._effective_constants())
@@ -533,7 +552,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller sets weak Content-Security-Policy",
                 "medium" if route.auth in {"public", "none"} else "low",
                 line,
-                f"Controller sets a Content-Security-Policy with {weak_csp_reason}; tighten script/style sources before relying on CSP to limit XSS impact",
+                f"Controller sets a Content-Security-Policy with {weak_csp_reason}; tighten "
+                "script/style sources before relying on CSP to limit XSS impact",
                 sink,
             )
         weak_frame_options = _weak_x_frame_options_value(lowered_header, value, self._effective_constants())
@@ -544,7 +564,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller sets weak X-Frame-Options",
                 "medium" if route.auth in {"public", "none"} else "low",
                 line,
-                f"Controller sets X-Frame-Options to {weak_frame_options!r}; use DENY/SAMEORIGIN or CSP frame-ancestors to reduce clickjacking exposure",
+                f"Controller sets X-Frame-Options to {weak_frame_options!r}; use DENY/SAMEORIGIN "
+                "or CSP frame-ancestors to reduce clickjacking exposure",
                 sink,
             )
         weak_referrer_policy = _weak_referrer_policy_value(lowered_header, value, self._effective_constants())
@@ -555,7 +576,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller sets weak Referrer-Policy",
                 "medium" if route.auth in {"public", "none"} else "low",
                 line,
-                f"Controller sets Referrer-Policy to {weak_referrer_policy!r}; use no-referrer or strict-origin-when-cross-origin to reduce tokenized URL leakage",
+                f"Controller sets Referrer-Policy to {weak_referrer_policy!r}; use no-referrer "
+                "or strict-origin-when-cross-origin to reduce tokenized URL leakage",
                 sink,
             )
         weak_hsts_reason = _weak_hsts_reason(lowered_header, value, self._effective_constants())
@@ -566,7 +588,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller sets weak Strict-Transport-Security",
                 "medium" if route.auth in {"public", "none"} else "low",
                 line,
-                f"Controller sets a weak Strict-Transport-Security header ({weak_hsts_reason}); use a long max-age such as 31536000 and includeSubDomains where appropriate",
+                f"Controller sets a weak Strict-Transport-Security header ({weak_hsts_reason}); "
+                "use a long max-age such as 31536000 and includeSubDomains where appropriate",
                 sink,
             )
         weak_cross_origin_policy = _weak_cross_origin_policy_value(
@@ -579,7 +602,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller sets weak cross-origin isolation policy",
                 "medium" if route.auth in {"public", "none"} else "low",
                 line,
-                f"Controller sets {header_name} to {weak_cross_origin_policy!r}; use explicit same-origin or require-corp style policies where cross-origin isolation is needed",
+                f"Controller sets {header_name} to {weak_cross_origin_policy!r}; use explicit "
+                "same-origin or require-corp style policies where cross-origin isolation is needed",
                 sink,
             )
         weak_permissions_policy = _weak_permissions_policy_reason(
@@ -592,7 +616,9 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller sets weak browser permissions policy",
                 "medium" if route.auth in {"public", "none"} else "low",
                 line,
-                f"Controller allows sensitive browser feature {weak_permissions_policy} in {header_name}; restrict camera, microphone, geolocation, payment, USB, serial, and clipboard access to trusted origins only",
+                f"Controller allows sensitive browser feature {weak_permissions_policy} in "
+                f"{header_name}; restrict camera, microphone, geolocation, payment, USB, serial, "
+                "and clipboard access to trusted origins only",
                 sink,
             )
         weak_content_type_options = _weak_content_type_options_value(
@@ -605,7 +631,9 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller sets weak X-Content-Type-Options",
                 "medium" if route.auth in {"public", "none"} else "low",
                 line,
-                f"Controller sets X-Content-Type-Options to {weak_content_type_options!r}; use 'nosniff' so browsers do not reinterpret JSON, text, or uploaded content as executable script",
+                f"Controller sets X-Content-Type-Options to {weak_content_type_options!r}; use "
+                "'nosniff' so browsers do not reinterpret JSON, text, or uploaded content as "
+                "executable script",
                 sink,
             )
         if lowered_header == "access-control-allow-credentials" and _truthy_header_value(
@@ -617,7 +645,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller enables credentialed CORS",
                 "medium" if route.auth in {"public", "none"} else "low",
                 line,
-                "Controller sets Access-Control-Allow-Credentials: true; verify allowed origins are fixed, trusted, and never wildcarded or reflected from request headers",
+                "Controller sets Access-Control-Allow-Credentials: true; verify allowed origins "
+                "are fixed, trusted, and never wildcarded or reflected from request headers",
                 sink,
             )
         if header_name.lower() != "access-control-allow-origin":
@@ -629,7 +658,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller reflects request origin into CORS header",
                 "high" if route.auth in {"public", "none"} else "medium",
                 line,
-                "Controller reflects a request-derived Origin into Access-Control-Allow-Origin; require an explicit trusted-origin allowlist before enabling cross-origin reads",
+                "Controller reflects a request-derived Origin into Access-Control-Allow-Origin; "
+                "require an explicit trusted-origin allowlist before enabling cross-origin reads",
                 sink,
             )
             return
@@ -641,7 +671,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
             "Controller response allows any CORS origin",
             "high" if route.auth in {"public", "none"} else "medium",
             line,
-            "Controller sets Access-Control-Allow-Origin: *; verify cross-origin reads are intended and credentials, tokens, or private data cannot be exposed",
+            "Controller sets Access-Control-Allow-Origin: *; verify cross-origin reads are "
+            "intended and credentials, tokens, or private data cannot be exposed",
             sink,
         )
 
@@ -654,7 +685,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Cookie name is request-controlled",
                 "medium",
                 node.lineno,
-                "Controller sets a cookie whose name is request-derived; restrict cookie keys to fixed allowlisted names to avoid arbitrary client-side state changes",
+                "Controller sets a cookie whose name is request-derived; restrict cookie keys to "
+                "fixed allowlisted names to avoid arbitrary client-side state changes",
                 sink,
             )
         cookie_value = node.args[1] if len(node.args) >= 2 else _keyword_value(node, "value", constants)
@@ -664,7 +696,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Cookie value is request-controlled",
                 "low",
                 node.lineno,
-                "Controller sets a cookie value directly from request input; verify it cannot create session fixation, tracking, or response splitting risk",
+                "Controller sets a cookie value directly from request input; verify it cannot "
+                "create session fixation, tracking, or response splitting risk",
                 sink,
             )
         cookie_name = _constant_string(cookie_name_node, constants) if cookie_name_node is not None else ""
@@ -674,7 +707,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Sensitive cookie misses security flags",
                 "medium",
                 node.lineno,
-                "Controller sets a session/token-like cookie without explicit HttpOnly, Secure, and SameSite flags; verify browser exposure and cross-site behavior",
+                "Controller sets a session/token-like cookie without explicit HttpOnly, Secure, "
+                "and SameSite flags; verify browser exposure and cross-site behavior",
                 sink,
             )
 
@@ -833,12 +867,24 @@ class ControllerResponseScanner(ast.NodeVisitor):
     def _is_redirect_sink(self, node: ast.AST) -> bool:
         if self._canonical_call_name(node) in REDIRECT_SINKS:
             return True
-        return _is_request_method(node, self.request_names, self.http_module_names, self.odoo_module_names, {"redirect"})
+        return _is_request_method(
+            node,
+            self.request_names,
+            self.http_module_names,
+            self.odoo_module_names,
+            {"redirect"},
+        )
 
     def _is_file_response_sink(self, node: ast.AST) -> bool:
         if self._canonical_call_name(node) in FILE_RESPONSE_SINKS:
             return True
-        return _is_request_method(node, self.request_names, self.http_module_names, self.odoo_module_names, {"send_file"})
+        return _is_request_method(
+            node,
+            self.request_names,
+            self.http_module_names,
+            self.odoo_module_names,
+            {"send_file"},
+        )
 
     def _is_response_factory_sink(self, node: ast.AST) -> bool:
         if self._canonical_call_name(node) in RESPONSE_FACTORY_SINKS:
@@ -961,6 +1007,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -992,6 +1040,45 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:

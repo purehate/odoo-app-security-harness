@@ -266,6 +266,31 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
 
 
+def test_updated_static_unpack_public_open_redirect(tmp_path: Path) -> None:
+    """Updated **route options should preserve public response severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+ROUTE_OPTIONS = {'auth': 'user', 'type': 'http'}
+ROUTE_OPTIONS.update({'auth': 'none'})
+
+class Controller(http.Controller):
+    @http.route('/go', **ROUTE_OPTIONS)
+    def go(self, **kwargs):
+        return request.redirect(kwargs.get('next'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
+
+
 def test_constant_alias_public_open_redirect(tmp_path: Path) -> None:
     """Recursive auth aliases should preserve public-route redirect severity."""
     controllers = tmp_path / "module" / "controllers"
@@ -1270,7 +1295,11 @@ class Controller(http.Controller):
     @http.route('/account/connector-key', auth='user', type='json')
     def connector_key(self):
         access_key = request.env['ir.config_parameter'].sudo().get_param('connector.access_key')
-        return request.make_json_response({'access_key': access_key, 'license_key': 'redacted', 'reset_password_url': '/reset'})
+        return request.make_json_response({
+            'access_key': access_key,
+            'license_key': 'redacted',
+            'reset_password_url': '/reset',
+        })
 """,
         encoding="utf-8",
     )
@@ -2248,7 +2277,10 @@ from odoo.http import request
 class Controller(http.Controller):
     @http.route('/public/page', auth='public')
     def page(self):
-        return request.make_response('ok', headers={'Content-Security-Policy': "default-src 'self'; script-src 'unsafe-inline'"})
+        return request.make_response(
+            'ok',
+            headers={'Content-Security-Policy': "default-src 'self'; script-src 'unsafe-inline'"},
+        )
 """,
         encoding="utf-8",
     )
@@ -2414,7 +2446,10 @@ from odoo.http import request
 class Controller(http.Controller):
     @http.route('/public/script', auth='public')
     def script(self):
-        return request.make_response("odoo.define('x', function () {});", headers={'Content-Type': 'application/javascript'})
+        return request.make_response(
+            "odoo.define('x', function () {});",
+            headers={'Content-Type': 'application/javascript'},
+        )
 """,
         encoding="utf-8",
     )
