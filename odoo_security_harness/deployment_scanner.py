@@ -173,7 +173,7 @@ class DeploymentScanner:
             )
 
     def _scan_config_value(self, key: str, value: str, line: int) -> None:
-        normalized_key = key.strip().lower()
+        normalized_key = _normalize_config_key(key)
         normalized_value = value.strip().strip("'\"").lower()
 
         if normalized_key in {"admin_passwd", "admin_password"}:
@@ -327,7 +327,7 @@ class DeploymentScanner:
                 key,
                 value,
             )
-        elif normalized_key == "web.base.url.freeze" and _is_falsy(normalized_value):
+        elif normalized_key in {"web.base.url.freeze", "web_base_url_freeze"} and _is_falsy(normalized_value):
             self._add(
                 "odoo-deploy-base-url-not-frozen",
                 "Base URL is not frozen",
@@ -337,7 +337,7 @@ class DeploymentScanner:
                 key,
                 value,
             )
-        elif normalized_key == "web.base.url" and _is_insecure_base_url(value):
+        elif normalized_key in {"web.base.url", "web_base_url"} and _is_insecure_base_url(value):
             self._add(
                 "odoo-deploy-insecure-base-url",
                 "Base URL uses an insecure or local endpoint",
@@ -347,7 +347,9 @@ class DeploymentScanner:
                 key,
                 value,
             )
-        elif normalized_key == "auth_signup.allow_uninvited" and _is_truthy(normalized_value):
+        elif normalized_key in {"auth_signup.allow_uninvited", "auth_signup_allow_uninvited"} and _is_truthy(
+            normalized_value
+        ):
             self._add(
                 "odoo-deploy-open-signup",
                 "Uninvited public signup is enabled",
@@ -357,7 +359,7 @@ class DeploymentScanner:
                 key,
                 value,
             )
-        elif normalized_key == "auth_oauth.allow_signup" and _is_truthy(normalized_value):
+        elif normalized_key in {"auth_oauth.allow_signup", "auth_oauth_allow_signup"} and _is_truthy(normalized_value):
             self._add(
                 "odoo-deploy-oauth-auto-signup",
                 "OAuth auto-signup is enabled",
@@ -367,7 +369,10 @@ class DeploymentScanner:
                 key,
                 value,
             )
-        elif normalized_key == "auth_signup.invitation_scope" and normalized_value == "b2c":
+        elif (
+            normalized_key in {"auth_signup.invitation_scope", "auth_signup_invitation_scope"}
+            and normalized_value == "b2c"
+        ):
             self._add(
                 "odoo-deploy-b2c-signup",
                 "B2C signup scope is enabled",
@@ -410,6 +415,13 @@ def _parse_assignment(line: str) -> tuple[str, str] | None:
     if not sep:
         return None
     return key.strip(), value.split("#", 1)[0].split(";", 1)[0].strip()
+
+
+def _normalize_config_key(key: str) -> str:
+    normalized = key.strip().lower().replace("-", "_")
+    if normalized.startswith("odoo_"):
+        normalized = normalized.removeprefix("odoo_")
+    return normalized
 
 
 def _record_fields(record: ElementTree.Element) -> dict[str, str]:

@@ -129,6 +129,32 @@ def test_scan_deployment_config_flags_committed_master_password(tmp_path: Path) 
     assert any(finding.rule_id == "odoo-deploy-admin-passwd-committed" for finding in findings)
 
 
+def test_scan_deployment_config_flags_odoo_prefixed_env_keys(tmp_path: Path) -> None:
+    """Odoo deployment env files commonly prefix config keys with ODOO_."""
+    config = tmp_path / ".env.production"
+    config.write_text(
+        """
+ODOO_ADMIN_PASSWD=prod-master-password-123456
+ODOO_LIST_DB=true
+ODOO_PROXY_MODE=false
+ODOO_DB_SSLMODE=prefer
+ODOO_WEB_BASE_URL=http://localhost:8069
+ODOO_AUTH_SIGNUP_ALLOW_UNINVITED=true
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_deployment_config(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deploy-admin-passwd-committed" in rule_ids
+    assert "odoo-deploy-list-db-enabled" in rule_ids
+    assert "odoo-deploy-proxy-mode-disabled" in rule_ids
+    assert "odoo-deploy-db-sslmode-opportunistic" in rule_ids
+    assert "odoo-deploy-insecure-base-url" in rule_ids
+    assert "odoo-deploy-open-signup" in rule_ids
+
+
 def test_scan_deployment_config_flags_signup_and_base_url_xml(tmp_path: Path) -> None:
     """XML config parameters should flag open signup and mutable base URL settings."""
     data_dir = tmp_path / "module" / "data"
