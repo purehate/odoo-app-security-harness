@@ -664,6 +664,20 @@ class TestModel(models.Model):
 
         assert any(f.rule_id == "odoo-deep-with-user-admin" for f in findings)
 
+    def test_local_constant_backed_with_user_superuser_keyword(self) -> None:
+        """Function-local superuser constants should preserve admin-root detection."""
+        source = """
+class TestModel(models.Model):
+    def do_admin_thing(self):
+        root_base = 1
+        root_uid = root_base
+        return self.with_user(user=root_uid).search([])
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-with-user-admin" for f in findings)
+
     def test_with_user_regular_user_is_not_admin(self) -> None:
         """Regular user context switches should not be labeled admin/root."""
         source = """
@@ -794,6 +808,22 @@ class TestModel(models.Model):
 
     def get_everything(self):
         return self.env['sale.order'].with_user(ROOT_UID).search(EMPTY_DOMAIN)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-empty-search-sudo" for f in findings)
+
+    def test_local_constant_empty_domain_superuser_search(self) -> None:
+        """Function-local superuser and domain constants should expose unbounded reads."""
+        source = """
+class TestModel(models.Model):
+    def get_everything(self):
+        root_base = 1
+        root_uid = root_base
+        empty_base = []
+        empty_domain = empty_base
+        return self.env['sale.order'].with_user(root_uid).search(empty_domain)
 """
         analyzer = OdooDeepAnalyzer("test.py")
         findings = analyzer.analyze(source)
@@ -1177,6 +1207,21 @@ class PortalController(http.Controller):
     @http.route('/my/attachments', auth='user')
     def attachments(self, order_id):
         return request.env[ATTACHMENT_MODEL].sudo().search([('res_id', '=', order_id)])
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-attachment-sudo-access" for f in findings)
+
+    def test_local_constant_attachment_model_sudo_in_controller(self) -> None:
+        """Function-local env model constants should not hide sudo attachment reads."""
+        source = """
+class PortalController(http.Controller):
+    @http.route('/my/attachments', auth='user')
+    def attachments(self, order_id):
+        attachment_base = 'ir.attachment'
+        attachment_model = attachment_base
+        return request.env[attachment_model].sudo().search([('res_id', '=', order_id)])
 """
         analyzer = OdooDeepAnalyzer("test.py")
         findings = analyzer.analyze(source)

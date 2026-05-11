@@ -82,6 +82,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.route_decorator_names: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def analyze(self, source: str) -> list[Finding]:
         """Analyze Python source code and return findings."""
@@ -149,8 +150,10 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.current_function = func
         previous_tainted_vars = self.tainted_vars
         previous_unsafe_sql_vars = self.unsafe_sql_vars
+        previous_local_constants = self.local_constants
         self.tainted_vars = set()
         self.unsafe_sql_vars = set()
+        self.local_constants = {}
 
         route_param_names = set(_route_parameter_names(func.route_paths)) if func.is_controller else set()
         for arg in node.args.args + node.args.kwonlyargs:
@@ -178,6 +181,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.current_function = self.function_stack[-1] if self.function_stack else None
         self.tainted_vars = previous_tainted_vars
         self.unsafe_sql_vars = previous_unsafe_sql_vars
+        self.local_constants = previous_local_constants
 
     def visit_Assign(self, node: ast.Assign) -> None:
         """Visit assignments to track tainted variables."""
@@ -189,6 +193,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         if is_tainted:
             self.current_function.has_request_params = True
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_target_names(target, self.tainted_vars, is_tainted)
 
         is_unsafe_sql = self._is_unsafe_sql_expr(node.value)
@@ -206,6 +211,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         is_tainted = self._is_tainted_expr(node.value)
         if is_tainted:
             self.current_function.has_request_params = True
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_target_names(node.target, self.tainted_vars, is_tainted)
 
         is_unsafe_sql = self._is_unsafe_sql_expr(node.value)
@@ -223,6 +229,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
             self.current_function.has_request_params = True
             if isinstance(node.target, ast.Name):
                 self.tainted_vars.add(node.target.id)
+        self._mark_local_constant_target(node.target, node.value)
 
         if self._is_unsafe_sql_expr(node.value) and isinstance(node.target, ast.Name):
             self.unsafe_sql_vars.add(node.target.id)
@@ -444,11 +451,12 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         return node
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
     def _is_static_literal(self, node: ast.AST) -> bool:
@@ -650,6 +658,32 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         if isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_target_names(element, names, should_mark)
+
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        """Track static function-local aliases used by analyzer sink helpers."""
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
+            for target_element, value_element in zip(target.elts, value.elts, strict=False):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if self._is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        self._clear_local_constant_target(target)
+
+    def _clear_local_constant_target(self, target: ast.AST) -> None:
+        if isinstance(target, ast.Name):
+            self.local_constants.pop(target.id, None)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for element in target.elts:
+                self._clear_local_constant_target(element)
+        elif isinstance(target, ast.Starred):
+            self._clear_local_constant_target(target.value)
 
     def _call_uses_request_env(self, node: ast.Call) -> bool:
         """Check whether a call expression contains request.env."""
