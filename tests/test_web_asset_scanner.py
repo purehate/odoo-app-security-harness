@@ -1881,6 +1881,16 @@ def test_owl_inline_template_dangerous_static_url_detected(tmp_path: Path) -> No
     )
 
 
+def test_owl_inline_template_dangerous_data_svg_url_detected(tmp_path: Path) -> None:
+    """OWL inline templates should not embed active SVG data documents."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<iframe src=\"data:image/svg+xml,<svg onload='alert(1)'/>\"></iframe>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-owl-qweb-dangerous-url-scheme" and f.severity == "high" for f in findings)
+
+
 def test_owl_inline_template_safe_static_url_ignored(tmp_path: Path) -> None:
     """Normal local OWL URLs should not create dangerous-scheme noise."""
     path = tmp_path / "widget.js"
@@ -2069,6 +2079,16 @@ def test_dangerous_window_open_data_scheme_detected(tmp_path: Path) -> None:
     """window.open should not target literal active data documents."""
     path = tmp_path / "widget.js"
     path.write_text("window.open('data:text/html,<script>alert(1)</script>');\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-dangerous-url-scheme" and f.sink == "window.open" for f in findings)
+
+
+def test_dangerous_window_open_data_svg_scheme_detected(tmp_path: Path) -> None:
+    """window.open should not target literal active SVG data documents."""
+    path = tmp_path / "widget.js"
+    path.write_text("window.open('data:image/svg+xml,<svg onload=alert(1)>');\n", encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 

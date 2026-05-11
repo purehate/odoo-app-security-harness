@@ -41,11 +41,11 @@ class QWebScanner:
     URL_BEARING_ATTRIBUTES = ("href", "src", "action", "formaction", "poster", "srcset", "ping", "xlink:href")
     URL_BEARING_ATTRIBUTE_RE = r"(?:href|src|action|formaction|poster|srcset|ping|xlink:href)"
     DANGEROUS_URL_SCHEME_RE = re.compile(
-        r"^\s*(?:javascript:|vbscript:|file:|data:(?:text/html|application/(?:javascript|xhtml\+xml)))",
+        r"^\s*(?:javascript:|vbscript:|file:|data:(?:text/html|image/svg\+xml|application/(?:javascript|xhtml\+xml)))",
         re.IGNORECASE,
     )
     DANGEROUS_URL_SCHEME_LITERAL_RE = re.compile(
-        r"['\"]\s*(?:javascript:|vbscript:|file:|data:(?:text/html|application/(?:javascript|xhtml\+xml)))",
+        r"['\"]\s*(?:javascript:|vbscript:|file:|data:(?:text/html|image/svg\+xml|application/(?:javascript|xhtml\+xml)))",
         re.IGNORECASE,
     )
 
@@ -594,7 +594,7 @@ class QWebScanner:
         """Return True when a meta refresh URL uses an executable/local scheme."""
         return bool(
             re.search(
-                r"\burl\s*=\s*(?:javascript:|vbscript:|file:|data:(?:text/html|application/(?:javascript|xhtml\+xml)))",
+                r"\burl\s*=\s*(?:javascript:|vbscript:|file:|data:(?:text/html|image/svg\+xml|application/(?:javascript|xhtml\+xml)))",
                 value,
                 re.IGNORECASE,
             )
@@ -880,7 +880,7 @@ class QWebScanner:
         # Find dangerous literal URL schemes.
         dangerous_url_attr_re = re.compile(
             rf"({self.URL_BEARING_ATTRIBUTE_RE})\s*=\s*([\"'])\s*"
-            r"(?:javascript:|vbscript:|file:|data:(?:text/html|application/(?:javascript|xhtml\+xml)))",
+            r"(?:javascript:|vbscript:|file:|data:(?:text/html|image/svg\+xml|application/(?:javascript|xhtml\+xml)))",
             re.IGNORECASE,
         )
         for match in dangerous_url_attr_re.finditer(content):

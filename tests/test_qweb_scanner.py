@@ -1170,6 +1170,19 @@ def test_detects_data_html_url_attribute(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-qweb-js-url" and f.attribute == "src" and f.severity == "high" for f in findings)
 
 
+def test_detects_data_svg_url_attribute(tmp_path: Path) -> None:
+    """SVG data documents can carry active content in frame/link URL sinks."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><iframe src="data:image/svg+xml,&lt;svg onload='alert(1)'/&gt;"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-js-url" and f.attribute == "src" and f.severity == "high" for f in findings)
+
+
 def test_detects_file_url_attribute(tmp_path: Path) -> None:
     """Literal template URL attributes should not point at local files."""
     template = tmp_path / "template.xml"

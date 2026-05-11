@@ -295,6 +295,7 @@ DANGEROUS_URL_SCHEMES = (
     "javascript:",
     "vbscript:",
     "data:text/html",
+    "data:image/svg+xml",
     "data:application/javascript",
     "data:application/xhtml+xml",
     "file:",
