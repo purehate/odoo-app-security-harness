@@ -700,6 +700,27 @@ requests.post(record.callback_url, timeout=AUTOMATION_TIMEOUT)
     assert any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
 
 
+def test_http_static_kwargs_timeout_in_automation_is_ignored(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should satisfy automation HTTP timeout checks."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_kwargs_timeout" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+HTTP_OPTIONS = {'timeout': 10}
+requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert not any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
+
+
 def test_regex_fallback_http_timeout_none_in_automation_is_reported(tmp_path: Path) -> None:
     """Malformed automation code should treat literal timeout=None as unbounded."""
     xml = tmp_path / "automation.xml"
@@ -727,6 +748,27 @@ def test_tls_verification_disabled_in_automation_is_reported(tmp_path: Path) -> 
 import requests
 TLS_VERIFY = False
 requests.post(record.callback_url, timeout=10, verify=TLS_VERIFY)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-tls-verify-disabled" for f in findings)
+
+
+def test_tls_verification_disabled_static_kwargs_in_automation_is_reported(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should not hide automation TLS verification disabling."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_tls_kwargs" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+HTTP_OPTIONS = {'timeout': 10, 'verify': False}
+requests.post(record.callback_url, **HTTP_OPTIONS)
     ]]></field>
   </record>
 </odoo>""",

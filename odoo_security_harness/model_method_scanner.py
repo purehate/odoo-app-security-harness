@@ -571,27 +571,51 @@ def _has_keyword(node: ast.Call, name: str) -> bool:
 
 def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
     constants = constants or {}
-    for keyword in node.keywords:
-        if keyword.arg != "timeout":
-            continue
-        value = _resolve_constant(keyword.value, constants)
-        return not _is_none_constant(value)
-    return False
+    timeout_values = _keyword_values(node, "timeout", constants)
+    return bool(timeout_values) and not any(_is_none_constant(value, constants) for value in timeout_values)
 
 
-def _is_none_constant(node: ast.AST) -> bool:
-    return isinstance(node, ast.Constant) and node.value is None
+def _is_none_constant(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+    value = _resolve_constant(node, constants or {})
+    return isinstance(value, ast.Constant) and value.value is None
 
 
 def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:
     constants = constants or {}
-    for keyword in node.keywords:
-        if keyword.arg != name:
-            continue
-        value = _resolve_constant(keyword.value, constants)
+    for keyword_value in _keyword_values(node, name, constants):
+        value = _resolve_constant(keyword_value, constants)
         if isinstance(value, ast.Constant) and value.value is False:
             return True
     return False
+
+
+def _keyword_values(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> list[ast.AST]:
+    constants = constants or {}
+    values: list[ast.AST] = []
+    for keyword in node.keywords:
+        if keyword.arg == name:
+            values.append(keyword.value)
+            continue
+        if keyword.arg is not None:
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Dict):
+            values.extend(_dict_keyword_values(value, name, constants))
+    return values
+
+
+def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    for key, item_value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            value = _resolve_constant(item_value, constants)
+            if isinstance(value, ast.Dict):
+                values.extend(_dict_keyword_values(value, name, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and resolved_key.value == name:
+            values.append(item_value)
+    return values
 
 
 def _unpack_target_value_pairs(
@@ -654,6 +678,12 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
+    if isinstance(node, ast.Dict):
+        return all(
+            (key is None or _is_static_literal(key)) and _is_static_literal(value)
+            for key, value in zip(node.keys, node.values, strict=False)
+            if value is not None
+        )
     return isinstance(node, ast.Constant) and isinstance(node.value, str | bool | int | float | type(None))
 
 

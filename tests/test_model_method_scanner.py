@@ -619,6 +619,33 @@ class Feed(models.Model):
     assert any(f.rule_id == "odoo-model-method-compute-http-no-timeout" for f in findings)
 
 
+def test_model_method_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should satisfy model method HTTP timeout checks."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "compute.py").write_text(
+        """
+from odoo import api, fields, models
+import requests
+
+HTTP_OPTIONS = {'timeout': 10}
+
+class Feed(models.Model):
+    _name = 'x.feed'
+    status = fields.Char(compute='_compute_status')
+
+    @api.depends('url')
+    def _compute_status(self):
+        requests.get(self.url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert not any(f.rule_id == "odoo-model-method-compute-http-no-timeout" for f in findings)
+
+
 def test_flags_tls_verification_disabled(tmp_path: Path) -> None:
     """Model methods should surface disabled TLS verification on outbound HTTP."""
     models = tmp_path / "module" / "models"
@@ -636,6 +663,32 @@ class Feed(models.Model):
     @api.constrains('url')
     def _check_url(self):
         return requests.get(self.url, timeout=10, verify=TLS_VERIFY)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-constraint-tls-verify-disabled" for f in findings)
+
+
+def test_flags_tls_verification_disabled_static_kwargs(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should not hide model method TLS verification disabling."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "constraint.py").write_text(
+        """
+from odoo import api, models
+import requests
+
+HTTP_OPTIONS = {'timeout': 10, 'verify': False}
+
+class Feed(models.Model):
+    _name = 'x.feed'
+
+    @api.constrains('url')
+    def _check_url(self):
+        return requests.get(self.url, **HTTP_OPTIONS)
 """,
         encoding="utf-8",
     )
