@@ -297,7 +297,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "ir.http.binary_content is reached through sudo()/with_user(SUPERUSER_ID); verify model/id/field inputs cannot bypass record rules or attachment ownership",
                 sink,
             )
-        if _call_has_tainted_input(node, self._expr_is_tainted):
+        if _call_has_tainted_input(node, self._expr_is_tainted, self._effective_constants()):
             route = self._current_route()
             severity = "high" if route.auth in {"public", "none"} else "medium"
             self._add(
@@ -333,8 +333,9 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             )
 
     def _scan_content_disposition(self, node: ast.Call, sink: str) -> None:
-        filename = _content_disposition_filename_node(node)
-        if filename is not None and _expr_has_sensitive_filename_marker(filename, self._effective_constants()):
+        constants = self._effective_constants()
+        filename = _content_disposition_filename_node(node, constants)
+        if filename is not None and _expr_has_sensitive_filename_marker(filename, constants):
             self._add(
                 "odoo-binary-sensitive-content-disposition-filename",
                 "Download filename contains sensitive marker",
@@ -343,7 +344,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "content_disposition builds a download filename containing token, secret, password, or API-key-like material; avoid leaking credentials through headers, browser download history, logs, and shared files",
                 sink,
             )
-        if _call_has_tainted_input(node, self._expr_is_tainted):
+        if _call_has_tainted_input(node, self._expr_is_tainted, constants):
             self._add(
                 "odoo-binary-tainted-content-disposition",
                 "Download filename is request-controlled",
@@ -354,7 +355,8 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             )
 
     def _scan_binary_response(self, node: ast.Call, sink: str) -> None:
-        response = _response_body_arg(node)
+        constants = self._effective_constants()
+        response = _response_body_arg(node, constants)
         if response is not None and self._expr_is_binary(response):
             route = self._current_route()
             severity = "high" if route.auth in {"public", "none"} else "medium"
@@ -366,8 +368,8 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                 "Controller response body contains attachment or binary field data; verify access checks, token validation, and cache/header policy",
                 sink,
             )
-            active_content = _active_response_content(node, self._effective_constants())
-            if active_content and not _response_forces_attachment_download(node, self._effective_constants()):
+            active_content = _active_response_content(node, constants)
+            if active_content and not _response_forces_attachment_download(node, constants):
                 self._add(
                     "odoo-binary-active-inline-response",
                     "Controller serves attachment data as browser-active content",
@@ -376,7 +378,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                     f"Controller response contains attachment/binary data with browser-active content type ({active_content}) without forced attachment disposition; verify sanitization, ownership, and download headers",
                     sink,
                 )
-            if _response_content_disposition_has_sensitive_filename(node, self._effective_constants()):
+            if _response_content_disposition_has_sensitive_filename(node, constants):
                 self._add(
                     "odoo-binary-sensitive-content-disposition-filename",
                     "Download filename contains sensitive marker",
@@ -550,7 +552,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             return
 
         if isinstance(target, ast.Name):
-            if _is_static_literal(value):
+            if _is_static_literal(value) or _is_static_dict_shape(value):
                 self.local_constants[target.id] = value
             else:
                 self.local_constants.pop(target.id, None)
@@ -769,6 +771,14 @@ def _is_static_literal(node: ast.AST) -> bool:
     return False
 
 
+def _is_static_dict_shape(node: ast.AST) -> bool:
+    if isinstance(node, ast.Dict):
+        return all(key is None or _is_static_literal(key) for key in node.keys)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_dict_shape(node.left) and _is_static_dict_shape(node.right)
+    return False
+
+
 def _is_http_route(
     node: ast.AST,
     route_names: set[str] | None = None,
@@ -935,19 +945,19 @@ def _redirect_location_arg(node: ast.Call) -> ast.AST | None:
     return None
 
 
-def _response_body_arg(node: ast.Call) -> ast.AST | None:
+def _response_body_arg(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> ast.AST | None:
     if node.args:
         return node.args[0]
-    for keyword in node.keywords:
-        if keyword.arg in {"data", "response", "body"}:
-            return keyword.value
+    for key, keyword_value in _expanded_keywords(node, constants or {}):
+        if key in {"data", "response", "body"}:
+            return keyword_value
     return None
 
 
 def _active_response_content(node: ast.Call, constants: dict[str, ast.AST]) -> str:
-    for keyword in node.keywords:
-        if keyword.arg in {"content_type", "mimetype"}:
-            content_type = _constant_string(keyword.value, constants).lower()
+    for key, keyword_value in _expanded_keywords(node, constants):
+        if key in {"content_type", "mimetype"}:
+            content_type = _constant_string(keyword_value, constants).lower()
             if _is_active_content_type(content_type):
                 return f"content_type={content_type}"
     for header_name, header_value in _response_header_pairs(node, constants):
@@ -976,9 +986,9 @@ def _response_header_pairs(node: ast.Call, constants: dict[str, ast.AST]) -> lis
     header_nodes: list[ast.AST] = []
     if len(node.args) >= 2:
         header_nodes.append(node.args[1])
-    for keyword in node.keywords:
-        if keyword.arg in {"header", "headers"}:
-            header_nodes.append(keyword.value)
+    for key, keyword_value in _expanded_keywords(node, constants):
+        if key in {"header", "headers"}:
+            header_nodes.append(keyword_value)
     pairs: list[tuple[str, str]] = []
     for header_node in header_nodes:
         pairs.extend(_literal_header_pairs(header_node, constants))
@@ -1015,12 +1025,12 @@ def _is_content_disposition_helper(node: ast.AST) -> bool:
     return isinstance(node, ast.Call) and _call_name(node.func).endswith("content_disposition")
 
 
-def _content_disposition_filename_node(node: ast.Call) -> ast.AST | None:
+def _content_disposition_filename_node(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> ast.AST | None:
     if node.args:
         return node.args[0]
-    for keyword in node.keywords:
-        if keyword.arg in {"filename", "file_name", "fname", "name"}:
-            return keyword.value
+    for key, keyword_value in _expanded_keywords(node, constants or {}):
+        if key in {"filename", "file_name", "fname", "name"}:
+            return keyword_value
     return None
 
 
@@ -1107,9 +1117,11 @@ def _contains_web_content_token_material(node: ast.AST, constants: dict[str, ast
     )
 
 
-def _call_has_tainted_input(node: ast.Call, is_tainted: Any) -> bool:
-    return any(is_tainted(arg) for arg in node.args) or any(
-        keyword.value is not None and is_tainted(keyword.value) for keyword in node.keywords
+def _call_has_tainted_input(node: ast.Call, is_tainted: Any, constants: dict[str, ast.AST] | None = None) -> bool:
+    return (
+        any(is_tainted(arg) for arg in node.args)
+        or any(keyword.value is not None and is_tainted(keyword.value) for keyword in node.keywords)
+        or any(is_tainted(keyword_value) for _, keyword_value in _expanded_keywords(node, constants or {}))
     )
 
 

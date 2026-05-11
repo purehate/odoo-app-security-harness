@@ -63,6 +63,35 @@ class Download(http.Controller):
     )
 
 
+def test_flags_unpack_public_active_inline_attachment_response(tmp_path: Path) -> None:
+    """Static **kwargs should not hide binary response bodies or active content headers."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Download(http.Controller):
+    @http.route('/public/preview', auth='public')
+    def preview(self, **kwargs):
+        attachment = request.env['ir.attachment'].sudo().browse(int(kwargs.get('id')))
+        options = {
+            'data': attachment.datas,
+            'headers': [('Content-Type', 'image/svg+xml; charset=utf-8')],
+        }
+        return request.make_response(**options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-binary-attachment-data-response" in rule_ids
+    assert "odoo-binary-active-inline-response" in rule_ids
+
+
 def test_attachment_download_disposition_suppresses_active_inline_response(tmp_path: Path) -> None:
     """Forced attachment downloads should not trigger the inline active-content rule."""
     controllers = tmp_path / "module" / "controllers"
@@ -1630,6 +1659,29 @@ class Headers(http.Controller):
     @http.route('/download', auth='user')
     def download(self, **kwargs):
         return content_disposition(kwargs.get('filename'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(f.rule_id == "odoo-binary-tainted-content-disposition" for f in findings)
+
+
+def test_flags_unpack_tainted_content_disposition_filename(tmp_path: Path) -> None:
+    """Static **kwargs passed to content_disposition should not hide tainted filenames."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "headers.py").write_text(
+        """
+from odoo import http
+from odoo.http import content_disposition
+
+class Headers(http.Controller):
+    @http.route('/download', auth='user')
+    def download(self, **kwargs):
+        options = {'filename': kwargs.get('filename')}
+        return content_disposition(**options)
 """,
         encoding="utf-8",
     )
