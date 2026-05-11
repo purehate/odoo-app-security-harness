@@ -2060,6 +2060,22 @@ def test_message_handler_missing_origin_check_detected(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-web-message-handler-missing-origin-check" and f.severity == "high" for f in findings)
 
 
+def test_jquery_message_handler_missing_origin_check_detected(tmp_path: Path) -> None:
+    """Legacy jQuery window message handlers should also validate origins."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """$(window).on('message', function (event) {
+    this._rpc({ route: '/portal/pay', params: event.originalEvent.data });
+});
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-message-handler-missing-origin-check" and f.severity == "high" for f in findings)
+
+
 def test_message_handler_with_origin_check_ignored(tmp_path: Path) -> None:
     """A visible origin comparison is enough to avoid this review lead."""
     path = tmp_path / "widget.js"
@@ -2069,6 +2085,25 @@ def test_message_handler_with_origin_check_ignored(tmp_path: Path) -> None:
         return;
     }
     this.rpc('/portal/pay', event.data);
+});
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-message-handler-missing-origin-check" for f in findings)
+
+
+def test_jquery_message_handler_with_origin_check_ignored(tmp_path: Path) -> None:
+    """jQuery message handlers with an originalEvent.origin check should be ignored."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """$(window).on('message', function (event) {
+    if (event.originalEvent.origin !== window.location.origin) {
+        return;
+    }
+    this._rpc({ route: '/portal/pay', params: event.originalEvent.data });
 });
 """,
         encoding="utf-8",

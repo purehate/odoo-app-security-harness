@@ -322,7 +322,7 @@ ACTION_WINDOW_TAINT_RE = re.compile(
     re.IGNORECASE,
 )
 MESSAGE_LISTENER_RE = re.compile(
-    r"(?:addEventListener\s*\(\s*['\"]message['\"]|onmessage\s*=)",
+    r"(?:addEventListener\s*\(\s*['\"]message['\"]|onmessage\s*=|(?:\$|jQuery)\s*\(\s*window\s*\)\s*\.on\s*\(\s*['\"]message['\"])",
     re.IGNORECASE,
 )
 MESSAGE_ORIGIN_VALIDATION_RE = re.compile(
