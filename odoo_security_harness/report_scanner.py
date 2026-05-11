@@ -72,7 +72,36 @@ KNOWN_MODEL_EXTERNAL_IDS = {
     "payment.model_payment_transaction": "payment.transaction",
     "model_payment_transaction": "payment.transaction",
 }
-SENSITIVE_NAME_MARKERS = ("access_token", "api_key", "apikey", "client_secret", "password", "secret", "token")
+SENSITIVE_NAME_MARKERS = (
+    "access_key",
+    "access_link",
+    "access_token",
+    "access_url",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "bearer_token",
+    "client_secret",
+    "csrf_token",
+    "hmac_secret",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
+    "partner_signup_url",
+    "private_key",
+    "reset_password_token",
+    "reset_password_url",
+    "secret",
+    "secret_key",
+    "session_token",
+    "signature_secret",
+    "signup_token",
+    "signup_url",
+    "signing_key",
+    "token",
+    "totp_secret",
+    "webhook_secret",
+)
 ROUTE_ID_ARG_RE = re.compile(r"(?:^id$|_ids?$)")
 REQUEST_SOURCE_ATTRS = {"httprequest", "jsonrequest", "params"}
 REQUEST_SOURCE_METHODS = {"get_http_params", "get_json_data"}

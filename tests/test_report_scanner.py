@@ -148,6 +148,27 @@ def test_sensitive_report_filename_expression_is_reported(tmp_path: Path) -> Non
     assert any(f.rule_id == "odoo-report-sensitive-filename-expression" for f in findings)
 
 
+def test_broad_sensitive_report_filename_markers_are_reported(tmp_path: Path) -> None:
+    """Report filename expressions should catch key and reset-token shaped fields."""
+    xml = tmp_path / "reports.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_key_report" model="ir.actions.report">
+    <field name="model">res.partner</field>
+    <field name="attachment">object.private_key</field>
+    <field name="print_report_name">object.reset_password_url</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = ReportScanner(xml).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-report-sensitive-filename-expression" and f.report == "action_key_report" for f in findings
+    )
+
+
 def test_report_xml_entities_are_not_expanded(tmp_path: Path) -> None:
     """Report XML parsing should reject entities instead of expanding them into findings."""
     xml = tmp_path / "reports.xml"
