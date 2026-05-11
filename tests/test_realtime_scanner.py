@@ -849,6 +849,26 @@ class Sync:
     assert any(f.rule_id == "odoo-realtime-bus-send-sudo" for f in findings)
 
 
+def test_flags_local_constant_with_user_bus_send(tmp_path: Path) -> None:
+    """Function-local superuser constants should keep bus send sudo posture visible."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+def notify(self):
+    root_uid = 1
+    admin_uid = root_uid
+    Bus = self.env['bus.bus'].with_user(admin_uid)
+    Bus._sendmany([('global', {'message': 'done'})])
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+
+    assert any(f.rule_id == "odoo-realtime-bus-send-sudo" for f in findings)
+
+
 def test_flags_env_ref_root_bus_send(tmp_path: Path) -> None:
     """Root XML-ID with_user calls should count as elevated bus sends."""
     models = tmp_path / "module" / "models"
@@ -1047,6 +1067,29 @@ class Sync:
 
     def notify(self):
         self.env['bus.bus']._sendone(CHANNEL, PAYLOAD)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-realtime-broad-or-tainted-channel" in rule_ids
+    assert "odoo-realtime-sensitive-payload" in rule_ids
+
+
+def test_flags_local_constant_backed_broad_channel_and_sensitive_payload(tmp_path: Path) -> None:
+    """Function-local channel and payload shapes should still be inspected."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+def notify(self):
+    public_channel = 'public_notifications'
+    channel = public_channel
+    secret_payload = {'access_token': 'redacted', 'email': 'a@example.com'}
+    payload = secret_payload
+    self.env['bus.bus']._sendone(channel, payload)
 """,
         encoding="utf-8",
     )

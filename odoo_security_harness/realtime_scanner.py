@@ -100,6 +100,7 @@ class RealtimeScanner(ast.NodeVisitor):
         self.route_stack: list[RouteContext] = []
         self.function_stack: list[str] = []
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[RealtimeFinding]:
         """Scan the file."""
@@ -118,6 +119,8 @@ class RealtimeScanner(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
         previous_sudo = set(self.sudo_names)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         route = _route_info(
             node,
             self._effective_constants(),
@@ -140,6 +143,7 @@ class RealtimeScanner(ast.NodeVisitor):
         self.route_stack.pop()
         self.tainted_names = previous_tainted
         self.sudo_names = previous_sudo
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -174,12 +178,14 @@ class RealtimeScanner(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_tainted_target(target, node.value)
         self._track_sudo_aliases(node.targets, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_tainted_target(node.target, node.value)
             self._track_sudo_aliases([node.target], node.value)
         self.generic_visit(node)
@@ -195,6 +201,7 @@ class RealtimeScanner(ast.NodeVisitor):
         self.visit_For(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_tainted_target(node.target, node.value)
         self._track_sudo_aliases([node.target], node.value)
         self.generic_visit(node)
@@ -420,6 +427,31 @@ class RealtimeScanner(ast.NodeVisitor):
         else:
             self.sudo_names.discard(target.id)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target, value):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        self._clear_local_constant_target(target)
+
+    def _clear_local_constant_target(self, target: ast.AST) -> None:
+        if isinstance(target, ast.Name):
+            self.local_constants.pop(target.id, None)
+        elif isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._clear_local_constant_target(element)
+        elif isinstance(target, ast.Starred):
+            self._clear_local_constant_target(target.value)
+
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.add(target.id)
@@ -445,11 +477,12 @@ class RealtimeScanner(ast.NodeVisitor):
         return self.function_stack[-1] if self.function_stack else ""
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, sink: str) -> None:
