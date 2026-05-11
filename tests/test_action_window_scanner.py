@@ -1039,6 +1039,43 @@ def test_sensitive_csv_res_model_external_ids_are_normalized(tmp_path: Path) -> 
     assert {"ir.config_parameter", "payment.provider"} <= sensitive_models
 
 
+def test_sensitive_csv_colon_res_model_external_ids_are_normalized(tmp_path: Path) -> None:
+    """CSV model refs exported with colon headers should resolve before sensitive checks."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_window.csv").write_text(
+        "id,res_model:id,domain\n"
+        "action_system_parameters,base.model_ir_config_parameter,[]\n"
+        "action_payment_providers,payment.model_payment_provider,[]\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+    sensitive_models = {
+        finding.model for finding in findings if finding.rule_id == "odoo-act-window-sensitive-broad-domain"
+    }
+
+    assert {"ir.config_parameter", "payment.provider"} <= sensitive_models
+
+
+def test_csv_colon_groups_id_suppresses_grouped_sensitive_broad_action_window(tmp_path: Path) -> None:
+    """CSV group refs exported with colon headers should be treated as restrictions."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_window.csv").write_text(
+        "id,res_model,domain,groups_id:id\n"
+        "action_users,res.users,[],base.group_system\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+
+    assert not any(
+        finding.rule_id == "odoo-act-window-sensitive-broad-domain" and finding.model == "res.users"
+        for finding in findings
+    )
+
+
 def test_empty_groups_eval_does_not_hide_sensitive_xml_broad_action_window(tmp_path: Path) -> None:
     """Empty XML groups evals should still be treated as unrestricted action windows."""
     views = tmp_path / "module" / "views"
