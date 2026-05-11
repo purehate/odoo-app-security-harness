@@ -5298,6 +5298,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "publication_active_public_attachment",
+        (
+            "odoo-publication-active-public-attachment",
+            "public attachment uses browser-active content type",
+            "public ir.attachment record stores browser-active content",
+            "mime allowlists, sanitization, download disposition, and intended public access",
+        ),
+    ),
+    (
         "publication_sensitive_website_published",
         (
             "odoo-publication-sensitive-website-published",

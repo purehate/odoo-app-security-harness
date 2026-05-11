@@ -2125,6 +2125,12 @@
       "capec": ["CAPEC-118"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "publication_active_public_attachment": {
+      "label": "Public ir.attachment record stores browser-active content",
+      "cwe": ["CWE-79", "CWE-434", "CWE-732"],
+      "capec": ["CAPEC-63", "CAPEC-118"],
+      "owasp": "A03:2021 Injection"
+    },
     "publication_sensitive_website_published": {
       "label": "Sensitive model record is marked website-published",
       "cwe": ["CWE-200", "CWE-213", "CWE-359"],

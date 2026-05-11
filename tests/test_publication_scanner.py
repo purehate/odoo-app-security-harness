@@ -67,6 +67,32 @@ def test_integration_credential_public_attachment_is_critical(tmp_path: Path) ->
     )
 
 
+def test_active_public_attachment_is_critical(tmp_path: Path) -> None:
+    """Public SVG/HTML-like attachments can execute when served inline."""
+    xml = tmp_path / "attachments.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="attachment_badge" model="ir.attachment">
+    <field name="name">badge.svg</field>
+    <field name="datas_fname">badge.svg</field>
+    <field name="mimetype">image/svg+xml</field>
+    <field name="public">True</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = PublicationScanner(xml).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-publication-active-public-attachment"
+        and f.severity == "critical"
+        and "mimetype=image/svg+xml" in f.message
+        and "name=badge.svg" in f.message
+        for f in findings
+    )
+
+
 def test_sensitive_website_published_record_is_reported(tmp_path: Path) -> None:
     """Sensitive records should not be silently marked website-published."""
     xml = tmp_path / "website.xml"
@@ -194,6 +220,25 @@ def test_public_attachment_csv_is_reported(tmp_path: Path) -> None:
 
     assert "odoo-publication-public-attachment" in rule_ids
     assert "odoo-publication-sensitive-public-attachment" in rule_ids
+
+
+def test_active_public_attachment_csv_is_reported(tmp_path: Path) -> None:
+    """CSV ir.attachment data should flag public browser-active content."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.attachment.csv").write_text(
+        "id,name,mimetype,public\n"
+        "attachment_widget,widget.html,text/html,1\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-publication-active-public-attachment"
+        and "mimetype=text/html" in f.message
+        for f in findings
+    )
 
 
 def test_sensitive_website_published_csv_is_reported(tmp_path: Path) -> None:

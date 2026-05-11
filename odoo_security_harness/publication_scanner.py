@@ -101,6 +101,14 @@ SENSITIVE_ATTACHMENT_HINTS = {
     "totp_secret",
     "webhook_secret",
 }
+ACTIVE_ATTACHMENT_MIMETYPES = {
+    "application/javascript",
+    "application/xhtml+xml",
+    "image/svg+xml",
+    "text/html",
+    "text/javascript",
+}
+ACTIVE_ATTACHMENT_EXTENSIONS = (".htm", ".html", ".js", ".mjs", ".svg", ".xhtml")
 PUBLICATION_FIELD_NAMES = {"is_published", "website_published"}
 TAINTED_ARG_NAMES = {"is_published", "published", "value", "website_published", "kwargs", "kw", "post"}
 REQUEST_MARKERS = (
@@ -200,6 +208,17 @@ class PublicationScanner:
                 "critical",
                 line,
                 "Public attachment name/model suggests sensitive content; verify it is intentionally world-readable",
+                "ir.attachment",
+                record_id,
+            )
+        active_content = _active_attachment_content(fields)
+        if _truthy(fields.get("public", "")) and active_content:
+            self._add(
+                "odoo-publication-active-public-attachment",
+                "Public attachment uses browser-active content type",
+                "critical",
+                line,
+                f"Public ir.attachment record stores browser-active content ({active_content}); verify sanitization, MIME allowlists, download disposition, and intended public access",
                 "ir.attachment",
                 record_id,
             )
@@ -932,6 +951,18 @@ def _model_value(value: str) -> str:
 
 def _truthy(value: str) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _active_attachment_content(fields: dict[str, str]) -> str:
+    evidence: list[str] = []
+    mimetype = fields.get("mimetype", "").strip().lower()
+    if mimetype in ACTIVE_ATTACHMENT_MIMETYPES:
+        evidence.append(f"mimetype={mimetype}")
+    for field_name in ("name", "datas_fname", "url"):
+        value = fields.get(field_name, "").strip().lower()
+        if value.endswith(ACTIVE_ATTACHMENT_EXTENSIONS):
+            evidence.append(f"{field_name}={value}")
+    return ", ".join(evidence)
 
 
 def _class_model_name(node: ast.ClassDef, constants: dict[str, ast.AST] | None = None) -> str:

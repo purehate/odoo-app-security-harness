@@ -3357,6 +3357,12 @@ def test_taxonomy_coverage_classifies_publication_specific_risks() -> None:
             },
             {
                 "source": "publication",
+                "rule_id": "odoo-publication-active-public-attachment",
+                "title": "Public attachment uses browser-active content type",
+                "message": "Public ir.attachment record stores browser-active content (mimetype=image/svg+xml); verify sanitization, MIME allowlists, download disposition, and intended public access",
+            },
+            {
+                "source": "publication",
                 "rule_id": "odoo-publication-sensitive-website-published",
                 "title": "Sensitive model record is website-published",
                 "message": "Record for sensitive model 'res.partner' is marked website-published",
@@ -3388,11 +3394,12 @@ def test_taxonomy_coverage_classifies_publication_specific_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 7
+    assert coverage["mapped_rules"] == 8
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-publication-public-attachment": "publication_public_attachment",
         "odoo-publication-sensitive-public-attachment": "publication_sensitive_public_attachment",
+        "odoo-publication-active-public-attachment": "publication_active_public_attachment",
         "odoo-publication-sensitive-website-published": "publication_sensitive_website_published",
         "odoo-publication-sensitive-default-published": "publication_sensitive_default_published",
         "odoo-publication-public-route-mutation": "publication_public_route_mutation",
