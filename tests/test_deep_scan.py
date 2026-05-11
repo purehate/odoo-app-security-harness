@@ -8361,6 +8361,18 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
             },
             {
                 "source": "xml-data",
+                "rule_id": "odoo-xml-config-param-insecure-base-url",
+                "title": "XML data sets insecure base URL",
+                "message": "Module data sets web.base.url to HTTP or a local host; generated portal, OAuth, payment, and password-reset links should use the public HTTPS origin",
+            },
+            {
+                "source": "xml-data",
+                "rule_id": "odoo-xml-config-param-base-url-embedded-credentials",
+                "title": "XML data base URL embeds credentials",
+                "message": "Module data sets web.base.url with username, password, or token material; generated portal, OAuth, payment, and password-reset links can leak those credentials",
+            },
+            {
+                "source": "xml-data",
                 "rule_id": "odoo-xml-server-action-tls-verify-disabled",
                 "title": "Server action disables TLS verification",
                 "message": "ir.actions.server code passes verify=False to outbound HTTP; install/update automation should not permit man-in-the-middle attacks",
@@ -8399,6 +8411,11 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
     assert shapes["odoo-xml-function-security-model-mutation"] == "xml_data_function_security_model_mutation"
     assert shapes["odoo-xml-public-mail-channel"] == "xml_data_public_mail_channel"
     assert shapes["odoo-xml-config-param-security-toggle-enabled"] == "config_parameter_security_toggle_write"
+    assert shapes["odoo-xml-config-param-insecure-base-url"] == "config_parameter_base_url_write"
+    assert (
+        shapes["odoo-xml-config-param-base-url-embedded-credentials"]
+        == "config_parameter_base_url_embedded_credentials"
+    )
     assert shapes["odoo-xml-server-action-tls-verify-disabled"] == "xml_data_server_action_tls_verification_disabled"
     assert shapes["odoo-xml-server-action-cleartext-http-url"] == "xml_data_server_action_cleartext_http_url"
     assert (

@@ -493,6 +493,45 @@ def test_csv_config_parameter_security_toggle_is_reported(tmp_path: Path) -> Non
     assert sum(1 for finding in findings if finding.rule_id == "odoo-xml-config-param-security-toggle-enabled") == 2
 
 
+def test_xml_config_parameter_insecure_base_url_is_reported(tmp_path: Path) -> None:
+    """Module XML data should not ship insecure generated-link origins."""
+    xml = tmp_path / "config.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="config_base_url" model="ir.config_parameter">
+    <field name="key">web.base.url</field>
+    <field name="value">http://localhost:8069</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(
+        finding.rule_id == "odoo-xml-config-param-insecure-base-url"
+        and finding.record_id == "config_base_url"
+        for finding in findings
+    )
+
+
+def test_csv_config_parameter_base_url_embedded_credentials_is_reported(tmp_path: Path) -> None:
+    """CSV web.base.url values should not embed credential material."""
+    csv_file = tmp_path / "ir.config_parameter.csv"
+    csv_file.write_text(
+        "id,key,value\nconfig_base_url,web.base.url,https://user:token@example.com\n",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(csv_file).scan_csv_file()
+
+    assert any(
+        finding.rule_id == "odoo-xml-config-param-base-url-embedded-credentials"
+        and finding.record_id == "config_base_url"
+        for finding in findings
+    )
+
+
 def test_server_action_constant_backed_sensitive_model_mutation(tmp_path: Path) -> None:
     """XML server action code should resolve env[...] model constants."""
     xml = tmp_path / "actions.xml"

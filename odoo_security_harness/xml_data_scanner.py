@@ -58,6 +58,7 @@ KNOWN_MODEL_EXTERNAL_IDS = {
     "model_payment_transaction": "payment.transaction",
 }
 CONFIG_PARAMETER_MODELS = {"ir.config_parameter", "ir.config.parameter"}
+LOCAL_BASE_URL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0"}  # noqa: S104
 SECURITY_TOGGLE_UNSAFE_VALUES = {
     "auth.signup.allow_uninvited": {"1", "true", "yes", "y"},
     "auth_signup.allow_uninvited": {"1", "true", "yes", "y"},
@@ -447,6 +448,26 @@ class XmlDataScanner:
                 "high",
                 line,
                 f"Module data sets ir.config_parameter '{key}' to '{value}'; verify install/update cannot silently weaken signup, database manager, or generated-link security posture",
+                "ir.config_parameter",
+                record_id,
+            )
+        if key.lower() == "web.base.url" and _is_insecure_base_url(value):
+            self._add(
+                "odoo-xml-config-param-insecure-base-url",
+                "XML data sets insecure base URL",
+                "medium",
+                line,
+                "Module data sets web.base.url to HTTP or a local host; generated portal, OAuth, payment, and password-reset links should use the public HTTPS origin",
+                "ir.config_parameter",
+                record_id,
+            )
+        if key.lower() == "web.base.url" and _url_has_embedded_credentials(value):
+            self._add(
+                "odoo-xml-config-param-base-url-embedded-credentials",
+                "XML data base URL embeds credentials",
+                "high",
+                line,
+                "Module data sets web.base.url with username, password, or token material; generated portal, OAuth, payment, and password-reset links can leak those credentials",
                 "ir.config_parameter",
                 record_id,
             )
@@ -1129,6 +1150,24 @@ def _mentions_user_groups(value: str) -> bool:
 
 def _mentions_privileged_group(value: str) -> bool:
     return bool(ADMIN_GROUP_RE.search(value) or INTERNAL_GROUP_RE.search(value))
+
+
+def _is_insecure_base_url(value: str) -> bool:
+    normalized = value.strip().strip("'\"").lower()
+    if normalized.startswith("http://"):
+        return True
+    parsed = urlparse(normalized)
+    return (parsed.hostname or "") in LOCAL_BASE_URL_HOSTS
+
+
+def _url_has_embedded_credentials(value: str) -> bool:
+    normalized = value.strip().strip("'\"")
+    if not normalized:
+        return False
+    parsed = urlparse(normalized)
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
+        parsed.username is not None or parsed.password is not None
+    )
 
 
 def findings_to_json(findings: list[XmlDataFinding]) -> list[dict[str, Any]]:

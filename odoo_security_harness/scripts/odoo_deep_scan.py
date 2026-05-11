@@ -4268,21 +4268,27 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "config_parameter_base_url_write",
         (
+            "xml-config-param-insecure-base-url",
             "config-param-tainted-base-url-write",
             "config-param-insecure-base-url-write",
+            "xml data sets insecure base url",
             "base url config parameter receives request-controlled value",
             "base url config parameter is set to an insecure endpoint",
             "set_param writes request-derived web.base.url",
             "set_param writes web.base.url to http",
+            "module data sets web.base.url to http",
             "generated portal, oauth, payment, or password-reset links",
         ),
     ),
     (
         "config_parameter_base_url_embedded_credentials",
         (
+            "xml-config-param-base-url-embedded-credentials",
             "odoo-config-param-base-url-embedded-credentials",
+            "xml data base url embeds credentials",
             "base url config parameter embeds credentials",
             "set_param writes web.base.url with username, password, or token material",
+            "module data sets web.base.url with username, password, or token material",
             "generated portal, oauth, payment, and password-reset links can leak those credentials",
         ),
     ),
