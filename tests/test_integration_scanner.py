@@ -63,6 +63,47 @@ def sync():
     assert any(f.rule_id == "odoo-integration-http-no-timeout" for f in findings)
 
 
+def test_http_call_with_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should satisfy outbound HTTP timeout checks."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+HTTP_OPTIONS = {'timeout': 10}
+
+def sync():
+    return requests.post('https://api.example.test/sync', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-integration-http-no-timeout" for f in findings)
+
+
+def test_http_call_with_nested_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """Nested static **kwargs dictionaries should satisfy outbound HTTP timeout checks."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = {**BASE_OPTIONS}
+
+def sync():
+    return requests.post('https://api.example.test/sync', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-integration-http-no-timeout" for f in findings)
+
+
 def test_tls_verification_disabled_is_reported(tmp_path: Path) -> None:
     """verify=False should be visible in review output."""
     py = tmp_path / "integration.py"
@@ -92,6 +133,26 @@ TLS_VERIFY = False
 
 def sync():
     return requests.get('https://api.example.test', timeout=10, verify=TLS_VERIFY)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-tls-verify-disabled" for f in findings)
+
+
+def test_tls_verification_disabled_static_kwargs_is_reported(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should not hide disabled TLS verification."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+HTTP_OPTIONS = {'timeout': 10, 'verify': False}
+
+def sync():
+    return requests.get('https://api.example.test', **HTTP_OPTIONS)
 """,
         encoding="utf-8",
     )

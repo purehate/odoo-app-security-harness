@@ -244,8 +244,10 @@ class IntegrationScanner(ast.NodeVisitor):
                 "Outbound HTTP call lacks a timeout; a slow upstream can exhaust Odoo workers",
                 sink,
             )
-        verify_keyword = _keyword(node, "verify")
-        if verify_keyword and _keyword_value_is(verify_keyword, False, self._effective_constants()):
+        if any(
+            _value_is(value, False, self._effective_constants())
+            for value in _keyword_values(node, "verify", self._effective_constants())
+        ):
             self._add(
                 "odoo-integration-tls-verify-disabled",
                 "Outbound HTTP disables TLS verification",
@@ -857,13 +859,46 @@ def _has_keyword(node: ast.Call, name: str) -> bool:
 
 
 def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
-    timeout_keyword = _keyword(node, "timeout")
-    return timeout_keyword is not None and not _keyword_value_is(timeout_keyword, None, constants)
+    timeout_values = _keyword_values(node, "timeout", constants)
+    return bool(timeout_values) and not any(_value_is(value, None, constants) for value in timeout_values)
 
 
 def _keyword_value_is(keyword: ast.keyword, expected: object, constants: dict[str, ast.AST] | None = None) -> bool:
-    value = _resolve_constant(keyword.value, constants or {})
+    return _value_is(keyword.value, expected, constants)
+
+
+def _value_is(node: ast.AST, expected: object, constants: dict[str, ast.AST] | None = None) -> bool:
+    value = _resolve_constant(node, constants or {})
     return isinstance(value, ast.Constant) and value.value is expected
+
+
+def _keyword_values(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> list[ast.AST]:
+    constants = constants or {}
+    values: list[ast.AST] = []
+    for keyword in node.keywords:
+        if keyword.arg == name:
+            values.append(keyword.value)
+            continue
+        if keyword.arg is not None:
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Dict):
+            values.extend(_dict_keyword_values(value, name, constants))
+    return values
+
+
+def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    for key, item_value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            value = _resolve_constant(item_value, constants)
+            if isinstance(value, ast.Dict):
+                values.extend(_dict_keyword_values(value, name, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and resolved_key.value == name:
+            values.append(item_value)
+    return values
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
