@@ -74,6 +74,11 @@ YAML_SECRET_ASSIGNMENT_RE = re.compile(
     r"(?P<value>[^#\s'\"][^#\n]*)",
     re.IGNORECASE,
 )
+SHELL_SECRET_ASSIGNMENT_RE = re.compile(
+    rf"^\s*(?:export\s+)?(?P<name>[A-Z_]*(?:{SECRET_KEY_PATTERN})[A-Z0-9_]*)\s*=\s*"
+    r"(?P<value>[^#\s'\";`$][^#\n;`]*)",
+    re.IGNORECASE,
+)
 CONFIG_PARAMETER_CALL_RE = re.compile(
     rf"\.set_param\(\s*['\"](?P<key>[^'\"]*(?:{SECRET_KEY_PATTERN})[^'\"]*)['\"]"
     r"\s*,\s*['\"](?P<value>[^'\"]{8,})['\"]",
@@ -83,7 +88,8 @@ PRIVATE_KEY_BLOCK_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
 
 CONFIG_EXTENSIONS = {".cfg", ".cnf", ".conf", ".env", ".ini", ".properties"}
 KEY_MATERIAL_EXTENSIONS = {".key", ".pem"}
-TEXT_EXTENSIONS = {".csv", ".json", ".py", ".toml", ".txt", ".xml", ".yaml", ".yml", *CONFIG_EXTENSIONS}
+SHELL_EXTENSIONS = {".bash", ".sh", ".zsh"}
+TEXT_EXTENSIONS = {".csv", ".json", ".py", ".toml", ".txt", ".xml", ".yaml", ".yml", *CONFIG_EXTENSIONS, *SHELL_EXTENSIONS}
 LOW_VALUE_PLACEHOLDERS = {"changeme", "change_me", "example", "dummy", "password", "secret", "token", "admin"}
 WEAK_USER_PASSWORDS = {"admin", "demo", "password", "changeme", "change_me", "odoo", "test"}
 
@@ -121,6 +127,8 @@ class SecretScanner:
         self._scan_literal_assignments(content)
         if self.path.suffix.lower() in {".yaml", ".yml"}:
             self._scan_yaml_unquoted_assignments(content)
+        if self.path.suffix.lower() in SHELL_EXTENSIONS:
+            self._scan_shell_unquoted_assignments(content)
         self._scan_private_key_blocks(content)
         if self.path.suffix.lower() == ".xml":
             self._scan_config_parameter_xml(content)
@@ -180,6 +188,26 @@ class SecretScanner:
                 "high",
                 line_number,
                 f"Secret-like YAML assignment '{match.group('name')}' contains committed value {_redact(value)}; rotate and move to environment/config storage",
+                secret_kind=match.group("name").lower(),
+                redacted=_redact(value),
+            )
+
+    def _scan_shell_unquoted_assignments(self, content: str) -> None:
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            match = SHELL_SECRET_ASSIGNMENT_RE.search(line)
+            if not match:
+                continue
+            value = match.group("value").strip().rstrip(",")
+            if _looks_placeholder(value) or value.startswith(("$", "{{", "<")):
+                continue
+            if _entropy(value) < 3.0 and len(value) < 20:
+                continue
+            self._add(
+                "odoo-secret-hardcoded-value",
+                "Hardcoded secret-like value",
+                "high",
+                line_number,
+                f"Secret-like shell assignment '{match.group('name')}' contains committed value {_redact(value)}; rotate and move to environment/config storage",
                 secret_kind=match.group("name").lower(),
                 redacted=_redact(value),
             )
