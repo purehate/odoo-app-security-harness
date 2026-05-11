@@ -77,16 +77,30 @@ KNOWN_MODEL_EXTERNAL_IDS = {
     "model_payment_transaction": "payment.transaction",
 }
 SENSITIVE_FIELD_MARKERS = (
+    "access_key",
     "access_token",
     "api_key",
     "apikey",
+    "auth_token",
+    "bearer_token",
     "client_secret",
+    "csrf_token",
+    "hmac_secret",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
     "password",
     "passwd",
     "private_key",
     "refresh_token",
     "secret",
+    "secret_key",
+    "session_token",
+    "signature_secret",
+    "signing_key",
     "token",
+    "totp_secret",
+    "webhook_secret",
 )
 
 

@@ -46,6 +46,27 @@ def test_sensitive_public_attachment_is_critical(tmp_path: Path) -> None:
     )
 
 
+def test_integration_credential_public_attachment_is_critical(tmp_path: Path) -> None:
+    """Public attachments named like integration credentials deserve critical review."""
+    xml = tmp_path / "attachments.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="attachment_access_key" model="ir.attachment">
+    <field name="name">connector_access_key.txt</field>
+    <field name="datas_fname">connector_license_key.txt</field>
+    <field name="public">1</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = PublicationScanner(xml).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-publication-sensitive-public-attachment" and f.severity == "critical" for f in findings
+    )
+
+
 def test_sensitive_website_published_record_is_reported(tmp_path: Path) -> None:
     """Sensitive records should not be silently marked website-published."""
     xml = tmp_path / "website.xml"

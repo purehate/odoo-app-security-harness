@@ -242,6 +242,31 @@ def test_sensitive_model_field_without_groups_is_reported(tmp_path: Path) -> Non
     assert any(f.rule_id == "odoo-metadata-sensitive-field-no-groups" for f in findings)
 
 
+def test_integration_credential_field_metadata_is_reported(tmp_path: Path) -> None:
+    """Integration credential field metadata should be treated as sensitive."""
+    xml = tmp_path / "fields.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="field_access_key" model="ir.model.fields">
+    <field name="model_id" ref="base.model_res_partner"/>
+    <field name="name">access_key</field>
+  </record>
+  <record id="field_license_key" model="ir.model.fields">
+    <field name="model_id" ref="base.model_res_partner"/>
+    <field name="name">license_key</field>
+    <field name="groups" eval="[(4, ref('base.group_public'))]"/>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = MetadataScanner(xml).scan_xml_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-metadata-sensitive-field-no-groups" in rule_ids
+    assert "odoo-metadata-sensitive-field-public-groups" in rule_ids
+
+
 def test_sensitive_model_field_csv_is_reported(tmp_path: Path) -> None:
     """CSV ir.model.fields rows should use the same sensitive field checks as XML."""
     csv_file = tmp_path / "ir.model.fields.csv"

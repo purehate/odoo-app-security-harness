@@ -72,14 +72,33 @@ KNOWN_MODEL_EXTERNAL_IDS = {
     "model_payment_transaction": "payment.transaction",
 }
 SENSITIVE_ATTACHMENT_HINTS = {
+    "access_key",
+    "access_token",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "bearer_token",
+    "client_secret",
     "contract",
+    "csrf_token",
+    "hmac_secret",
     "invoice",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
     "passport",
     "password",
     "payslip",
     "private",
+    "private_key",
     "secret",
+    "secret_key",
+    "session_token",
+    "signature_secret",
+    "signing_key",
     "token",
+    "totp_secret",
+    "webhook_secret",
 }
 PUBLICATION_FIELD_NAMES = {"is_published", "website_published"}
 TAINTED_ARG_NAMES = {"is_published", "published", "value", "website_published", "kwargs", "kw", "post"}
