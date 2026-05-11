@@ -79,6 +79,11 @@ SHELL_SECRET_ASSIGNMENT_RE = re.compile(
     r"(?P<value>[^#\s'\";`$][^#\n;`]*)",
     re.IGNORECASE,
 )
+DOCKERFILE_SECRET_ASSIGNMENT_RE = re.compile(
+    rf"^\s*(?:ARG|ENV)\s+(?P<name>[A-Z_]*(?:{SECRET_KEY_PATTERN})[A-Z0-9_]*)"
+    r"(?:\s*=\s*|\s+)(?P<value>[^#\s'\";`$][^#\n;`]*)",
+    re.IGNORECASE,
+)
 CONFIG_PARAMETER_CALL_RE = re.compile(
     rf"\.set_param\(\s*['\"](?P<key>[^'\"]*(?:{SECRET_KEY_PATTERN})[^'\"]*)['\"]"
     r"\s*,\s*['\"](?P<value>[^'\"]{8,})['\"]",
@@ -87,6 +92,7 @@ CONFIG_PARAMETER_CALL_RE = re.compile(
 PRIVATE_KEY_BLOCK_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
 
 CONFIG_EXTENSIONS = {".cfg", ".cnf", ".conf", ".env", ".ini", ".properties"}
+DOCKERFILE_NAMES = {"containerfile", "dockerfile"}
 KEY_MATERIAL_EXTENSIONS = {".key", ".pem"}
 SHELL_EXTENSIONS = {".bash", ".sh", ".zsh"}
 TEXT_EXTENSIONS = {".csv", ".json", ".py", ".toml", ".txt", ".xml", ".yaml", ".yml", *CONFIG_EXTENSIONS, *SHELL_EXTENSIONS}
@@ -104,6 +110,7 @@ def scan_secrets(repo_path: Path) -> list[SecretFinding]:
             path.suffix.lower() not in TEXT_EXTENSIONS
             and path.suffix.lower() not in KEY_MATERIAL_EXTENSIONS
             and not path.name.startswith(".env")
+            and not _is_dockerfile(path)
         ):
             continue
         findings.extend(SecretScanner(path).scan_file())
@@ -129,6 +136,8 @@ class SecretScanner:
             self._scan_yaml_unquoted_assignments(content)
         if self.path.suffix.lower() in SHELL_EXTENSIONS:
             self._scan_shell_unquoted_assignments(content)
+        if _is_dockerfile(self.path):
+            self._scan_dockerfile_secret_assignments(content)
         self._scan_private_key_blocks(content)
         if self.path.suffix.lower() == ".xml":
             self._scan_config_parameter_xml(content)
@@ -208,6 +217,26 @@ class SecretScanner:
                 "high",
                 line_number,
                 f"Secret-like shell assignment '{match.group('name')}' contains committed value {_redact(value)}; rotate and move to environment/config storage",
+                secret_kind=match.group("name").lower(),
+                redacted=_redact(value),
+            )
+
+    def _scan_dockerfile_secret_assignments(self, content: str) -> None:
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            match = DOCKERFILE_SECRET_ASSIGNMENT_RE.search(line)
+            if not match:
+                continue
+            value = match.group("value").strip().rstrip(",")
+            if _looks_placeholder(value) or value.startswith(("$", "{{", "<")):
+                continue
+            if _entropy(value) < 3.0 and len(value) < 20:
+                continue
+            self._add(
+                "odoo-secret-hardcoded-value",
+                "Hardcoded secret-like value",
+                "high",
+                line_number,
+                f"Dockerfile {line.strip().split(None, 1)[0]} '{match.group('name')}' contains committed value {_redact(value)}; use build/runtime secret injection instead",
                 secret_kind=match.group("name").lower(),
                 redacted=_redact(value),
             )
@@ -487,6 +516,11 @@ def _line_for(content: str, needle: str) -> int:
 
 def _should_skip(path: Path) -> bool:
     return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov"})
+
+
+def _is_dockerfile(path: Path) -> bool:
+    name = path.name.lower()
+    return name in DOCKERFILE_NAMES or name.startswith(("dockerfile.", "containerfile."))
 
 
 def findings_to_json(findings: list[SecretFinding]) -> list[dict[str, Any]]:

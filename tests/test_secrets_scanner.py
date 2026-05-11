@@ -425,6 +425,28 @@ ODOO_PASSWORD=${ODOO_PASSWORD}
     assert not any(f.secret_kind == "odoo_password" for f in findings)
 
 
+def test_dockerfile_env_secret_assignment_is_reported(tmp_path: Path) -> None:
+    """Docker ARG/ENV layers should not bake Odoo integration secrets."""
+    path = tmp_path / "Dockerfile"
+    path.write_text(
+        """FROM odoo:18
+ARG ODOO_API_KEY=sk_live_abcdef1234567890
+ENV ODOO_PASSWORD=${ODOO_PASSWORD}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_secrets(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-secret-hardcoded-value"
+        and f.file == str(path)
+        and f.secret_kind == "odoo_api_key"
+        for f in findings
+    )
+    assert not any(f.secret_kind == "odoo_password" for f in findings)
+
+
 def test_repository_secret_scan_skips_virtualenv(tmp_path: Path) -> None:
     """Vendored/generated directories should not be scanned."""
     app = tmp_path / "app.py"
