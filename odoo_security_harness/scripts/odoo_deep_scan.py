@@ -34,6 +34,7 @@ from pathlib import Path
 
 import yaml
 
+from odoo_security_harness.base_scanner import _should_skip
 from odoo_security_harness import (
     analyze_access_control,
     analyze_directory,
@@ -9557,9 +9558,6 @@ def _read_text(path: Path) -> str:
     except Exception:
         return ""
 
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def _is_relative_to(path: Path, parent: Path) -> bool:

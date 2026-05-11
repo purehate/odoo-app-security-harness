@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -864,9 +865,6 @@ def _is_static_literal(node: ast.AST) -> bool:
         return _is_static_literal(node.left) and _is_static_literal(node.right)
     return isinstance(node, ast.Constant) and isinstance(node.value, str | bool | int | float | type(None))
 
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def findings_to_json(findings: list[ModelMethodFinding]) -> list[dict[str, Any]]:

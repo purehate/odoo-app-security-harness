@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -830,9 +831,6 @@ def _enqueue_has_keyword(node: ast.Call, name: str) -> bool:
             current = current.value
     return False
 
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def findings_to_json(findings: list[QueueJobFinding]) -> list[dict[str, Any]]:

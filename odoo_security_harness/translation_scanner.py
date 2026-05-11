@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -229,9 +230,6 @@ def _extract_placeholders(text: str) -> set[str]:
 def _locale_for(path: Path) -> str:
     return path.stem
 
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def findings_to_json(findings: list[TranslationFinding]) -> list[dict[str, Any]]:

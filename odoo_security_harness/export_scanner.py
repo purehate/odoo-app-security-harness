@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -751,9 +752,6 @@ def _unpack_target_value_pairs(
         pairs.extend(zip(targets[-tail_count:], values[-tail_count:], strict=False))
     return pairs
 
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def findings_to_json(findings: list[ExportFinding]) -> list[dict[str, Any]]:

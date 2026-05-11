@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -877,9 +878,6 @@ def _mark_target_names(target: ast.AST, names: set[str]) -> None:
     elif isinstance(target, ast.Starred):
         _mark_target_names(target.value, names)
 
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def findings_to_json(findings: list[ScheduledJobFinding]) -> list[dict[str, Any]]:

@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -510,9 +511,6 @@ def _is_get_only_route(methods: set[str]) -> bool:
 def _relaxes_inherited_route_security(route: RouteInfo) -> bool:
     return route.auth in {"public", "none"} or route.csrf is False or route.cors.strip() == "*"
 
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def findings_to_json(findings: list[RouteSecurityFinding]) -> list[dict[str, Any]]:

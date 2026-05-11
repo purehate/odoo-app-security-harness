@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -1162,9 +1163,6 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
         return []
     return rows
 
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def findings_to_json(findings: list[ApiKeyFinding]) -> list[dict[str, Any]]:

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -879,9 +880,6 @@ def _unpack_target_value_pairs(
     after = list(zip(target.elts[starred_index + 1 :], value.elts[after_values_start:], strict=False))
     return [*before, (target.elts[starred_index], ast.List(elts=list(rest_values), ctx=ast.Load())), *after]
 
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def findings_to_json(findings: list[LoosePythonFinding]) -> list[dict[str, Any]]:

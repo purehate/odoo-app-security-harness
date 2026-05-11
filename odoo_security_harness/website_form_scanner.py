@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -995,9 +996,6 @@ def _call_name(node: ast.AST) -> str:
         return f"{base}.{node.attr}" if base else node.attr
     return ""
 
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def findings_to_json(findings: list[WebsiteFormFinding]) -> list[dict[str, Any]]:
