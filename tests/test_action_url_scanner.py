@@ -347,6 +347,33 @@ class Redirect(http.Controller):
     assert any(f.route == "/go/action/nested-options" for f in findings)
 
 
+def test_dict_union_static_unpack_public_route_options_tainted_act_url(tmp_path: Path) -> None:
+    """Dict-union route option unpacking should preserve public act_url context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "redirect.py").write_text(
+        """
+from odoo import http
+
+BASE_OPTIONS = {'auth': 'public'}
+ROUTE_OPTIONS = BASE_OPTIONS | {'routes': ['/go/action/union-options']}
+
+class Redirect(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def go(self, **kwargs):
+        return {'type': 'ir.actions.act_url', 'url': kwargs.get('next'), 'target': 'self'}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-url-tainted-url" in rule_ids
+    assert "odoo-act-url-public-route" in rule_ids
+    assert any(f.route == "/go/action/union-options" for f in findings)
+
+
 def test_flags_public_tainted_act_url_from_unpacking(tmp_path: Path) -> None:
     """Tuple unpacking should not hide request-controlled act_url targets."""
     controllers = tmp_path / "module" / "controllers"
