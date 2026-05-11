@@ -1251,6 +1251,12 @@
       "cwe": ["CWE-400", "CWE-770", "CWE-703"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "migration_tls_verification_disabled": {
+      "label": "Odoo migration or lifecycle hook disables TLS verification for outbound HTTP",
+      "cwe": ["CWE-295", "CWE-319", "CWE-326"],
+      "capec": ["CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "migration_process_execution": {
       "label": "Odoo migration or lifecycle hook executes a subprocess",
       "cwe": ["CWE-78", "CWE-88", "CWE-269"],

@@ -1056,6 +1056,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "migration_tls_verification_disabled",
+        (
+            "migration-tls-verify-disabled",
+            "migration/hook disables tls verification",
+            "migration or lifecycle hook passes verify=false to outbound http",
+            "man-in-the-middle attacks",
+        ),
+    ),
+    (
         "migration_process_execution",
         (
             "migration-process-execution",

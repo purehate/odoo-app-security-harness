@@ -154,16 +154,24 @@ class MigrationScanner(ast.NodeVisitor):
                 node.lineno,
                 "Migration or lifecycle hook calls commit()/rollback(); verify failures cannot leave partial security state",
             )
-        elif _is_http_call(node.func, self.http_module_aliases, self.http_function_aliases) and not _has_keyword(
-            node, "timeout"
-        ):
-            self._add(
-                "odoo-migration-http-no-timeout",
-                "Migration/hook performs HTTP without timeout",
-                "medium",
-                node.lineno,
-                "Migration or lifecycle hook performs outbound HTTP without timeout; install/upgrade can hang workers or deployment pipelines",
-            )
+        elif _is_http_call(node.func, self.http_module_aliases, self.http_function_aliases):
+            constants = self._effective_constants()
+            if not _has_keyword(node, "timeout"):
+                self._add(
+                    "odoo-migration-http-no-timeout",
+                    "Migration/hook performs HTTP without timeout",
+                    "medium",
+                    node.lineno,
+                    "Migration or lifecycle hook performs outbound HTTP without timeout; install/upgrade can hang workers or deployment pipelines",
+                )
+            if _keyword_is_false(node, "verify", constants):
+                self._add(
+                    "odoo-migration-tls-verify-disabled",
+                    "Migration/hook disables TLS verification",
+                    "high",
+                    node.lineno,
+                    "Migration or lifecycle hook passes verify=False to outbound HTTP; install/upgrade integrations should not permit man-in-the-middle attacks",
+                )
         elif _is_process_call(node.func, self.process_module_aliases, self.process_function_aliases):
             self._add(
                 "odoo-migration-process-execution",
@@ -507,6 +515,17 @@ def _is_process_call(node: ast.AST, module_aliases: set[str], function_aliases: 
 
 def _has_keyword(node: ast.Call, name: str) -> bool:
     return any(keyword.arg == name for keyword in node.keywords)
+
+
+def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for keyword in node.keywords:
+        if keyword.arg != name:
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Constant) and value.value is False:
+            return True
+    return False
 
 
 def _call_root_name(node: ast.AST) -> str:
