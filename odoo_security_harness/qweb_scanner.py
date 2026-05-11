@@ -38,6 +38,8 @@ class QWebFinding:
 class QWebScanner:
     """Scanner for QWeb template security issues."""
 
+    URL_BEARING_ATTRIBUTES = ("href", "src", "action", "formaction", "poster", "srcset", "xlink:href")
+    URL_BEARING_ATTRIBUTE_RE = r"(?:href|src|action|formaction|poster|srcset|xlink:href)"
     DANGEROUS_URL_SCHEME_RE = re.compile(
         r"^\s*(?:javascript:|vbscript:|file:|data:(?:text/html|application/(?:javascript|xhtml\+xml)))",
         re.IGNORECASE,
@@ -218,8 +220,8 @@ class QWebScanner:
             if attr_name in {"t-field", "t-esc", "t-out"}:
                 self._check_sensitive_render(tag, attr_name, value)
 
-            # href/src with javascript:
-            if attr_name in ("href", "src", "action"):
+            # URL-bearing attributes can execute script or leak token-bearing URLs.
+            if attr_name in self.URL_BEARING_ATTRIBUTES:
                 self._check_url_attr(tag, attr_name, value)
 
             if attr_name == "srcdoc" and self._looks_dynamic_html_value(value):
@@ -242,7 +244,7 @@ class QWebScanner:
 
     def _check_t_att(self, tag: str, attr: str, value: str) -> None:
         """Check t-att-* attributes for security issues."""
-        # t-att-href and t-att-src are especially dangerous
+        # t-att URL attributes are especially dangerous.
         base_attr = attr.replace("t-att-", "")
         if base_attr.startswith("on"):
             self._add_finding(
@@ -279,7 +281,7 @@ class QWebScanner:
             return
         if self._looks_sensitive_attribute_render(base_attr, value):
             self._check_sensitive_render(tag, attr, value)
-        if base_attr in ("href", "src", "action"):
+        if base_attr in self.URL_BEARING_ATTRIBUTES:
             self._add_finding(
                 rule_id="odoo-qweb-t-att-url",
                 title=f"Dynamic URL attribute: {attr}",
@@ -349,7 +351,7 @@ class QWebScanner:
                 message=f"{attr}='{value}' maps stylesheet href to CSS loaded from an external or dynamic target; verify untrusted data cannot choose stylesheets that hide, overlay, or restyle privileged UI",
             )
 
-        if not re.search(r"['\"](?:href|src|action)['\"]", value):
+        if not self._mapping_sets_url_attribute(value):
             return
         severity = "high" if self._has_dangerous_url_scheme(value) else "medium"
         self._add_finding(
@@ -358,7 +360,7 @@ class QWebScanner:
             severity=severity,
             element=tag,
             attribute=attr,
-            message=f"{attr}='{value}' can set href/src/action dynamically; verify untrusted values cannot produce javascript: URLs or unsafe destinations",
+            message=f"{attr}='{value}' can set URL-bearing attributes dynamically; verify untrusted values cannot produce javascript: URLs or unsafe destinations",
         )
         self._check_sensitive_url_token(tag, attr, value)
 
@@ -400,7 +402,7 @@ class QWebScanner:
             return
         if self._looks_sensitive_attribute_render(base_attr, value):
             self._check_sensitive_render(tag, attr, value)
-        if base_attr in ("href", "src", "action"):
+        if base_attr in self.URL_BEARING_ATTRIBUTES:
             severity = "high" if self._has_dangerous_url_scheme(value) else "medium"
             self._add_finding(
                 rule_id="odoo-qweb-t-attf-url",
@@ -525,7 +527,7 @@ class QWebScanner:
         return any(marker in lowered_value for marker in self.SENSITIVE_FIELD_MARKERS)
 
     def _check_url_attr(self, tag: str, attr: str, value: str) -> None:
-        """Check href/src/action attributes for dangerous URL schemes."""
+        """Check URL-bearing attributes for dangerous URL schemes."""
         if self._has_dangerous_url_scheme(value):
             self._add_finding(
                 rule_id="odoo-qweb-js-url",
@@ -610,6 +612,10 @@ class QWebScanner:
         if not match:
             return None
         return match.group(1).split(",", 1)[0]
+
+    def _mapping_sets_url_attribute(self, mapping: str) -> bool:
+        """Return whether a QWeb t-att mapping can set a URL-bearing attribute."""
+        return bool(re.search(rf"['\"]{self.URL_BEARING_ATTRIBUTE_RE}['\"]", mapping, re.IGNORECASE))
 
     def _mapped_sensitive_attribute_values(self, mapping: str) -> list[tuple[str, str]]:
         """Return sensitive-looking attribute/value pairs from a QWeb t-att mapping."""
@@ -826,7 +832,7 @@ class QWebScanner:
 
         # Find dangerous literal URL schemes.
         dangerous_url_attr_re = re.compile(
-            r'(href|src|action)\s*=\s*(["\'])\s*'
+            rf"({self.URL_BEARING_ATTRIBUTE_RE})\s*=\s*([\"'])\s*"
             r"(?:javascript:|vbscript:|file:|data:(?:text/html|application/(?:javascript|xhtml\+xml)))",
             re.IGNORECASE,
         )
@@ -1077,7 +1083,8 @@ class QWebScanner:
             )
 
         # Find formatted dynamic URL attributes.
-        for match in re.finditer(r'(t-attf-(?:href|src|action))\s*=\s*["\']([^"\']+)["\']', content, re.IGNORECASE):
+        url_attr_re = self.URL_BEARING_ATTRIBUTE_RE
+        for match in re.finditer(rf'(t-attf?-{url_attr_re})\s*=\s*["\']([^"\']+)["\']', content, re.IGNORECASE):
             line = content[: match.start()].count("\n") + 1
             severity = "high" if self._has_dangerous_url_scheme(match.group(2)) else "medium"
             findings.append(
@@ -1345,7 +1352,7 @@ class QWebScanner:
                 )
                 break
 
-            if not re.search(r"['\"](?:href|src|action)['\"]", value):
+            if not self._mapping_sets_url_attribute(value):
                 continue
             severity = "high" if self._has_dangerous_url_scheme(value) else "medium"
             findings.append(
@@ -1357,7 +1364,7 @@ class QWebScanner:
                     line=line,
                     element="",
                     attribute="t-att",
-                    message="t-att can set href/src/action dynamically; verify untrusted values cannot produce javascript: URLs or unsafe destinations",
+                    message="t-att can set URL-bearing attributes dynamically; verify untrusted values cannot produce javascript: URLs or unsafe destinations",
                 )
             )
             if self._looks_sensitive_url_token(value):

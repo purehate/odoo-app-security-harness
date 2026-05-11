@@ -588,6 +588,19 @@ def test_detects_formatted_dynamic_url(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-qweb-t-attf-url" and f.severity == "medium" for f in findings)
 
 
+def test_detects_formaction_dynamic_url(tmp_path: Path) -> None:
+    """QWeb URL sink coverage should include form submission override attributes."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><button t-att-formaction="record.pay_url">Pay</button></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-t-att-url" and f.attribute == "t-att-formaction" for f in findings)
+
+
 def test_detects_javascript_formatted_url(tmp_path: Path) -> None:
     """t-attf URL attributes containing javascript: should be high severity."""
     template = tmp_path / "template.xml"
@@ -804,6 +817,19 @@ def test_detects_javascript_dynamic_attribute_mapping_url(tmp_path: Path) -> Non
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(f.rule_id == "odoo-qweb-t-att-mapping-url" and f.severity == "high" for f in findings)
+
+
+def test_detects_extended_dynamic_attribute_mapping_url(tmp_path: Path) -> None:
+    """Generic t-att mappings should include media/navigation URL-bearing attributes."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><video t-att="{'poster': record.preview_url}"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-t-att-mapping-url" and f.attribute == "t-att" for f in findings)
 
 
 def test_detects_data_html_dynamic_attribute_mapping_url(tmp_path: Path) -> None:
