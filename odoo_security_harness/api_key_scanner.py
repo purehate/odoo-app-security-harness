@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import ast
 import re
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +51,8 @@ def scan_api_keys(repo_path: Path) -> list[ApiKeyFinding]:
             findings.extend(ApiKeyScanner(path).scan_python_file())
         elif path.suffix == ".xml":
             findings.extend(ApiKeyScanner(path).scan_xml_file())
+        elif path.suffix == ".csv":
+            findings.extend(ApiKeyScanner(path).scan_csv_file())
     return findings
 
 
@@ -124,6 +128,30 @@ class ApiKeyScanner(ast.NodeVisitor):
                     "Module data declares a res.users.apikeys record; verify credentials are not seeded, exported, or recreated across databases",
                     record_id=record.get("id", ""),
                 )
+        return self.findings
+
+    def scan_csv_file(self) -> list[ApiKeyFinding]:
+        """Scan CSV data files for committed API-key records."""
+        model = _csv_model_name(self.path)
+        if model not in API_KEY_MODELS:
+            return []
+        try:
+            self.content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+        rows = _csv_dict_rows(self.content)
+        if not rows:
+            return []
+        for row, line_number in rows:
+            self._add(
+                "odoo-api-key-csv-record",
+                "API key record is declared in CSV data",
+                "critical",
+                line_number,
+                "CSV data declares a res.users.apikeys record; verify credentials are not seeded, exported, or recreated across databases",
+                record_id=row.get("id", ""),
+            )
         return self.findings
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
@@ -984,6 +1012,33 @@ def _safe_unparse(node: ast.AST) -> str:
         return ast.unparse(node)
     except Exception:
         return ""
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    dotted = stem.replace("_", ".")
+    return dotted if dotted in API_KEY_MODELS else stem
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized = {
+                str(key or "").strip().lower(): str(value or "").strip()
+                for key, value in row.items()
+                if key is not None
+            }
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _should_skip(path: Path) -> bool:

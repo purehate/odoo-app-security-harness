@@ -2198,6 +2198,12 @@
       "capec": ["CAPEC-191"],
       "owasp": "A07:2021 Identification and Authentication Failures"
     },
+    "api_key_csv_record": {
+      "label": "Odoo CSV data declares res.users.apikeys records",
+      "cwe": ["CWE-798", "CWE-522", "CWE-259"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
     "api_key_public_route_mutation": {
       "label": "Public or unauthenticated route can create, rename, or revoke API keys",
       "cwe": ["CWE-306", "CWE-862", "CWE-352"],

@@ -1027,6 +1027,34 @@ def test_api_key_xml_record_is_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-api-key-xml-record" and f.record_id == "seeded_api_key" for f in findings)
 
 
+def test_api_key_csv_record_is_reported(tmp_path: Path) -> None:
+    """API-key records can also be seeded through Odoo CSV data files."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "res.users.apikeys.csv").write_text(
+        "id,name,user_id,key\nseeded_api_key,Seeded Key,base.user_admin,sk_live_1234567890abcdef\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+
+    assert any(f.rule_id == "odoo-api-key-csv-record" and f.record_id == "seeded_api_key" for f in findings)
+
+
+def test_api_key_underscore_csv_record_is_reported(tmp_path: Path) -> None:
+    """Underscore-style CSV model filenames should also be recognized."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "res_users_apikeys.csv").write_text(
+        "id,name,user_id\nseeded_api_key,Seeded Key,base.user_admin\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+
+    assert any(f.rule_id == "odoo-api-key-csv-record" and f.record_id == "seeded_api_key" for f in findings)
+
+
 def test_request_api_key_stored_in_config_parameter_is_reported(tmp_path: Path) -> None:
     """Request-updated integration credentials should not silently land in config parameters."""
     controllers = tmp_path / "module" / "controllers"

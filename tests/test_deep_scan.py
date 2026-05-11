@@ -4142,6 +4142,12 @@ def test_taxonomy_coverage_classifies_api_key_lookup_and_seeded_records() -> Non
             },
             {
                 "source": "api-keys",
+                "rule_id": "odoo-api-key-csv-record",
+                "title": "API key record is declared in CSV data",
+                "message": "CSV data declares a res.users.apikeys record; verify credentials are not seeded, exported, or recreated across databases",
+            },
+            {
+                "source": "api-keys",
                 "rule_id": "odoo-api-key-tainted-lookup",
                 "title": "Request-derived API key lookup",
                 "message": "Request-derived data is used to query API-key records; verify constant-time credential validation, hashing, and user scoping rather than raw key lookup",
@@ -4152,6 +4158,7 @@ def test_taxonomy_coverage_classifies_api_key_lookup_and_seeded_records() -> Non
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-api-key-xml-record": "api_key_xml_record",
+        "odoo-api-key-csv-record": "api_key_csv_record",
         "odoo-api-key-tainted-lookup": "api_key_tainted_lookup",
     }
     assert any("CWE-798" in entry["cwe"] for entry in coverage["mapped_entries"])

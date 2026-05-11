@@ -238,6 +238,14 @@ _TAXONOMY_SHAPE_HINTS = (
             "odoo-api-key-xml-record",
             "api key record is declared in xml data",
             "module data declares a res.users.apikeys record",
+        ),
+    ),
+    (
+        "api_key_csv_record",
+        (
+            "odoo-api-key-csv-record",
+            "api key record is declared in csv data",
+            "csv data declares a res.users.apikeys record",
             "credentials are not seeded, exported, or recreated across databases",
         ),
     ),
