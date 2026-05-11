@@ -2484,6 +2484,12 @@
       "capec": ["CAPEC-118"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "controller_weak_content_type_options": {
+      "label": "Controller sets a weak X-Content-Type-Options header",
+      "cwe": ["CWE-693", "CWE-79", "CWE-116"],
+      "capec": ["CAPEC-63"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
     "controller_tainted_html_response": {
       "label": "Controller returns request-derived data as an HTML response",
       "cwe": ["CWE-79", "CWE-116"],

@@ -562,6 +562,19 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 f"Controller allows sensitive browser feature {weak_permissions_policy} in {header_name}; restrict camera, microphone, geolocation, payment, USB, serial, and clipboard access to trusted origins only",
                 sink,
             )
+        weak_content_type_options = _weak_content_type_options_value(
+            lowered_header, value, self._effective_constants()
+        )
+        if weak_content_type_options:
+            route = self._current_route()
+            self._add(
+                "odoo-controller-weak-content-type-options",
+                "Controller sets weak X-Content-Type-Options",
+                "medium" if route.auth in {"public", "none"} else "low",
+                line,
+                f"Controller sets X-Content-Type-Options to {weak_content_type_options!r}; use 'nosniff' so browsers do not reinterpret JSON, text, or uploaded content as executable script",
+                sink,
+            )
         if lowered_header == "access-control-allow-credentials" and _truthy_header_value(
             value, self._effective_constants()
         ):
@@ -1343,6 +1356,17 @@ def _weak_permissions_policy_reason(header_name: str, value: ast.AST, constants:
         if re.search(rf"(?:^|;)\s*{feature_pattern}\s+\*", policy):
             return f"{feature} *"
     return ""
+
+
+def _weak_content_type_options_value(header_name: str, value: ast.AST, constants: dict[str, ast.AST]) -> str:
+    if header_name != "x-content-type-options":
+        return ""
+    options = _constant_string(value, constants).strip()
+    if not options:
+        return ""
+    if options.lower() == "nosniff":
+        return ""
+    return options
 
 
 def _cookie_name_node(node: ast.Call) -> ast.AST | None:

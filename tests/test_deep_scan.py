@@ -7202,6 +7202,24 @@ def test_taxonomy_coverage_classifies_controller_weak_permissions_policy() -> No
     assert "CWE-693" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_controller_weak_content_type_options() -> None:
+    """Weak content type sniffing headers should map to protection-mechanism taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "source": "controller-responses",
+                "rule_id": "odoo-controller-weak-content-type-options",
+                "title": "Controller sets weak X-Content-Type-Options",
+                "message": "Controller sets X-Content-Type-Options to 'none'; use 'nosniff' so browsers do not reinterpret JSON, text, or uploaded content as executable script",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "controller_weak_content_type_options"
+    assert "CWE-693" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_controller_tainted_html_response() -> None:
     """Request-derived HTML responses should map to XSS taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(

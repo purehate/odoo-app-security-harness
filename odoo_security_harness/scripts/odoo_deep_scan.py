@@ -4260,6 +4260,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "controller_weak_content_type_options",
+        (
+            "odoo-controller-weak-content-type-options",
+            "controller sets weak x-content-type-options",
+            "use 'nosniff'",
+            "do not reinterpret json, text, or uploaded content as executable script",
+        ),
+    ),
+    (
         "controller_tainted_html_response",
         (
             "controller-tainted-html-response",
