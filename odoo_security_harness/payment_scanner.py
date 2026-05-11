@@ -463,12 +463,16 @@ class _PaymentStateTransitionVisitor(ast.NodeVisitor):
         for target in node.targets:
             _mark_local_constant_target(self.local_constants, target, node.value)
             self._mark_state_payload_target(target, node.value)
+            if _assigns_payment_state(target, node.value, self._effective_constants()):
+                self.changes_payment_state = True
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
             _mark_local_constant_target(self.local_constants, node.target, node.value)
             self._mark_state_payload_target(node.target, node.value)
+            if _assigns_payment_state(node.target, node.value, self._effective_constants()):
+                self.changes_payment_state = True
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
@@ -563,6 +567,31 @@ def _dict_sets_payment_state(node: ast.AST, constants: dict[str, ast.AST] | None
             if isinstance(value, ast.Constant):
                 return str(value.value).lower() in PAYMENT_FINAL_STATES
             return True
+    return False
+
+
+def _assigns_payment_state(target: ast.AST, value: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        return any(
+            _assigns_payment_state(target_element, value_element, constants)
+            for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts)
+        )
+    if isinstance(target, ast.Starred):
+        return _assigns_payment_state(target.value, value, constants)
+    if not _is_payment_state_target(target, constants):
+        return False
+    value = _resolve_constant(value, constants)
+    if isinstance(value, ast.Constant):
+        return str(value.value).lower() in PAYMENT_FINAL_STATES
+    return True
+
+
+def _is_payment_state_target(target: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    if isinstance(target, ast.Attribute):
+        return target.attr == "state"
+    if isinstance(target, ast.Subscript):
+        key = _resolve_constant(target.slice, constants)
+        return isinstance(key, ast.Constant) and key.value == "state"
     return False
 
 

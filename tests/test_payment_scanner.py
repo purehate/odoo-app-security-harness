@@ -677,6 +677,31 @@ class PaymentTransaction(models.Model):
     assert "odoo-payment-state-without-idempotency-check" in rule_ids
 
 
+def test_payment_state_assignment_without_validation_is_reported(tmp_path: Path) -> None:
+    """Direct state assignment should be treated like payment state transition helpers."""
+    py = tmp_path / "models.py"
+    py.write_text(
+        """
+from odoo import models
+
+class PaymentTransaction(models.Model):
+    _inherit = 'payment.transaction'
+
+    def _process_notification_data(self, provider_code, notification_data):
+        tx = self.search([('reference', '=', notification_data.get('reference'))], limit=1)
+        tx.state = 'done'
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+    rule_ids = {f.rule_id for f in findings}
+
+    assert "odoo-payment-state-without-validation" in rule_ids
+    assert "odoo-payment-state-without-amount-currency-check" in rule_ids
+    assert "odoo-payment-state-without-idempotency-check" in rule_ids
+
+
 def test_local_constant_payment_state_write_without_validation_is_reported(tmp_path: Path) -> None:
     """Function-local state keys should still reveal payment state writes."""
     py = tmp_path / "models.py"
