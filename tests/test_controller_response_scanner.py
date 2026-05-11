@@ -490,6 +490,34 @@ class Controller(http.Controller):
     )
 
 
+def test_flags_unpack_redirect_embedded_credentials(tmp_path: Path) -> None:
+    """Unpacked redirect keyword targets should still expose credential-bearing URLs."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/go', auth='public')
+    def go(self):
+        options = {'location': 'https://user:token@partner.example/callback'}
+        return request.redirect(**options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-redirect-embedded-credentials"
+        and f.severity == "high"
+        and f.sink == "request.redirect"
+        for f in findings
+    )
+
+
 def test_reassigned_redirect_target_alias_is_not_stale(tmp_path: Path) -> None:
     """Reusing a redirect target for a safe local path should clear taint."""
     controllers = tmp_path / "module" / "controllers"
