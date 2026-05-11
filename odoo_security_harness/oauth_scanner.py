@@ -595,6 +595,9 @@ def _apply_route_options(
     if not isinstance(value, ast.Dict):
         return auth, paths
     for key, option_value in zip(value.keys, value.values, strict=False):
+        if key is None:
+            auth, paths = _apply_route_options(option_value, constants, auth, paths)
+            continue
         key = _resolve_constant(key, constants) if key is not None else None
         if isinstance(key, ast.Constant) and isinstance(key.value, str):
             auth, paths = _apply_route_keyword(key.value, option_value, constants, auth, paths)
@@ -702,7 +705,7 @@ def _is_static_literal(node: ast.AST) -> bool:
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
-            key is not None and _is_static_literal(key) and _is_static_literal(value)
+            (key is None or _is_static_literal(key)) and _is_static_literal(value)
             for key, value in zip(node.keys, node.values, strict=False)
             if value is not None
         )
