@@ -380,6 +380,31 @@ def test_request_derived_eventsource_endpoint_detected(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-web-dynamic-live-connection" and f.severity == "medium" for f in findings)
 
 
+def test_cleartext_live_connection_url_detected(tmp_path: Path) -> None:
+    """Browser realtime connections should not use cleartext transports."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """const socket = new WebSocket('ws://stream.example.com/orders');
+const feed = new EventSource('http://stream.example.com/events');
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert sum(f.rule_id == "odoo-web-insecure-live-connection-url" for f in findings) == 2
+
+
+def test_secure_live_connection_url_ignored_for_insecure_transport(tmp_path: Path) -> None:
+    """Secure realtime transports remain covered by the external-endpoint review lead only."""
+    path = tmp_path / "widget.js"
+    path.write_text("const socket = new WebSocket('wss://stream.example.com/orders');\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-insecure-live-connection-url" for f in findings)
+
+
 def test_local_literal_live_connection_ignored(tmp_path: Path) -> None:
     """Same-origin realtime endpoints are expected in Odoo frontend assets."""
     path = tmp_path / "widget.js"

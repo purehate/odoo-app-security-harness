@@ -526,6 +526,15 @@ class WebAssetScanner:
                 )
 
             live_connection_match = LIVE_CONNECTION_RE.search(line)
+            if live_connection_match and _is_insecure_live_connection_url(live_connection_match.group("target")):
+                self._add(
+                    "odoo-web-insecure-live-connection-url",
+                    "Frontend live connection uses insecure URL",
+                    "medium",
+                    line_number,
+                    "Frontend WebSocket/EventSource connection targets a literal cleartext ws:// or http:// URL; use WSS, HTTPS, or same-origin endpoints to avoid mixed-content downgrade and interception risk",
+                    live_connection_match.group("kind"),
+                )
             if live_connection_match and _looks_risky_live_connection_target(live_connection_match.group("target")):
                 self._add(
                     "odoo-web-dynamic-live-connection",
@@ -1643,6 +1652,11 @@ def _looks_risky_live_connection_target(target: str) -> bool:
     if CLIENT_NAVIGATION_TAINT_RE.search(target) or SENSITIVE_URL_DYNAMIC_VALUE_RE.search(target):
         return True
     return bool(re.search(r"\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?\b", target))
+
+
+def _is_insecure_live_connection_url(target: str) -> bool:
+    literal = _strip_js_string(target.strip()).strip()
+    return bool(re.match(r"^(?:ws|http)://", literal, re.IGNORECASE))
 
 
 def _looks_risky_wasm_load_target(target: str, *, fetched: bool) -> bool:
