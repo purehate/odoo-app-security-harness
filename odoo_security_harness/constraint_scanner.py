@@ -47,6 +47,7 @@ class ConstraintScanner(ast.NodeVisitor):
         self.method_stack: list[ConstraintContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
         self.api_module_names: set[str] = {"api"}
         self.odoo_module_names: set[str] = {"odoo"}
         self.api_decorator_names: set[str] = set()
@@ -117,6 +118,8 @@ class ConstraintScanner(ast.NodeVisitor):
             return
 
         fields = _constraint_fields(decorator, self._effective_constants()) if decorator else []
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         context = ConstraintContext(name=node.name)
         self.method_stack.append(context)
 
@@ -125,6 +128,7 @@ class ConstraintScanner(ast.NodeVisitor):
 
         self.generic_visit(node)
         self.method_stack.pop()
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -133,18 +137,21 @@ class ConstraintScanner(ast.NodeVisitor):
         if self.method_stack:
             context = self.method_stack[-1]
             for target in node.targets:
+                self._mark_local_constant_target(target, node.value)
                 self._track_sudo_alias(target, node.value, context)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if self.method_stack and node.value is not None:
             context = self.method_stack[-1]
+            self._mark_local_constant_target(node.target, node.value)
             self._track_sudo_alias(node.target, node.value, context)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
         if self.method_stack:
             context = self.method_stack[-1]
+            self._mark_local_constant_target(node.target, node.value)
             self._track_sudo_alias(node.target, node.value, context)
         self.generic_visit(node)
 
@@ -308,12 +315,31 @@ class ConstraintScanner(ast.NodeVisitor):
         else:
             context.sudo_vars.discard(target.id)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(child_target, child_value)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for name in _target_names(target):
+                self.local_constants.pop(name, None)
+
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
 

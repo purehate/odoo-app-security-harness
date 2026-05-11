@@ -244,6 +244,30 @@ class Partner(models.Model):
     assert any(f.model == "x.partner" for f in findings)
 
 
+def test_flags_local_constant_ignored_return(tmp_path: Path) -> None:
+    """Function-local ignored-return constants should still be reported."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "partner.py").write_text(
+        """
+from odoo import api, models
+
+class Partner(models.Model):
+    _name = 'x.partner'
+
+    @api.constrains('company_id')
+    def _check_company_name(self):
+        ignored = False
+        return ignored
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_constraints(tmp_path)
+
+    assert any(f.rule_id == "odoo-constraint-return-ignored" for f in findings)
+
+
 def test_flags_sudo_and_unbounded_search_in_constraint(tmp_path: Path) -> None:
     """Constraint searches should avoid sudo() bypasses and unbounded scans."""
     models = tmp_path / "module" / "models"
@@ -556,6 +580,35 @@ class Code(models.Model):
     assert "odoo-constraint-unbounded-search" in rule_ids
     assert "odoo-constraint-dynamic-field" not in rule_ids
     assert any(f.model == "x.code" for f in findings)
+
+
+def test_flags_local_constant_with_user_root_search_in_constraint(tmp_path: Path) -> None:
+    """Function-local superuser aliases should keep sudo-read posture."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "code.py").write_text(
+        """
+from odoo import api, models
+
+class Code(models.Model):
+    _name = 'x.code'
+
+    @api.constrains('code')
+    def _check_code_unique(self):
+        root_uid = 1
+        Codes = self.env['x.code'].with_user(root_uid)
+        duplicates = Codes.search([('code', '=', self.code)])
+        if duplicates:
+            raise ValidationError('duplicate')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_constraints(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-constraint-sudo-search" in rule_ids
+    assert "odoo-constraint-unbounded-search" in rule_ids
 
 
 def test_flags_env_ref_admin_search_in_constraint(tmp_path: Path) -> None:
