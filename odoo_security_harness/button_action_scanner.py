@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -163,6 +164,7 @@ class ButtonActionScanner(ast.NodeVisitor):
         sink = _call_name(node.func)
         if any(marker in sink for marker in ACCESS_CHECK_MARKERS):
             context.has_access_check = True
+        self._track_local_dict_update_call(node)
         sensitive_model = _call_receiver_sensitive_model(node.func, self._effective_constants())
         if sensitive_model and sink.rsplit(".", 1)[-1] in SENSITIVE_MODEL_MUTATION_METHODS:
             self._add(
@@ -170,19 +172,22 @@ class ButtonActionScanner(ast.NodeVisitor):
                 "Button/action method mutates sensitive model",
                 "high",
                 node.lineno,
-                f"Button/action method mutates sensitive model '{sensitive_model}'; verify object-button exposure, RPC access, group checks, and audit trail",
+                f"Button/action method mutates sensitive model '{sensitive_model}'; verify object-button exposure, "
+                "RPC access, group checks, and audit trail",
                 context.name,
             )
-        if (sink.endswith(".write") or sink == "write") and node.args and isinstance(node.args[0], ast.Dict):
+        write_values = self._write_values_arg(node) if sink.endswith(".write") or sink == "write" else None
+        if write_values is not None:
             context.has_write = True
-            if _dict_writes_sensitive_state(node.args[0], self._effective_constants()):
+            if _dict_writes_sensitive_state(write_values, self._effective_constants()):
                 context.has_sensitive_state_write = True
                 self._add(
                     "odoo-button-action-sensitive-state-write",
                     "Button/action method writes sensitive workflow state",
                     "medium",
                     node.lineno,
-                    "Button/action method writes approval/payment/posting-like state; verify ACLs, record rules, and groups enforce the workflow boundary",
+                    "Button/action method writes approval/payment/posting-like state; verify ACLs, record rules, "
+                    "and groups enforce the workflow boundary",
                     context.name,
                 )
         if _is_privileged_mutation(node.func, context.sudo_vars, self._effective_constants(), self.superuser_names):
@@ -192,7 +197,8 @@ class ButtonActionScanner(ast.NodeVisitor):
                 "Button/action method performs sudo mutation",
                 "high",
                 node.lineno,
-                "Button/action method chains sudo()/with_user(SUPERUSER_ID) into write/create/unlink; verify explicit group, access, and company checks before mutation",
+                "Button/action method chains sudo()/with_user(SUPERUSER_ID) into write/create/unlink; verify "
+                "explicit group, access, and company checks before mutation",
                 context.name,
             )
         elif sink.endswith(".unlink") or sink == "unlink":
@@ -208,7 +214,8 @@ class ButtonActionScanner(ast.NodeVisitor):
                 "Button/action method unlinks without visible access check",
                 "high",
                 node.lineno,
-                "Button/action method deletes records without visible check_access/user_has_groups guard; verify object button exposure cannot delete unauthorized records",
+                "Button/action method deletes records without visible check_access/user_has_groups guard; verify "
+                "object button exposure cannot delete unauthorized records",
                 context.name,
             )
         if (context.has_sudo_mutation or context.has_sensitive_state_write) and not context.has_access_check:
@@ -217,7 +224,8 @@ class ButtonActionScanner(ast.NodeVisitor):
                 "Button/action method mutates without visible access check",
                 "medium",
                 node.lineno,
-                "Button/action method performs sensitive mutation without visible check_access/user_has_groups guard; verify UI and RPC calls cannot bypass workflow approvals",
+                "Button/action method performs sensitive mutation without visible check_access/user_has_groups "
+                "guard; verify UI and RPC calls cannot bypass workflow approvals",
                 context.name,
             )
 
@@ -257,6 +265,24 @@ class ButtonActionScanner(ast.NodeVisitor):
         if isinstance(target, ast.Tuple | ast.List):
             for name in _target_names(target):
                 self.local_constants.pop(name, None)
+
+    def _track_local_dict_update_call(self, node: ast.Call) -> None:
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+            return
+        if not isinstance(node.func.value, ast.Name):
+            return
+        name = node.func.value.id
+        values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), self._effective_constants())
+        if values_node is None:
+            return
+        for key, value in _expanded_update_entries(node, self._effective_constants()):
+            values_node = _dict_with_field(values_node, key, value)
+        self.local_constants[name] = values_node
+
+    def _write_values_arg(self, node: ast.Call) -> ast.Dict | None:
+        if not node.args:
+            return None
+        return _resolve_static_dict(node.args[0], self._effective_constants())
 
     def _effective_constants(self) -> dict[str, ast.AST]:
         if not self.class_constants_stack and not self.local_constants:
@@ -418,6 +444,48 @@ def _dict_writes_sensitive_state(node: ast.Dict, constants: dict[str, ast.AST] |
     return False
 
 
+def _expanded_update_entries(node: ast.Call, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    entries: list[tuple[str, ast.AST]] = []
+    if node.args:
+        values = _resolve_static_dict(node.args[0], constants)
+        if values is not None:
+            entries.extend(_expanded_dict_entries(values, constants))
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            entries.append((keyword.arg, keyword.value))
+            continue
+        values = _resolve_static_dict(keyword.value, constants)
+        if values is not None:
+            entries.extend(_expanded_dict_entries(values, constants))
+    return entries
+
+
+def _expanded_dict_entries(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    entries: list[tuple[str, ast.AST]] = []
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            values = _resolve_static_dict(value, constants)
+            if values is not None:
+                entries.extend(_expanded_dict_entries(values, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            entries.append((resolved_key.value, value))
+    return entries
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
+
+
 def _call_receiver_sensitive_model(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str | None:
     if not isinstance(node, ast.Attribute):
         return None
@@ -551,6 +619,20 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
     return node
 
 
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
+    seen = seen or set()
+    node = _resolve_constant_seen(node, constants, seen)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants, set(seen))
+        right = _resolve_static_dict(node.right, constants, set(seen))
+        if left is None or right is None:
+            return None
+        return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
+    return None
+
+
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
         return isinstance(node.value, str | bool | int | float | type(None))
@@ -563,6 +645,8 @@ def _is_static_literal(node: ast.AST) -> bool:
             (key is None or _is_static_literal(key)) and _is_static_literal(value)
             for key, value in zip(node.keys, node.values)
         )
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_literal(node.left) and _is_static_literal(node.right)
     return False
 
 

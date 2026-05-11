@@ -483,6 +483,79 @@ class Invoice(models.Model):
     assert any(f.rule_id == "odoo-button-action-sensitive-state-write" for f in findings)
 
 
+def test_flags_aliased_sensitive_state_write(tmp_path: Path) -> None:
+    """Aliased workflow state write values should not hide button mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "invoice.py").write_text(
+        """
+from odoo import models
+
+class Invoice(models.Model):
+    _name = 'x.invoice'
+
+    def button_post(self):
+        vals = {'state': 'posted'}
+        self.write(vals)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_button_actions(tmp_path)
+
+    assert any(f.rule_id == "odoo-button-action-sensitive-state-write" for f in findings)
+
+
+def test_flags_updated_sensitive_state_write(tmp_path: Path) -> None:
+    """Updated workflow state write values should not hide button mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "invoice.py").write_text(
+        """
+from odoo import models
+
+class Invoice(models.Model):
+    _name = 'x.invoice'
+
+    def button_post(self):
+        vals = {'memo': 'posting'}
+        changes = {'state': 'posted'}
+        vals.update(**changes)
+        self.write(vals)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_button_actions(tmp_path)
+
+    assert any(f.rule_id == "odoo-button-action-sensitive-state-write" for f in findings)
+
+
+def test_flags_positional_updated_sensitive_state_write(tmp_path: Path) -> None:
+    """Positional dict updates should not hide workflow state write values."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "invoice.py").write_text(
+        """
+from odoo import models
+
+class Invoice(models.Model):
+    _name = 'x.invoice'
+
+    def button_post(self):
+        vals = {'memo': 'posting'}
+        changes = {'state': 'posted'}
+        vals.update(changes)
+        self.write(vals)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_button_actions(tmp_path)
+
+    assert any(f.rule_id == "odoo-button-action-sensitive-state-write" for f in findings)
+
+
 def test_flags_sensitive_model_mutation(tmp_path: Path) -> None:
     """Object buttons mutating security/payment/config models should be reviewed."""
     models = tmp_path / "module" / "models"
