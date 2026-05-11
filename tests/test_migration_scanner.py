@@ -115,6 +115,24 @@ class PartnerMigration:
     assert any(f.rule_id == "odoo-migration-destructive-sql" and f.severity == "critical" for f in findings)
 
 
+def test_local_constant_destructive_migration_sql_is_reported(tmp_path: Path) -> None:
+    """Function-local SQL constants should still be inspected when executed."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+def migrate(cr, version):
+    base_query = "DELETE FROM account_move"
+    query = base_query
+    cr.execute(query)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(f.rule_id == "odoo-migration-destructive-sql" and f.severity == "critical" for f in findings)
+
+
 def test_sudo_mutation_and_manual_transaction_are_reported(tmp_path: Path) -> None:
     """Migration hooks often run privileged; sudo writes and commits need review."""
     py = tmp_path / "post-migrate.py"
@@ -238,6 +256,24 @@ class PartnerMigration:
     def migrate(self, env):
         partners = env['res.partner'].with_user(ADMIN_UID).search([])
         partners.write({'active': False})
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(f.rule_id == "odoo-migration-sudo-mutation" for f in findings)
+
+
+def test_local_constant_with_user_mutation_is_reported(tmp_path: Path) -> None:
+    """Function-local superuser constants in migrations should trigger mutation review."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+def migrate(env):
+    root_uid = 1
+    partners = env['res.partner'].with_user(root_uid).search([])
+    partners.write({'active': False})
 """,
         encoding="utf-8",
     )
@@ -490,6 +526,25 @@ def migrate(cr, version):
     assert not any(finding.rule_id == "odoo-migration-http-no-timeout" for finding in findings)
 
 
+def test_http_local_kwargs_timeout_is_not_reported_in_migration(tmp_path: Path) -> None:
+    """Function-local **kwargs dictionaries should satisfy migration HTTP timeout checks."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+import requests
+
+def migrate(cr, version):
+    options = {'timeout': 10}
+    requests.post("https://example.test/upgrade", **options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert not any(finding.rule_id == "odoo-migration-http-no-timeout" for finding in findings)
+
+
 def test_tls_verification_disabled_is_reported_in_migration(tmp_path: Path) -> None:
     """Migration outbound HTTP should not disable TLS verification."""
     py = tmp_path / "post-migrate.py"
@@ -521,6 +576,25 @@ HTTP_OPTIONS = {'timeout': 10, 'verify': False}
 
 def migrate(cr, version):
     requests.post("https://example.test/upgrade", **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(finding.rule_id == "odoo-migration-tls-verify-disabled" for finding in findings)
+
+
+def test_tls_verification_disabled_local_kwargs_is_reported_in_migration(tmp_path: Path) -> None:
+    """Function-local **kwargs dictionaries should not hide disabled TLS verification."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+import requests
+
+def migrate(cr, version):
+    options = {'timeout': 10, 'verify': False}
+    requests.post("https://example.test/upgrade", **options)
 """,
         encoding="utf-8",
     )

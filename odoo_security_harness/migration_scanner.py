@@ -65,6 +65,7 @@ class MigrationScanner(ast.NodeVisitor):
         self.function_stack: list[str] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[MigrationFinding]:
         """Scan the file."""
@@ -116,6 +117,8 @@ class MigrationScanner(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         self.function_stack.append(node.name)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         if node.name in self.hook_names:
             self._add(
                 "odoo-migration-lifecycle-hook",
@@ -125,6 +128,7 @@ class MigrationScanner(ast.NodeVisitor):
                 f"Manifest declares lifecycle hook '{node.name}'; review install/uninstall side effects and privilege assumptions",
             )
         self.generic_visit(node)
+        self.local_constants = previous_local_constants
         self.function_stack.pop()
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
@@ -132,15 +136,18 @@ class MigrationScanner(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._record_alias_target(target, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._record_alias_target(node.target, node.value)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._record_alias_target(node.target, node.value)
         self.generic_visit(node)
 
@@ -234,6 +241,25 @@ class MigrationScanner(ast.NodeVisitor):
         elif isinstance(target, ast.Starred):
             self._record_sql_target(target.value, value)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target, value):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        names: set[str] = set()
+        _mark_target_names(target, names)
+        for name in names:
+            self.local_constants.pop(name, None)
+
     def _scan_sql_execute(self, node: ast.Call) -> None:
         if not node.args:
             return
@@ -291,11 +317,12 @@ class MigrationScanner(ast.NodeVisitor):
         )
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
 
