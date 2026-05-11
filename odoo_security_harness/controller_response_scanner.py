@@ -1274,6 +1274,10 @@ def _weak_csp_reason(header_name: str, value: ast.AST, constants: dict[str, ast.
             weaknesses.append(f"{directive} *")
     if re.search(r"(?:^|;)\s*frame-ancestors\s+[^;]*\*", csp):
         weaknesses.append("frame-ancestors *")
+    for directive in ("default-src", "script-src", "style-src", "object-src", "frame-ancestors"):
+        match = re.search(rf"(?:^|;)\s*{directive}\s+([^;]*)", csp)
+        if match and re.search(r"(?:^|\s)http:", match.group(1)):
+            weaknesses.append(f"{directive} http:")
     return " and ".join(weaknesses)
 
 

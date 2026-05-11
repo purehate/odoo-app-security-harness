@@ -2021,6 +2021,37 @@ class Controller(http.Controller):
     )
 
 
+def test_flags_weak_csp_cleartext_sources(tmp_path: Path) -> None:
+    """CSP source lists should not allow cleartext HTTP script or embedding origins."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/page', auth='public')
+    def page(self):
+        return request.make_response(
+            'ok',
+            headers={'Content-Security-Policy': "default-src 'self'; script-src http:; frame-ancestors http://partner.example"},
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-weak-csp-header"
+        and f.severity == "medium"
+        and "script-src http:" in f.message
+        and "frame-ancestors http:" in f.message
+        for f in findings
+    )
+
+
 def test_flags_weak_csp_wildcard_script_source(tmp_path: Path) -> None:
     """CSP script sources should not allow arbitrary origins."""
     controllers = tmp_path / "module" / "controllers"
