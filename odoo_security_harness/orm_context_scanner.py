@@ -68,6 +68,7 @@ class OrmContextScanner(ast.NodeVisitor):
         self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[OrmContextFinding]:
         """Scan the file."""
@@ -112,25 +113,32 @@ class OrmContextScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         self.scope_stack.append(ContextScope())
         self.generic_visit(node)
         self.scope_stack.pop()
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         if self.scope_stack:
+            for target in node.targets:
+                self._mark_local_constant_target(target, node.value)
             self._track_context_aliases(node.targets, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if self.scope_stack and node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._track_context_aliases([node.target], node.value)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
         if self.scope_stack:
+            self._mark_local_constant_target(node.target, node.value)
             self._track_context_aliases([node.target], node.value)
         self.generic_visit(node)
 
@@ -366,12 +374,31 @@ class OrmContextScanner(ast.NodeVisitor):
             else:
                 scope.sudo_vars.discard(target.id)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(child_target, child_value)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for name in _target_names(target):
+                self.local_constants.pop(name, None)
+
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
 
@@ -623,6 +650,41 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
         ):
             constants[statement.target.id] = statement.value
     return constants
+
+
+def _target_names(node: ast.AST) -> set[str]:
+    if isinstance(node, ast.Name):
+        return {node.id}
+    if isinstance(node, ast.Starred):
+        return _target_names(node.value)
+    if isinstance(node, ast.Tuple | ast.List):
+        names: set[str] = set()
+        for element in node.elts:
+            names |= _target_names(element)
+        return names
+    return set()
+
+
+def _unpack_target_value_pairs(targets: list[ast.expr], values: list[ast.expr]) -> list[tuple[ast.expr, ast.AST]]:
+    pairs: list[tuple[ast.expr, ast.AST]] = []
+    value_index = 0
+    starred_index: int | None = None
+    for index, target in enumerate(targets):
+        if isinstance(target, ast.Starred):
+            starred_index = index
+            break
+    for index, target in enumerate(targets):
+        if index == starred_index:
+            remaining_targets = len(targets) - index - 1
+            remaining_values = max(len(values) - value_index - remaining_targets, 0)
+            pairs.append((target, ast.List(elts=values[value_index : value_index + remaining_values], ctx=ast.Load())))
+            value_index += remaining_values
+            continue
+        if value_index >= len(values):
+            break
+        pairs.append((target, values[value_index]))
+        value_index += 1
+    return pairs
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:

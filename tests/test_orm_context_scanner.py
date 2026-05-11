@@ -213,6 +213,32 @@ class Sale(models.Model):
     assert "odoo-orm-context-sudo-active-test-read" in rule_ids
 
 
+def test_flags_local_constant_with_user_active_test_read(tmp_path: Path) -> None:
+    """Function-local constants should not hide superuser active_test reads."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    def archived_orders(self):
+        root_uid = 1
+        include_archived = False
+        return self.env['sale.order'].with_user(root_uid).with_context(active_test=include_archived).search([])
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-orm-context-active-test-disabled" in rule_ids
+    assert "odoo-orm-context-sudo-active-test-read" in rule_ids
+
+
 def test_flags_aliased_with_user_one_active_test_read(tmp_path: Path) -> None:
     """Aliased with_user(1) recordsets should preserve privileged read posture."""
     models = tmp_path / "module" / "models"
@@ -347,6 +373,31 @@ class Partner(models.Model):
 
     def quiet_update(self):
         ctx = {TRACKING_FLAG: ENABLED}
+        return self.with_context(ctx).write({'name': 'x'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-context-tracking-disabled-mutation" for f in findings)
+
+
+def test_flags_local_constant_context_dict_tracking_disabled_mutation(tmp_path: Path) -> None:
+    """Function-local constants in context dictionaries should preserve risky flags."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "partner.py").write_text(
+        """
+from odoo import models
+
+class Partner(models.Model):
+    _name = 'x.partner'
+
+    def quiet_update(self):
+        tracking_flag = 'tracking_disable'
+        enabled = True
+        ctx = {tracking_flag: enabled}
         return self.with_context(ctx).write({'name': 'x'})
 """,
         encoding="utf-8",
@@ -630,6 +681,36 @@ class Controller(http.Controller):
     @http.route('/quiet-admin', auth='user')
     def quiet_admin(self):
         request.update_context(CONTEXT_ALIAS)
+        return request.env['res.users'].create({'name': 'Admin'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-orm-context-request-active-test-disabled" in rule_ids
+    assert "odoo-orm-context-request-privileged-mode" in rule_ids
+
+
+def test_flags_request_update_context_local_constant_dict(tmp_path: Path) -> None:
+    """request.update_context should resolve function-local context dictionaries."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/quiet-admin', auth='user')
+    def quiet_admin(self):
+        active_key = 'active_test'
+        disabled = False
+        module_key = 'module_uninstall'
+        enabled = True
+        request_context = {active_key: disabled, module_key: enabled}
+        request.update_context(request_context)
         return request.env['res.users'].create({'name': 'Admin'})
 """,
         encoding="utf-8",
