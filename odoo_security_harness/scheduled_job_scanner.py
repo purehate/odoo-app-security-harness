@@ -273,6 +273,17 @@ class ScheduledJobScanner(ast.NodeVisitor):
                     context.name,
                     sink,
                 )
+            for url_value in _http_url_values(node, sink, constants):
+                if _is_cleartext_literal_url(url_value, constants):
+                    self._add(
+                        "odoo-scheduled-job-cleartext-http-url",
+                        "Scheduled job uses cleartext HTTP URL",
+                        "medium",
+                        node.lineno,
+                        "Scheduled job outbound HTTP targets a literal http:// URL; use HTTPS to protect recurring integration payloads and response data from interception or downgrade",
+                        context.name,
+                        sink,
+                    )
 
         if method in UNBOUNDED_READ_METHODS and SYNC_NAME_RE.search(context.name) and not _has_keyword(node, "limit"):
             self._add(
@@ -703,6 +714,25 @@ def _keyword_values(node: ast.Call, name: str, constants: dict[str, ast.AST] | N
         if isinstance(value, ast.Dict):
             values.extend(_dict_keyword_values(value, name, constants))
     return values
+
+
+def _http_url_values(node: ast.Call, sink: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    if node.args:
+        method = sink.rsplit(".", 1)[-1]
+        if method == "request" and len(node.args) >= 2:
+            values.append(node.args[1])
+        else:
+            values.append(node.args[0])
+    values.extend(_keyword_values(node, "url", constants))
+    return values
+
+
+def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    return isinstance(value, ast.Constant) and isinstance(value.value, str) and value.value.strip().lower().startswith(
+        "http://"
+    )
 
 
 def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST]) -> list[ast.AST]:

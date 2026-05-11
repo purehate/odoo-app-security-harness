@@ -1306,6 +1306,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "scheduled_job_cleartext_http_url",
+        (
+            "scheduled-job-cleartext-http-url",
+            "scheduled job uses cleartext http url",
+            "scheduled job outbound http targets a literal http:// url",
+            "protect recurring integration payloads and response data",
+            "interception or downgrade",
+        ),
+    ),
+    (
         "scheduled_job_sync_without_limit",
         (
             "scheduled-job-sync-without-limit",

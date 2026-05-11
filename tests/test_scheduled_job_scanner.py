@@ -718,6 +718,32 @@ class Sync(models.Model):
     assert any(f.rule_id == "odoo-scheduled-job-tls-verify-disabled" for f in findings)
 
 
+def test_flags_cron_cleartext_http_url(tmp_path: Path) -> None:
+    """Recurring integrations should not call literal cleartext HTTP endpoints."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import requests
+
+LEGACY_FEED = 'http://feeds.example.test/orders'
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        requests.get(LEGACY_FEED, timeout=10)
+        return requests.request('POST', url='http://partner.example.test/orders', timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert sum(f.rule_id == "odoo-scheduled-job-cleartext-http-url" for f in findings) == 2
+
+
 def test_flags_imported_http_function_without_timeout(tmp_path: Path) -> None:
     """Imported requests helpers should still count as outbound HTTP calls."""
     models = tmp_path / "module" / "models"

@@ -6397,6 +6397,12 @@ def test_taxonomy_coverage_classifies_scheduled_job_integration_risks() -> None:
             },
             {
                 "source": "scheduled-jobs",
+                "rule_id": "odoo-scheduled-job-cleartext-http-url",
+                "title": "Scheduled job uses cleartext HTTP URL",
+                "message": "Scheduled job outbound HTTP targets a literal http:// URL; use HTTPS to protect recurring integration payloads and response data from interception or downgrade",
+            },
+            {
+                "source": "scheduled-jobs",
                 "rule_id": "odoo-scheduled-job-sync-without-limit",
                 "title": "External-sync scheduled job lacks visible batch limit",
                 "message": "Scheduled sync/import/fetch job searches without a visible limit; verify batching, locking, timeout, and retry behavior",
@@ -6409,6 +6415,7 @@ def test_taxonomy_coverage_classifies_scheduled_job_integration_risks() -> None:
     assert shapes["odoo-scheduled-job-unbounded-search"] == "scheduled_job_unbounded_search"
     assert shapes["odoo-scheduled-job-http-no-timeout"] == "scheduled_job_http_without_timeout"
     assert shapes["odoo-scheduled-job-tls-verify-disabled"] == "scheduled_job_tls_verification_disabled"
+    assert shapes["odoo-scheduled-job-cleartext-http-url"] == "scheduled_job_cleartext_http_url"
     assert shapes["odoo-scheduled-job-sync-without-limit"] == "scheduled_job_sync_without_limit"
 
 

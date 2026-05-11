@@ -1404,6 +1404,12 @@
       "capec": ["CAPEC-94"],
       "owasp": "A02:2021 Cryptographic Failures"
     },
+    "scheduled_job_cleartext_http_url": {
+      "label": "Odoo scheduled job uses cleartext HTTP transport",
+      "cwe": ["CWE-319", "CWE-311", "CWE-200"],
+      "capec": ["CAPEC-117", "CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "scheduled_job_sync_without_limit": {
       "label": "Odoo scheduled sync or import job lacks a visible batch limit",
       "cwe": ["CWE-400", "CWE-770", "CWE-834"],
