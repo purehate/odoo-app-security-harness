@@ -588,6 +588,38 @@ def test_iframe_safe_sandbox_tokens_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-qweb-iframe-sandbox-escape" for f in findings)
 
 
+def test_detects_iframe_broad_sensitive_permissions(tmp_path: Path) -> None:
+    """Iframe allow policies should not broadly delegate sensitive browser features."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><iframe src="/my/widget" sandbox="" allow="camera *; geolocation; payment https://pay.example"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-qweb-iframe-broad-permissions"
+        and f.attribute == "allow"
+        and "camera" in f.message
+        and "geolocation" in f.message
+        for f in findings
+    )
+
+
+def test_iframe_origin_scoped_permissions_ignored(tmp_path: Path) -> None:
+    """Origin-scoped iframe feature policies are reviewable without this broad-permission lead."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><iframe src="/my/widget" sandbox="" allow="camera https://camera.example; payment https://pay.example"/></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-iframe-broad-permissions" for f in findings)
+
+
 def test_detects_formatted_dynamic_url(tmp_path: Path) -> None:
     """t-attf URL attributes should be treated as dynamic URL sinks."""
     template = tmp_path / "template.xml"

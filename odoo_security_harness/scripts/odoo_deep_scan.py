@@ -3541,6 +3541,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "frontend_iframe_broad_permissions",
+        (
+            "odoo-qweb-iframe-broad-permissions",
+            "iframe allows sensitive browser features broadly",
+            "grants sensitive browser features broadly",
+            "restrict camera, microphone, geolocation, payment, usb, serial, and clipboard access",
+        ),
+    ),
+    (
         "frontend_external_script_missing_sri",
         (
             "web-owl-qweb-external-script-missing-sri",

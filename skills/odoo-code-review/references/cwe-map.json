@@ -391,6 +391,11 @@
       "cwe": ["CWE-693", "CWE-1021"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "frontend_iframe_broad_permissions": {
+      "label": "Frontend iframe broadly delegates sensitive browser features",
+      "cwe": ["CWE-284", "CWE-266", "CWE-1021"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
     "frontend_external_script_missing_sri": {
       "label": "Frontend loads external JavaScript without Subresource Integrity pinning",
       "cwe": ["CWE-353", "CWE-829"],

@@ -2359,6 +2359,24 @@ def test_taxonomy_coverage_classifies_web_iframe_sandbox_escape() -> None:
     assert "CWE-1021" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_qweb_iframe_broad_permissions() -> None:
+    """Broad iframe feature delegation should map to frame containment taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-qweb-iframe-broad-permissions",
+                "source": "qweb",
+                "title": "QWeb iframe allows sensitive browser features broadly",
+                "message": "QWeb iframe allow='camera *; geolocation' grants sensitive browser features broadly",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "frontend_iframe_broad_permissions"
+    assert "CWE-284" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_qweb_external_script_missing_sri() -> None:
     """External script integrity leads should map to software integrity taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(

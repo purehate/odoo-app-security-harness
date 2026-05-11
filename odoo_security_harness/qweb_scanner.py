@@ -57,6 +57,17 @@ class QWebScanner:
 
     # Dangerous HTML tags
     DANGEROUS_TAGS = {"script", "iframe", "object", "embed", "form"}
+    SENSITIVE_IFRAME_FEATURES = {
+        "camera",
+        "clipboard-read",
+        "clipboard-write",
+        "display-capture",
+        "geolocation",
+        "microphone",
+        "payment",
+        "serial",
+        "usb",
+    }
     SENSITIVE_FIELD_MARKERS = (
         "access_key",
         "access_link",
@@ -189,6 +200,7 @@ class QWebScanner:
 
         if tag.lower() == "iframe":
             self._check_iframe_sandbox(element, tag)
+            self._check_iframe_allow_permissions(element, tag)
 
         if tag.lower() == "script":
             self._check_script_qweb_expression(element, tag)
@@ -750,6 +762,35 @@ class QWebScanner:
                 message="QWeb iframe sandbox combines allow-scripts with allow-same-origin; same-origin content can remove the sandbox or access parent-origin data",
             )
 
+    def _check_iframe_allow_permissions(self, element: ElementTree.Element, tag: str) -> None:
+        """Check embedded frames for broad sensitive browser feature delegation."""
+        allow_value = _xml_attr(element, "allow")
+        broad_features = self._broad_iframe_features(allow_value)
+        if not broad_features:
+            return
+        self._add_finding(
+            rule_id="odoo-qweb-iframe-broad-permissions",
+            title="QWeb iframe allows sensitive browser features broadly",
+            severity="medium",
+            element=tag,
+            attribute="allow",
+            message=f"QWeb iframe allow='{allow_value}' grants sensitive browser features broadly ({', '.join(broad_features)}); restrict camera, microphone, geolocation, payment, USB, serial, and clipboard access to trusted origins only",
+        )
+
+    def _broad_iframe_features(self, allow_value: str) -> list[str]:
+        """Return sensitive iframe feature policies that are wildcarded or originless."""
+        broad: list[str] = []
+        for policy in allow_value.lower().split(";"):
+            tokens = policy.strip().split()
+            if not tokens:
+                continue
+            feature = tokens[0]
+            if feature not in self.SENSITIVE_IFRAME_FEATURES:
+                continue
+            if len(tokens) == 1 or "*" in tokens:
+                broad.append(feature)
+        return broad
+
     def _check_external_script_integrity(self, element: ElementTree.Element, tag: str) -> None:
         """Check third-party scripts for Subresource Integrity."""
         src = _xml_attr(element, "src").strip()
@@ -1003,6 +1044,22 @@ class QWebScanner:
             attrs = match.group("attrs")
             line = content[: match.start()].count("\n") + 1
             sandbox_match = re.search(r"\bsandbox\s*=\s*([\"'])(?P<sandbox>.*?)\1", attrs, re.IGNORECASE | re.DOTALL)
+            allow_match = re.search(r"\ballow\s*=\s*([\"'])(?P<allow>.*?)\1", attrs, re.IGNORECASE | re.DOTALL)
+            allow_value = allow_match.group("allow") if allow_match else ""
+            broad_features = self._broad_iframe_features(allow_value)
+            if broad_features:
+                findings.append(
+                    QWebFinding(
+                        rule_id="odoo-qweb-iframe-broad-permissions",
+                        title="QWeb iframe allows sensitive browser features broadly",
+                        severity="medium",
+                        file=self.file_path,
+                        line=line,
+                        element="iframe",
+                        attribute="allow",
+                        message=f"QWeb iframe allow='{allow_value}' grants sensitive browser features broadly ({', '.join(broad_features)})",
+                    )
+                )
             if not sandbox_match:
                 findings.append(
                     QWebFinding(
