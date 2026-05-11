@@ -439,6 +439,49 @@ class Controller(odoo_http.Controller):
     assert any(f.rule_id == "odoo-cache-public-sensitive-response" for f in findings)
 
 
+def test_imported_odoo_http_module_sensitive_response_is_reported(tmp_path: Path) -> None:
+    """import odoo.http as aliases should preserve route and request response sinks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "token.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/public/token', auth='public')
+    def token(self, **kwargs):
+        payload = odoo_http.request.get_http_params()
+        return odoo_http.request.make_response({'access_token': payload.get('token')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_cache_headers(tmp_path)
+
+    assert any(f.rule_id == "odoo-cache-public-sensitive-response" for f in findings)
+
+
+def test_imported_odoo_module_sensitive_response_is_reported(tmp_path: Path) -> None:
+    """import odoo as aliases should preserve od.http route and request sinks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "token.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/public/token', auth='public')
+    def token(self, **kwargs):
+        return od.http.request.make_response({'access_token': kwargs.get('token')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_cache_headers(tmp_path)
+
+    assert any(f.rule_id == "odoo-cache-public-sensitive-response" for f in findings)
+
+
 def test_non_odoo_route_decorator_sensitive_response_is_ignored(tmp_path: Path) -> None:
     """Local route-like decorators should not create Odoo route context."""
     controllers = tmp_path / "module" / "controllers"
