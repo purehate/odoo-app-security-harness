@@ -1256,6 +1256,32 @@ class Document(models.Model):
     assert any(f.rule_id == "odoo-act-url-sensitive-url" for f in findings)
 
 
+def test_flags_unpack_update_mutated_tainted_act_url(tmp_path: Path) -> None:
+    """Static **kwargs passed to dict.update should not hide act_url URL mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+
+class Controller(http.Controller):
+    @http.route('/go', auth='public')
+    def go(self, **kwargs):
+        action = {'type': 'ir.actions.act_url', 'target': 'self'}
+        changes = {'url': kwargs.get('next')}
+        action.update(**changes)
+        return action
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-url-tainted-url" in rule_ids
+    assert "odoo-act-url-public-route" in rule_ids
+
+
 def test_flags_mutated_act_url_embedded_credentials(tmp_path: Path) -> None:
     """Mutated act_url dictionaries should be scanned for embedded URL credentials."""
     models = tmp_path / "module" / "models"

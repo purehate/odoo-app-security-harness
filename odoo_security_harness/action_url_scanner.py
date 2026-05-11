@@ -429,14 +429,16 @@ class ActionUrlScanner(ast.NodeVisitor):
         if not self._expr_is_action_url(node.func.value):
             return
 
+        constants = self._effective_constants()
         for arg in node.args:
-            if isinstance(arg, ast.Dict):
-                url_node = _dict_value(arg, "url", self._effective_constants())
+            dict_arg = _resolve_static_dict(arg, constants)
+            if dict_arg is not None:
+                url_node = _dict_value(dict_arg, "url", constants)
                 if url_node is not None:
                     self._scan_mutated_action_url(url_node, node.lineno, "python-dict-update")
-        for keyword in node.keywords:
-            if keyword.arg == "url":
-                self._scan_mutated_action_url(keyword.value, node.lineno, "python-dict-update")
+        for key, keyword_value in _expanded_keywords(node, constants):
+            if key == "url":
+                self._scan_mutated_action_url(keyword_value, node.lineno, "python-dict-update")
 
     def _scan_mutated_action_url(self, url_node: ast.AST, line: int, sink: str) -> None:
         route = self._current_route()
@@ -628,7 +630,7 @@ class ActionUrlScanner(ast.NodeVisitor):
             return
 
         if isinstance(target, ast.Name):
-            if _is_static_literal(value):
+            if _is_static_literal(value) or _is_static_dict_shape(value):
                 self.local_constants[target.id] = value
             else:
                 self.local_constants.pop(target.id, None)
@@ -887,6 +889,14 @@ def _is_static_literal(node: ast.AST) -> bool:
         )
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _is_static_literal(node.left) and _is_static_literal(node.right)
+    return False
+
+
+def _is_static_dict_shape(node: ast.AST) -> bool:
+    if isinstance(node, ast.Dict):
+        return all(key is None or _is_static_literal(key) for key in node.keys)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_dict_shape(node.left) and _is_static_dict_shape(node.right)
     return False
 
 
