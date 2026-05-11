@@ -75,6 +75,8 @@ class DeploymentScanner:
             self._scan_config_parameter_csv()
         elif _is_compose_file(self.path):
             self._scan_compose_environment()
+        elif _is_helm_values_file(self.path):
+            self._scan_helm_values_environment()
         elif suffix in {".yaml", ".yml"}:
             self._scan_kubernetes_environment()
         elif _is_dockerfile(self.path):
@@ -115,6 +117,14 @@ class DeploymentScanner:
             environment = service.get("environment")
             for key, value in _compose_environment_items(environment):
                 self._scan_config_value(key, value, _line_for(self.content, str(key)))
+
+    def _scan_helm_values_environment(self) -> None:
+        try:
+            document = yaml.safe_load(self.content)
+        except yaml.YAMLError:
+            return
+        for key, value in _helm_values_environment_items(document):
+            self._scan_config_value(key, value, _line_for(self.content, str(key)))
 
     def _scan_kubernetes_environment(self) -> None:
         try:
@@ -496,6 +506,37 @@ def _looks_kubernetes_manifest(document: object) -> bool:
     return isinstance(document, dict) and "apiVersion" in document and "kind" in document
 
 
+def _helm_values_environment_items(document: object) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    if isinstance(document, dict):
+        for key, value in document.items():
+            key_text = str(key)
+            if _looks_odoo_env_key(key_text) and _is_scalar_config_value(value):
+                items.append((key_text, str(value)))
+            if key_text.lower() in {"env", "environment", "extraenv", "extraenvvars"}:
+                items.extend(_compose_environment_items(value))
+                items.extend(_name_value_environment_items(value))
+            items.extend(_helm_values_environment_items(value))
+    elif isinstance(document, list):
+        for value in document:
+            items.extend(_helm_values_environment_items(value))
+    return items
+
+
+def _name_value_environment_items(environment: object) -> list[tuple[str, str]]:
+    if not isinstance(environment, list):
+        return []
+    items: list[tuple[str, str]] = []
+    for entry in environment:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        value = entry.get("value")
+        if name and value is not None:
+            items.append((str(name), str(value)))
+    return items
+
+
 def _kubernetes_environment_items(document: object) -> list[tuple[str, str]]:
     items: list[tuple[str, str]] = []
     for container in _kubernetes_containers(document):
@@ -525,6 +566,14 @@ def _kubernetes_containers(node: object) -> list[dict[str, object]]:
         for value in node:
             containers.extend(_kubernetes_containers(value))
     return containers
+
+
+def _looks_odoo_env_key(key: str) -> bool:
+    return key.strip().upper().startswith("ODOO_")
+
+
+def _is_scalar_config_value(value: object) -> bool:
+    return isinstance(value, str | int | float | bool)
 
 
 def _normalize_config_key(key: str) -> str:
@@ -597,6 +646,11 @@ def _looks_config_file(path: Path) -> bool:
 
 def _is_compose_file(path: Path) -> bool:
     return path.name.lower() in COMPOSE_FILENAMES
+
+
+def _is_helm_values_file(path: Path) -> bool:
+    suffix = path.suffix.lower()
+    return suffix in {".yaml", ".yml"} and path.name.lower().startswith("values")
 
 
 def _is_dockerfile(path: Path) -> bool:

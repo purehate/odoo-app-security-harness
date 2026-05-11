@@ -240,6 +240,35 @@ spec:
     assert "odoo-deploy-db-sslmode-opportunistic" not in rule_ids
 
 
+def test_scan_deployment_config_flags_helm_values_odoo_env_keys(tmp_path: Path) -> None:
+    """Helm values files should feed obvious Odoo env settings into posture checks."""
+    config = tmp_path / "values-production.yaml"
+    config.write_text(
+        """odoo:
+  env:
+    ODOO_LIST_DB: true
+    ODOO_PROXY_MODE: false
+extraEnvVars:
+  - name: ODOO_WEB_BASE_URL
+    value: http://localhost:8069
+  - name: ODOO_DB_SSLMODE
+    valueFrom:
+      secretKeyRef:
+        name: odoo
+        key: db_sslmode
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_deployment_config(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deploy-list-db-enabled" in rule_ids
+    assert "odoo-deploy-proxy-mode-disabled" in rule_ids
+    assert "odoo-deploy-insecure-base-url" in rule_ids
+    assert "odoo-deploy-db-sslmode-opportunistic" not in rule_ids
+
+
 def test_scan_deployment_config_flags_signup_and_base_url_xml(tmp_path: Path) -> None:
     """XML config parameters should flag open signup and mutable base URL settings."""
     data_dir = tmp_path / "module" / "data"
