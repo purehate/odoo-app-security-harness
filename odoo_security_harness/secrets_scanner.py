@@ -76,9 +76,9 @@ CONFIG_PARAMETER_CALL_RE = re.compile(
 )
 PRIVATE_KEY_BLOCK_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
 
-CONFIG_EXTENSIONS = {".conf", ".cfg", ".env", ".ini"}
+CONFIG_EXTENSIONS = {".cfg", ".cnf", ".conf", ".env", ".ini", ".properties"}
 KEY_MATERIAL_EXTENSIONS = {".key", ".pem"}
-TEXT_EXTENSIONS = {".py", ".xml", ".csv", ".yml", ".yaml", ".json", ".txt", *CONFIG_EXTENSIONS}
+TEXT_EXTENSIONS = {".csv", ".json", ".py", ".toml", ".txt", ".xml", ".yaml", ".yml", *CONFIG_EXTENSIONS}
 LOW_VALUE_PLACEHOLDERS = {"changeme", "change_me", "example", "dummy", "password", "secret", "token", "admin"}
 WEAK_USER_PASSWORDS = {"admin", "demo", "password", "changeme", "change_me", "odoo", "test"}
 

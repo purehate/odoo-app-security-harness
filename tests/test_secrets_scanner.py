@@ -359,6 +359,26 @@ def test_integration_key_in_config_file_is_reported(tmp_path: Path) -> None:
     )
 
 
+def test_toml_secret_assignment_is_reported(tmp_path: Path) -> None:
+    """TOML config files should be scanned for quoted secret assignments."""
+    path = tmp_path / "settings.toml"
+    path.write_text('api_key = "sk_live_abcdef1234567890"\n', encoding="utf-8")
+
+    findings = scan_secrets(tmp_path)
+
+    assert any(f.rule_id == "odoo-secret-hardcoded-value" and f.file == str(path) for f in findings)
+
+
+def test_properties_secret_assignment_is_reported(tmp_path: Path) -> None:
+    """Properties-style config files should be scanned for unquoted secrets."""
+    path = tmp_path / "integration.properties"
+    path.write_text("connector.secret_key = live_secret_abcdef1234567890\n", encoding="utf-8")
+
+    findings = scan_secrets(tmp_path)
+
+    assert any(f.rule_id == "odoo-secret-config-file-value" and f.file == str(path) for f in findings)
+
+
 def test_repository_secret_scan_skips_virtualenv(tmp_path: Path) -> None:
     """Vendored/generated directories should not be scanned."""
     app = tmp_path / "app.py"
