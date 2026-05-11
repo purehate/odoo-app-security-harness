@@ -77,6 +77,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.request_names: set[str] = {"request"}
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
+        self.field_module_names: set[str] = {"fields"}
         self.route_decorator_names: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
@@ -98,6 +99,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 self.odoo_module_names.add(alias.asname or alias.name)
             elif alias.name == "odoo.http" and alias.asname:
                 self.http_module_names.add(alias.asname)
+            elif alias.name == "odoo.fields" and alias.asname:
+                self.field_module_names.add(alias.asname)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -106,6 +109,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "fields":
+                    self.field_module_names.add(alias.asname or alias.name)
         if node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -931,15 +936,21 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         return bool(self._field_call_type(node))
 
     def _field_call_type(self, node: ast.Call) -> str:
-        if (
-            isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "fields"
-        ):
+        if isinstance(node.func, ast.Attribute) and self._is_odoo_fields_module_expr(node.func.value):
             return node.func.attr
         if isinstance(node.func, ast.Name):
             return node.func.id
         return ""
+
+    def _is_odoo_fields_module_expr(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.field_module_names
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "fields"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in self.odoo_module_names
+        )
 
     def _check_field_options(self, node: ast.Call) -> None:
         """Check for risky Odoo field options."""

@@ -925,6 +925,48 @@ class TestModel(models.Model):
 
         assert any(f.rule_id == "odoo-deep-html-sanitize-false" for f in findings)
 
+    def test_aliased_odoo_fields_module_html_sanitize_false(self) -> None:
+        """Aliased Odoo fields modules should expose unsafe HTML fields."""
+        source = """
+from odoo import fields as odoo_fields
+
+class TestModel(models.Model):
+    _name = 'test.model'
+    body = odoo_fields.Html(sanitize=False)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-html-sanitize-false" for f in findings)
+
+    def test_imported_odoo_fields_module_html_sanitize_false(self) -> None:
+        """Direct odoo.fields imports should expose unsafe HTML fields."""
+        source = """
+import odoo.fields as odoo_fields
+
+class TestModel(models.Model):
+    _name = 'test.model'
+    body = odoo_fields.Html(sanitize=False)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-html-sanitize-false" for f in findings)
+
+    def test_imported_odoo_module_fields_html_sanitize_false(self) -> None:
+        """Direct odoo module imports should expose unsafe HTML fields."""
+        source = """
+import odoo as od
+
+class TestModel(od.models.Model):
+    _name = 'test.model'
+    body = od.fields.Html(sanitize=False)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-html-sanitize-false" for f in findings)
+
     def test_class_constant_html_field_sanitize_false(self) -> None:
         """Class-scoped sanitize constants should expose raw HTML fields."""
         source = """
