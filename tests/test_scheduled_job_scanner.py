@@ -523,6 +523,31 @@ class Sync(models.Model):
     assert any(f.rule_id == "odoo-scheduled-job-tls-verify-disabled" for f in findings)
 
 
+def test_flags_tls_verification_disabled_static_kwargs(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should not hide cron TLS verification disabling."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import requests
+
+HTTP_OPTIONS = {'timeout': 10, 'verify': False}
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        return requests.get(self.feed_url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-scheduled-job-tls-verify-disabled" for f in findings)
+
+
 def test_flags_imported_http_function_without_timeout(tmp_path: Path) -> None:
     """Imported requests helpers should still count as outbound HTTP calls."""
     models = tmp_path / "module" / "models"
@@ -713,6 +738,31 @@ class Sync(models.Model):
     findings = scan_scheduled_jobs(tmp_path)
 
     assert any(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings)
+
+
+def test_flags_http_static_kwargs_timeout(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should satisfy cron HTTP timeout checks."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import requests
+
+HTTP_OPTIONS = {'timeout': 10}
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        return requests.post(self.feed_url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert not any(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings)
 
 
 def test_flags_tuple_unpacked_sudo_cron_mutation(tmp_path: Path) -> None:

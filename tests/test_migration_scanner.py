@@ -452,6 +452,26 @@ def migrate(cr, version):
     assert any(finding.rule_id == "odoo-migration-http-no-timeout" for finding in findings)
 
 
+def test_http_static_kwargs_timeout_is_not_reported_in_migration(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should satisfy migration HTTP timeout checks."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+import requests
+
+HTTP_OPTIONS = {'timeout': 10}
+
+def migrate(cr, version):
+    requests.post("https://example.test/upgrade", **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert not any(finding.rule_id == "odoo-migration-http-no-timeout" for finding in findings)
+
+
 def test_tls_verification_disabled_is_reported_in_migration(tmp_path: Path) -> None:
     """Migration outbound HTTP should not disable TLS verification."""
     py = tmp_path / "post-migrate.py"
@@ -463,6 +483,26 @@ VERIFY_TLS = False
 
 def migrate(cr, version):
     requests.post("https://example.test/upgrade", timeout=10, verify=VERIFY_TLS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(finding.rule_id == "odoo-migration-tls-verify-disabled" for finding in findings)
+
+
+def test_tls_verification_disabled_static_kwargs_is_reported_in_migration(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should not hide migration TLS verification disabling."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+import requests
+
+HTTP_OPTIONS = {'timeout': 10, 'verify': False}
+
+def migrate(cr, version):
+    requests.post("https://example.test/upgrade", **HTTP_OPTIONS)
 """,
         encoding="utf-8",
     )
