@@ -1112,6 +1112,62 @@ class Controller(http.Controller):
     )
 
 
+def test_request_access_key_stored_in_config_parameter_is_reported(tmp_path: Path) -> None:
+    """Access-key shaped config parameters should be treated like API-key sinks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/provider/access-key', auth='public', csrf=False)
+    def set_provider_key(self, **kwargs):
+        request.env['ir.config_parameter'].sudo().set_param(
+            'connector.access_key',
+            kwargs.get('access_key'),
+        )
+        return {'ok': True}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-api-key-config-parameter-request-secret" and f.severity == "critical" for f in findings
+    )
+
+
+def test_direct_route_license_key_arg_stored_in_config_parameter_is_reported(tmp_path: Path) -> None:
+    """Route args named like integration keys should seed taint for config writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/provider/license-key', auth='public', csrf=False)
+    def set_provider_key(self, license_key):
+        request.env['ir.config_parameter'].sudo().set_param(
+            'connector.license_key',
+            license_key,
+        )
+        return {'ok': True}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-api-key-config-parameter-request-secret" and f.severity == "critical" for f in findings
+    )
+
+
 def test_walrus_config_parameter_api_key_store_is_reported(tmp_path: Path) -> None:
     """Walrus-bound config-parameter aliases should still report request-stored API keys."""
     controllers = tmp_path / "module" / "controllers"
@@ -1155,6 +1211,28 @@ class Settings:
     )
 
     assert not any(f.rule_id == "odoo-api-key-config-parameter-request-secret" for f in scan_api_keys(tmp_path))
+
+
+def test_access_key_response_return_is_reported(tmp_path: Path) -> None:
+    """Route responses containing access keys should be treated like API-key exposure."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+from odoo import http
+
+class Controller(http.Controller):
+    @http.route('/apikey/show-access-key', auth='user')
+    def show_key(self):
+        key = self.env['ir.config_parameter'].sudo().get_param('connector.access_key')
+        return {'access_key': key}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+
+    assert any(f.rule_id == "odoo-api-key-returned-from-route" and f.severity == "high" for f in findings)
 
 
 def test_xml_entities_are_not_expanded_into_api_key_findings(tmp_path: Path) -> None:

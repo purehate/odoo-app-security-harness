@@ -31,14 +31,36 @@ class ApiKeyFinding:
 API_KEY_MODELS = {"res.users.apikeys", "res.users.apikeys.description"}
 MUTATION_METHODS = {"create", "write", "unlink"}
 LOOKUP_METHODS = {"browse", "read_group", "search", "search_count", "search_read"}
-TAINTED_ARG_NAMES = {"api_key", "apikey", "key", "token", "kwargs", "kw", "post", "params", "payload"}
+API_KEY_NAME_MARKERS = (
+    "access_key",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "bearer_token",
+    "client_secret",
+    "csrf_token",
+    "hmac_secret",
+    "jwt_secret",
+    "key",
+    "license_key",
+    "oauth_token",
+    "private_key",
+    "secret",
+    "secret_key",
+    "session_token",
+    "signature_secret",
+    "signing_key",
+    "token",
+    "webhook_secret",
+)
+TAINTED_ARG_NAMES = {*API_KEY_NAME_MARKERS, "kwargs", "kw", "post", "params", "payload"}
 ROUTE_ID_ARG_RE = re.compile(r"(?:^id$|_ids?$|^uid$|_uids?$)")
 REQUEST_MARKERS = (
     "kwargs.get",
     "kw.get",
     "post.get",
 )
-KEY_RETURN_MARKERS = ("api_key", "apikey", "new_key", "access_token", "token")
+KEY_RETURN_MARKERS = (*API_KEY_NAME_MARKERS, "access_token", "new_key")
 
 
 def scan_api_keys(repo_path: Path) -> list[ApiKeyFinding]:
@@ -857,12 +879,12 @@ def _keyword_value(node: ast.Call, name: str) -> ast.AST | None:
 
 
 def _expr_mentions_api_key_name(node: ast.AST) -> bool:
-    text = _safe_unparse(node).lower()
-    return any(marker in text for marker in ("api_key", "apikey", "access_token", "secret", "token"))
+    text = _safe_unparse(node).lower().replace("-", "_")
+    return any(marker in text for marker in API_KEY_NAME_MARKERS)
 
 
 def _expr_mentions_key_return(node: ast.AST) -> bool:
-    text = _safe_unparse(node).lower()
+    text = _safe_unparse(node).lower().replace("-", "_")
     return any(marker in text for marker in KEY_RETURN_MARKERS)
 
 
