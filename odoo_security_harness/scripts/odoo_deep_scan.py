@@ -9821,6 +9821,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -9835,6 +9837,73 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[st
         seen.add(node.id)
         return _resolve_constant(value, constants, seen)
     return node
+
+
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
+    seen = seen or set()
+    node = _resolve_constant(node, constants, seen)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants, set(seen))
+        right = _resolve_static_dict(node.right, constants, set(seen))
+        if left is None or right is None:
+            return None
+        return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
+    return None
+
+
+def _expanded_dict_keywords(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    keywords: list[tuple[str, ast.AST]] = []
+    for key, item_value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            value = _resolve_static_dict(item_value, constants)
+            if value is not None:
+                keywords.extend(_expanded_dict_keywords(value, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            keywords.append((resolved_key.value, item_value))
+    return keywords
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:

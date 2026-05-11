@@ -135,6 +135,71 @@ class TestController(http.Controller):
 
         assert any(f.rule_id == "odoo-deep-csrf-write" for f in findings)
 
+    def test_updated_static_route_kwargs_public_route_with_sudo(self) -> None:
+        """Updated static **kwargs should not hide public route posture."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+PUBLIC_ROUTE = '/test/public'
+ROUTE_OPTIONS = {'route': PUBLIC_ROUTE, 'auth': 'user'}
+ROUTE_OPTIONS.update({'auth': 'public'})
+
+class TestController(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def test_public(self):
+        users = request.env['res.users'].sudo().search([])
+        return {'count': len(users)}
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-public-sudo" in rule_ids
+        assert "odoo-deep-public-sudo-search" in rule_ids
+
+    def test_updated_keyword_static_route_kwargs_public_route_with_sudo(self) -> None:
+        """Updated static **kwargs via keyword args should not hide public route posture."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+PUBLIC_ROUTE = '/test/public'
+ROUTE_OPTIONS = {'route': PUBLIC_ROUTE, 'auth': 'user'}
+ROUTE_OPTIONS.update(auth='public', csrf=False)
+
+class TestController(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def test_public(self):
+        users = request.env['res.users'].sudo().search([])
+        return {'count': len(users)}
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-public-sudo" in rule_ids
+        assert "odoo-deep-public-sudo-search" in rule_ids
+
+    def test_updated_static_route_kwargs_csrf_false_on_write(self) -> None:
+        """Updated static **kwargs should not hide csrf=False on state-changing routes."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+ROUTE_OPTIONS = {'route': '/test/action', 'auth': 'user', 'csrf': True}
+ROUTE_OPTIONS.update({'csrf': False, 'methods': ['POST']})
+
+class TestController(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def test_action(self):
+        return request.env['test.model'].write({'state': 'done'})
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-csrf-write" for f in findings)
+
     def test_aliased_http_route_with_sudo(self) -> None:
         """Aliased Odoo http imports should still expose public route context."""
         source = """

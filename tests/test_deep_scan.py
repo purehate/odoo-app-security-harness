@@ -8821,6 +8821,43 @@ class TestController:
     assert routes == []
 
 
+def test_route_inventory_resolves_updated_route_kwargs_metadata(tmp_path: Path) -> None:
+    """Route inventory should preserve updated static **kwargs route metadata."""
+    controllers = tmp_path / "test_module" / "controllers"
+    controllers.mkdir(parents=True)
+    controller = controllers / "main.py"
+    controller.write_text(
+        """
+from odoo import http
+
+ROUTE_OPTIONS = {"route": "/api/action", "auth": "user", "csrf": True}
+ROUTE_OPTIONS.update({"auth": "public", "csrf": False})
+
+class TestController(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def action(self):
+        return {}
+""",
+        encoding="utf-8",
+    )
+
+    routes = odoo_deep_scan._route_inventory(tmp_path, [controller])
+
+    assert routes == [
+        {
+            "file": "test_module/controllers/main.py",
+            "line": 8,
+            "end_line": 10,
+            "function": "action",
+            "route": "/api/action",
+            "auth": "public",
+            "csrf": "False",
+            "type": "http",
+            "methods": "",
+        },
+    ]
+
+
 def test_deep_scan_writes_findings_report_and_pocs(tmp_path: Path, monkeypatch) -> None:
     """Deep scan should aggregate analyzers and write report/PoC artifacts."""
     repo = tmp_path / "repo"

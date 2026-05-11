@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
-from odoo_security_harness.base_scanner import _line_for, _should_skip
+from odoo_security_harness.base_scanner import XmlScanner, _line_for, _record_fields, _should_skip
 
 
 @dataclass
@@ -119,31 +119,22 @@ def scan_metadata(repo_path: Path) -> list[MetadataFinding]:
         if not path.is_file() or _should_skip(path):
             continue
         if path.suffix.lower() == ".xml":
-            findings.extend(MetadataScanner(path).scan_xml_file())
+            findings.extend(MetadataScanner(path).scan_file())
         elif path.suffix.lower() == ".csv":
             findings.extend(MetadataScanner(path).scan_csv_file())
     return findings
 
 
-class MetadataScanner:
+class MetadataScanner(XmlScanner):
     """Scanner for one metadata file."""
 
     def __init__(self, path: Path) -> None:
-        self.path = path
-        self.content = ""
+        super().__init__(path)
         self.findings: list[MetadataFinding] = []
 
-    def scan_xml_file(self) -> list[MetadataFinding]:
+    def scan_xml(self) -> None:
         """Scan XML data records."""
-        try:
-            self.content = self.path.read_text(encoding="utf-8", errors="replace")
-            root = ElementTree.fromstring(self.content)
-        except ElementTree.ParseError:
-            return []
-        except Exception:
-            return []
-
-        for record in root.iter("record"):
+        for record in self.root.iter("record"):
             model = record.get("model", "")
             if model == "ir.model.access":
                 self._scan_xml_acl(record)
@@ -153,7 +144,10 @@ class MetadataScanner:
                 self._scan_group_record(record)
             elif model == "res.users":
                 self._scan_user_record(record)
-        return self.findings
+
+    def scan_xml_file(self) -> list[MetadataFinding]:
+        """Backward-compatible alias for scan_file."""
+        return self.scan_file()
 
     def scan_csv_file(self) -> list[MetadataFinding]:
         """Scan CSV data files for ACL-like records."""
@@ -340,13 +334,6 @@ class MetadataScanner:
                 record_id,
             )
 
-    def _line_for_record(self, record: ElementTree.Element) -> int:
-        record_id = record.get("id")
-        if record_id:
-            return _line_for(self.content, f'id="{record_id}"')
-        model = record.get("model", "")
-        return _line_for(self.content, f'model="{model}"')
-
     def _add(
         self,
         rule_id: str,
@@ -369,16 +356,6 @@ class MetadataScanner:
                 record_id=record_id,
             )
         )
-
-
-def _record_fields(record: ElementTree.Element) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for field in record.iter("field"):
-        name = field.get("name")
-        if not name:
-            continue
-        values[name] = field.get("ref") or field.get("eval") or (field.text or "").strip()
-    return values
 
 
 def _csv_model_name(path: Path) -> str:

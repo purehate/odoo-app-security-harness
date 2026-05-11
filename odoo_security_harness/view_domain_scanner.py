@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
-from odoo_security_harness.base_scanner import _line_for, _should_skip
+
+from odoo_security_harness.base_scanner import XmlScanner, _line_for, _record_fields, _should_skip
 
 
 @dataclass
@@ -109,32 +110,18 @@ def scan_view_domains(repo_path: Path) -> list[ViewDomainFinding]:
     return findings
 
 
-class ViewDomainScanner:
+class ViewDomainScanner(XmlScanner):
     """Scanner for one XML file."""
 
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self.content = ""
-        self.findings: list[ViewDomainFinding] = []
-
-    def scan_file(self) -> list[ViewDomainFinding]:
+    def scan_xml(self) -> None:
         """Scan XML domains and contexts."""
-        try:
-            self.content = self.path.read_text(encoding="utf-8", errors="replace")
-            root = ElementTree.fromstring(self.content)
-        except ElementTree.ParseError:
-            return []
-        except Exception:
-            return []
-
-        for element in root.iter():
+        for element in self.root.iter():
             self._scan_element_attributes(element)
             if element.tag == "record":
                 self._scan_action_record(element)
                 self._scan_filter_record(element)
             elif element.tag == "field" and element.get("name") in {"domain", "context", "filter_domain"}:
                 self._scan_expression(element, element.get("name", ""), _field_value(element))
-        return self.findings
 
     def scan_csv_file(self) -> list[ViewDomainFinding]:
         """Scan CSV action/filter records."""
@@ -315,12 +302,6 @@ class ViewDomainScanner:
                 attribute,
             )
 
-    def _line_for_record(self, record: ElementTree.Element) -> int:
-        record_id = record.get("id")
-        if record_id:
-            return _line_for(self.content, f'id="{record_id}"')
-        return _line_for(self.content, 'model="ir.actions.act_window"')
-
     def _add(
         self,
         rule_id: str,
@@ -343,53 +324,6 @@ class ViewDomainScanner:
                 attribute=attribute,
             )
         )
-
-
-def _record_fields(record: ElementTree.Element) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for field in record.iter("field"):
-        name = field.get("name")
-        if not name:
-            continue
-        values[name] = field.get("eval") or field.get("ref") or _field_value(field)
-    return values
-
-
-def _csv_model_name(path: Path) -> str:
-    stem = path.stem.strip().lower()
-    aliases = {
-        "ir_actions_act_window": "ir.actions.act_window",
-        "ir.actions.act_window": "ir.actions.act_window",
-        "ir_filters": "ir.filters",
-        "ir.filters": "ir.filters",
-    }
-    return aliases.get(stem, stem.replace("_", "."))
-
-
-def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
-    try:
-        reader = DictReader(StringIO(content))
-    except Exception:
-        return []
-    if not reader.fieldnames:
-        return []
-
-    rows: list[tuple[dict[str, str], int]] = []
-    try:
-        for index, row in enumerate(reader, start=2):
-            normalized: dict[str, str] = {}
-            for key, value in row.items():
-                if key is None:
-                    continue
-                name = str(key).strip().lower()
-                text = str(value or "").strip()
-                normalized[name] = text
-                if "/" in name or ":" in name:
-                    normalized.setdefault(re.split(r"[/:]", name, maxsplit=1)[0], text)
-            rows.append((normalized, index))
-    except Exception:
-        return []
-    return rows
 
 
 def _field_value(field: ElementTree.Element) -> str:
@@ -473,6 +407,43 @@ def _line_for_expression(content: str, attribute: str, value: str) -> int:
         if line != 1:
             return line
     return _line_for(content, f'name="{attribute}"') or _line_for(content, attribute)
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    aliases = {
+        "ir_actions_act_window": "ir.actions.act_window",
+        "ir.actions.act_window": "ir.actions.act_window",
+        "ir_filters": "ir.filters",
+        "ir.filters": "ir.filters",
+    }
+    return aliases.get(stem, stem.replace("_", "."))
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name or ":" in name:
+                    normalized.setdefault(re.split(r"[/:]", name, maxsplit=1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def findings_to_json(findings: list[ViewDomainFinding]) -> list[dict[str, Any]]:
