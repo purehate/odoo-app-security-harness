@@ -281,7 +281,7 @@ class ModelMethodScanner(ast.NodeVisitor):
             or _is_http_client_call(node.func, context.http_client_vars)
         ):
             constants = self._effective_constants()
-            if not _has_keyword(node, "timeout"):
+            if not _has_effective_timeout(node, constants):
                 self._add(
                     HTTP_NO_TIMEOUT_RULES[context.kind],
                     "Odoo model method performs HTTP without timeout",
@@ -567,6 +567,20 @@ def _target_names(node: ast.AST) -> set[str]:
 
 def _has_keyword(node: ast.Call, name: str) -> bool:
     return any(keyword.arg == name for keyword in node.keywords)
+
+
+def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for keyword in node.keywords:
+        if keyword.arg != "timeout":
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        return not _is_none_constant(value)
+    return False
+
+
+def _is_none_constant(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
 
 
 def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:

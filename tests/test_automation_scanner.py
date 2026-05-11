@@ -659,6 +659,64 @@ httpx.head(record.status_url, timeout=10)
     assert len([f for f in findings if f.rule_id == "odoo-automation-http-no-timeout"]) == 1
 
 
+def test_http_timeout_none_in_automation_is_reported(tmp_path: Path) -> None:
+    """Automated action code should treat timeout=None as no effective HTTP timeout."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_timeout_none" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+requests.post(record.callback_url, timeout=None)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
+
+
+def test_http_constant_timeout_none_in_automation_is_reported(tmp_path: Path) -> None:
+    """Automated action code should resolve constants used for timeout values."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_constant_timeout_none" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+AUTOMATION_TIMEOUT = None
+requests.post(record.callback_url, timeout=AUTOMATION_TIMEOUT)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
+
+
+def test_regex_fallback_http_timeout_none_in_automation_is_reported(tmp_path: Path) -> None:
+    """Malformed automation code should treat literal timeout=None as unbounded."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_timeout_none_fallback" model="base.automation">
+    <field name="code">if broken: requests.post(record.callback_url, timeout=None</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
+
+
 def test_tls_verification_disabled_in_automation_is_reported(tmp_path: Path) -> None:
     """Automated action code should surface disabled TLS verification."""
     xml = tmp_path / "automation.xml"

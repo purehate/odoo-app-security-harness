@@ -567,6 +567,58 @@ class Feed(models.Model):
     assert len([f for f in findings if f.rule_id == "odoo-model-method-compute-http-no-timeout"]) == 1
 
 
+def test_flags_model_method_http_timeout_none_as_unbounded(tmp_path: Path) -> None:
+    """Model methods should treat timeout=None as no effective HTTP timeout."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "compute.py").write_text(
+        """
+from odoo import api, fields, models
+import requests
+
+class Feed(models.Model):
+    _name = 'x.feed'
+    status = fields.Char(compute='_compute_status')
+
+    @api.depends('url')
+    def _compute_status(self):
+        requests.get(self.url, timeout=None)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-compute-http-no-timeout" for f in findings)
+
+
+def test_flags_model_method_http_constant_timeout_none_as_unbounded(tmp_path: Path) -> None:
+    """Model methods should resolve constants used for timeout values."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "compute.py").write_text(
+        """
+from odoo import api, fields, models
+import requests
+
+MODEL_TIMEOUT = None
+
+class Feed(models.Model):
+    _name = 'x.feed'
+    status = fields.Char(compute='_compute_status')
+
+    @api.depends('url')
+    def _compute_status(self):
+        requests.get(self.url, timeout=MODEL_TIMEOUT)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-compute-http-no-timeout" for f in findings)
+
+
 def test_flags_tls_verification_disabled(tmp_path: Path) -> None:
     """Model methods should surface disabled TLS verification on outbound HTTP."""
     models = tmp_path / "module" / "models"

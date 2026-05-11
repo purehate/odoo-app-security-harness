@@ -355,7 +355,7 @@ class _AutomationCodeScanner(ast.NodeVisitor):
         ):
             self.risks.add("sensitive_model_mutation")
         if _is_http_call(node.func, self.http_module_aliases, self.http_function_aliases, self.http_client_vars):
-            if not _has_keyword(node, "timeout"):
+            if not _has_effective_timeout(node, constants):
                 self.risks.add("http_no_timeout")
             if _keyword_is_false(node, "verify", constants):
                 self.risks.add("tls_verify_disabled")
@@ -416,7 +416,7 @@ class _AutomationCodeScanner(ast.NodeVisitor):
             re.search(r"requests\.(get|post|put|patch|delete|head)\s*\(", code)
             or re.search(r"aiohttp\.(get|post|put|patch|delete|head|request)\s*\(", code)
             or re.search(r"(?:urllib\.request\.)?urlopen\s*\(", code)
-        ) and "timeout" not in code:
+        ) and ("timeout" not in code or re.search(r"\btimeout\s*=\s*None\b", code)):
             risks.add("http_no_timeout")
         if re.search(r"\bverify\s*=\s*False\b", code):
             risks.add("tls_verify_disabled")
@@ -664,6 +664,20 @@ def _is_static_literal(node: ast.AST) -> bool:
 
 def _has_keyword(node: ast.Call, name: str) -> bool:
     return any(keyword.arg == name for keyword in node.keywords)
+
+
+def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for keyword in node.keywords:
+        if keyword.arg != "timeout":
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        return not _is_none_constant(value)
+    return False
+
+
+def _is_none_constant(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
 
 
 def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:
