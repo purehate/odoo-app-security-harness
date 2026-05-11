@@ -174,6 +174,31 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
 
 
+def test_nested_static_unpack_public_open_redirect(tmp_path: Path) -> None:
+    """Nested static **route options should preserve public response severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public'}
+ROUTE_OPTIONS = {**BASE_OPTIONS, 'type': 'http'}
+
+class Controller(http.Controller):
+    @http.route('/go', **ROUTE_OPTIONS)
+    def go(self, **kwargs):
+        return request.redirect(kwargs.get('next'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
+
+
 def test_constant_alias_public_open_redirect(tmp_path: Path) -> None:
     """Recursive auth aliases should preserve public-route redirect severity."""
     controllers = tmp_path / "module" / "controllers"
