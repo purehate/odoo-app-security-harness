@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _record_fields, _should_skip
 
 
@@ -264,7 +265,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "URL action uses request-controlled URL",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "Returned ir.actions.act_url uses a request-derived URL; restrict to local paths or allowlisted hosts to prevent open redirect/navigation abuse",
+                "Returned ir.actions.act_url uses a request-derived URL; restrict to local paths or "
+                "allowlisted hosts to prevent open redirect/navigation abuse",
                 url,
                 route,
                 "python-dict",
@@ -278,7 +280,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "Public route returns URL action",
                 "high",
                 node.lineno,
-                "Public route returns ir.actions.act_url; verify unauthenticated users cannot drive external navigation or consume one-time links",
+                "Public route returns ir.actions.act_url; verify unauthenticated users cannot drive "
+                "external navigation or consume one-time links",
                 url,
                 route,
                 "python-dict",
@@ -290,7 +293,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "URL action opens external URL in new window",
                 "medium",
                 node.lineno,
-                f"ir.actions.act_url opens external URL '{url}' with target='new'; review phishing, tabnabbing, and allowlist expectations",
+                f"ir.actions.act_url opens external URL '{url}' with target='new'; review phishing, "
+                "tabnabbing, and allowlist expectations",
                 url,
                 route,
                 "python-dict",
@@ -302,7 +306,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "URL action uses unsafe URL scheme",
                 "high",
                 node.lineno,
-                f"ir.actions.act_url uses URL '{url}' with an unsafe scheme; restrict actions to local paths or allowlisted HTTPS destinations",
+                f"ir.actions.act_url uses URL '{url}' with an unsafe scheme; restrict actions to local paths "
+                "or allowlisted HTTPS destinations",
                 url,
                 route,
                 "python-dict",
@@ -316,7 +321,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "URL action contains sensitive parameter",
                 "high",
                 node.lineno,
-                "ir.actions.act_url URL appears to contain token, secret, password, or API-key material; avoid exposing secrets in browser history and referrers",
+                "ir.actions.act_url URL appears to contain token, secret, password, or API-key material; "
+                "avoid exposing secrets in browser history and referrers",
                 url,
                 route,
                 "python-dict",
@@ -330,7 +336,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "URL action embeds credentials",
                 "high",
                 node.lineno,
-                "ir.actions.act_url embeds username, password, or token material in a navigable URL; keep credentials out of browser history, referrers, logs, and shared links",
+                "ir.actions.act_url embeds username, password, or token material in a navigable URL; keep "
+                "credentials out of browser history, referrers, logs, and shared links",
                 url,
                 route,
                 "python-dict",
@@ -357,7 +364,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "External URL action has no groups",
                 "medium",
                 line,
-                f"ir.actions.act_url '{record_id}' opens external URL '{url}' without groups; verify only intended users can trigger this navigation",
+                f"ir.actions.act_url '{record_id}' opens external URL '{url}' without groups; verify only "
+                "intended users can trigger this navigation",
                 url,
                 RouteContext(is_route=False),
                 "ir.actions.act_url",
@@ -370,7 +378,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "URL action opens external URL in new window",
                 "medium",
                 line,
-                f"ir.actions.act_url '{record_id}' opens external URL in a new window; review phishing, tabnabbing, and allowlist expectations",
+                f"ir.actions.act_url '{record_id}' opens external URL in a new window; review phishing, "
+                "tabnabbing, and allowlist expectations",
                 url,
                 RouteContext(is_route=False),
                 "ir.actions.act_url",
@@ -383,7 +392,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "URL action uses unsafe URL scheme",
                 "high",
                 line,
-                f"ir.actions.act_url '{record_id}' uses URL '{url}' with an unsafe scheme; restrict actions to local paths or allowlisted HTTPS destinations",
+                f"ir.actions.act_url '{record_id}' uses URL '{url}' with an unsafe scheme; restrict actions "
+                "to local paths or allowlisted HTTPS destinations",
                 url,
                 RouteContext(is_route=False),
                 "ir.actions.act_url",
@@ -450,7 +460,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "URL action uses request-controlled URL",
                 "critical" if route.auth in {"public", "none"} else "high",
                 line,
-                "ir.actions.act_url URL is assigned from request-derived data; restrict to local paths or allowlisted hosts to prevent open redirect/navigation abuse",
+                "ir.actions.act_url URL is assigned from request-derived data; restrict to local paths or "
+                "allowlisted hosts to prevent open redirect/navigation abuse",
                 url,
                 route,
                 sink,
@@ -462,7 +473,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "Public route returns URL action",
                 "high",
                 line,
-                "Public route mutates ir.actions.act_url; verify unauthenticated users cannot drive external navigation or consume one-time links",
+                "Public route mutates ir.actions.act_url; verify unauthenticated users cannot drive "
+                "external navigation or consume one-time links",
                 url,
                 route,
                 sink,
@@ -474,7 +486,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "URL action uses unsafe URL scheme",
                 "high",
                 line,
-                f"ir.actions.act_url uses URL '{url}' with an unsafe scheme; restrict actions to local paths or allowlisted HTTPS destinations",
+                f"ir.actions.act_url uses URL '{url}' with an unsafe scheme; restrict actions to local paths "
+                "or allowlisted HTTPS destinations",
                 url,
                 route,
                 sink,
@@ -486,7 +499,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "URL action contains sensitive parameter",
                 "high",
                 line,
-                "ir.actions.act_url URL appears to contain token, secret, password, or API-key material; avoid exposing secrets in browser history and referrers",
+                "ir.actions.act_url URL appears to contain token, secret, password, or API-key material; "
+                "avoid exposing secrets in browser history and referrers",
                 url,
                 route,
                 sink,
@@ -498,7 +512,8 @@ class ActionUrlScanner(ast.NodeVisitor):
                 "URL action embeds credentials",
                 "high",
                 line,
-                "ir.actions.act_url URL embeds username, password, or token material; keep credentials out of browser history, referrers, logs, and shared links",
+                "ir.actions.act_url URL embeds username, password, or token material; keep credentials out "
+                "of browser history, referrers, logs, and shared links",
                 url,
                 route,
                 sink,
@@ -767,6 +782,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -873,6 +890,45 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
