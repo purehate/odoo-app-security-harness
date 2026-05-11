@@ -4351,6 +4351,12 @@ def test_taxonomy_coverage_classifies_secret_source_and_config_values() -> None:
             },
             {
                 "source": "secrets",
+                "rule_id": "odoo-secret-private-key-block",
+                "title": "Private key material committed",
+                "message": "Repository contains a PEM private key block; remove it from source control, rotate the key, and move it to secret storage",
+            },
+            {
+                "source": "secrets",
                 "rule_id": "odoo-secret-config-parameter",
                 "title": "Sensitive ir.config_parameter value committed",
                 "message": "Module data commits ir.config_parameter 'payment.provider.secret' with value sk_...; module updates can overwrite production secrets/config",
@@ -4368,6 +4374,7 @@ def test_taxonomy_coverage_classifies_secret_source_and_config_values() -> None:
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-secret-hardcoded-value": "secret_hardcoded_value",
         "odoo-secret-config-parameter-set-param": "secret_config_parameter_code_value",
+        "odoo-secret-private-key-block": "secret_private_key_block",
         "odoo-secret-config-parameter": "secret_config_parameter_xml_value",
         "odoo-secret-config-file-value": "secret_config_file_value",
     }

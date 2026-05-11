@@ -72,6 +72,27 @@ def configure(env):
     assert any(f.rule_id == "odoo-secret-config-parameter-set-param" for f in findings)
 
 
+def test_private_key_block_is_reported(tmp_path: Path) -> None:
+    """PEM private key blocks should be critical rotation leads."""
+    path = tmp_path / "id_rsa.pem"
+    path.write_text(
+        """-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASC
+-----END PRIVATE KEY-----
+""",
+        encoding="utf-8",
+    )
+
+    findings = SecretScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-secret-private-key-block"
+        and f.severity == "critical"
+        and f.redacted == "<private-key>"
+        for f in findings
+    )
+
+
 def test_set_param_integration_key_in_python_is_reported(tmp_path: Path) -> None:
     """set_param with key-shaped integration secrets should be reported."""
     path = tmp_path / "settings.py"
@@ -350,3 +371,19 @@ def test_repository_secret_scan_skips_virtualenv(tmp_path: Path) -> None:
 
     assert len(findings) == 1
     assert findings[0].file == str(app)
+
+
+def test_repository_secret_scan_includes_key_material_files(tmp_path: Path) -> None:
+    """Repository scanning should include standalone PEM/key material files."""
+    key_file = tmp_path / "deploy.key"
+    key_file.write_text(
+        """-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmU=
+-----END OPENSSH PRIVATE KEY-----
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_secrets(tmp_path)
+
+    assert any(f.rule_id == "odoo-secret-private-key-block" and f.file == str(key_file) for f in findings)

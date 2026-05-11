@@ -320,6 +320,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "secret_private_key_block",
+        (
+            "odoo-secret-private-key-block",
+            "private key material committed",
+            "repository contains a pem private key block",
+            "rotate the key",
+            "move it to secret storage",
+        ),
+    ),
+    (
         "secret_config_parameter_xml_value",
         (
             "odoo-secret-config-parameter",

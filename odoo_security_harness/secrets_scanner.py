@@ -74,8 +74,10 @@ CONFIG_PARAMETER_CALL_RE = re.compile(
     r"\s*,\s*['\"](?P<value>[^'\"]{8,})['\"]",
     re.IGNORECASE,
 )
+PRIVATE_KEY_BLOCK_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
 
-CONFIG_EXTENSIONS = {".conf", ".cfg", ".ini", ".env"}
+CONFIG_EXTENSIONS = {".conf", ".cfg", ".env", ".ini"}
+KEY_MATERIAL_EXTENSIONS = {".key", ".pem"}
 TEXT_EXTENSIONS = {".py", ".xml", ".csv", ".yml", ".yaml", ".json", ".txt", *CONFIG_EXTENSIONS}
 LOW_VALUE_PLACEHOLDERS = {"changeme", "change_me", "example", "dummy", "password", "secret", "token", "admin"}
 WEAK_USER_PASSWORDS = {"admin", "demo", "password", "changeme", "change_me", "odoo", "test"}
@@ -87,7 +89,11 @@ def scan_secrets(repo_path: Path) -> list[SecretFinding]:
     for path in repo_path.rglob("*"):
         if not path.is_file() or _should_skip(path):
             continue
-        if path.suffix.lower() not in TEXT_EXTENSIONS and not path.name.startswith(".env"):
+        if (
+            path.suffix.lower() not in TEXT_EXTENSIONS
+            and path.suffix.lower() not in KEY_MATERIAL_EXTENSIONS
+            and not path.name.startswith(".env")
+        ):
             continue
         findings.extend(SecretScanner(path).scan_file())
     return findings
@@ -108,6 +114,7 @@ class SecretScanner:
             return []
 
         self._scan_literal_assignments(content)
+        self._scan_private_key_blocks(content)
         if self.path.suffix.lower() == ".xml":
             self._scan_config_parameter_xml(content)
             self._scan_res_users_passwords(content)
@@ -149,6 +156,20 @@ class SecretScanner:
                     secret_kind=key,
                     redacted=_redact(value),
                 )
+
+    def _scan_private_key_blocks(self, content: str) -> None:
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            if not PRIVATE_KEY_BLOCK_RE.search(line):
+                continue
+            self._add(
+                "odoo-secret-private-key-block",
+                "Private key material committed",
+                "critical",
+                line_number,
+                "Repository contains a PEM private key block; remove it from source control, rotate the key, and move it to secret storage",
+                secret_kind="private_key",
+                redacted="<private-key>",
+            )
 
     def _scan_config_parameter_xml(self, content: str) -> None:
         try:
