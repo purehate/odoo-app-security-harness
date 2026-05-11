@@ -724,8 +724,8 @@ def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[as
         if keyword.arg is not None:
             keywords.append(keyword)
             continue
-        value = _resolve_constant(keyword.value, constants)
-        if isinstance(value, ast.Dict):
+        value = _resolve_static_dict(keyword.value, constants)
+        if value is not None:
             keywords.extend(_expanded_dict_keywords(value, constants))
     return keywords
 
@@ -734,8 +734,8 @@ def _expanded_dict_keywords(node: ast.Dict, constants: dict[str, ast.AST]) -> li
     keywords: list[ast.keyword] = []
     for key, dict_value in zip(node.keys, node.values, strict=False):
         if key is None:
-            value = _resolve_constant(dict_value, constants)
-            if isinstance(value, ast.Dict):
+            value = _resolve_static_dict(dict_value, constants)
+            if value is not None:
                 keywords.extend(_expanded_dict_keywords(value, constants))
             continue
         resolved_key = _resolve_constant(key, constants)
@@ -754,6 +754,22 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[st
     return node
 
 
+def _resolve_static_dict(
+    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
+) -> ast.Dict | None:
+    seen = seen or set()
+    node = _resolve_constant(node, constants, seen)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants, set(seen))
+        right = _resolve_static_dict(node.right, constants, set(seen))
+        if left is None or right is None:
+            return None
+        return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
+    return None
+
+
 def _is_static_constant(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant | ast.Attribute | ast.Name):
         return True
@@ -765,6 +781,8 @@ def _is_static_constant(node: ast.AST) -> bool:
         )
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
         return all(_is_static_constant(element) for element in node.elts)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_constant(node.left) and _is_static_constant(node.right)
     return False
 
 
