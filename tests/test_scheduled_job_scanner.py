@@ -718,6 +718,32 @@ class Sync(models.Model):
     assert any(f.rule_id == "odoo-scheduled-job-tls-verify-disabled" for f in findings)
 
 
+def test_flags_tls_verification_disabled_dict_union_static_kwargs(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should not hide cron TLS verification disabling."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import requests
+
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'verify': False}
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        return requests.get(self.feed_url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-scheduled-job-tls-verify-disabled" for f in findings)
+
+
 def test_flags_cron_cleartext_http_url(tmp_path: Path) -> None:
     """Recurring integrations should not call literal cleartext HTTP endpoints."""
     models = tmp_path / "module" / "models"
@@ -742,6 +768,32 @@ class Sync(models.Model):
     findings = scan_scheduled_jobs(tmp_path)
 
     assert sum(f.rule_id == "odoo-scheduled-job-cleartext-http-url" for f in findings) == 2
+
+
+def test_flags_cron_cleartext_http_url_dict_union_static_kwargs(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should expose cleartext recurring HTTP URLs."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import requests
+
+BASE_OPTIONS = {'url': 'http://partner.example.test/orders'}
+HTTP_OPTIONS = BASE_OPTIONS | {'timeout': 10}
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        return requests.request('POST', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-scheduled-job-cleartext-http-url" for f in findings)
 
 
 def test_flags_imported_http_function_without_timeout(tmp_path: Path) -> None:
@@ -946,6 +998,32 @@ from odoo import models
 import requests
 
 HTTP_OPTIONS = {'timeout': 10}
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        return requests.post(self.feed_url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert not any(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings)
+
+
+def test_flags_http_dict_union_static_kwargs_timeout(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should satisfy cron HTTP timeout checks."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import requests
+
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'headers': {}}
 
 class Sync(models.Model):
     _name = 'x.sync'
