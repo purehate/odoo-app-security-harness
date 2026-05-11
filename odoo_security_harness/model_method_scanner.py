@@ -92,6 +92,7 @@ class ModelMethodScanner(ast.NodeVisitor):
         self.api_module_names: set[str] = {"api"}
         self.odoo_module_names: set[str] = {"odoo"}
         self.api_decorator_names: dict[str, str] = {}
+        self.dynamic_eval_names: set[str] = {"eval", "exec", "safe_eval"}
 
     def scan_file(self) -> list[ModelMethodFinding]:
         """Scan the file."""
@@ -139,6 +140,10 @@ class ModelMethodScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name in API_METHOD_DECORATORS:
                     self.api_decorator_names[alias.asname or alias.name] = alias.name
+        elif node.module == "odoo.tools.safe_eval":
+            for alias in node.names:
+                if alias.name == "safe_eval":
+                    self.dynamic_eval_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
@@ -275,7 +280,7 @@ class ModelMethodScanner(ast.NodeVisitor):
             return
 
         sink = _call_name(node.func)
-        if _is_dynamic_eval(sink):
+        if _is_dynamic_eval(sink, self.dynamic_eval_names):
             self._add(
                 "odoo-model-method-dynamic-eval",
                 "Odoo model method performs dynamic evaluation",
@@ -471,8 +476,9 @@ def _is_sudo_expr(node: ast.AST, sudo_vars: set[str], constants: dict[str, ast.A
     )
 
 
-def _is_dynamic_eval(sink: str) -> bool:
-    return sink in {"eval", "exec", "safe_eval"} or sink.endswith(".safe_eval")
+def _is_dynamic_eval(sink: str, dynamic_eval_names: set[str] | None = None) -> bool:
+    dynamic_eval_names = dynamic_eval_names or {"eval", "exec", "safe_eval"}
+    return sink in dynamic_eval_names or sink.endswith(".safe_eval")
 
 
 def _is_http_call(sink: str, http_modules: set[str], http_functions: set[str]) -> bool:

@@ -70,6 +70,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
         self.function_stack: list[JobContext] = []
         self.http_module_aliases: set[str] = {"aiohttp", "requests", "httpx", "urllib.request"}
         self.http_function_aliases: set[str] = set()
+        self.dynamic_eval_names: set[str] = {"eval", "exec", "safe_eval"}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
 
@@ -104,6 +105,10 @@ class ScheduledJobScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "request":
                     self.http_module_aliases.add(alias.asname or alias.name)
+        elif node.module == "odoo.tools.safe_eval":
+            for alias in node.names:
+                if alias.name == "safe_eval":
+                    self.dynamic_eval_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
@@ -188,7 +193,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
                     context.name,
                     sink,
                 )
-        elif _is_dynamic_eval(sink):
+        elif _is_dynamic_eval(sink, self.dynamic_eval_names):
             self._add(
                 "odoo-scheduled-job-dynamic-eval",
                 "Scheduled job performs dynamic evaluation",
@@ -520,8 +525,9 @@ def _is_http_client_expr(node: ast.AST, module_aliases: set[str]) -> bool:
     return _call_root_name(node.func) in module_aliases
 
 
-def _is_dynamic_eval(sink: str) -> bool:
-    return sink in {"eval", "exec", "safe_eval"} or sink.endswith(".safe_eval")
+def _is_dynamic_eval(sink: str, dynamic_eval_names: set[str] | None = None) -> bool:
+    dynamic_eval_names = dynamic_eval_names or {"eval", "exec", "safe_eval"}
+    return sink in dynamic_eval_names or sink.endswith(".safe_eval")
 
 
 def _is_manual_transaction(sink: str) -> bool:

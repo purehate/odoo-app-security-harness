@@ -34,6 +34,28 @@ class SaleJob(models.Model):
     assert "odoo-queue-job-http-no-timeout" in rule_ids
 
 
+def test_flags_aliased_safe_eval_in_queue_job(tmp_path: Path) -> None:
+    """Aliased safe_eval imports should remain visible inside queue jobs."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+from odoo.tools.safe_eval import safe_eval as run_eval
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        return run_eval(record.expression)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-queue-job-dynamic-eval" for f in findings)
+
+
 def test_flags_queue_job_aliases_for_sudo_and_http(tmp_path: Path) -> None:
     """Queue jobs should track sudo, HTTP module, and client aliases."""
     module = tmp_path / "module" / "models"

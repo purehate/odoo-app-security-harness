@@ -64,6 +64,7 @@ class QueueJobScanner(ast.NodeVisitor):
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.job_decorator_names: set[str] = {"job"}
         self.route_decorator_names: set[str] = {"route"}
+        self.dynamic_eval_names: set[str] = {"eval", "exec", "safe_eval"}
 
     def scan_file(self) -> list[QueueJobFinding]:
         """Scan the file."""
@@ -104,6 +105,10 @@ class QueueJobScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "route":
                     self.route_decorator_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.tools.safe_eval":
+            for alias in node.names:
+                if alias.name == "safe_eval":
+                    self.dynamic_eval_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
@@ -206,7 +211,7 @@ class QueueJobScanner(ast.NodeVisitor):
                         f"queue_job/delayed job mutates sensitive model '{sensitive_model}'; verify job input trust, retry idempotency, and audit trail",
                         current.name,
                     )
-            elif _is_dynamic_eval(sink):
+            elif _is_dynamic_eval(sink, self.dynamic_eval_names):
                 self._add(
                     "odoo-queue-job-dynamic-eval",
                     "Queue job performs dynamic evaluation",
@@ -479,8 +484,9 @@ def _env_subscript_model(node: ast.AST, constants: dict[str, ast.AST]) -> str:
     return ""
 
 
-def _is_dynamic_eval(sink: str) -> bool:
-    return sink in {"eval", "exec", "safe_eval"} or sink.endswith(".safe_eval")
+def _is_dynamic_eval(sink: str, dynamic_eval_names: set[str] | None = None) -> bool:
+    dynamic_eval_names = dynamic_eval_names or {"eval", "exec", "safe_eval"}
+    return sink in dynamic_eval_names or sink.endswith(".safe_eval")
 
 
 def _is_http_call(

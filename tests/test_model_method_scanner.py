@@ -867,6 +867,31 @@ class Rule(models.Model):
     assert any(f.rule_id == "odoo-model-method-dynamic-eval" for f in findings)
 
 
+def test_flags_aliased_safe_eval_in_compute_method(tmp_path: Path) -> None:
+    """Aliased safe_eval imports should remain visible inside model lifecycle methods."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "compute.py").write_text(
+        """
+from odoo import api, models
+from odoo.tools.safe_eval import safe_eval as run_eval
+
+class Rule(models.Model):
+    _name = 'x.rule'
+
+    @api.depends('expression')
+    def _compute_result(self):
+        for record in self:
+            record.result = run_eval(record.expression)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-dynamic-eval" for f in findings)
+
+
 def test_flags_lifecycle_sensitive_model_mutation(tmp_path: Path) -> None:
     """Lifecycle methods mutating identity/config models are surprising side effects."""
     models = tmp_path / "module" / "models"

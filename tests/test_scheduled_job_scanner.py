@@ -424,6 +424,29 @@ class Cleanup(models.Model):
     assert any(f.rule_id == "odoo-scheduled-job-dynamic-eval" for f in findings)
 
 
+def test_flags_aliased_safe_eval_in_cron_named_method(tmp_path: Path) -> None:
+    """Aliased safe_eval imports should remain visible inside scheduled jobs."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "cleanup.py").write_text(
+        """
+from odoo import models
+from odoo.tools.safe_eval import safe_eval as run_eval
+
+class Cleanup(models.Model):
+    _name = 'x.cleanup'
+
+    def _cron_cleanup(self):
+        return run_eval(self.expression)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-scheduled-job-dynamic-eval" for f in findings)
+
+
 def test_flags_cron_http_tls_verification_disabled(tmp_path: Path) -> None:
     """Recurring HTTP integrations should not disable TLS verification."""
     models = tmp_path / "module" / "models"
