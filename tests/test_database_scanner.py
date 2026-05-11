@@ -151,6 +151,66 @@ class Controller(odoo_http.Controller):
     assert "odoo-database-tainted-management-input" in rule_ids
 
 
+def test_imported_odoo_http_module_public_database_manager_route_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http imports should expose public database manager behavior."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "db.py").write_text(
+        """
+import odoo.http as odoo_http
+from odoo import service
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/db/drop', auth='none', csrf=False)
+    def drop(self):
+        payload = odoo_http.request.get_http_params()
+        odoo_http.request.session.db = payload.get('db')
+        service.db.list_dbs()
+        return service.db.exp_drop(payload.get('password'), payload.get('db'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_database_operations(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-database-session-db-assignment" in rule_ids
+    assert "odoo-database-tainted-selection" in rule_ids
+    assert "odoo-database-listing-route" in rule_ids
+    assert "odoo-database-management-call" in rule_ids
+    assert "odoo-database-tainted-management-input" in rule_ids
+
+
+def test_imported_odoo_module_public_database_manager_route_is_reported(tmp_path: Path) -> None:
+    """Direct odoo imports should expose public database manager behavior."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "db.py").write_text(
+        """
+import odoo as od
+from odoo import service
+
+class Controller(od.http.Controller):
+    @od.http.route('/db/drop', auth='none', csrf=False)
+    def drop(self):
+        payload = od.http.request.get_http_params()
+        od.http.request.session.db = payload.get('db')
+        service.db.list_dbs()
+        return service.db.exp_drop(payload.get('password'), payload.get('db'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_database_operations(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-database-session-db-assignment" in rule_ids
+    assert "odoo-database-tainted-selection" in rule_ids
+    assert "odoo-database-listing-route" in rule_ids
+    assert "odoo-database-management-call" in rule_ids
+    assert "odoo-database-tainted-management-input" in rule_ids
+
+
 def test_constant_backed_public_database_manager_route_is_reported(tmp_path: Path) -> None:
     """Constant-backed route metadata should not hide public database manager exposure."""
     controllers = tmp_path / "module" / "controllers"
