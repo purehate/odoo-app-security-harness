@@ -472,6 +472,41 @@ class Users(http.Controller):
     assert any(finding.rule_id == "odoo-identity-privilege-field-write" for finding in findings)
 
 
+def test_dict_union_static_unpack_public_route_identity_mutation_is_reported(tmp_path: Path) -> None:
+    """Dict-union **route options should not hide public identity mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "users.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public', 'type': 'http'}
+ROUTE_OPTIONS = BASE_OPTIONS | {'route': '/signup/promote'}
+
+class Users(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def promote(self, user_id, **kwargs):
+        user = request.env['res.users'].sudo().browse(int(user_id))
+        return user.write({'groups_id': [(4, request.env.ref('base.group_system').id)]})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_identity_mutations(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-identity-public-route-mutation"
+        and finding.severity == "critical"
+        and finding.route == "/signup/promote"
+        for finding in findings
+    )
+    assert any(
+        finding.rule_id == "odoo-identity-elevated-mutation" and finding.severity == "critical" for finding in findings
+    )
+    assert any(finding.rule_id == "odoo-identity-privilege-field-write" for finding in findings)
+
+
 def test_class_constant_route_model_and_privilege_key_are_reported(tmp_path: Path) -> None:
     """Class-scoped constants should not hide public identity writes or privilege keys."""
     controllers = tmp_path / "module" / "controllers"
