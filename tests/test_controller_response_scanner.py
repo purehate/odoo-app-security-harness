@@ -95,6 +95,48 @@ class Controller(odoo_http.Controller):
     assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
 
 
+def test_imported_odoo_http_module_route_public_open_redirect(tmp_path: Path) -> None:
+    """import odoo.http as aliases should preserve route and request sinks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/go', auth='public')
+    def go(self, **kwargs):
+        return odoo_http.request.redirect(kwargs.get('next'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
+
+
+def test_imported_odoo_module_route_public_open_redirect(tmp_path: Path) -> None:
+    """import odoo as aliases should preserve od.http route and request sinks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/go', auth='public')
+    def go(self, **kwargs):
+        return od.http.request.redirect(kwargs.get('next'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(f.rule_id == "odoo-controller-open-redirect" and f.severity == "high" for f in findings)
+
+
 def test_non_odoo_route_decorator_open_redirect_is_not_public(tmp_path: Path) -> None:
     """Local route decorators should not make response sinks public routes."""
     controllers = tmp_path / "module" / "controllers"
