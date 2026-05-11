@@ -2704,6 +2704,12 @@
       "capec": ["CAPEC-118"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "website_form_dynamic_success_redirect": {
+      "label": "Website form builds successful submission redirect targets from request data",
+      "cwe": ["CWE-601", "CWE-20", "CWE-346"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "website_form_dangerous_success_redirect": {
       "label": "Website form redirects successful submissions to an executable or local-file URL scheme",
       "cwe": ["CWE-79", "CWE-601", "CWE-20"],

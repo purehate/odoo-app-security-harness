@@ -398,6 +398,53 @@ def test_flags_qweb_external_success_redirect(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-website-form-external-success-redirect" for f in findings)
 
 
+def test_flags_request_derived_qweb_success_redirect(tmp_path: Path) -> None:
+    """Request-derived success pages can become open redirects after form submission."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "forms.xml").write_text(
+        """<odoo>
+  <template id="lead">
+    <form action="/website/form/crm.lead" method="post" t-att-data-success-page="request.params.get('next')">
+      <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+      <input name="name"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-website-form-dynamic-success-redirect"
+        and f.field == "success_page"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_flags_request_derived_formatted_success_redirect(tmp_path: Path) -> None:
+    """Formatted success page attributes should still catch request-controlled targets."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "forms.xml").write_text(
+        """<odoo>
+  <template id="lead">
+    <form action="/website/form/crm.lead" method="post" t-attf-data-success_page="/thanks?next=#{post.get('return_url')}">
+      <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+      <input name="name"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-dynamic-success-redirect" for f in findings)
+
+
 def test_flags_qweb_dangerous_success_redirect_scheme(tmp_path: Path) -> None:
     """QWeb success-page attributes should catch executable data-document redirects."""
     views = tmp_path / "module" / "views"

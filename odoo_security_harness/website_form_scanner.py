@@ -80,6 +80,21 @@ SENSITIVE_FIELD_NAMES = {
     "website_published",
     "write_uid",
 }
+SUCCESS_PAGE_ATTRS = {
+    "data-success-page",
+    "data-success_page",
+    "success-page",
+    "success_page",
+    "t-att-data-success-page",
+    "t-att-data-success_page",
+    "t-att-success-page",
+    "t-att-success_page",
+    "t-attf-data-success-page",
+    "t-attf-data-success_page",
+    "t-attf-success-page",
+    "t-attf-success_page",
+}
+QWEB_SUCCESS_PAGE_ATTRS = {attr for attr in SUCCESS_PAGE_ATTRS if attr.startswith(("t-att-", "t-attf-"))}
 
 
 def scan_website_forms(repo_path: Path) -> list[WebsiteFormFinding]:
@@ -188,6 +203,18 @@ class WebsiteFormScanner:
                 "success_page",
             )
 
+        dynamic_success_page = self._dynamic_success_page(form)
+        if dynamic_success_page:
+            self._add(
+                "odoo-website-form-dynamic-success-redirect",
+                "Website form success redirect is request-derived",
+                "medium",
+                line,
+                f"Website form success page is built from request-derived expression '{dynamic_success_page}'; validate against local routes or allowlisted hosts before redirecting",
+                model,
+                "success_page",
+            )
+
         for field in sorted(fields & SENSITIVE_FIELD_NAMES):
             self._add(
                 "odoo-website-form-sensitive-field",
@@ -248,17 +275,17 @@ class WebsiteFormScanner:
         return form.get("method", "post").strip().lower() == "post"
 
     def _success_page(self, form: ElementTree.Element) -> str:
-        for attr in {
-            "data-success-page",
-            "data-success_page",
-            "success-page",
-            "success_page",
-            "t-att-data-success-page",
-            "t-attf-data-success-page",
-        }:
+        for attr in SUCCESS_PAGE_ATTRS:
             value = form.get(attr, "").strip()
             if value:
                 return value.strip("'\"")
+        return ""
+
+    def _dynamic_success_page(self, form: ElementTree.Element) -> str:
+        for attr in QWEB_SUCCESS_PAGE_ATTRS:
+            value = form.get(attr, "").strip()
+            if _is_request_derived_redirect_expr(value):
+                return value
         return ""
 
     def _has_file_input(self, form: ElementTree.Element) -> bool:
@@ -594,6 +621,28 @@ def _is_dangerous_url_scheme(value: str) -> bool:
             "data:text/html",
             "data:application/javascript",
             "data:application/xhtml+xml",
+        )
+    )
+
+
+def _is_request_derived_redirect_expr(value: str) -> bool:
+    lowered = value.strip().lower()
+    if not lowered:
+        return False
+    source_terms = ("request", "params", "kwargs", "kw", "post", "values")
+    redirect_terms = ("next", "redirect", "return_url", "success_url", "url", "target")
+    if any(f"{source}.get(" in lowered for source in source_terms):
+        return any(term in lowered for term in redirect_terms)
+    if any(f"{source}[" in lowered for source in source_terms):
+        return any(term in lowered for term in redirect_terms)
+    return bool(
+        re.search(
+            r"\b(request|params|kwargs|kw|post|values)\b.*\b(next|redirect|return_url|success_url|url|target)\b",
+            lowered,
+        )
+        or re.search(
+            r"\b(next|redirect|return_url|success_url|url|target)\b.*\b(request|params|kwargs|kw|post|values)\b",
+            lowered,
         )
     )
 

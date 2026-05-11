@@ -4164,6 +4164,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "website_form_dynamic_success_redirect",
+        (
+            "odoo-website-form-dynamic-success-redirect",
+            "website form success redirect is request-derived",
+            "website form success page is built from request-derived expression",
+            "validate against local routes or allowlisted hosts before redirecting",
+        ),
+    ),
+    (
         "action_url_tainted_navigation",
         (
             "act-url-tainted-url",
