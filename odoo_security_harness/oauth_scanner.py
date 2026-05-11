@@ -987,10 +987,7 @@ def _is_user_model_expr(
 
 
 def _has_verify_false(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
-    return any(
-        keyword.arg == "verify" and _is_false_constant(keyword.value, constants)
-        for keyword in node.keywords
-    )
+    return any(_is_false_constant(value, constants) for value in _keyword_values(node, "verify", constants))
 
 
 def _call_has_tainted_url(node: ast.Call, is_tainted: Any) -> bool:
@@ -1116,8 +1113,37 @@ def _keyword(node: ast.Call, name: str) -> ast.keyword | None:
 
 
 def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
-    timeout_keyword = _keyword(node, "timeout")
-    return timeout_keyword is not None and not _is_none_constant(timeout_keyword.value, constants)
+    timeout_values = _keyword_values(node, "timeout", constants)
+    return bool(timeout_values) and not any(_is_none_constant(value, constants) for value in timeout_values)
+
+
+def _keyword_values(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> list[ast.AST]:
+    constants = constants or {}
+    values: list[ast.AST] = []
+    for keyword in node.keywords:
+        if keyword.arg == name:
+            values.append(keyword.value)
+            continue
+        if keyword.arg is not None:
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Dict):
+            values.extend(_dict_keyword_values(value, name, constants))
+    return values
+
+
+def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    for key, item_value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            value = _resolve_constant(item_value, constants)
+            if isinstance(value, ast.Dict):
+                values.extend(_dict_keyword_values(value, name, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and resolved_key.value == name:
+            values.append(item_value)
+    return values
 
 
 def _call_name(node: ast.AST) -> str:
