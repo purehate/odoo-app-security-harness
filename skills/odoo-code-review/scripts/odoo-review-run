@@ -581,7 +581,10 @@ def find_loose_python(repo: Path, args: argparse.Namespace) -> list[dict]:
     return pseudo
 
 
-ROUTE_RE = re.compile(r"@http\.route\((?P<args>.*?)\)", re.DOTALL)
+ROUTE_RE = re.compile(
+    r"@(?:(?:[A-Za-z_][A-Za-z0-9_]*\.)?http|[A-Za-z_][A-Za-z0-9_]*_http)\.route\((?P<args>.*?)\)",
+    re.DOTALL,
+)
 KW_RE = re.compile(r"(?P<key>auth|csrf|type|methods)\s*=\s*(?P<value>[^,\)]*)")
 HTTP_ROUTE_PARAM_RE = re.compile(r"<[^>]+>")
 

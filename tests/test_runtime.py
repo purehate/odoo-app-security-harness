@@ -529,6 +529,35 @@ class Demo(od.http.Controller):
         assert routes[0]["methods"] == "['GET']"
         assert routes[0]["csrf"] == "True"
 
+    def test_runner_fallback_extracts_odoo_module_route_metadata(self, tmp_path: Path) -> None:
+        """Syntax-error fallback should still see odoo.http.route decorators."""
+        namespace = runpy.run_path(str(RUN_SCRIPT), run_name="__test_odoo_run__")
+        module_dir = tmp_path / "demo"
+        controller_dir = module_dir / "controllers"
+        controller_dir.mkdir(parents=True)
+        controller = controller_dir / "main.py"
+        controller.write_text(
+            """
+import odoo as od
+
+class Demo:
+    @od.http.route('/demo/fallback', auth='public', methods=['GET'])
+    def fallback(self):
+        return 'ok'
+
+    =
+""",
+            encoding="utf-8",
+        )
+        manifests = [{"module": "demo", "dir": "demo"}]
+
+        routes = namespace["extract_routes"](tmp_path, manifests)
+
+        assert len(routes) == 1
+        assert routes[0]["paths"] == ["/demo/fallback"]
+        assert routes[0]["auth"] == "'public'"
+        assert routes[0]["methods"] == "['GET']"
+
     def test_runtime_probe_readme_includes_odoomap_target(self, tmp_path: Path) -> None:
         """The generated replay command should carry the requested OdooMap target."""
         namespace = runpy.run_path(str(RUN_SCRIPT), run_name="__test_odoo_run__")
