@@ -3307,9 +3307,11 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "frontend_reverse_tabnabbing",
         (
+            "web-owl-qweb-target-blank-no-noopener",
             "qweb-target-blank-no-noopener",
             "web-window-open-no-noopener",
             "web-target-blank-no-noopener",
+            "owl inline template link opens new tab without opener isolation",
             "target='_blank' without rel='noopener'",
             "target='_blank' without rel='noreferrer'",
             "dom link opens new tab without opener isolation",

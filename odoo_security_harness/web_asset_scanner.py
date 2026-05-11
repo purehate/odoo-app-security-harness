@@ -316,6 +316,7 @@ OWL_TEMPLATE_T_RAW_RE = re.compile(r"\bt-raw\s*=", re.IGNORECASE)
 OWL_TEMPLATE_RAW_OUTPUT_MODE_RE = re.compile(r"\bt-out-mode\s*=\s*['\"]raw['\"]", re.IGNORECASE)
 OWL_TEMPLATE_DANGEROUS_TAG_RE = re.compile(r"<\s*(?:script|iframe|object|embed|form)\b", re.IGNORECASE)
 OWL_TEMPLATE_POST_FORM_RE = re.compile(r"<form\b(?P<attrs>[^>]*)>(?P<body>.*?)</form>", re.IGNORECASE | re.DOTALL)
+OWL_TEMPLATE_LINK_RE = re.compile(r"<a\b(?P<attrs>[^>]*)>", re.IGNORECASE | re.DOTALL)
 OWL_TEMPLATE_DYNAMIC_EVENT_RE = re.compile(r"\b(?:on\w+|t-attf?-on\w+)\s*=", re.IGNORECASE)
 OWL_TEMPLATE_SRCDOC_RE = re.compile(
     r"\bt-attf?-srcdoc\s*=|\bt-att\s*=\s*['\"][^>]*['\"]srcdoc['\"]\s*:",
@@ -1157,6 +1158,15 @@ class WebAssetScanner:
                     "OWL xml template contains a POST form without a visible csrf_token field or request.csrf_token() expression; verify Odoo CSRF protection covers the target endpoint",
                     "owl-template",
                 )
+            if _owl_template_has_target_blank_without_opener(body):
+                self._add(
+                    "odoo-web-owl-qweb-target-blank-no-noopener",
+                    "OWL inline template link opens new tab without opener isolation",
+                    "medium",
+                    line,
+                    "OWL xml template link uses target='_blank' without rel='noopener' or rel='noreferrer'; add opener isolation for external links",
+                    "owl-template",
+                )
             if OWL_TEMPLATE_DYNAMIC_EVENT_RE.search(body):
                 self._add(
                     "odoo-web-owl-qweb-dynamic-event-handler",
@@ -1368,6 +1378,18 @@ def _owl_template_has_post_form_without_csrf(body: str) -> bool:
         if not re.search(r"\bmethod\s*=\s*['\"]post['\"]", match.group("attrs"), re.IGNORECASE):
             continue
         if re.search(r"csrf_token", attrs_and_body, re.IGNORECASE):
+            continue
+        return True
+    return False
+
+
+def _owl_template_has_target_blank_without_opener(body: str) -> bool:
+    for match in OWL_TEMPLATE_LINK_RE.finditer(body):
+        attrs = match.group("attrs")
+        if not re.search(r"\btarget\s*=\s*['\"]_blank['\"]", attrs, re.IGNORECASE):
+            continue
+        rel_match = re.search(r"\brel\s*=\s*['\"](?P<rel>[^'\"]*)['\"]", attrs, re.IGNORECASE)
+        if rel_match and re.search(r"\b(?:noopener|noreferrer)\b", rel_match.group("rel"), re.IGNORECASE):
             continue
         return True
     return False

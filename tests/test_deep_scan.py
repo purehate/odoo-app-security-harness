@@ -2171,13 +2171,19 @@ def test_taxonomy_coverage_classifies_qweb_reverse_tabnabbing() -> None:
                 "source": "qweb",
                 "title": "QWeb link opens new tab without opener isolation",
                 "message": "QWeb link uses target='_blank' without rel='noopener' or rel='noreferrer'",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-target-blank-no-noopener",
+                "source": "web-asset",
+                "title": "OWL inline template link opens new tab without opener isolation",
+                "message": "OWL xml template link uses target='_blank' without rel='noopener'",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_reverse_tabnabbing"
-    assert "CWE-1022" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_reverse_tabnabbing"}
+    assert all("CWE-1022" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_web_window_open_reverse_tabnabbing() -> None:

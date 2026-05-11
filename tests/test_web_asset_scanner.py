@@ -1390,6 +1390,34 @@ def test_owl_inline_template_get_form_missing_csrf_ignored(tmp_path: Path) -> No
     assert not any(f.rule_id == "odoo-web-owl-qweb-post-form-missing-csrf" for f in findings)
 
 
+def test_owl_inline_template_target_blank_without_noopener_detected(tmp_path: Path) -> None:
+    """OWL inline links opening a new tab should isolate window.opener."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<a href=\"https://example.com\" target=\"_blank\">Open</a>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-target-blank-no-noopener"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_target_blank_with_noopener_ignored(tmp_path: Path) -> None:
+    """rel=noopener/noreferrer suppresses OWL target blank opener leads."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "export const template = xml`<a href=\"https://example.com\" target=\"_blank\" rel=\"noopener noreferrer\">Open</a>`;\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-target-blank-no-noopener" for f in findings)
+
+
 def test_owl_inline_template_escaped_output_ignored(tmp_path: Path) -> None:
     """Escaped OWL inline template output should not create raw-output leads."""
     path = tmp_path / "widget.js"
