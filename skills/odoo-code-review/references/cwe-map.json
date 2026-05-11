@@ -2868,6 +2868,12 @@
       "capec": ["CAPEC-1", "CAPEC-115"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "website_form_active_file_upload": {
+      "label": "Public website form accepts browser-active upload types",
+      "cwe": ["CWE-434", "CWE-79", "CWE-20"],
+      "capec": ["CAPEC-63", "CAPEC-592"],
+      "owasp": "A03:2021 Injection"
+    },
     "website_form_missing_csrf_token": {
       "label": "Website form posts to model creation without a visible CSRF token",
       "cwe": ["CWE-352", "CWE-346", "CWE-862"],

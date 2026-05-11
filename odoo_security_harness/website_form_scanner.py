@@ -127,6 +127,15 @@ SUCCESS_PAGE_ATTRS = {
     "t-attf-success_page",
 }
 QWEB_SUCCESS_PAGE_ATTRS = {attr for attr in SUCCESS_PAGE_ATTRS if attr.startswith(("t-att-", "t-attf-"))}
+ACTIVE_FILE_ACCEPT_TYPES = {
+    "application/javascript",
+    "application/xhtml+xml",
+    "image/svg+xml",
+    "text/html",
+    "text/javascript",
+}
+ACTIVE_FILE_ACCEPT_EXTENSIONS = {".htm", ".html", ".js", ".mjs", ".svg", ".xhtml"}
+ACTIVE_FILE_ACCEPT_WILDCARDS = {"image/*", "text/*"}
 
 
 def scan_website_forms(repo_path: Path) -> list[WebsiteFormFinding]:
@@ -201,6 +210,17 @@ class WebsiteFormScanner:
                 model,
                 "",
             )
+            active_accept = self._active_file_accept(form)
+            if active_accept:
+                self._add(
+                    "odoo-website-form-active-file-upload",
+                    "Website form allows browser-active file uploads",
+                    "high",
+                    line,
+                    f"Public website form file input accepts browser-active upload types ({active_accept}); restrict accept lists and enforce server-side MIME/content validation before creating attachments",
+                    model,
+                    "accept",
+                )
 
         if self._is_post_form(form) and "csrf_token" not in fields:
             self._add(
@@ -322,6 +342,14 @@ class WebsiteFormScanner:
 
     def _has_file_input(self, form: ElementTree.Element) -> bool:
         return any(element.get("type", "").lower() == "file" for element in form.iter("input"))
+
+    def _active_file_accept(self, form: ElementTree.Element) -> str:
+        active_tokens: list[str] = []
+        for element in form.iter("input"):
+            if element.get("type", "").lower() != "file":
+                continue
+            active_tokens.extend(_active_accept_tokens(element.get("accept", "")))
+        return ", ".join(dict.fromkeys(active_tokens))
 
     def _has_hidden_model_selector(self, form: ElementTree.Element) -> bool:
         return any(
@@ -995,6 +1023,20 @@ def _call_name(node: ast.AST) -> str:
         base = _call_name(node.value)
         return f"{base}.{node.attr}" if base else node.attr
     return ""
+
+
+def _active_accept_tokens(accept: str) -> list[str]:
+    active: list[str] = []
+    for token in (part.strip().lower() for part in accept.split(",")):
+        if not token:
+            continue
+        if (
+            token in ACTIVE_FILE_ACCEPT_TYPES
+            or token in ACTIVE_FILE_ACCEPT_EXTENSIONS
+            or token in ACTIVE_FILE_ACCEPT_WILDCARDS
+        ):
+            active.append(token)
+    return active
 
 
 

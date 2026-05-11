@@ -5046,6 +5046,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "website_form_active_file_upload",
+        (
+            "odoo-website-form-active-file-upload",
+            "website form allows browser-active file uploads",
+            "file input accepts browser-active upload types",
+            "restrict accept lists and enforce server-side mime/content validation",
+        ),
+    ),
+    (
         "website_form_missing_csrf_token",
         (
             "odoo-website-form-missing-csrf-token",

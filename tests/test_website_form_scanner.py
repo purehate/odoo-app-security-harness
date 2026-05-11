@@ -100,6 +100,33 @@ def test_flags_website_form_file_upload(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-website-form-file-upload" for f in findings)
 
 
+def test_flags_active_file_accept_on_website_form_upload(tmp_path: Path) -> None:
+    """Website file inputs accepting SVG/HTML-like content deserve stronger review."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "upload.xml").write_text(
+        """<odoo>
+  <template id="upload">
+    <form action="/website/form/helpdesk.ticket" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+      <input type="file" name="attachment" accept="image/svg+xml,.html,image/*"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-website-form-active-file-upload"
+        and f.severity == "high"
+        and "image/svg+xml" in f.message
+        and ".html" in f.message
+        for f in findings
+    )
+
+
 def test_flags_missing_csrf_token_on_post_form(tmp_path: Path) -> None:
     """Public website model-create forms should carry a CSRF token."""
     views = tmp_path / "module" / "views"

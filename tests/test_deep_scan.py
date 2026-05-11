@@ -7707,6 +7707,12 @@ def test_taxonomy_coverage_classifies_website_form_specific_risks() -> None:
             },
             {
                 "source": "website-forms",
+                "rule_id": "odoo-website-form-active-file-upload",
+                "title": "Website form allows browser-active file uploads",
+                "message": "Public website form file input accepts browser-active upload types (image/svg+xml, .html); restrict accept lists and enforce server-side MIME/content validation before creating attachments",
+            },
+            {
+                "source": "website-forms",
                 "rule_id": "odoo-website-form-missing-csrf-token",
                 "title": "Website form has no visible CSRF token",
                 "message": "Website form posts to model creation without a visible csrf_token input; verify Odoo CSRF protection is present and cannot be bypassed cross-site",
@@ -7744,11 +7750,12 @@ def test_taxonomy_coverage_classifies_website_form_specific_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 8
+    assert coverage["mapped_rules"] == 9
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-website-form-public-model-create": "website_form_public_model_create",
         "odoo-website-form-file-upload": "website_form_file_upload",
+        "odoo-website-form-active-file-upload": "website_form_active_file_upload",
         "odoo-website-form-missing-csrf-token": "website_form_missing_csrf_token",
         "odoo-website-form-dangerous-success-redirect": "website_form_dangerous_success_redirect",
         "odoo-website-form-external-success-redirect": "website_form_external_success_redirect",
