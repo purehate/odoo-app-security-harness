@@ -546,6 +546,85 @@ class Lead(models.Model):
     )
 
 
+def test_flags_aliased_odoo_fields_module_allowlisted_for_website_form(tmp_path: Path) -> None:
+    """Aliased Odoo fields modules should not hide website form allowlists."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "lead.py").write_text(
+        """
+from odoo import fields as odoo_fields, models
+
+class Lead(models.Model):
+    _inherit = 'crm.lead'
+
+    partner_id = odoo_fields.Many2one('res.partner', website_form_blacklisted=False)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-website-form-field-allowlisted-sensitive"
+        and f.model == "crm.lead"
+        and f.field == "partner_id"
+        for f in findings
+    )
+
+
+def test_flags_imported_odoo_fields_module_allowlisted_for_website_form(tmp_path: Path) -> None:
+    """Direct odoo.fields imports should not hide website form allowlists."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "lead.py").write_text(
+        """
+from odoo import models
+import odoo.fields as odoo_fields
+
+class Lead(models.Model):
+    _inherit = 'crm.lead'
+
+    partner_id = odoo_fields.Many2one('res.partner', website_form_blacklisted=False)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-website-form-field-allowlisted-sensitive"
+        and f.model == "crm.lead"
+        and f.field == "partner_id"
+        for f in findings
+    )
+
+
+def test_flags_imported_odoo_module_fields_allowlisted_for_website_form(tmp_path: Path) -> None:
+    """Direct odoo module imports should still expose website form allowlists."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "lead.py").write_text(
+        """
+import odoo as od
+
+class Lead(od.models.Model):
+    _inherit = 'crm.lead'
+
+    partner_id = od.fields.Many2one('res.partner', website_form_blacklisted=False)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-website-form-field-allowlisted-sensitive"
+        and f.model == "crm.lead"
+        and f.field == "partner_id"
+        for f in findings
+    )
+
+
 def test_flags_constant_backed_sensitive_field_allowlisted_for_website_form(tmp_path: Path) -> None:
     """website_form_blacklisted constants should not hide sensitive field allowlists."""
     models = tmp_path / "module" / "models"

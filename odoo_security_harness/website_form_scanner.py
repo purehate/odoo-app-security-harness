@@ -353,6 +353,8 @@ class WebsiteFormFieldScanner(ast.NodeVisitor):
         self.model_stack: list[str] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.field_module_names: set[str] = {"fields"}
+        self.odoo_module_names: set[str] = {"odoo"}
 
     def scan_file(self) -> list[WebsiteFormFinding]:
         """Scan Python model declarations."""
@@ -376,8 +378,28 @@ class WebsiteFormFieldScanner(ast.NodeVisitor):
         self.class_constants_stack.pop()
         self.model_stack.pop()
 
+    def visit_Import(self, node: ast.Import) -> Any:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.fields" and alias.asname:
+                self.field_module_names.add(alias.asname)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "fields":
+                    self.field_module_names.add(alias.asname or alias.name)
+        self.generic_visit(node)
+
     def visit_Assign(self, node: ast.Assign) -> Any:
-        if _is_website_form_allowed_field(node.value, self._effective_constants()):
+        if _is_website_form_allowed_field(
+            node.value,
+            self._effective_constants(),
+            self.field_module_names,
+            self.odoo_module_names,
+        ):
             model = self.model_stack[-1] if self.model_stack else ""
             for target in node.targets:
                 field = _assigned_field_name(target)
@@ -385,7 +407,12 @@ class WebsiteFormFieldScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
-        if _is_website_form_allowed_field(node.value, self._effective_constants()):
+        if _is_website_form_allowed_field(
+            node.value,
+            self._effective_constants(),
+            self.field_module_names,
+            self.odoo_module_names,
+        ):
             model = self.model_stack[-1] if self.model_stack else ""
             self._add_exposed_field(model, _assigned_field_name(node.target), node.lineno)
         self.generic_visit(node)
@@ -673,10 +700,15 @@ def _class_model_name(node: ast.ClassDef) -> str:
     return model_name or inherit_name
 
 
-def _is_website_form_allowed_field(node: ast.AST | None, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_website_form_allowed_field(
+    node: ast.AST | None,
+    constants: dict[str, ast.AST] | None = None,
+    field_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
+) -> bool:
     if not isinstance(node, ast.Call):
         return False
-    if not _field_call_type(node.func):
+    if not _field_call_type(node.func, field_module_names, odoo_module_names):
         return False
     return any(
         keyword.arg == "website_form_blacklisted" and _is_false_constant(keyword.value, constants)
@@ -684,12 +716,37 @@ def _is_website_form_allowed_field(node: ast.AST | None, constants: dict[str, as
     )
 
 
-def _field_call_type(node: ast.AST) -> str:
-    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "fields":
+def _field_call_type(
+    node: ast.AST,
+    field_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
+) -> str:
+    field_module_names = field_module_names or {"fields"}
+    odoo_module_names = odoo_module_names or {"odoo"}
+    if isinstance(node, ast.Attribute) and _is_odoo_fields_module_expr(
+        node.value,
+        field_module_names,
+        odoo_module_names,
+    ):
         return node.attr
     if isinstance(node, ast.Name):
         return node.id
     return ""
+
+
+def _is_odoo_fields_module_expr(
+    node: ast.AST,
+    field_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in field_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "fields"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in odoo_module_names
+    )
 
 
 def _website_form_route_with_csrf_disabled(
