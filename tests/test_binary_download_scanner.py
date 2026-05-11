@@ -1351,6 +1351,35 @@ class Redirect(http.Controller):
     assert any(f.rule_id == "odoo-binary-tainted-web-content-redirect" for f in findings)
 
 
+def test_flags_tokenized_web_content_redirect(tmp_path: Path) -> None:
+    """Static /web/content redirects should not carry reusable document tokens."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "redirect.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+CONTENT_URL = '/web/content/42?access_token=static-token&download=1'
+
+class Redirect(http.Controller):
+    @http.route('/public/content', auth='public')
+    def content(self):
+        return request.redirect(CONTENT_URL)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-tokenized-web-content-redirect"
+        and f.severity == "high"
+        and f.sink == "request.redirect"
+        for f in findings
+    )
+
+
 def test_flags_constant_alias_tainted_web_content_redirect(tmp_path: Path) -> None:
     """Recursive constants should not hide /web/content redirect targets."""
     controllers = tmp_path / "module" / "controllers"

@@ -3724,6 +3724,12 @@ def test_taxonomy_coverage_classifies_binary_download_specific_risks() -> None:
             },
             {
                 "source": "binary-downloads",
+                "rule_id": "odoo-binary-tokenized-web-content-redirect",
+                "title": "Controller redirects to tokenized web content URL",
+                "message": "Controller redirects to a /web/content or /web/image URL containing access-token or signature-like material; avoid exposing document tokens in browser history, referrers, logs, and shared links",
+            },
+            {
+                "source": "binary-downloads",
                 "rule_id": "odoo-binary-tainted-content-disposition",
                 "title": "Download filename is request-controlled",
                 "message": "content_disposition uses request-derived filename; validate CRLF, path separators, extension, and confusing Unicode/control characters",
@@ -3737,13 +3743,14 @@ def test_taxonomy_coverage_classifies_binary_download_specific_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 6
+    assert coverage["mapped_rules"] == 7
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-binary-attachment-data-response": "binary_attachment_data_response",
         "odoo-binary-ir-http-binary-content-sudo": "binary_content_sudo",
         "odoo-binary-tainted-binary-content-args": "binary_tainted_content_args",
         "odoo-binary-tainted-web-content-redirect": "binary_tainted_web_content_redirect",
+        "odoo-binary-tokenized-web-content-redirect": "binary_tokenized_web_content_redirect",
         "odoo-binary-tainted-content-disposition": "binary_tainted_content_disposition",
         "odoo-binary-active-inline-response": "binary_active_inline_response",
     }

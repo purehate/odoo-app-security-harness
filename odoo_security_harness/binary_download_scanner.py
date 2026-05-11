@@ -26,6 +26,14 @@ class BinaryDownloadFinding:
 TAINTED_ARG_NAMES = {"attachment_id", "download", "filename", "id", "kwargs", "kw", "model", "path", "post"}
 ROUTE_ID_ARG_RE = re.compile(r"(?:^id$|_ids?$)")
 WEB_CONTENT_MARKERS = {"/web/content", "/web/image"}
+WEB_CONTENT_TOKEN_MARKERS = (
+    "access_token",
+    "access-token",
+    "download_token",
+    "download-token",
+    "signature",
+    "token=",
+)
 ATTACHMENT_BINARY_ATTRS = {"datas", "raw", "db_datas"}
 ACTIVE_RESPONSE_CONTENT_TYPES = {
     "application/javascript",
@@ -287,11 +295,18 @@ class BinaryDownloadScanner(ast.NodeVisitor):
 
     def _scan_web_content_redirect(self, node: ast.Call, sink: str) -> None:
         location = _redirect_location_arg(node)
-        if (
-            location is not None
-            and _contains_web_content(location, self._effective_constants())
-            and self._expr_is_tainted(location)
-        ):
+        if location is None or not _contains_web_content(location, self._effective_constants()):
+            return
+        if _contains_web_content_token_material(location, self._effective_constants()):
+            self._add(
+                "odoo-binary-tokenized-web-content-redirect",
+                "Controller redirects to tokenized web content URL",
+                "high",
+                node.lineno,
+                "Controller redirects to a /web/content or /web/image URL containing access-token or signature-like material; avoid exposing document tokens in browser history, referrers, logs, and shared links",
+                sink,
+            )
+        if self._expr_is_tainted(location):
             self._add(
                 "odoo-binary-tainted-web-content-redirect",
                 "Controller redirects to request-controlled web content URL",
@@ -1007,6 +1022,21 @@ def _contains_web_content(node: ast.AST, constants: dict[str, ast.AST] | None = 
             return True
     text = _safe_unparse(node)
     return any(marker in text for marker in WEB_CONTENT_MARKERS)
+
+
+def _contains_web_content_token_material(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _contains_web_content_token_material(resolved, constants)
+    for child in ast.walk(node):
+        value = _constant_string(child, constants).lower()
+        if value and any(marker in value for marker in WEB_CONTENT_MARKERS):
+            return any(marker in value for marker in WEB_CONTENT_TOKEN_MARKERS)
+    text = _safe_unparse(node).lower()
+    return any(marker in text for marker in WEB_CONTENT_MARKERS) and any(
+        marker in text for marker in WEB_CONTENT_TOKEN_MARKERS
+    )
 
 
 def _call_has_tainted_input(node: ast.Call, is_tainted: Any) -> bool:

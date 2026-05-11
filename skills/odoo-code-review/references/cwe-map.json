@@ -2388,6 +2388,12 @@
       "capec": ["CAPEC-21", "CAPEC-118"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "binary_tokenized_web_content_redirect": {
+      "label": "Controller redirects to tokenized /web/content or /web/image URLs",
+      "cwe": ["CWE-598", "CWE-522", "CWE-359"],
+      "capec": ["CAPEC-191", "CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "binary_tainted_content_disposition": {
       "label": "Request-derived filename reaches Content-Disposition download headers",
       "cwe": ["CWE-113", "CWE-73", "CWE-20"],

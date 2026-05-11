@@ -4806,6 +4806,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "binary_tokenized_web_content_redirect",
+        (
+            "odoo-binary-tokenized-web-content-redirect",
+            "controller redirects to tokenized web content url",
+            "controller redirects to a /web/content or /web/image url containing access-token or signature-like material",
+            "document tokens in browser history, referrers, logs, and shared links",
+        ),
+    ),
+    (
         "open_redirect_portal",
         (
             "redirect",
