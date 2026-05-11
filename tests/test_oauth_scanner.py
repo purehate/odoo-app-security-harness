@@ -1563,6 +1563,29 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-oauth-tainted-validation-url" for f in findings)
 
 
+def test_tainted_static_kwargs_oauth_url_is_reported(tmp_path: Path) -> None:
+    """Request-derived OAuth validation URLs should not hide inside unpacked call options."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import requests
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        options = {'url': kwargs.get('userinfo_url'), 'timeout': 10}
+        return requests.get(**options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert any(f.rule_id == "odoo-oauth-tainted-validation-url" for f in findings)
+
+
 def test_boolop_derived_oauth_url_is_reported(tmp_path: Path) -> None:
     """Boolean fallback OAuth validation URLs should not clear request taint."""
     controllers = tmp_path / "module" / "controllers"

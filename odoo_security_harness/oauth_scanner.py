@@ -243,7 +243,7 @@ class OAuthScanner(ast.NodeVisitor):
         if _is_oauth_http_call(node, canonical_sink) or _call_has_oauth_literal_url(node, canonical_sink, constants) or (
             _is_oauth_route(route, "")
             and _is_http_client_sink(canonical_sink)
-            and _call_has_tainted_url(node, self._expr_is_tainted)
+            and _call_has_tainted_url(node, self._expr_is_tainted, canonical_sink, constants)
         ):
             if not _has_effective_timeout(node, constants):
                 self._add(
@@ -286,7 +286,7 @@ class OAuthScanner(ast.NodeVisitor):
                         route.display_path(),
                         sink,
                     )
-            if _call_has_tainted_url(node, self._expr_is_tainted):
+            if _call_has_tainted_url(node, self._expr_is_tainted, canonical_sink, constants):
                 self._add(
                     "odoo-oauth-tainted-validation-url",
                     "Request-derived OAuth validation URL",
@@ -1136,15 +1136,19 @@ def _has_verify_false(node: ast.Call, constants: dict[str, ast.AST] | None = Non
     return any(_is_false_constant(value, constants) for value in _keyword_values(node, "verify", constants))
 
 
-def _call_has_tainted_url(node: ast.Call, is_tainted: Any) -> bool:
-    if node.args and is_tainted(node.args[0]):
+def _call_has_tainted_url(
+    node: ast.Call,
+    is_tainted: Any,
+    sink: str | None = None,
+    constants: dict[str, ast.AST] | None = None,
+) -> bool:
+    sink = sink or _call_name(node.func)
+    constants = constants or {}
+    if any(is_tainted(value) for value in _http_url_values(node, sink, constants)):
         return True
-    if _call_name(node.func).rsplit(".", 1)[-1] == "request" and len(node.args) > 1 and is_tainted(node.args[1]):
+    if any(is_tainted(value) for value in _keyword_values(node, "endpoint", constants)):
         return True
-    return any(
-        keyword.arg in {"url", "endpoint"} and keyword.value is not None and is_tainted(keyword.value)
-        for keyword in node.keywords
-    )
+    return any(keyword.arg is None and keyword.value is not None and is_tainted(keyword.value) for keyword in node.keywords)
 
 
 def _is_jwt_decode(node: ast.Call) -> bool:
