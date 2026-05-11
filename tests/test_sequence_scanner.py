@@ -254,6 +254,65 @@ class Invite(http.Controller):
     )
 
 
+def test_local_constant_public_route_sensitive_sequence_use(tmp_path: Path) -> None:
+    """Function-local model and code constants should not hide public sequence issuance."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "invite.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Invite(http.Controller):
+    @http.route('/invite/code', auth='public')
+    def code(self):
+        sequence_model = 'ir.sequence'
+        token_code = 'access.token.sequence'
+        return request.env[sequence_model].next_by_code(token_code)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-sequence-public-route-next"
+        and f.severity == "high"
+        and f.route == "/invite/code"
+        for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-sequence-sensitive-code-use" and f.code == "access.token.sequence"
+        for f in findings
+    )
+
+
+def test_local_constant_public_route_sequence_alias_use(tmp_path: Path) -> None:
+    """Function-local constants should resolve before ir.sequence aliases are tracked."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "invite.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Invite(http.Controller):
+    @http.route('/invite/code', auth='public')
+    def code(self):
+        sequence_model = 'ir.sequence'
+        token_code = 'invite.token.sequence'
+        sequences = request.env[sequence_model]
+        return sequences.next_by_code(token_code)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+
+    assert any(f.rule_id == "odoo-sequence-public-route-next" for f in findings)
+    assert any(f.rule_id == "odoo-sequence-sensitive-code-use" for f in findings)
+
+
 def test_static_unpack_public_route_sensitive_sequence_use(tmp_path: Path) -> None:
     """Static **route options should not hide public sequence issuance."""
     controllers = tmp_path / "module" / "controllers"
