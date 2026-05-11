@@ -337,6 +337,26 @@ def migrate(cr, version):
     assert "odoo-migration-process-execution" in rule_ids
 
 
+def test_urllib_urlopen_without_timeout_is_reported(tmp_path: Path) -> None:
+    """urllib.request.urlopen should be treated as migration outbound HTTP."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+from urllib.request import urlopen
+import urllib.request as urlreq
+
+def migrate(cr, version):
+    urlopen("https://example.test/upgrade")
+    urlreq.urlopen("https://example.test/status", timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert len([finding for finding in findings if finding.rule_id == "odoo-migration-http-no-timeout"]) == 1
+
+
 def test_manifest_declared_lifecycle_hook_is_scanned(tmp_path: Path) -> None:
     """Manifest hook names should locate and scan hook functions."""
     module = tmp_path / "module"

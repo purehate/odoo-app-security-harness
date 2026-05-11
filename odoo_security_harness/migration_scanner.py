@@ -25,7 +25,7 @@ class MigrationFinding:
 
 HOOK_KEYS = {"pre_init_hook", "post_init_hook", "uninstall_hook", "post_load"}
 DESTRUCTIVE_SQL = re.compile(r"\b(drop|truncate|delete\s+from|alter\s+table)\b", re.IGNORECASE)
-HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request"}
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request", "urlopen"}
 PROCESS_METHODS = {"run", "call", "check_call", "check_output", "Popen"}
 
 
@@ -57,7 +57,7 @@ class MigrationScanner(ast.NodeVisitor):
         self.findings: list[MigrationFinding] = []
         self.sql_vars: dict[str, ast.expr] = {}
         self.sudo_vars: set[str] = set()
-        self.http_module_aliases: set[str] = {"requests", "httpx"}
+        self.http_module_aliases: set[str] = {"requests", "httpx", "urllib"}
         self.http_function_aliases: set[str] = set()
         self.process_module_aliases: set[str] = {"subprocess"}
         self.process_function_aliases: set[str] = set()
@@ -88,12 +88,14 @@ class MigrationScanner(ast.NodeVisitor):
         for alias in node.names:
             if alias.name in {"requests", "httpx"}:
                 self.http_module_aliases.add(alias.asname or alias.name)
+            elif alias.name == "urllib.request":
+                self.http_module_aliases.add(alias.asname or "urllib")
             elif alias.name == "subprocess":
                 self.process_module_aliases.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        if node.module in {"requests", "httpx"}:
+        if node.module in {"requests", "httpx", "urllib.request"}:
             for alias in node.names:
                 if alias.name in HTTP_METHODS:
                     self.http_function_aliases.add(alias.asname or alias.name)
