@@ -751,6 +751,38 @@ def test_flags_sensitive_and_global_business_xml_sequences(tmp_path: Path) -> No
     assert "odoo-sequence-business-global-scope" in rule_ids
 
 
+def test_flags_sensitive_and_global_business_csv_sequences(tmp_path: Path) -> None:
+    """CSV ir.sequence declarations should use the same declaration checks as XML."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.sequence.csv").write_text(
+        "id,name,code,prefix\n"
+        "seq_invite_token,Invite Token,invite.token,TOKEN-\n"
+        "seq_sale_order,Sale Order,sale.order,SO\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_sequences(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-sequence-sensitive-declaration" in rule_ids
+    assert "odoo-sequence-sensitive-global-scope" in rule_ids
+    assert "odoo-sequence-business-global-scope" in rule_ids
+
+
+def test_company_scoped_normal_csv_sequence_is_ignored(tmp_path: Path) -> None:
+    """Company-scoped non-sensitive CSV sequences should not be noisy."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_sequence.csv").write_text(
+        "id,name,code,company_id/id\n"
+        "seq_ticket,Helpdesk Ticket,helpdesk.ticket,base.main_company\n",
+        encoding="utf-8",
+    )
+
+    assert scan_sequences(tmp_path) == []
+
+
 def test_xml_entities_are_not_expanded_into_sequence_findings(tmp_path: Path) -> None:
     """XML entities must not synthesize sensitive sequence declarations."""
     data = tmp_path / "module" / "data"
