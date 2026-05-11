@@ -86,6 +86,28 @@ requests.post(record.callback_url)
     assert "odoo-xml-server-action-http-no-timeout" in rule_ids
 
 
+def test_server_action_urllib_and_httpx_without_timeout(tmp_path: Path) -> None:
+    """Executable server actions should catch urllib/httpx calls without timeouts."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_url_fetch" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+from urllib.request import urlopen
+urlopen(record.callback_url)
+httpx.post(record.audit_url, timeout=10)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert len([f for f in findings if f.rule_id == "odoo-xml-server-action-http-no-timeout"]) == 1
+
+
 def test_server_action_keyword_with_user_mutation_is_reported(tmp_path: Path) -> None:
     """XML server actions should surface keyword with_user superuser mutations."""
     xml = tmp_path / "actions.xml"
@@ -282,6 +304,24 @@ def test_root_cron_code_and_http_without_timeout(tmp_path: Path) -> None:
     assert "odoo-xml-cron-admin-user" in rule_ids
     assert "odoo-xml-cron-root-code" in rule_ids
     assert "odoo-xml-cron-http-no-timeout" in rule_ids
+
+
+def test_cron_urllib_without_timeout(tmp_path: Path) -> None:
+    """Cron inline Python should catch urllib URL fetches without timeouts."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_url_fetch" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code">urllib.request.urlopen(record.url)</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
 
 
 def test_admin_method_cron_without_state_code_is_reported(tmp_path: Path) -> None:

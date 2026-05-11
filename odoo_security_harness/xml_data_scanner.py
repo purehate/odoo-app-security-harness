@@ -182,7 +182,7 @@ class XmlDataScanner:
                 record_id,
             )
 
-        if re.search(r"requests\.(get|post|put|patch|delete)\s*\(", code) and "timeout" not in code:
+        if _http_call_without_timeout(code):
             self._add(
                 "odoo-xml-server-action-http-no-timeout",
                 "Server action performs HTTP request without timeout",
@@ -224,7 +224,7 @@ class XmlDataScanner:
                     record_id,
                 )
 
-        if state == "code" and re.search(r"requests\.(get|post|put|patch)\s*\(", code) and "timeout" not in code:
+        if state == "code" and _http_call_without_timeout(code):
             self._add(
                 "odoo-xml-cron-http-no-timeout",
                 "Cron performs HTTP request without visible timeout",
@@ -708,6 +708,17 @@ def _is_static_literal(node: ast.AST) -> bool:
             for key, value in zip(node.keys, node.values, strict=True)
         )
     return False
+
+
+def _http_call_without_timeout(code: str) -> bool:
+    return any(
+        "timeout" not in match.group("args")
+        for match in re.finditer(
+            r"(?:(?:requests|httpx)\.(?:get|post|put|patch|delete|request)|(?:urllib\.request\.)?urlopen)"
+            r"\s*\((?P<args>[^)]*)\)",
+            code,
+        )
+    )
 
 
 def _mentions_user_groups(value: str) -> bool:
