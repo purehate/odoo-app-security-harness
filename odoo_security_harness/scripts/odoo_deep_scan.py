@@ -557,7 +557,9 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "qweb_dynamic_url_attribute",
         (
+            "web-owl-qweb-dynamic-url-attribute",
             "odoo-qweb-t-att-url",
+            "owl inline template binds dynamic url attribute",
             "qweb dynamic url attribute",
             "dynamic href/src/action URL",
             "scriptable URL scheme",

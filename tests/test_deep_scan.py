@@ -7502,6 +7502,12 @@ def test_taxonomy_coverage_classifies_remaining_qweb_surface_rules() -> None:
                 "title": "QWeb binds dynamic URL attribute",
                 "message": "Dynamic href/src/action URL must reject scriptable URL schemes",
             },
+            {
+                "source": "web-asset",
+                "rule_id": "odoo-web-owl-qweb-dynamic-url-attribute",
+                "title": "OWL inline template binds dynamic URL attribute",
+                "message": "OWL xml template binds a dynamic href, src, action, or similar URL attribute",
+            },
         ]
     )
 
@@ -7514,6 +7520,7 @@ def test_taxonomy_coverage_classifies_remaining_qweb_surface_rules() -> None:
         "odoo-qweb-sensitive-field-render": "qweb_sensitive_field_render",
         "odoo-web-owl-qweb-sensitive-field-render": "qweb_sensitive_field_render",
         "odoo-qweb-t-att-url": "qweb_dynamic_url_attribute",
+        "odoo-web-owl-qweb-dynamic-url-attribute": "qweb_dynamic_url_attribute",
     }
     assert any("CWE-601" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-200" in entry["cwe"] for entry in coverage["mapped_entries"])

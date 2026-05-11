@@ -1426,6 +1426,31 @@ def test_owl_inline_template_dynamic_stylesheet_href_detected(tmp_path: Path) ->
     )
 
 
+def test_owl_inline_template_dynamic_url_attribute_detected(tmp_path: Path) -> None:
+    """OWL inline URL-bearing attributes should not use runtime-selected targets."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<a t-att-href=\"props.next_url\">Continue</a>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-dynamic-url-attribute"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_dynamic_url_mapping_detected(tmp_path: Path) -> None:
+    """OWL t-att mappings can also bind URL-bearing attributes dynamically."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<form t-att=\"{'action': props.post_url}\"/>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-owl-qweb-dynamic-url-attribute" for f in findings)
+
+
 def test_owl_inline_template_sensitive_field_render_detected(tmp_path: Path) -> None:
     """OWL inline templates should not expose credential-shaped values."""
     path = tmp_path / "widget.js"

@@ -327,6 +327,12 @@ OWL_TEMPLATE_DYNAMIC_STYLESHEET_RE = re.compile(
     r"<link\b(?=[^>]*\brel\s*=\s*['\"][^'\"]*\bstylesheet\b)(?=[^>]*\bt-attf?-href\s*=)",
     re.IGNORECASE,
 )
+OWL_TEMPLATE_DYNAMIC_URL_ATTR_RE = re.compile(
+    r"\bt-attf?-(?:href|src|action|formaction|poster|srcset|ping|xlink:href)\s*=|"
+    r"\bt-att\s*=\s*['\"][^>]*(?:['\"](?:href|src|action|formAction|poster|srcset|ping|xlink:href)['\"]|"
+    r"(?:href|src|action|formAction|poster|srcset|ping)\s*:)",
+    re.IGNORECASE,
+)
 OWL_TEMPLATE_SENSITIVE_RENDER_RE = re.compile(
     r"\b(?:t-(?:out|esc|field)|t-att-(?:value|content|data-[\w-]*))\s*=\s*['\"][^'\"]*"
     r"(?:access[_-]?token|accessToken|api[_-]?key|apiKey|client[_-]?secret|clientSecret|"
@@ -1157,6 +1163,15 @@ class WebAssetScanner:
                     "medium",
                     line,
                     "OWL xml template loads CSS from an external or dynamic target; verify untrusted data cannot choose stylesheets that hide, overlay, or restyle privileged UI",
+                    "owl-template",
+                )
+            if OWL_TEMPLATE_DYNAMIC_URL_ATTR_RE.search(body):
+                self._add(
+                    "odoo-web-owl-qweb-dynamic-url-attribute",
+                    "OWL inline template binds dynamic URL attribute",
+                    "medium",
+                    line,
+                    "OWL xml template binds a dynamic href, src, action, or similar URL attribute; reject scriptable schemes and restrict redirects, embeds, and form targets to trusted locations",
                     "owl-template",
                 )
             if OWL_TEMPLATE_SENSITIVE_RENDER_RE.search(body):
