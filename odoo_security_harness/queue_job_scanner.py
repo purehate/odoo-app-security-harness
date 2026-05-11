@@ -63,6 +63,7 @@ class QueueJobScanner(ast.NodeVisitor):
         self.http_function_aliases: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
         self.job_decorator_names: set[str] = {"job"}
         self.route_decorator_names: set[str] = {"route"}
         self.dynamic_eval_names: set[str] = {"eval", "exec", "safe_eval"}
@@ -118,6 +119,8 @@ class QueueJobScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         context = FunctionContext(
             name=node.name,
             is_job=_is_job_function(node, self.job_decorator_names),
@@ -126,6 +129,7 @@ class QueueJobScanner(ast.NodeVisitor):
         self.function_stack.append(context)
         self.generic_visit(node)
         self.function_stack.pop()
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -139,18 +143,21 @@ class QueueJobScanner(ast.NodeVisitor):
         current = self.function_stack[-1] if self.function_stack else None
         if current:
             for target in node.targets:
+                self._mark_local_constant_target(target, node.value)
                 self._record_alias_target(target, node.value, current)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         current = self.function_stack[-1] if self.function_stack else None
         if current and node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._record_alias_target(node.target, node.value, current)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
         current = self.function_stack[-1] if self.function_stack else None
         if current:
+            self._mark_local_constant_target(node.target, node.value)
             self._record_alias_target(node.target, node.value, current)
         self.generic_visit(node)
 
@@ -303,12 +310,40 @@ class QueueJobScanner(ast.NodeVisitor):
         else:
             aliases.discard(target.id)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for child_target, child_value in _unpack_target_value_pairs(target, value):
+                self._mark_local_constant_target(child_target, child_value)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
+    def _discard_local_constant_target(self, target: ast.AST) -> None:
+        if isinstance(target, ast.Name):
+            self.local_constants.pop(target.id, None)
+        elif isinstance(target, ast.Starred):
+            self._discard_local_constant_target(target.value)
+        elif isinstance(target, ast.Tuple | ast.List):
+            for element in target.elts:
+                self._discard_local_constant_target(element)
+
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, job: str) -> None:

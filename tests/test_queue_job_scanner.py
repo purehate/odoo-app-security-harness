@@ -319,6 +319,30 @@ class SaleJob(models.Model):
     assert "odoo-queue-job-sudo-mutation" in rule_ids
 
 
+def test_flags_queue_job_local_constant_with_user_mutation(tmp_path: Path) -> None:
+    """Function-local superuser aliases should not hide elevated queue mutations."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        root_uid = 1
+        orders = record.with_user(root_uid)
+        orders.write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-queue-job-sudo-mutation" in rule_ids
+
+
 def test_flags_queue_job_env_ref_root_mutation(tmp_path: Path) -> None:
     """Queue jobs should track with_user(base.user_root) aliases as elevated."""
     module = tmp_path / "module" / "models"
@@ -587,6 +611,30 @@ class SaleJob(models.Model):
     assert any(f.rule_id == "odoo-queue-job-tls-verify-disabled" for f in findings)
 
 
+def test_flags_queue_job_local_constant_tls_verification_disabled(tmp_path: Path) -> None:
+    """Function-local verify=False kwargs should still flag queue job HTTP integrations."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+import requests
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        verify_tls = False
+        http_options = {'timeout': 10, 'verify': verify_tls}
+        requests.post(record.callback_url, **http_options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-queue-job-tls-verify-disabled" for f in findings)
+
+
 def test_flags_sensitive_model_queue_mutation_without_sudo(tmp_path: Path) -> None:
     """Queue jobs mutating sensitive models deserve review even without inline sudo."""
     module = tmp_path / "module" / "models"
@@ -658,6 +706,33 @@ class IdentityJob(models.Model):
     findings = scan_queue_jobs(tmp_path)
 
     assert any(f.rule_id == "odoo-queue-job-sensitive-model-mutation" for f in findings)
+
+
+def test_flags_local_constant_backed_sensitive_model_queue_mutation(tmp_path: Path) -> None:
+    """Function-local env model names should still flag sensitive queue mutations."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+
+class IdentityJob(models.Model):
+    @job
+    def sync_queue(self, payload):
+        users_model = 'res.users'
+        config_model = 'ir.config_parameter'
+        self.env[users_model].write({'active': False})
+        self.env[config_model].set_param('auth.signup.allow_uninvited', 'False')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+    sensitive_mutations = [
+        finding for finding in findings if finding.rule_id == "odoo-queue-job-sensitive-model-mutation"
+    ]
+
+    assert len(sensitive_mutations) == 2
 
 
 def test_flags_public_route_enqueue_without_identity_key(tmp_path: Path) -> None:
