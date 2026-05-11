@@ -629,6 +629,77 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-session-direct-uid-assignment" and f.severity == "high" for f in findings)
 
 
+def test_flags_aliased_session_update_uid_assignment(tmp_path: Path) -> None:
+    """Aliased session update dictionaries should preserve uid assignment checks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "impersonate.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/impersonate', auth='user')
+    def impersonate(self, **kwargs):
+        values = {'uid': int(kwargs.get('uid'))}
+        return request.session.update(values)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-direct-uid-assignment" and f.severity == "high" for f in findings)
+
+
+def test_flags_incremental_session_update_uid_assignment(tmp_path: Path) -> None:
+    """Session update dictionaries populated in steps should be inspected."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "impersonate.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/impersonate', auth='user')
+    def impersonate(self, **kwargs):
+        values = {}
+        values['uid'] = int(kwargs.get('uid'))
+        return request.session.update(values)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-direct-uid-assignment" and f.severity == "high" for f in findings)
+
+
+def test_flags_updated_session_update_uid_assignment(tmp_path: Path) -> None:
+    """dict.update calls should not hide session uid updates."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "impersonate.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/impersonate', auth='user')
+    def impersonate(self, **kwargs):
+        values = {}
+        values.update({'uid': int(kwargs.get('uid'))})
+        return request.session.update(values)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert any(f.rule_id == "odoo-session-direct-uid-assignment" and f.severity == "high" for f in findings)
+
+
 def test_flags_public_request_uid_assignment(tmp_path: Path) -> None:
     """Public routes must not assign request.uid directly."""
     controllers = tmp_path / "module" / "controllers"

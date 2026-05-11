@@ -36,6 +36,7 @@ IR_HTTP_AUTH_METHODS = {
 }
 SUPERUSER_MARKERS = ("SUPERUSER_ID", "base.user_root", "base.user_admin")
 ROUTE_ID_ARG_RE = re.compile(r"(?:^id$|_ids?$|^uid$|_uids?$)")
+SESSION_UID_KEYS = {"uid", "user_id"}
 
 
 def scan_session_auth(repo_path: Path) -> list[SessionAuthFinding]:
@@ -62,6 +63,7 @@ class SessionAuthScanner(ast.NodeVisitor):
         self.http_module_names: set[str] = {"http"}
         self.route_decorator_names: set[str] = set()
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.session_update_value_names: dict[str, ast.Dict] = {}
 
     def scan_file(self) -> list[SessionAuthFinding]:
         """Scan the file."""
@@ -105,6 +107,7 @@ class SessionAuthScanner(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_names)
+        previous_session_update_values = dict(self.session_update_value_names)
         route = _route_info(
             node,
             self._effective_constants(),
@@ -125,6 +128,7 @@ class SessionAuthScanner(ast.NodeVisitor):
         self.generic_visit(node)
         self.route_stack.pop()
         self.tainted_names = previous_tainted
+        self.session_update_value_names = previous_session_update_values
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -132,6 +136,8 @@ class SessionAuthScanner(ast.NodeVisitor):
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
             self._mark_tainted_target(target, node.value)
+            self._mark_session_update_value_target(target, node.value)
+            self._mark_session_update_value_item_target(target, node.value)
 
         for target in node.targets:
             self._scan_uid_assignment_target(target, node.value, node.lineno)
@@ -140,6 +146,7 @@ class SessionAuthScanner(ast.NodeVisitor):
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
             self._mark_tainted_target(node.target, node.value)
+            self._mark_session_update_value_target(node.target, node.value)
             self._scan_uid_assignment_target(node.target, node.value, node.lineno)
         self.generic_visit(node)
 
@@ -155,11 +162,13 @@ class SessionAuthScanner(ast.NodeVisitor):
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
         self._mark_tainted_target(node.target, node.value)
+        self._mark_session_update_value_target(node.target, node.value)
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
         route = self._current_route()
+        self._mark_session_update_value_update_call(node)
 
         if self._is_request_session_method(node.func, "authenticate"):
             if route.auth in {"public", "none"} and _call_has_tainted_input(node, self._expr_is_tainted):
@@ -287,7 +296,7 @@ class SessionAuthScanner(ast.NodeVisitor):
 
     def _scan_session_update(self, node: ast.Call, sink: str) -> None:
         constants = self._effective_constants()
-        for value in _dict_values_for_keys(node, {"uid", "user_id"}, constants):
+        for value in self._session_update_uid_values(node, constants):
             severity = (
                 "high" if self._expr_is_tainted(value) or _expr_mentions_superuser(value, constants) else "medium"
             )
@@ -300,6 +309,18 @@ class SessionAuthScanner(ast.NodeVisitor):
                 sink,
             )
             return
+
+    def _session_update_uid_values(self, node: ast.Call, constants: dict[str, ast.AST]) -> list[ast.AST]:
+        values: list[ast.AST] = []
+        for arg in node.args:
+            if isinstance(arg, ast.Name) and arg.id in self.session_update_value_names:
+                values.extend(_dict_literal_values_for_keys(self.session_update_value_names[arg.id], SESSION_UID_KEYS, constants))
+            elif isinstance(arg, ast.Dict):
+                values.extend(_dict_literal_values_for_keys(arg, SESSION_UID_KEYS, constants))
+        for keyword in node.keywords:
+            if keyword.arg in SESSION_UID_KEYS and keyword.value is not None:
+                values.append(keyword.value)
+        return values
 
     def _scan_uid_assignment_target(self, target: ast.AST, value: ast.AST, line: int) -> None:
         if self._is_session_uid_target(target):
@@ -423,6 +444,54 @@ class SessionAuthScanner(ast.NodeVisitor):
             else:
                 for target_element in target.elts:
                     self._discard_name_target(target_element, self.tainted_names)
+
+    def _mark_session_update_value_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_session_update_value_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_session_update_value_target(target.value, value)
+            return
+        if not isinstance(target, ast.Name):
+            return
+        if isinstance(value, ast.Dict):
+            self.session_update_value_names[target.id] = value
+        elif isinstance(value, ast.Name) and value.id in self.session_update_value_names:
+            self.session_update_value_names[target.id] = self.session_update_value_names[value.id]
+        else:
+            self.session_update_value_names.pop(target.id, None)
+
+    def _mark_session_update_value_item_target(self, target: ast.AST, value: ast.AST) -> None:
+        if not isinstance(target, ast.Subscript) or not isinstance(target.value, ast.Name):
+            return
+        name = target.value.id
+        values = self.session_update_value_names.get(name)
+        if values is None:
+            return
+        key = _literal_subscript_key(_resolve_constant(target.slice, self._effective_constants()))
+        if key:
+            self.session_update_value_names[name] = _dict_with_field(values, key, value)
+
+    def _mark_session_update_value_update_call(self, node: ast.Call) -> None:
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+            return
+        if not isinstance(node.func.value, ast.Name):
+            return
+        name = node.func.value.id
+        values = self.session_update_value_names.get(name)
+        if values is None:
+            return
+        update_values = node.args[0] if node.args else None
+        if not isinstance(update_values, ast.Dict):
+            return
+        merged = values
+        for key, value in zip(update_values.keys, update_values.values, strict=False):
+            resolved_key = _resolve_constant(key, self._effective_constants()) if key is not None else None
+            literal_key = _literal_subscript_key(resolved_key)
+            if literal_key:
+                merged = _dict_with_field(merged, literal_key, value)
+        self.session_update_value_names[name] = merged
 
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
@@ -871,6 +940,18 @@ def _dict_literal_values_for_keys(
         if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str) and resolved_key.value in keys:
             values.append(value)
     return values
+
+
+def _dict_with_field(values: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values.keys)
+    values_list = list(values.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values_list[index] = value
+            return ast.Dict(keys=keys, values=values_list)
+    keys.append(ast.Constant(value=key))
+    values_list.append(value)
+    return ast.Dict(keys=keys, values=values_list)
 
 
 def _unpack_target_value_pairs(
