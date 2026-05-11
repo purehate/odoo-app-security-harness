@@ -35,30 +35,77 @@ from pathlib import Path
 import yaml
 
 from odoo_security_harness.base_scanner import _should_skip
-import odoo_security_harness as _osh
-
-# Dynamically bind all scanner functions exported by odoo_security_harness.
-# This removes the need to maintain a hard-coded import list when adding
-# new scanners; they are picked up automatically from __all__.
-for _name in _osh.__all__:
-    if _name.startswith(scan_) or _name in {
-        analyze_directory,
-        analyze_access_control,
-        check_multi_company_isolation,
-    }:
-        globals()[_name] = getattr(_osh, _name)
-
-# Non-scanner utilities used by reporting and normalization.
-compute_fingerprint = _osh.compute_fingerprint
-generate_pocs = _osh.generate_pocs
-normalize_findings = _osh.normalize_findings
-poc_coverage_report = _osh.poc_coverage_report
-validation_report = _osh.validation_report
-
-# Populate the scanner registry for coverage and auxiliary tooling.
-# The explicit deep-scan execution plan remains wired below.
-from odoo_security_harness.registry import auto_discover
-auto_discover()
+from odoo_security_harness import (
+    analyze_access_control,
+    analyze_directory,
+    check_multi_company_isolation,
+    compute_fingerprint,
+    generate_pocs,
+    normalize_findings,
+    poc_coverage_report,
+    scan_access_overrides,
+    scan_action_urls,
+    scan_action_windows,
+    scan_api_keys,
+    scan_attachments,
+    scan_automations,
+    scan_binary_downloads,
+    scan_button_actions,
+    scan_cache_headers,
+    scan_config_parameters,
+    scan_constraints,
+    scan_controller_responses,
+    scan_data_integrity,
+    scan_database_operations,
+    scan_default_values,
+    scan_deployment_config,
+    scan_exports,
+    scan_field_security,
+    scan_file_uploads,
+    scan_identity_mutations,
+    scan_integrations,
+    scan_json_routes,
+    scan_loose_python,
+    scan_mail_aliases,
+    scan_mail_chatter,
+    scan_mail_templates,
+    scan_manifests,
+    scan_metadata,
+    scan_migrations,
+    scan_model_methods,
+    scan_models,
+    scan_module_lifecycle,
+    scan_oauth_flows,
+    scan_orm_context,
+    scan_orm_domains,
+    scan_payments,
+    scan_portal_routes,
+    scan_property_fields,
+    scan_publication,
+    scan_queue_jobs,
+    scan_qweb_templates,
+    scan_raw_sql,
+    scan_realtime,
+    scan_record_rules,
+    scan_reports,
+    scan_route_security,
+    scan_scheduled_jobs,
+    scan_secrets,
+    scan_sequences,
+    scan_serialization,
+    scan_session_auth,
+    scan_settings,
+    scan_signup_tokens,
+    scan_translations,
+    scan_ui_exposure,
+    scan_view_domains,
+    scan_view_inheritance,
+    scan_web_assets,
+    scan_website_forms,
+    scan_wizards,
+    scan_xml_data,
+    validation_report,
+)
 
 _SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
 _SEVERITY_RANK = {severity: index for index, severity in enumerate(_SEVERITY_ORDER)}
