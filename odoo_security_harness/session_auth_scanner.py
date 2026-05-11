@@ -368,15 +368,16 @@ class SessionAuthScanner(ast.NodeVisitor):
     def _session_update_uid_values(self, node: ast.Call, constants: dict[str, ast.AST]) -> list[ast.AST]:
         values: list[ast.AST] = []
         for arg in node.args:
-            if isinstance(arg, ast.Name) and arg.id in self.session_update_value_names:
-                values.extend(
-                    _dict_literal_values_for_keys(self.session_update_value_names[arg.id], SESSION_UID_KEYS, constants)
-                )
-            elif isinstance(arg, ast.Dict):
-                values.extend(_dict_literal_values_for_keys(arg, SESSION_UID_KEYS, constants))
+            values_node = self._session_update_values_node(arg, constants)
+            if values_node is not None:
+                values.extend(_dict_literal_values_for_keys(values_node, SESSION_UID_KEYS, constants))
         for keyword in node.keywords:
             if keyword.arg in SESSION_UID_KEYS and keyword.value is not None:
                 values.append(keyword.value)
+            elif keyword.arg is None:
+                values_node = self._session_update_values_node(keyword.value, constants)
+                if values_node is not None:
+                    values.extend(_dict_literal_values_for_keys(values_node, SESSION_UID_KEYS, constants))
         return values
 
     def _scan_uid_assignment_target(self, target: ast.AST, value: ast.AST, line: int) -> None:
@@ -540,16 +541,36 @@ class SessionAuthScanner(ast.NodeVisitor):
         values = self.session_update_value_names.get(name)
         if values is None:
             return
-        update_values = node.args[0] if node.args else None
-        if not isinstance(update_values, ast.Dict):
-            return
+
+        constants = self._effective_constants()
         merged = values
-        for key, value in zip(update_values.keys, update_values.values, strict=False):
-            resolved_key = _resolve_constant(key, self._effective_constants()) if key is not None else None
-            literal_key = _literal_subscript_key(resolved_key)
-            if literal_key:
-                merged = _dict_with_field(merged, literal_key, value)
+        for arg in node.args:
+            update_values = self._session_update_values_node(arg, constants)
+            if update_values is None:
+                continue
+            for key, value in zip(update_values.keys, update_values.values, strict=False):
+                resolved_key = _resolve_constant(key, constants) if key is not None else None
+                literal_key = _literal_subscript_key(resolved_key)
+                if literal_key:
+                    merged = _dict_with_field(merged, literal_key, value)
+        for keyword in node.keywords:
+            if keyword.arg is not None:
+                merged = _dict_with_field(merged, keyword.arg, keyword.value)
+                continue
+            update_values = self._session_update_values_node(keyword.value, constants)
+            if update_values is None:
+                continue
+            for key, value in zip(update_values.keys, update_values.values, strict=False):
+                resolved_key = _resolve_constant(key, constants) if key is not None else None
+                literal_key = _literal_subscript_key(resolved_key)
+                if literal_key:
+                    merged = _dict_with_field(merged, literal_key, value)
         self.session_update_value_names[name] = merged
+
+    def _session_update_values_node(self, node: ast.AST, constants: dict[str, ast.AST]) -> ast.Dict | None:
+        if isinstance(node, ast.Name) and node.id in self.session_update_value_names:
+            return self.session_update_value_names[node.id]
+        return _resolve_static_dict(node, constants)
 
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
