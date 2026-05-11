@@ -33,7 +33,19 @@ class LoosePythonFinding:
 class LoosePythonScanner(ast.NodeVisitor):
     """AST scanner for server actions and loose Python helper scripts."""
 
-    HTTP_METHODS = {"requests.delete", "requests.get", "requests.patch", "requests.post", "requests.put"}
+    HTTP_METHODS = {
+        "aiohttp.delete",
+        "aiohttp.get",
+        "aiohttp.patch",
+        "aiohttp.post",
+        "aiohttp.put",
+        "aiohttp.request",
+        "requests.delete",
+        "requests.get",
+        "requests.patch",
+        "requests.post",
+        "requests.put",
+    }
     HTTP_CLIENT_METHODS = {"delete", "get", "patch", "post", "put", "request"}
     HTTP_CLIENT_CONSTRUCTORS = {"aiohttp.ClientSession", "httpx.AsyncClient", "httpx.Client", "requests.Session"}
     SENSITIVE_MUTATION_METHODS = {"create", "set", "set_param", "unlink", "write"}
@@ -308,7 +320,7 @@ class LoosePythonScanner(ast.NodeVisitor):
         sink = self._canonical_call_name(node.func)
         if sink in self.HTTP_METHODS or sink in {"requests.request", "httpx.request", "urllib.request.urlopen"}:
             return True
-        if sink.startswith("httpx.") and sink.rsplit(".", maxsplit=1)[-1] in self.HTTP_CLIENT_METHODS:
+        if sink.startswith(("aiohttp.", "httpx.")) and sink.rsplit(".", maxsplit=1)[-1] in self.HTTP_CLIENT_METHODS:
             return True
         if (
             isinstance(node.func, ast.Attribute)
