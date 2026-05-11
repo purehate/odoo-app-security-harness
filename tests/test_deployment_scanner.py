@@ -179,6 +179,35 @@ def test_scan_deployment_config_flags_signup_and_base_url_xml(tmp_path: Path) ->
     assert "odoo-deploy-b2c-signup" in rule_ids
 
 
+def test_scan_deployment_config_flags_signup_and_base_url_csv(tmp_path: Path) -> None:
+    """CSV config parameters should flag open signup and mutable base URL settings."""
+    data_dir = tmp_path / "module" / "data"
+    data_dir.mkdir(parents=True)
+    (data_dir / "ir.config_parameter.csv").write_text(
+        """id,key,value
+base_url_freeze,web.base.url.freeze,False
+base_url,web.base.url,http://localhost:8069
+open_signup,auth_signup.allow_uninvited,True
+db_create,database.create,True
+db_drop,database.drop,True
+oauth_signup,auth_oauth.allow_signup,1
+b2c_signup,auth_signup.invitation_scope,b2c
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_deployment_config(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deploy-base-url-not-frozen" in rule_ids
+    assert "odoo-deploy-insecure-base-url" in rule_ids
+    assert "odoo-deploy-open-signup" in rule_ids
+    assert "odoo-deploy-database-create-enabled" in rule_ids
+    assert "odoo-deploy-database-drop-enabled" in rule_ids
+    assert "odoo-deploy-oauth-auto-signup" in rule_ids
+    assert "odoo-deploy-b2c-signup" in rule_ids
+
+
 def test_scan_deployment_config_flags_risky_oauth_provider_xml(tmp_path: Path) -> None:
     """OAuth provider records should expose insecure auth posture."""
     data_dir = tmp_path / "module" / "data"
@@ -193,6 +222,25 @@ def test_scan_deployment_config_flags_risky_oauth_provider_xml(tmp_path: Path) -
     <field name="client_secret">prod-secret-1234567890</field>
   </record>
 </odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_deployment_config(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deploy-oauth-missing-validation-endpoint" in rule_ids
+    assert "odoo-deploy-oauth-insecure-endpoint" in rule_ids
+    assert "odoo-deploy-oauth-client-secret-committed" in rule_ids
+
+
+def test_scan_deployment_config_flags_risky_oauth_provider_csv(tmp_path: Path) -> None:
+    """OAuth provider CSV records should expose insecure auth posture."""
+    data_dir = tmp_path / "module" / "data"
+    data_dir.mkdir(parents=True)
+    (data_dir / "auth_oauth_provider.csv").write_text(
+        """id,name,enabled,auth_endpoint,token_endpoint,client_secret
+oauth_partner,Partner OAuth,True,http://idp.example.com/auth,https://idp.example.com/token,prod-secret-1234567890
+""",
         encoding="utf-8",
     )
 

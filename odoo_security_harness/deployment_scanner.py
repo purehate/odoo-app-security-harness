@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -36,14 +38,14 @@ LOCAL_BASE_URL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0"}  # noqa: S104
 
 
 def scan_deployment_config(repo_path: Path) -> list[DeploymentFinding]:
-    """Scan Odoo deployment config and XML data for insecure production posture."""
+    """Scan Odoo deployment config and data files for insecure production posture."""
     findings: list[DeploymentFinding] = []
     for path in repo_path.rglob("*"):
         if not path.is_file() or _should_skip(path):
             continue
         if _looks_config_file(path):
             findings.extend(DeploymentScanner(path).scan_file())
-        elif path.suffix.lower() == ".xml":
+        elif path.suffix.lower() in {".xml", ".csv"}:
             findings.extend(DeploymentScanner(path).scan_file())
     return findings
 
@@ -63,8 +65,11 @@ class DeploymentScanner:
         except Exception:
             return []
 
-        if self.path.suffix.lower() == ".xml":
+        suffix = self.path.suffix.lower()
+        if suffix == ".xml":
             self._scan_config_parameter_xml()
+        elif suffix == ".csv":
+            self._scan_config_parameter_csv()
         else:
             self._scan_config_lines()
         return self.findings
@@ -95,18 +100,35 @@ class DeploymentScanner:
             if key:
                 self._scan_config_value(key, value, _line_for(self.content, key))
 
+    def _scan_config_parameter_csv(self) -> None:
+        model = _csv_model_name(self.path)
+        if model not in {"auth.oauth.provider", "ir.config_parameter"}:
+            return
+
+        for fields, line in _csv_dict_rows(self.content):
+            if model == "auth.oauth.provider":
+                self._scan_oauth_provider_fields(fields, fields.get("id", ""), line)
+                continue
+            key = fields.get("key", "")
+            value = fields.get("value", "")
+            if key:
+                self._scan_config_value(key, value, line)
+
     def _scan_oauth_provider_xml(self, record: ElementTree.Element) -> None:
         fields = _record_fields(record)
         record_id = record.get("id", "")
-        enabled = fields.get("enabled", "")
-        if enabled and not _is_truthy(enabled):
-            return
-
         line = (
             _line_for(self.content, f'id="{record_id}"')
             if record_id
             else _line_for(self.content, "auth.oauth.provider")
         )
+        self._scan_oauth_provider_fields(fields, record_id, line)
+
+    def _scan_oauth_provider_fields(self, fields: dict[str, str], record_id: str, line: int) -> None:
+        enabled = fields.get("enabled", "")
+        if enabled and not _is_truthy(enabled):
+            return
+
         provider_name = fields.get("name", record_id or "auth.oauth.provider")
         endpoints = {
             "auth_endpoint": fields.get("auth_endpoint", ""),
@@ -398,6 +420,45 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("eval") or (field.text or "").strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    aliases = {
+        "auth_oauth_provider": "auth.oauth.provider",
+        "auth.oauth.provider": "auth.oauth.provider",
+        "ir_config_parameter": "ir.config_parameter",
+        "ir.config_parameter": "ir.config_parameter",
+    }
+    return aliases.get(stem, stem.replace("_", "."))
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+                if ":" in name:
+                    normalized.setdefault(name.split(":", 1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _looks_config_file(path: Path) -> bool:
