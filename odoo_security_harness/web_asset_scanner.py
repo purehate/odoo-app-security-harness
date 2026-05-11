@@ -314,6 +314,7 @@ MESSAGE_ORIGIN_VALIDATION_RE = re.compile(
 OWL_XML_TEMPLATE_RE = re.compile(r"\bxml\s*`(?P<body>(?:\\`|[^`])*)`", re.IGNORECASE | re.DOTALL)
 OWL_TEMPLATE_T_RAW_RE = re.compile(r"\bt-raw\s*=", re.IGNORECASE)
 OWL_TEMPLATE_RAW_OUTPUT_MODE_RE = re.compile(r"\bt-out-mode\s*=\s*['\"]raw['\"]", re.IGNORECASE)
+OWL_TEMPLATE_DANGEROUS_TAG_RE = re.compile(r"<\s*(?:script|iframe|object|embed|form)\b", re.IGNORECASE)
 OWL_TEMPLATE_DYNAMIC_EVENT_RE = re.compile(r"\b(?:on\w+|t-attf?-on\w+)\s*=", re.IGNORECASE)
 OWL_TEMPLATE_SRCDOC_RE = re.compile(
     r"\bt-attf?-srcdoc\s*=|\bt-att\s*=\s*['\"][^>]*['\"]srcdoc['\"]\s*:",
@@ -1135,6 +1136,15 @@ class WebAssetScanner:
                     "high",
                     line,
                     "OWL xml template uses t-out-mode='raw' and disables normal escaping; verify rendered data is sanitized and trusted",
+                    "owl-template",
+                )
+            if OWL_TEMPLATE_DANGEROUS_TAG_RE.search(body):
+                self._add(
+                    "odoo-web-owl-qweb-dangerous-tag",
+                    "OWL inline template renders dangerous HTML tag",
+                    "medium",
+                    line,
+                    "OWL xml template contains a script, iframe, object, embed, or form tag; verify content, embedded origins, and submission behavior are trusted",
                     "owl-template",
                 )
             if OWL_TEMPLATE_DYNAMIC_EVENT_RE.search(body):

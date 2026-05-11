@@ -7485,6 +7485,12 @@ def test_taxonomy_coverage_classifies_remaining_qweb_surface_rules() -> None:
                 "message": "Template renders script, iframe, object, embed, or link tag",
             },
             {
+                "source": "web-asset",
+                "rule_id": "odoo-web-owl-qweb-dangerous-tag",
+                "title": "OWL inline template renders dangerous HTML tag",
+                "message": "OWL xml template contains a script, iframe, object, embed, or form tag",
+            },
+            {
                 "source": "qweb",
                 "rule_id": "odoo-qweb-html-widget",
                 "title": "QWeb template renders an HTML widget",
@@ -7527,6 +7533,7 @@ def test_taxonomy_coverage_classifies_remaining_qweb_surface_rules() -> None:
     shapes = {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]}
     assert shapes == {
         "odoo-qweb-dangerous-tag": "qweb_dangerous_tag",
+        "odoo-web-owl-qweb-dangerous-tag": "qweb_dangerous_tag",
         "odoo-qweb-html-widget": "qweb_html_widget_render",
         "odoo-qweb-inline-event": "qweb_inline_event_handler",
         "odoo-qweb-sensitive-field-render": "qweb_sensitive_field_render",

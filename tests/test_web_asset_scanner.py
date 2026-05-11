@@ -1325,6 +1325,33 @@ export const template = xml`
     )
 
 
+def test_owl_inline_template_dangerous_tag_detected(tmp_path: Path) -> None:
+    """OWL inline templates should surface embedded active or submission tags."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<div><form action=\"/portal/pay\"><input name=\"amount\"/></form></div>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-dangerous-tag"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_dangerous_tag_does_not_hide_raw_output(tmp_path: Path) -> None:
+    """Dangerous OWL template tags should not suppress sibling raw-output leads."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<div><iframe src=\"https://player.example.com\"></iframe><span t-raw=\"props.html\"/></div>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-web-owl-qweb-dangerous-tag" in rule_ids
+    assert "odoo-web-owl-qweb-t-raw" in rule_ids
+
+
 def test_owl_inline_template_escaped_output_ignored(tmp_path: Path) -> None:
     """Escaped OWL inline template output should not create raw-output leads."""
     path = tmp_path / "widget.js"

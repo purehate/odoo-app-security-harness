@@ -520,7 +520,9 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "qweb_dangerous_tag",
         (
+            "web-owl-qweb-dangerous-tag",
             "odoo-qweb-dangerous-tag",
+            "owl inline template renders dangerous html tag",
             "qweb renders dangerous html tag",
             "dangerous html tag",
             "script, iframe, object, embed, or link tag",
