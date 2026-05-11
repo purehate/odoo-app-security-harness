@@ -191,6 +191,60 @@ class Importer:
     assert not any(f.rule_id == "odoo-serialization-unsafe-yaml-load" for f in findings)
 
 
+def test_yaml_load_all_without_safe_loader_is_reported(tmp_path: Path) -> None:
+    """yaml.load_all has the same unsafe constructor behavior as yaml.load."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+import yaml
+
+def import_config(payload):
+    return list(yaml.load_all(payload))
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-serialization-unsafe-yaml-load" and f.sink == "yaml.load_all" for f in findings)
+
+
+def test_imported_yaml_load_all_alias_is_reported(tmp_path: Path) -> None:
+    """from-yaml aliases for load_all should not hide unsafe YAML loading."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+from yaml import load_all as decode_all
+
+def import_config(payload):
+    return list(decode_all(payload))
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-serialization-unsafe-yaml-load" and f.sink == "yaml.load_all" for f in findings)
+
+
+def test_yaml_load_all_safe_loader_is_not_reported(tmp_path: Path) -> None:
+    """SafeLoader should suppress yaml.load_all findings too."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+import yaml
+
+def import_config(payload):
+    return list(yaml.load_all(payload, Loader=yaml.SafeLoader))
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-serialization-unsafe-yaml-load" for f in findings)
+
+
 def test_yaml_unsafe_load_is_reported(tmp_path: Path) -> None:
     """yaml.unsafe_load should be flagged even when not spelled as yaml.load."""
     py = tmp_path / "importer.py"

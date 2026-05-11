@@ -41,6 +41,7 @@ UNSAFE_DESERIALIZATION_SINKS = {
 }
 TAINTED_ARG_NAMES = {"data", "payload", "body", "content", "file", "attachment", "kwargs", "kw", "post"}
 SAFE_YAML_LOADERS = {"SafeLoader", "CSafeLoader", "BaseLoader"}
+YAML_LOAD_SINKS = {"yaml.load", "yaml.load_all"}
 YAML_UNSAFE_LOAD_SINKS = {"yaml.unsafe_load", "yaml.unsafe_load_all"}
 YAML_FULL_LOAD_SINKS = {"yaml.full_load", "yaml.full_load_all"}
 LITERAL_EVAL_SINKS = {"ast.literal_eval"}
@@ -237,14 +238,14 @@ class SerializationScanner(ast.NodeVisitor):
                 f"{sink} can execute code or instantiate attacker-controlled objects; never use it on request, attachment, or integration data",
                 sink,
             )
-        elif sink == "yaml.load" and not _has_safe_yaml_loader(node, self._effective_constants()):
+        elif sink in YAML_LOAD_SINKS and not _has_safe_yaml_loader(node, self._effective_constants()):
             severity = "critical" if _call_has_tainted_input(node, self._expr_is_tainted) else "high"
             self._add(
                 "odoo-serialization-unsafe-yaml-load",
                 "Unsafe YAML load",
                 severity,
                 node.lineno,
-                "yaml.load() without SafeLoader can construct arbitrary Python objects; use safe_load() or SafeLoader",
+                "yaml.load()/load_all() without SafeLoader can construct arbitrary Python objects; use safe_load()/safe_load_all() or SafeLoader",
                 sink,
             )
         elif sink in YAML_UNSAFE_LOAD_SINKS:
