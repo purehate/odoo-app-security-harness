@@ -337,6 +337,39 @@ class Controller(http.Controller):
     assert "odoo-mail-tainted-recipients" in rule_ids
 
 
+def test_dict_union_static_unpack_public_route_message_post_is_reported(tmp_path: Path) -> None:
+    """Dict-union **route options should not hide public chatter endpoints."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'user'}
+ROUTE_OPTIONS = BASE_OPTIONS | {'auth': 'public', 'route': '/ticket/comment'}
+
+class Controller(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def comment(self, **kwargs):
+        ticket = request.env['helpdesk.ticket'].sudo().browse(kwargs.get('id'))
+        return ticket.sudo().message_post(
+            body=kwargs.get('body'),
+            partner_ids=kwargs.get('partner_ids'),
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-chatter-public-route-send" in rule_ids
+    assert "odoo-mail-chatter-sudo-post" in rule_ids
+    assert "odoo-mail-tainted-body" in rule_ids
+    assert "odoo-mail-tainted-recipients" in rule_ids
+
+
 def test_class_constant_backed_public_route_message_post_is_reported(tmp_path: Path) -> None:
     """Class-scoped public route auth should not hide chatter endpoints."""
     controllers = tmp_path / "module" / "controllers"
@@ -1371,6 +1404,31 @@ FOLLOW_VALUES = {
     'res_id': 1,
     'partner_id': 2,
 }
+
+class Followers:
+    def follow_order(self):
+        return self.env['mail.followers'].create(FOLLOW_VALUES)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+
+    assert any(f.rule_id == "odoo-mail-followers-sensitive-model-mutation" for f in findings)
+
+
+def test_dict_union_sensitive_model_mail_followers_mutation(tmp_path: Path) -> None:
+    """Dict-union follower value dictionaries should expose sensitive res_model values."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "followers.py").write_text(
+        """
+FOLLOWED_MODEL = 'sale.order'
+BASE_VALUES = {
+    'res_id': 1,
+    'partner_id': 2,
+}
+FOLLOW_VALUES = BASE_VALUES | {'res_model': FOLLOWED_MODEL}
 
 class Followers:
     def follow_order(self):

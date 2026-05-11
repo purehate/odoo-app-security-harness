@@ -663,7 +663,25 @@ def _is_static_literal(node: ast.AST) -> bool:
             (key is None or _is_static_literal(key)) and _is_static_literal(value)
             for key, value in zip(node.keys, node.values, strict=False)
         )
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_literal(node.left) and _is_static_literal(node.right)
     return False
+
+
+def _resolve_static_dict(
+    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
+) -> ast.Dict | None:
+    seen = seen or set()
+    node = _resolve_constant(node, constants, seen)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants, set(seen))
+        right = _resolve_static_dict(node.right, constants, set(seen))
+        if left is None or right is None:
+            return None
+        return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
+    return None
 
 
 def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[ast.keyword]:
@@ -672,7 +690,7 @@ def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[as
         if keyword.arg is not None:
             keywords.append(keyword)
             continue
-        value = _resolve_constant(keyword.value, constants)
+        value = _resolve_static_dict(keyword.value, constants)
         if isinstance(value, ast.Dict):
             keywords.extend(_expanded_dict_keywords(value, constants))
     return keywords
@@ -682,7 +700,7 @@ def _expanded_dict_keywords(node: ast.Dict, constants: dict[str, ast.AST]) -> li
     keywords: list[ast.keyword] = []
     for key, dict_value in zip(node.keys, node.values, strict=False):
         if key is None:
-            value = _resolve_constant(dict_value, constants)
+            value = _resolve_static_dict(dict_value, constants)
             if isinstance(value, ast.Dict):
                 keywords.extend(_expanded_dict_keywords(value, constants))
             continue
@@ -749,11 +767,11 @@ def _field_values(
         if keyword.arg in fields:
             values.append(keyword.value)
         if keyword.arg == "email_values":
-            email_values = _resolve_constant(keyword.value, constants)
+            email_values = _resolve_static_dict(keyword.value, constants)
             if isinstance(email_values, ast.Dict):
                 values.extend(_dict_field_values(email_values, fields, constants))
     for arg in node.args:
-        resolved_arg = _resolve_constant(arg, constants)
+        resolved_arg = _resolve_static_dict(arg, constants)
         if isinstance(resolved_arg, ast.Dict):
             values.extend(_dict_field_values(resolved_arg, fields, constants))
     return values
@@ -773,6 +791,11 @@ def _dict_field_values(
     constants = constants or {}
     values: list[ast.AST | None] = []
     for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                values.extend(_dict_field_values(nested, fields, constants))
+            continue
         resolved_key = _resolve_constant(key, constants) if key is not None else key
         if (
             isinstance(resolved_key, ast.Constant)
