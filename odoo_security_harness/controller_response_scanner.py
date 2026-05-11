@@ -348,13 +348,12 @@ class ControllerResponseScanner(ast.NodeVisitor):
         )
 
     def _file_response_target_is_tainted(self, node: ast.Call) -> bool:
+        constants = self._effective_constants()
         if node.args and self._expr_is_tainted(node.args[0]):
             return True
         return any(
-            keyword.arg in FILE_RESPONSE_TARGET_KEYWORDS
-            and keyword.value is not None
-            and self._expr_is_tainted(keyword.value)
-            for keyword in node.keywords
+            key in FILE_RESPONSE_TARGET_KEYWORDS and self._expr_is_tainted(keyword_value)
+            for key, keyword_value in _expanded_keywords(node, constants)
         )
 
     def _is_tainted_file_read(self, node: ast.Call, sink: str) -> bool:

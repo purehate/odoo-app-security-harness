@@ -796,6 +796,29 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-controller-tainted-file-download" for f in findings)
 
 
+def test_flags_unpack_keyword_tainted_file_download(tmp_path: Path) -> None:
+    """Static **kwargs passed to file response helpers should not hide tainted paths."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.addons.web.controllers.main import send_file
+
+class Controller(http.Controller):
+    @http.route('/download', auth='user')
+    def download(self, **kwargs):
+        options = {'path': kwargs.get('path')}
+        return send_file(**options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(f.rule_id == "odoo-controller-tainted-file-download" for f in findings)
+
+
 def test_flags_tainted_file_read_in_public_route(tmp_path: Path) -> None:
     """Controllers should not read request-controlled filesystem paths."""
     controllers = tmp_path / "module" / "controllers"
