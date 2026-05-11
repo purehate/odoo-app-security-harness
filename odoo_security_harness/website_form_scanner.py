@@ -688,7 +688,7 @@ def _field_name(element: ElementTree.Element) -> str:
 
 
 def _form_model_attr(form: ElementTree.Element) -> str:
-    for attr in (
+    model_attrs = (
         "data-model_name",
         "data-model-name",
         "data-model",
@@ -698,10 +698,16 @@ def _form_model_attr(form: ElementTree.Element) -> str:
         "t-attf-data-model_name",
         "t-attf-data-model-name",
         "t-attf-data-model",
-    ):
+    )
+    for attr in model_attrs:
         value = form.get(attr, "").strip()
         if value:
             return value.strip("'\"")
+    mapping = form.get("t-att", "")
+    for attr in ("data-model_name", "data-model-name", "data-model"):
+        mapped_value = _mapped_attribute_value(mapping, attr)
+        if mapped_value:
+            return mapped_value.strip("'\"")
     return ""
 
 
