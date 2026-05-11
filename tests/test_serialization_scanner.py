@@ -46,6 +46,46 @@ def import_payload():
     assert any(f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical" for f in findings)
 
 
+def test_imported_odoo_http_request_pickle_loads_is_critical(tmp_path: Path) -> None:
+    """Direct odoo.http request access should still taint unsafe deserialization."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+import pickle
+import odoo.http as odoo_http
+
+def import_payload():
+    payload = odoo_http.request.params.get('payload')
+    return pickle.loads(payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical" for f in findings)
+
+
+def test_imported_odoo_request_pickle_loads_is_critical(tmp_path: Path) -> None:
+    """Direct odoo request access should still taint unsafe deserialization."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+import pickle
+import odoo as od
+
+def import_payload():
+    payload = od.http.request.params.get('payload')
+    return pickle.loads(payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical" for f in findings)
+
+
 def test_reassigned_tainted_payload_alias_is_not_stale(tmp_path: Path) -> None:
     """Reusing a payload alias for safe data should clear request-derived taint."""
     py = tmp_path / "importer.py"
@@ -878,6 +918,48 @@ from odoo import http as odoo_http
 
 class ImportController(odoo_http.Controller):
     @odoo_http.route('/public/import/<string:serialized_blob>', auth='public', csrf=False)
+    def import_blob(self, serialized_blob):
+        return pickle.loads(serialized_blob)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical" for f in findings)
+
+
+def test_imported_odoo_http_module_route_path_payload_is_tainted_for_deserialization(tmp_path: Path) -> None:
+    """Direct odoo.http route decorators should still taint route arguments."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import pickle
+import odoo.http as odoo_http
+
+class ImportController(odoo_http.Controller):
+    @odoo_http.route('/public/import/<string:serialized_blob>', auth='public', csrf=False)
+    def import_blob(self, serialized_blob):
+        return pickle.loads(serialized_blob)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical" for f in findings)
+
+
+def test_imported_odoo_module_route_path_payload_is_tainted_for_deserialization(tmp_path: Path) -> None:
+    """Direct odoo module route decorators should still taint route arguments."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import pickle
+import odoo as od
+
+class ImportController(od.http.Controller):
+    @od.http.route('/public/import/<string:serialized_blob>', auth='public', csrf=False)
     def import_blob(self, serialized_blob):
         return pickle.loads(serialized_blob)
 """,
