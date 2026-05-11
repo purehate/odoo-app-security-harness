@@ -55,6 +55,8 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         self.request_names: set[str] = {"request"}
         self.http_module_names: set[str] = {"http"}
         self.route_names: set[str] = set()
+        self.response_factory_names: set[str] = {"Response", "make_json_response", "make_response"}
+        self.content_disposition_names: set[str] = {"content_disposition"}
         self.tainted_names: set[str] = set()
         self.attachment_names: set[str] = set()
         self.binary_names: set[str] = set()
@@ -89,6 +91,14 @@ class BinaryDownloadScanner(ast.NodeVisitor):
                     self.request_names.add(alias.asname or alias.name)
                 elif alias.name == "route":
                     self.route_names.add(alias.asname or alias.name)
+                elif alias.name in {"Response", "make_json_response", "make_response"}:
+                    self.response_factory_names.add(alias.asname or alias.name)
+                elif alias.name == "content_disposition":
+                    self.content_disposition_names.add(alias.asname or alias.name)
+        elif node.module == "werkzeug.wrappers":
+            for alias in node.names:
+                if alias.name == "Response":
+                    self.response_factory_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
@@ -206,9 +216,9 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             self._scan_binary_content(node, sink)
         elif _is_redirect_call(node.func, self.request_names):
             self._scan_web_content_redirect(node, sink)
-        elif sink in {"content_disposition", "http.content_disposition"}:
+        elif _is_content_disposition_call(node.func, self.content_disposition_names):
             self._scan_content_disposition(node, sink)
-        elif _is_response_factory_call(node.func, self.request_names):
+        elif _is_response_factory_call(node.func, self.request_names, self.response_factory_names):
             self._scan_binary_response(node, sink)
         self.generic_visit(node)
 
@@ -701,8 +711,18 @@ def _is_redirect_call(node: ast.AST, request_names: set[str]) -> bool:
     return _call_name(node) == "redirect" or _is_request_method(node, "redirect", request_names)
 
 
-def _is_response_factory_call(node: ast.AST, request_names: set[str]) -> bool:
-    if _call_name(node) in RESPONSE_FACTORY_SINKS:
+def _is_content_disposition_call(node: ast.AST, content_disposition_names: set[str]) -> bool:
+    call_name = _call_name(node)
+    return call_name in {"http.content_disposition", *content_disposition_names}
+
+
+def _is_response_factory_call(
+    node: ast.AST,
+    request_names: set[str],
+    response_factory_names: set[str] | None = None,
+) -> bool:
+    response_factory_names = response_factory_names or set()
+    if _call_name(node) in RESPONSE_FACTORY_SINKS | response_factory_names:
         return True
     return _is_request_method(node, "make_response", request_names) or _is_request_method(
         node, "make_json_response", request_names

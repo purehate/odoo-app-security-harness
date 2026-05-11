@@ -703,6 +703,34 @@ class Download(http.Controller):
     )
 
 
+def test_flags_aliased_imported_make_response_binary_payload(tmp_path: Path) -> None:
+    """Aliased response helpers should still expose attachment payload downloads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.http import make_response as odoo_response, request
+
+class Download(http.Controller):
+    @http.route('/public/download', auth='public')
+    def download(self, **kwargs):
+        attachment = request.env['ir.attachment'].sudo().browse(int(kwargs.get('id')))
+        return odoo_response(attachment.datas)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-attachment-data-response"
+        and f.severity == "high"
+        and f.sink == "odoo_response"
+        for f in findings
+    )
+
+
 def test_flags_keyword_binary_response_payload(tmp_path: Path) -> None:
     """Keyword response bodies should not hide attachment payload downloads."""
     controllers = tmp_path / "module" / "controllers"
@@ -1415,6 +1443,31 @@ class Headers(http.Controller):
     findings = scan_binary_downloads(tmp_path)
 
     assert any(f.rule_id == "odoo-binary-tainted-content-disposition" for f in findings)
+
+
+def test_flags_aliased_content_disposition_filename(tmp_path: Path) -> None:
+    """Aliased content_disposition imports should still inspect filenames."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "headers.py").write_text(
+        """
+from odoo import http
+from odoo.http import content_disposition as download_name
+
+class Headers(http.Controller):
+    @http.route('/download', auth='user')
+    def download(self, **kwargs):
+        return download_name(kwargs.get('filename'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-tainted-content-disposition" and f.sink == "download_name"
+        for f in findings
+    )
 
 
 def test_flags_comprehension_filter_content_disposition_filename(tmp_path: Path) -> None:
