@@ -4567,6 +4567,12 @@ def test_taxonomy_coverage_classifies_loose_python_mutation_and_runtime_shapes()
                 "title": "Loose script disables TLS verification",
                 "message": "Server actions or loose scripts pass verify=False to outbound HTTP; privileged automation should not permit man-in-the-middle attacks",
             },
+            {
+                "source": "loose-python",
+                "rule_id": "odoo-loose-python-cleartext-http-url",
+                "title": "Loose script uses cleartext HTTP URL",
+                "message": "Server actions or loose scripts outbound HTTP targets a literal http:// URL; use HTTPS to protect privileged automation payloads and response data from interception or downgrade",
+            },
         ]
     )
 
@@ -4578,6 +4584,7 @@ def test_taxonomy_coverage_classifies_loose_python_mutation_and_runtime_shapes()
         "odoo-loose-python-manual-transaction": "loose_python_manual_transaction",
         "odoo-loose-python-http-no-timeout": "loose_python_http_no_timeout",
         "odoo-loose-python-tls-verify-disabled": "loose_python_tls_verification_disabled",
+        "odoo-loose-python-cleartext-http-url": "loose_python_cleartext_http_url",
     }
     assert any("CWE-269" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-664" in entry["cwe"] for entry in coverage["mapped_entries"])

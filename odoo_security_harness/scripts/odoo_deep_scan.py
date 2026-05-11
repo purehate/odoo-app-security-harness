@@ -192,6 +192,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "loose_python_cleartext_http_url",
+        (
+            "odoo-loose-python-cleartext-http-url",
+            "loose script uses cleartext http url",
+            "server actions or loose scripts outbound http targets a literal http:// url",
+            "protect privileged automation payloads and response data",
+        ),
+    ),
+    (
         "loose_python_sql_injection",
         (
             "odoo-loose-python-sql-injection",

@@ -1765,6 +1765,12 @@
       "capec": ["CAPEC-94"],
       "owasp": "A02:2021 Cryptographic Failures"
     },
+    "loose_python_cleartext_http_url": {
+      "label": "Server action or loose Python script uses cleartext HTTP transport",
+      "cwe": ["CWE-319", "CWE-311", "CWE-200"],
+      "capec": ["CAPEC-117", "CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "loose_python_sql_injection": {
       "label": "Server action or loose Python script builds raw SQL through interpolation",
       "cwe": ["CWE-89", "CWE-20"],

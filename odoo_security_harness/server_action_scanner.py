@@ -262,6 +262,19 @@ class LoosePythonScanner(ast.NodeVisitor):
                 message="Server actions or loose scripts pass verify=False to outbound HTTP; privileged automation should not permit man-in-the-middle attacks",
             )
 
+        if self._is_http_call(node):
+            constants = self._effective_constants()
+            sink = self._canonical_call_name(node.func)
+            for url_value in _http_url_values(node, sink, constants):
+                if _is_cleartext_literal_url(url_value, constants):
+                    self._add_finding(
+                        rule_id="odoo-loose-python-cleartext-http-url",
+                        title="Loose script uses cleartext HTTP URL",
+                        severity="medium",
+                        line=node.lineno,
+                        message="Server actions or loose scripts outbound HTTP targets a literal http:// URL; use HTTPS to protect privileged automation payloads and response data from interception or downgrade",
+                    )
+
         self.generic_visit(node)
 
     def _is_cr_execute(self, node: ast.Call) -> bool:
@@ -801,6 +814,27 @@ def _is_static_literal(node: ast.AST) -> bool:
             for key, value in zip(node.keys, node.values, strict=True)
         )
     return False
+
+
+def _http_url_values(node: ast.Call, sink: str, constants: dict[str, ast.AST]) -> list[ast.AST]:
+    values: list[ast.AST] = []
+    if node.args:
+        method = sink.rsplit(".", 1)[-1]
+        if method == "request" and len(node.args) >= 2:
+            values.append(node.args[1])
+        else:
+            values.append(node.args[0])
+    values.extend(_keyword_values(node, "url", constants))
+    return values
+
+
+def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    value = _resolve_constant(node, constants)
+    return (
+        isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+        and value.value.strip().lower().startswith("http://")
+    )
 
 
 def _safe_unparse(node: ast.AST) -> str:
