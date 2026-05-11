@@ -953,6 +953,35 @@ class Binary(http.Controller):
     assert "odoo-binary-tainted-binary-content-args" in rule_ids
 
 
+def test_flags_unpack_sudo_binary_content_with_tainted_arguments(tmp_path: Path) -> None:
+    """Static **kwargs should not hide request-controlled binary_content selectors."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "binary.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Binary(http.Controller):
+    @http.route('/public/binary', auth='public')
+    def binary(self, **kwargs):
+        options = {
+            'model': kwargs.get('model'),
+            'id': kwargs.get('id'),
+            'field': 'datas',
+        }
+        return request.env['ir.http'].sudo().binary_content(**options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-binary-ir-http-binary-content-sudo" in rule_ids
+    assert "odoo-binary-tainted-binary-content-args" in rule_ids
+
+
 def test_request_alias_sudo_binary_content_with_tainted_arguments(tmp_path: Path) -> None:
     """Aliased Odoo request imports should still seed binary_content taint."""
     controllers = tmp_path / "module" / "controllers"
