@@ -5975,6 +5975,12 @@ def test_taxonomy_coverage_classifies_orm_context_read_and_framework_flags() -> 
             },
             {
                 "source": "orm-context",
+                "rule_id": "odoo-orm-context-accounting-validation-disabled",
+                "title": "ORM context disables accounting move validation",
+                "message": "with_context(check_move_validity=False) disables accounting move validation; verify the surrounding flow preserves balanced moves, taxes, and reconciliation invariants",
+            },
+            {
+                "source": "orm-context",
                 "rule_id": "odoo-orm-context-privileged-mode",
                 "title": "ORM context enables privileged framework mode",
                 "message": "with_context(install_mode=True) enables a framework mode normally reserved for install/uninstall flows; verify it cannot bypass normal business safeguards",
@@ -5994,6 +6000,10 @@ def test_taxonomy_coverage_classifies_orm_context_read_and_framework_flags() -> 
     assert shapes["odoo-orm-context-sudo-active-test-read"] == "orm_context_sudo_active_test_read"
     assert shapes["odoo-orm-context-bin-size-disabled"] == "orm_context_bin_size_disabled"
     assert shapes["odoo-orm-context-sudo-bin-size-read"] == "orm_context_sudo_bin_size_read"
+    assert (
+        shapes["odoo-orm-context-accounting-validation-disabled"]
+        == "orm_context_accounting_validation_disabled"
+    )
     assert shapes["odoo-orm-context-privileged-mode"] == "orm_context_privileged_mode"
     assert shapes["odoo-orm-context-privileged-default"] == "orm_context_privileged_default"
 
@@ -6013,6 +6023,12 @@ def test_taxonomy_coverage_classifies_orm_context_request_scope() -> None:
                 "rule_id": "odoo-orm-context-request-bin-size-disabled",
                 "title": "Request context forces binary field contents",
                 "message": "request.update_context(bin_size=False) changes the request environment so later binary reads can return file contents instead of size metadata",
+            },
+            {
+                "source": "orm-context",
+                "rule_id": "odoo-orm-context-request-accounting-validation-disabled",
+                "title": "Request context disables accounting move validation",
+                "message": "request.update_context(check_move_validity=False) disables accounting move validation for later route work; verify callers cannot persist unbalanced or invalid accounting entries",
             },
             {
                 "source": "orm-context",
@@ -6045,6 +6061,10 @@ def test_taxonomy_coverage_classifies_orm_context_request_scope() -> None:
     shapes = {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]}
     assert shapes["odoo-orm-context-request-active-test-disabled"] == "orm_context_request_active_test_disabled"
     assert shapes["odoo-orm-context-request-bin-size-disabled"] == "orm_context_request_bin_size_disabled"
+    assert (
+        shapes["odoo-orm-context-request-accounting-validation-disabled"]
+        == "orm_context_request_accounting_validation_disabled"
+    )
     assert shapes["odoo-orm-context-request-tracking-disabled"] == "orm_context_request_tracking_disabled"
     assert shapes["odoo-orm-context-request-notification-disabled"] == "orm_context_request_notification_disabled"
     assert shapes["odoo-orm-context-request-privileged-mode"] == "orm_context_request_privileged_mode"
@@ -6079,6 +6099,12 @@ def test_taxonomy_coverage_classifies_orm_context_mutation_suppression() -> None
                 "title": "ORM mutation uses privilege-bearing default context",
                 "message": "ORM mutation runs with default_groups_id=... in context; verify callers cannot create records with elevated ownership, groups, companies, or visibility",
             },
+            {
+                "source": "orm-context",
+                "rule_id": "odoo-orm-context-accounting-validation-disabled-mutation",
+                "title": "ORM mutation disables accounting move validation",
+                "message": "ORM create/write/unlink runs with check_move_validity=False; verify callers cannot persist unbalanced or invalid accounting entries",
+            },
         ]
     )
 
@@ -6088,6 +6114,10 @@ def test_taxonomy_coverage_classifies_orm_context_mutation_suppression() -> None
     assert shapes["odoo-orm-context-notification-disabled-mutation"] == "orm_context_notification_disabled_mutation"
     assert shapes["odoo-orm-context-privileged-mode-mutation"] == "orm_context_privileged_mode_mutation"
     assert shapes["odoo-orm-context-privileged-default-mutation"] == "orm_context_privileged_default_mutation"
+    assert (
+        shapes["odoo-orm-context-accounting-validation-disabled-mutation"]
+        == "orm_context_accounting_validation_disabled_mutation"
+    )
 
 
 def test_taxonomy_coverage_classifies_orm_domain_tainted_searches() -> None:

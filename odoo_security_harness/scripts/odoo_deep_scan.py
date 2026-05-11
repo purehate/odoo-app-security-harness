@@ -2428,6 +2428,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "orm_context_accounting_validation_disabled_mutation",
+        (
+            "odoo-orm-context-accounting-validation-disabled-mutation",
+            "orm-context-accounting-validation-disabled-mutation",
+            "orm mutation disables accounting move validation",
+            "orm create/write/unlink runs with check_move_validity=false",
+            "persist unbalanced or invalid accounting entries",
+        ),
+    ),
+    (
         "orm_context_active_test_disabled",
         (
             "orm-context-active-test-disabled",
@@ -2449,6 +2459,7 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "orm_context_bin_size_disabled",
         (
+            "odoo-orm-context-bin-size-disabled",
             "orm-context-bin-size-disabled",
             "orm context forces binary field contents",
             "with_context(bin_size=false)",
@@ -2458,10 +2469,21 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "orm_context_sudo_bin_size_read",
         (
+            "odoo-orm-context-sudo-bin-size-read",
             "orm-context-sudo-bin-size-read",
             "privileged orm read forces binary field contents",
             "orm read uses sudo()/with_user(superuser_id) with bin_size=false",
             "binary fields may return file contents",
+        ),
+    ),
+    (
+        "orm_context_accounting_validation_disabled",
+        (
+            "odoo-orm-context-accounting-validation-disabled",
+            "orm-context-accounting-validation-disabled",
+            "orm context disables accounting move validation",
+            "with_context(check_move_validity=false)",
+            "balanced moves, taxes, and reconciliation invariants",
         ),
     ),
     (
@@ -2500,10 +2522,21 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "orm_context_request_bin_size_disabled",
         (
+            "odoo-orm-context-request-bin-size-disabled",
             "orm-context-request-bin-size-disabled",
             "request context forces binary field contents",
             "request.update_context(bin_size=false)",
             "later binary reads can return file contents",
+        ),
+    ),
+    (
+        "orm_context_request_accounting_validation_disabled",
+        (
+            "odoo-orm-context-request-accounting-validation-disabled",
+            "orm-context-request-accounting-validation-disabled",
+            "request context disables accounting move validation",
+            "request.update_context(check_move_validity=false)",
+            "persist unbalanced or invalid accounting entries",
         ),
     ),
     (

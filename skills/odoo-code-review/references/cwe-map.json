@@ -2497,6 +2497,11 @@
       "capec": ["CAPEC-118", "CAPEC-122"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "orm_context_accounting_validation_disabled": {
+      "label": "Odoo ORM context disables accounting move validation",
+      "cwe": ["CWE-345", "CWE-840", "CWE-754"],
+      "owasp": "A04:2021 Insecure Design"
+    },
     "orm_context_privileged_mode": {
       "label": "Odoo ORM context enables install or uninstall framework modes",
       "cwe": ["CWE-269", "CWE-693", "CWE-840"],
@@ -2520,6 +2525,11 @@
       "cwe": ["CWE-200", "CWE-400", "CWE-284"],
       "capec": ["CAPEC-118"],
       "owasp": "A01:2021 Broken Access Control"
+    },
+    "orm_context_request_accounting_validation_disabled": {
+      "label": "Odoo request context disables accounting move validation",
+      "cwe": ["CWE-345", "CWE-840", "CWE-754"],
+      "owasp": "A04:2021 Insecure Design"
     },
     "orm_context_request_tracking_disabled": {
       "label": "Odoo request context disables chatter, tracking, or subscription audit behavior",
@@ -2564,6 +2574,11 @@
       "cwe": ["CWE-269", "CWE-284", "CWE-732"],
       "capec": ["CAPEC-122"],
       "owasp": "A01:2021 Broken Access Control"
+    },
+    "orm_context_accounting_validation_disabled_mutation": {
+      "label": "Odoo ORM mutation disables accounting move validation",
+      "cwe": ["CWE-345", "CWE-840", "CWE-754"],
+      "owasp": "A04:2021 Insecure Design"
     },
     "action_window_sensitive_exposure": {
       "label": "ir.actions.act_window exposes sensitive models through public routes or broad domains",

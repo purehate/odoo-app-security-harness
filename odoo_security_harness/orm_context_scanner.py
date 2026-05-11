@@ -31,6 +31,7 @@ TRACKING_DISABLE_FLAGS = {
 }
 NOTIFICATION_DISABLE_FLAGS = {"no_reset_password", "mail_notify_force_send"}
 PRIVILEGED_MODE_FLAGS = {"install_mode", "module_uninstall", "uninstall_mode"}
+ACCOUNTING_VALIDATION_FLAGS = {"check_move_validity"}
 PRIVILEGED_DEFAULT_FIELDS = {
     "active",
     "company_id",
@@ -227,6 +228,18 @@ class OrmContextScanner(ast.NodeVisitor):
                 "bin_size",
             )
 
+        for flag in sorted(ACCOUNTING_VALIDATION_FLAGS & flags.keys()):
+            if _flag_is_false(flags, flag):
+                self._add(
+                    "odoo-orm-context-accounting-validation-disabled",
+                    "ORM context disables accounting move validation",
+                    "medium",
+                    node.lineno,
+                    f"with_context({flag}=False) disables accounting move validation; verify the surrounding flow preserves balanced moves, taxes, and reconciliation invariants",
+                    sink,
+                    flag,
+                )
+
         for flag in sorted(PRIVILEGED_MODE_FLAGS & flags.keys()):
             if _flag_is_truthy(flags, flag):
                 self._add(
@@ -277,6 +290,18 @@ class OrmContextScanner(ast.NodeVisitor):
                 sink,
                 "bin_size",
             )
+
+        for flag in sorted(ACCOUNTING_VALIDATION_FLAGS & flags.keys()):
+            if _flag_is_false(flags, flag):
+                self._add(
+                    "odoo-orm-context-request-accounting-validation-disabled",
+                    "Request context disables accounting move validation",
+                    "high",
+                    node.lineno,
+                    f"request.update_context({flag}=False) disables accounting move validation for later route work; verify callers cannot persist unbalanced or invalid accounting entries",
+                    sink,
+                    flag,
+                )
 
         disabled_tracking = [flag for flag in TRACKING_DISABLE_FLAGS if _flag_is_truthy(flags, flag)]
         if disabled_tracking:
@@ -358,6 +383,18 @@ class OrmContextScanner(ast.NodeVisitor):
                     "high",
                     node.lineno,
                     f"ORM mutation runs with {flag}=True; verify install/uninstall-only behavior cannot bypass normal validation or workflow controls",
+                sink,
+                flag,
+            )
+
+        for flag in sorted(ACCOUNTING_VALIDATION_FLAGS & flags.keys()):
+            if _flag_is_false(flags, flag):
+                self._add(
+                    "odoo-orm-context-accounting-validation-disabled-mutation",
+                    "ORM mutation disables accounting move validation",
+                    "high",
+                    node.lineno,
+                    f"ORM create/write/unlink runs with {flag}=False; verify callers cannot persist unbalanced or invalid accounting entries",
                     sink,
                     flag,
                 )

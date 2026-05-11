@@ -355,6 +355,50 @@ class Partner(models.Model):
     assert any(f.rule_id == "odoo-orm-context-tracking-disabled-mutation" for f in findings)
 
 
+def test_flags_accounting_validation_disabled_mutation(tmp_path: Path) -> None:
+    """Accounting validation bypass context around writes should be reviewed."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "move.py").write_text(
+        """
+from odoo import models
+
+class Move(models.Model):
+    _inherit = 'account.move'
+
+    def force_post(self):
+        return self.with_context(check_move_validity=False).write({'line_ids': []})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-orm-context-accounting-validation-disabled" in rule_ids
+    assert "odoo-orm-context-accounting-validation-disabled-mutation" in rule_ids
+
+
+def test_flags_request_accounting_validation_disabled(tmp_path: Path) -> None:
+    """Request-level accounting validation bypass should be visible."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo.http import request
+
+def update_move():
+    request.update_context(check_move_validity=False)
+    return request.env['account.move'].browse(1).write({'line_ids': []})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-context-request-accounting-validation-disabled" for f in findings)
+
+
 def test_flags_aliased_tracking_disabled_mutation(tmp_path: Path) -> None:
     """Tracking suppression should not disappear when the recordset is aliased."""
     models = tmp_path / "module" / "models"
