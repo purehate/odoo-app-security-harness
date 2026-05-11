@@ -472,17 +472,18 @@ class ActionWindowScanner(ast.NodeVisitor):
         if not self._expr_is_action_window(node.func.value):
             return
 
+        constants = self._effective_constants()
         for arg in node.args:
-            if not isinstance(arg, ast.Dict):
+            dict_arg = _resolve_static_dict(arg, constants)
+            if dict_arg is None:
                 continue
-            constants = self._effective_constants()
             for key in ("res_model", "domain", "context"):
-                value = _dict_value(arg, key, constants)
+                value = _dict_value(dict_arg, key, constants)
                 if value is not None:
                     self._scan_mutated_action_window_field(key, value, node.lineno, "python-dict-update")
-        for keyword in node.keywords:
-            if keyword.arg in {"res_model", "domain", "context"}:
-                self._scan_mutated_action_window_field(keyword.arg, keyword.value, node.lineno, "python-dict-update")
+        for key, keyword_value in _expanded_keywords(node, constants):
+            if key in {"res_model", "domain", "context"}:
+                self._scan_mutated_action_window_field(key, keyword_value, node.lineno, "python-dict-update")
 
     def _scan_mutated_action_window_field(self, key: str, value: ast.AST, line: int, sink: str) -> None:
         constants = self._effective_constants()
@@ -738,7 +739,7 @@ class ActionWindowScanner(ast.NodeVisitor):
             self._mark_local_constant_target(target.value, value)
             return
         if isinstance(target, ast.Name):
-            if _is_static_literal(value):
+            if _is_static_literal(value) or _is_static_dict_shape(value):
                 self.local_constants[target.id] = value
             else:
                 self.local_constants.pop(target.id, None)
@@ -971,6 +972,14 @@ def _is_static_literal(node: ast.AST) -> bool:
         )
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _is_static_literal(node.left) and _is_static_literal(node.right)
+    return False
+
+
+def _is_static_dict_shape(node: ast.AST) -> bool:
+    if isinstance(node, ast.Dict):
+        return all(key is None or _is_static_literal(key) for key in node.keys)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_dict_shape(node.left) and _is_static_dict_shape(node.right)
     return False
 
 

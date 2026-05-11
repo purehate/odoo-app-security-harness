@@ -1501,6 +1501,37 @@ class Users(models.Model):
     assert {"default_groups_id", "allowed_company_ids", "active_test"} <= flags
 
 
+def test_flags_unpack_update_mutated_tainted_action_window_fields(tmp_path: Path) -> None:
+    """Unpacked update maps should not hide request-derived action window fields."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "window.py").write_text(
+        """
+from odoo import http
+
+class Window(http.Controller):
+    @http.route('/window/mutated', auth='public')
+    def mutated(self, **kwargs):
+        action = {'type': 'ir.actions.act_window'}
+        changes = {
+            'res_model': kwargs.get('model'),
+            'domain': kwargs.get('domain'),
+            'context': kwargs.get('context'),
+        }
+        action.update(**changes)
+        return action
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-window-tainted-res-model" in rule_ids
+    assert "odoo-act-window-tainted-domain" in rule_ids
+    assert "odoo-act-window-tainted-context" in rule_ids
+
+
 def test_loop_accumulated_domain_is_reported(tmp_path: Path) -> None:
     """Request-derived loop variables appended into domains should remain tainted."""
     controllers = tmp_path / "module" / "controllers"
