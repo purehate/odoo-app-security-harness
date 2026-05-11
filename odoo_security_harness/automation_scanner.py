@@ -286,6 +286,7 @@ class _AutomationCodeScanner(ast.NodeVisitor):
         self.risks: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
         self.sudo_vars: set[str] = set()
         self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.http_module_aliases: set[str] = {"aiohttp", "requests", "httpx", "urllib"}
@@ -331,17 +332,29 @@ class _AutomationCodeScanner(ast.NodeVisitor):
         self.generic_visit(node)
         self.class_constants_stack.pop()
 
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
+        self.generic_visit(node)
+        self.local_constants = previous_local_constants
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
+        self.visit_FunctionDef(node)
+
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._record_alias_target(target, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._record_alias_target(node.target, node.value)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._record_alias_target(node.target, node.value)
         self.generic_visit(node)
 
@@ -423,6 +436,25 @@ class _AutomationCodeScanner(ast.NodeVisitor):
         else:
             aliases.discard(target.id)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        names: set[str] = set()
+        _mark_target_names(target, names)
+        for name in names:
+            self.local_constants.pop(name, None)
+
     def _regex_fallback(self, code: str) -> set[str]:
         risks: set[str] = set()
         if "safe_eval" in code or re.search(r"\b(eval|exec)\s*\(", code):
@@ -451,11 +483,12 @@ class _AutomationCodeScanner(ast.NodeVisitor):
         return risks
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
 

@@ -260,6 +260,29 @@ class Helper:
     assert any(f.rule_id == "odoo-automation-sudo-mutation" for f in findings)
 
 
+def test_local_constant_backed_with_user_mutation_in_automation_is_reported(tmp_path: Path) -> None:
+    """Function-local constants in automation helper code should resolve."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_with_user_local_constant" model="base.automation">
+    <field name="code"><![CDATA[
+class Helper:
+    def run(self):
+        root_uid = 1
+        records = record.with_user(root_uid)
+        records.write({'active': False})
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-sudo-mutation" for f in findings)
+
+
 def test_aliased_with_user_one_mutation_in_automation_is_reported(tmp_path: Path) -> None:
     """Aliased with_user(1) automated action recordsets should be recognized."""
     xml = tmp_path / "automation.xml"
@@ -565,6 +588,30 @@ class Helper:
     assert any(f.rule_id == "odoo-automation-sensitive-model-mutation" for f in findings)
 
 
+def test_local_constant_backed_sensitive_model_mutation_in_automation_is_reported(tmp_path: Path) -> None:
+    """Function-local env model aliases in automation helper code should resolve."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_identity_local_constant" model="base.automation">
+    <field name="code"><![CDATA[
+class Helper:
+    def run(self):
+        users_model = 'res.users'
+        config_model = 'ir.config_parameter'
+        env[users_model].write({'active': False})
+        env[config_model].set_param('auth.signup.allow_uninvited', 'False')
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-sensitive-model-mutation" for f in findings)
+
+
 def test_http_without_timeout_in_automation_is_reported(tmp_path: Path) -> None:
     """Automated action HTTP calls can exhaust workers if unbounded."""
     xml = tmp_path / "automation.xml"
@@ -810,6 +857,29 @@ requests.post(record.callback_url, **HTTP_OPTIONS)
     assert not any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
 
 
+def test_http_local_constant_kwargs_timeout_in_automation_is_ignored(tmp_path: Path) -> None:
+    """Function-local **kwargs dictionaries should satisfy automation HTTP timeout checks."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_local_kwargs_timeout" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+
+def sync_callback():
+    options = {'timeout': 10}
+    requests.post(record.callback_url, **options)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert not any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
+
+
 def test_regex_fallback_http_timeout_none_in_automation_is_reported(tmp_path: Path) -> None:
     """Malformed automation code should treat literal timeout=None as unbounded."""
     xml = tmp_path / "automation.xml"
@@ -858,6 +928,29 @@ def test_tls_verification_disabled_static_kwargs_in_automation_is_reported(tmp_p
 import requests
 HTTP_OPTIONS = {'timeout': 10, 'verify': False}
 requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-tls-verify-disabled" for f in findings)
+
+
+def test_tls_verification_disabled_local_constant_kwargs_in_automation_is_reported(tmp_path: Path) -> None:
+    """Function-local **kwargs dictionaries should not hide disabled TLS verification."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_tls_local_kwargs" model="base.automation">
+    <field name="code"><![CDATA[
+import requests
+
+def sync_callback():
+    options = {'timeout': 10, 'verify': False}
+    requests.post(record.callback_url, **options)
     ]]></field>
   </record>
 </odoo>""",
