@@ -71,6 +71,18 @@ def test_sensitive_csv_report_with_groups_is_ignored(tmp_path: Path) -> None:
     assert scan_reports(tmp_path) == []
 
 
+def test_sensitive_csv_report_with_colon_groups_is_ignored(tmp_path: Path) -> None:
+    """Grouped CSV report actions exported with colon headers should not look broad."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.report.csv").write_text(
+        "id,name,model,groups_id:id\naction_users_report,Users,res.users,base.group_system\n",
+        encoding="utf-8",
+    )
+
+    assert scan_reports(tmp_path) == []
+
+
 def test_csv_report_sudo_and_filename_risks_are_reported(tmp_path: Path) -> None:
     """CSV report action metadata should feed existing report-risk rules."""
     data = tmp_path / "module" / "data"
@@ -109,6 +121,25 @@ def test_sensitive_report_model_external_ids_are_normalized(tmp_path: Path) -> N
         "ir.config_parameter",
         "payment.provider",
     }
+
+
+def test_sensitive_csv_report_colon_model_external_ids_are_normalized(tmp_path: Path) -> None:
+    """CSV report model refs exported with colon headers should normalize to model names."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.report.csv").write_text(
+        "id,name,model:id\n"
+        "action_config_report,Config,base.model_ir_config_parameter\n"
+        "payment_provider_report,Provider,payment.model_payment_provider\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_reports(tmp_path)
+    sensitive_models = {
+        finding.model for finding in findings if finding.rule_id == "odoo-report-sensitive-no-groups"
+    }
+
+    assert {"ir.config_parameter", "payment.provider"} <= sensitive_models
 
 
 def test_dynamic_attachment_cache_is_reported(tmp_path: Path) -> None:
