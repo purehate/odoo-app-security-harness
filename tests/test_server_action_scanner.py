@@ -771,6 +771,21 @@ requests.post(record.callback_url)
     assert "server_action_xml" in contexts
 
 
+def test_repository_scan_detects_csv_server_action_code(tmp_path: Path) -> None:
+    """CSV ir.actions.server code should receive the loose Python AST checks."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_server.csv").write_text(
+        "id,name,state,code\n"
+        "action_eval,Eval,code,safe_eval(record.domain)\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_loose_python(tmp_path)
+
+    assert any(f.rule_id == "odoo-loose-python-safe-eval" and f.context == "server_action_csv" for f in findings)
+
+
 def test_repository_scan_ignores_non_code_xml_server_actions(tmp_path: Path) -> None:
     """Only state='code' XML server actions should be parsed as loose Python."""
     data = tmp_path / "module" / "data"
@@ -782,6 +797,19 @@ def test_repository_scan_ignores_non_code_xml_server_actions(tmp_path: Path) -> 
     <field name="code">eval(record.expression)</field>
   </record>
 </odoo>""",
+        encoding="utf-8",
+    )
+
+    assert scan_loose_python(tmp_path) == []
+
+
+def test_repository_scan_ignores_non_code_csv_server_actions(tmp_path: Path) -> None:
+    """Only state='code' CSV server actions should be parsed as loose Python."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.server.csv").write_text(
+        "id,name,state,code\n"
+        "action_email,Email,email,eval(record.expression)\n",
         encoding="utf-8",
     )
 

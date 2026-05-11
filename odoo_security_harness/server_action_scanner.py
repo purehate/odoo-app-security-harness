@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import ast
 import textwrap
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -480,6 +482,10 @@ def scan_loose_python(repo_path: Path) -> list[LoosePythonFinding]:
         if _should_skip(xml_file):
             continue
         findings.extend(_scan_xml_server_actions(xml_file))
+    for csv_file in repo_path.rglob("*.csv"):
+        if _should_skip(csv_file):
+            continue
+        findings.extend(_scan_csv_server_actions(csv_file))
     return findings
 
 
@@ -505,6 +511,23 @@ def _scan_xml_server_actions(xml_file: Path) -> list[LoosePythonFinding]:
     return findings
 
 
+def _scan_csv_server_actions(csv_file: Path) -> list[LoosePythonFinding]:
+    findings: list[LoosePythonFinding] = []
+    if _csv_model_name(csv_file) != "ir.actions.server":
+        return findings
+    try:
+        content = csv_file.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return findings
+
+    for fields, line in _csv_dict_rows(content):
+        if fields.get("state") != "code" or not fields.get("code", "").strip():
+            continue
+        scanner = LoosePythonScanner(str(csv_file), "server_action_csv")
+        findings.extend(scanner.scan_source(fields["code"], line_offset=line - 1))
+    return findings
+
+
 def _record_fields(record: ElementTree.Element) -> dict[str, str]:
     values: dict[str, str] = {}
     for field in record.iter("field"):
@@ -513,6 +536,41 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("eval") or field.get("ref") or "".join(field.itertext()).strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    aliases = {
+        "ir_actions_server": "ir.actions.server",
+        "ir.actions.server": "ir.actions.server",
+    }
+    return aliases.get(stem, stem.replace("_", "."))
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _line_for_record(content: str, record: ElementTree.Element) -> int:
