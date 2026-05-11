@@ -103,6 +103,7 @@ class SerializationScanner(ast.NodeVisitor):
         self.route_decorator_names: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
         self.size_guard_stack: list[bool] = []
 
     def scan_file(self) -> list[SerializationFinding]:
@@ -126,6 +127,8 @@ class SerializationScanner(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous = set(self.tainted_names)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         self.size_guard_stack.append(_function_has_size_guard(node))
         is_route = _function_is_http_route(
             node, self.route_decorator_names, self.http_module_names, self.odoo_module_names
@@ -141,6 +144,7 @@ class SerializationScanner(ast.NodeVisitor):
         self.generic_visit(node)
         self.size_guard_stack.pop()
         self.tainted_names = previous
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -224,11 +228,13 @@ class SerializationScanner(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_tainted_target(target, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_tainted_target(node.target, node.value)
         self.generic_visit(node)
 
@@ -243,6 +249,7 @@ class SerializationScanner(ast.NodeVisitor):
         self.visit_For(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_tainted_target(node.target, node.value)
         self.generic_visit(node)
 
@@ -444,6 +451,23 @@ class SerializationScanner(ast.NodeVisitor):
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_constant(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        for name in _target_names(target):
+            self.local_constants.pop(name, None)
+
     def _canonical_call_name(self, node: ast.AST) -> str:
         sink = _call_name(node)
         if sink in self.function_aliases:
@@ -462,11 +486,12 @@ class SerializationScanner(ast.NodeVisitor):
         )
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, sink: str) -> None:
@@ -559,6 +584,19 @@ def _unpack_target_value_pairs(
     if after_count:
         pairs.extend(zip(target_elts[-after_count:], value_elts[-after_count:], strict=False))
     return pairs
+
+
+def _target_names(node: ast.AST) -> set[str]:
+    if isinstance(node, ast.Name):
+        return {node.id}
+    if isinstance(node, ast.Tuple | ast.List):
+        names: set[str] = set()
+        for element in node.elts:
+            names.update(_target_names(element))
+        return names
+    if isinstance(node, ast.Starred):
+        return _target_names(node.value)
+    return set()
 
 
 def _call_has_tainted_input(node: ast.Call, is_tainted: Any) -> bool:
