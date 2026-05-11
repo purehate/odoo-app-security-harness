@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ast
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -96,12 +98,15 @@ REQUEST_SOURCE_METHODS = {"get_http_params", "get_json_data"}
 
 
 def scan_publication(repo_path: Path) -> list[PublicationFinding]:
-    """Scan XML data files for public publication/exposure flags."""
+    """Scan data files and Python code for public publication/exposure flags."""
     findings: list[PublicationFinding] = []
-    for path in repo_path.rglob("*.xml"):
-        if _should_skip(path):
+    for path in repo_path.rglob("*"):
+        if not path.is_file() or _should_skip(path):
             continue
-        findings.extend(PublicationScanner(path).scan_file())
+        if path.suffix == ".xml":
+            findings.extend(PublicationScanner(path).scan_file())
+        elif path.suffix == ".csv":
+            findings.extend(PublicationScanner(path).scan_csv_file())
     for path in repo_path.rglob("*.py"):
         if _should_skip(path):
             continue
@@ -130,22 +135,39 @@ class PublicationScanner:
         for record in root.iter("record"):
             fields = _record_fields(record)
             model = record.get("model", "")
-            if model == "ir.attachment":
-                self._scan_attachment(record, fields)
-            self._scan_website_publication(record, fields)
-            self._scan_portal_share(record, fields)
+            self._scan_record(model, record.get("id", ""), fields, self._line_for_record(record))
         return self.findings
 
-    def _scan_attachment(self, record: ElementTree.Element, fields: dict[str, str]) -> None:
+    def scan_csv_file(self) -> list[PublicationFinding]:
+        """Scan CSV data records for public publication/exposure flags."""
+        model = _csv_model_name(self.path)
+        if model not in {"ir.attachment", "portal.share", "portal.wizard", "share.wizard"} | SENSITIVE_MODELS:
+            return []
+        try:
+            self.content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+        for fields, line_number in _csv_dict_rows(self.content):
+            self._scan_record(model, fields.get("id", ""), fields, line_number)
+        return self.findings
+
+    def _scan_record(self, model: str, record_id: str, fields: dict[str, str], line: int) -> None:
+        if model == "ir.attachment":
+            self._scan_attachment(record_id, fields, line)
+        self._scan_website_publication(model, record_id, fields, line)
+        self._scan_portal_share(model, record_id, fields, line)
+
+    def _scan_attachment(self, record_id: str, fields: dict[str, str], line: int) -> None:
         if _truthy(fields.get("public", "")):
             self._add(
                 "odoo-publication-public-attachment",
                 "Attachment is published publicly",
                 "high",
-                self._line_for_record(record),
+                line,
                 "ir.attachment record sets public=True; verify the binary cannot expose private customer, employee, invoice, or token data",
                 "ir.attachment",
-                record.get("id", ""),
+                record_id,
             )
         attachment_model = _model_value(fields.get("res_model", ""))
         name_blob = " ".join(fields.get(name, "") for name in ("name", "datas_fname", "url", "res_model")).lower()
@@ -156,29 +178,27 @@ class PublicationScanner:
                 "odoo-publication-sensitive-public-attachment",
                 "Sensitive-looking attachment is public",
                 "critical",
-                self._line_for_record(record),
+                line,
                 "Public attachment name/model suggests sensitive content; verify it is intentionally world-readable",
                 "ir.attachment",
-                record.get("id", ""),
+                record_id,
             )
 
-    def _scan_website_publication(self, record: ElementTree.Element, fields: dict[str, str]) -> None:
+    def _scan_website_publication(self, model: str, record_id: str, fields: dict[str, str], line: int) -> None:
         if not _truthy(fields.get("website_published", "")) and not _truthy(fields.get("is_published", "")):
             return
-        model = record.get("model", "")
         if model in SENSITIVE_MODELS:
             self._add(
                 "odoo-publication-sensitive-website-published",
                 "Sensitive model record is website-published",
                 "high",
-                self._line_for_record(record),
+                line,
                 f"Record for sensitive model '{model}' is marked website-published; verify portal/public routes cannot expose private fields",
                 model,
-                record.get("id", ""),
+                record_id,
             )
 
-    def _scan_portal_share(self, record: ElementTree.Element, fields: dict[str, str]) -> None:
-        model = record.get("model", "")
+    def _scan_portal_share(self, model: str, record_id: str, fields: dict[str, str], line: int) -> None:
         if model not in {"portal.share", "portal.wizard", "share.wizard"}:
             return
         share_model = _model_value(fields.get("res_model", ""))
@@ -187,10 +207,10 @@ class PublicationScanner:
                 "odoo-publication-portal-share-sensitive",
                 "Portal/share record targets sensitive data",
                 "medium",
-                self._line_for_record(record),
+                line,
                 "Portal/share wizard data targets sensitive records; verify generated links, recipients, and expiration behavior",
                 model,
-                record.get("id", ""),
+                record_id,
             )
 
     def _line_for_record(self, record: ElementTree.Element) -> int:
@@ -642,6 +662,40 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("ref") or field.get("eval") or (field.text or "").strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    dotted = stem.replace("_", ".")
+    if dotted in {"ir.attachment", "portal.share", "portal.wizard", "share.wizard"} | SENSITIVE_MODELS:
+        return dotted
+    return stem
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _route_info(

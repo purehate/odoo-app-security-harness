@@ -158,6 +158,58 @@ def test_repository_scan_finds_publication_records(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-publication-sensitive-public-attachment" for f in findings)
 
 
+def test_public_attachment_csv_is_reported(tmp_path: Path) -> None:
+    """CSV ir.attachment records should get the same public exposure checks as XML."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.attachment.csv").write_text(
+        "id,name,res_model,public\n"
+        "attachment_invoice,invoice.pdf,account.move,1\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-publication-public-attachment" in rule_ids
+    assert "odoo-publication-sensitive-public-attachment" in rule_ids
+
+
+def test_sensitive_website_published_csv_is_reported(tmp_path: Path) -> None:
+    """CSV data can also publish sensitive records directly."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "res_partner.csv").write_text(
+        "id,name,website_published\n"
+        "vip_customer,VIP Customer,True\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-publication-sensitive-website-published"
+        and f.model == "res.partner"
+        and f.record_id == "vip_customer"
+        for f in findings
+    )
+
+
+def test_portal_share_csv_sensitive_target_is_reported(tmp_path: Path) -> None:
+    """CSV portal share records can expose sensitive target records."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "portal_share.csv").write_text(
+        "id,res_model/id,access_warning\n"
+        "share_provider,payment.model_payment_provider,\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_publication(tmp_path)
+
+    assert any(f.rule_id == "odoo-publication-portal-share-sensitive" for f in findings)
+
+
 def test_sensitive_model_default_website_published_is_reported(tmp_path: Path) -> None:
     """Sensitive models should not default records into website publication."""
     models = tmp_path / "module" / "models"
