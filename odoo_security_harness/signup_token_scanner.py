@@ -615,13 +615,16 @@ class SignupTokenScanner(ast.NodeVisitor):
         root_name = _call_root_name(node.func.value)
         if not root_name:
             return
-        update_values = node.args[0] if node.args else None
-        if not isinstance(update_values, ast.Dict):
-            return
-        if not _dict_mentions_token_field(update_values, self._effective_constants()):
+
+        constants = self._effective_constants()
+        update_values = [*node.args, *(keyword.value for keyword in node.keywords if keyword.value is not None)]
+        has_token_update = any(
+            _expr_mentions_token_mutation(value, self.token_mutation_names, constants) for value in update_values
+        ) or any(keyword.arg is not None and _is_token_field_name(keyword.arg) for keyword in node.keywords)
+        if not has_token_update:
             return
         self.token_mutation_names.add(root_name)
-        if any(value is not None and self._expr_is_tainted(value) for value in update_values.values):
+        if any(self._expr_is_tainted(value) for value in update_values):
             self.tainted_names.add(root_name)
 
     def _add(self, rule_id: str, title: str, severity: str, line: int, message: str, route: str, sink: str) -> None:
@@ -1131,13 +1134,13 @@ def _dict_mentions_token_field(node: ast.AST, constants: dict[str, ast.AST] | No
     if isinstance(node, ast.Dict):
         for key in node.keys:
             resolved_key = _resolve_constant(key, constants) if key is not None else None
-            if isinstance(resolved_key, ast.Constant) and str(resolved_key.value) in {
-                *TOKEN_FIELD_MARKERS,
-                "password",
-                "new_password",
-            }:
+            if isinstance(resolved_key, ast.Constant) and _is_token_field_name(str(resolved_key.value)):
                 return True
     return False
+
+
+def _is_token_field_name(name: str) -> bool:
+    return name in {*TOKEN_FIELD_MARKERS, "password", "new_password"}
 
 
 def _is_elevated_identity_access(

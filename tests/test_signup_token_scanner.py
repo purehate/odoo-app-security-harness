@@ -1145,6 +1145,68 @@ class Controller(http.Controller):
     )
 
 
+def test_flags_unpacked_updated_identity_token_write_values(tmp_path: Path) -> None:
+    """Unpacked dict.update maps should not hide token/password mutation dictionaries."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/web/reset_password', auth='public', csrf=False)
+    def reset_password(self, **kwargs):
+        Users = request.env['res.users'].sudo()
+        values = {}
+        changes = {'signup_token': kwargs.get('token'), 'password': kwargs.get('password')}
+        values.update(**changes)
+        return Users.write(values)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-signup-tainted-identity-token-write"
+        and finding.severity == "critical"
+        and finding.sink == "Users.write"
+        for finding in findings
+    )
+
+
+def test_flags_aliased_updated_identity_token_write_values(tmp_path: Path) -> None:
+    """Aliased dict.update maps should not hide token/password mutation dictionaries."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/web/reset_password', auth='public', csrf=False)
+    def reset_password(self, **kwargs):
+        Users = request.env['res.users'].sudo()
+        values = {}
+        changes = {'signup_token': kwargs.get('token'), 'password': kwargs.get('password')}
+        values.update(changes)
+        return Users.write(values)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-signup-tainted-identity-token-write"
+        and finding.severity == "critical"
+        and finding.sink == "Users.write"
+        for finding in findings
+    )
+
+
 def test_safe_incremental_identity_token_write_value_is_ignored(tmp_path: Path) -> None:
     """Static service-issued token writes should not be treated as request-derived."""
     controllers = tmp_path / "module" / "controllers"
