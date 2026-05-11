@@ -1114,6 +1114,29 @@ class Portal(http.Controller):
     assert any(f.rule_id == "odoo-portal-document-check-missing-token" for f in findings)
 
 
+def test_flags_wrong_document_check_token_keyword(tmp_path: Path) -> None:
+    """Only the access_token keyword should count as named token forwarding."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "portal.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Portal(http.Controller):
+    @http.route('/my/invoices/<int:invoice_id>', auth='public', website=True)
+    def portal_invoice(self, invoice_id, access_token=None):
+        invoice = self._document_check_access('account.move', invoice_id, token=access_token)
+        return request.render('account.portal_invoice_page', {'invoice': invoice})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_portal_routes(tmp_path)
+
+    assert any(f.rule_id == "odoo-portal-document-check-missing-token" for f in findings)
+
+
 def test_safe_portal_route_with_document_check_and_token_is_ignored(tmp_path: Path) -> None:
     """Standard portal access helpers with token forwarding should suppress risky read findings."""
     controllers = tmp_path / "module" / "controllers"
@@ -1127,6 +1150,27 @@ class Portal(http.Controller):
     @http.route('/my/orders/<int:order_id>', auth='user', website=True)
     def portal_order(self, order_id, access_token=None):
         order = self._document_check_access('sale.order', order_id, access_token=access_token)
+        return request.render('sale.portal_order_page', {'order': order})
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_portal_routes(tmp_path) == []
+
+
+def test_safe_portal_route_with_positional_document_check_token_is_ignored(tmp_path: Path) -> None:
+    """The third positional _document_check_access argument is the token."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "portal.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Portal(http.Controller):
+    @http.route('/my/orders/<int:order_id>', auth='user', website=True)
+    def portal_order(self, order_id, access_token=None):
+        order = self._document_check_access('sale.order', order_id, access_token)
         return request.render('sale.portal_order_page', {'order': order})
 """,
         encoding="utf-8",
