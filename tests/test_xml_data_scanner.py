@@ -723,6 +723,20 @@ def test_user_admin_group_assignment_csv(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-xml-user-admin-group-assignment" for f in findings)
 
 
+def test_user_admin_group_assignment_csv_colon_groups(tmp_path: Path) -> None:
+    """CSV res.users group assignments exported with colon headers should be scanned."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "res_users.csv").write_text(
+        "id,login,groups_id:id\ndemo_promoted_user,demo-admin,base.group_system\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_xml_data(tmp_path)
+
+    assert any(f.rule_id == "odoo-xml-user-admin-group-assignment" for f in findings)
+
+
 def test_group_record_implies_internal_privilege(tmp_path: Path) -> None:
     """Group records can make public or signup groups imply internal access."""
     xml = tmp_path / "groups.xml"
