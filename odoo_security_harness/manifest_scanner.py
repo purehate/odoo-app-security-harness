@@ -110,7 +110,10 @@ class ManifestScanner:
         data_files = _as_string_list(data.get("data"))
         demo_files = _as_string_list(data.get("demo"))
         depends = _as_string_list(data.get("depends"))
+        asset_files = _manifest_file_paths(data.get("assets"))
+        qweb_files = _manifest_file_paths(data.get("qweb"))
         all_loaded_files = [*data_files, *demo_files]
+        all_manifest_paths = [*all_loaded_files, *asset_files, *qweb_files]
         has_models = (self.module_path / "models").exists() and any((self.module_path / "models").rglob("*.py"))
         has_security_acl = any(path.endswith("ir.model.access.csv") for path in data_files)
 
@@ -150,13 +153,13 @@ class ManifestScanner:
                 f"Manifest license '{license_value}' is not a known Odoo manifest license identifier; verify redistribution and app-store compliance before shipping",
             )
 
-        suspicious_paths = _suspicious_manifest_paths(all_loaded_files)
+        suspicious_paths = _suspicious_manifest_paths(all_manifest_paths)
         if suspicious_paths:
             self._add(
                 "odoo-manifest-suspicious-data-path",
-                "Manifest loads suspicious file paths",
+                "Manifest loads suspicious local file paths",
                 "high",
-                f"Manifest data/demo paths include absolute or parent-directory traversal entries: {', '.join(suspicious_paths)}; verify packaged data cannot load files outside the module",
+                f"Manifest local file paths include absolute or parent-directory traversal entries: {', '.join(suspicious_paths)}; verify packaged data and assets cannot load files outside the module",
             )
 
         auto_install = _is_auto_install_enabled(data.get("auto_install"))
@@ -257,7 +260,7 @@ def _remote_asset_paths(value: Any) -> list[str]:
     """Return remote URL strings from Odoo asset/qweb manifest declarations."""
     remote: list[str] = []
     if isinstance(value, str):
-        if value.startswith(("http://", "https://", "//")):
+        if _is_remote_url(value):
             remote.append(value)
     elif isinstance(value, (list, tuple, set)):
         for item in value:
@@ -266,6 +269,26 @@ def _remote_asset_paths(value: Any) -> list[str]:
         for item in value.values():
             remote.extend(_remote_asset_paths(item))
     return remote
+
+
+def _manifest_file_paths(value: Any) -> list[str]:
+    """Return local path strings from nested manifest path declarations."""
+    paths: list[str] = []
+    if isinstance(value, str):
+        if not _is_remote_url(value):
+            paths.append(value)
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            paths.extend(_manifest_file_paths(item))
+    elif isinstance(value, dict):
+        for item in value.values():
+            paths.extend(_manifest_file_paths(item))
+    return paths
+
+
+def _is_remote_url(value: str) -> bool:
+    """Return whether a manifest string is a remote URL-like asset reference."""
+    return value.startswith(("http://", "https://", "//"))
 
 
 def _loads_security_data(data_files: list[str]) -> bool:

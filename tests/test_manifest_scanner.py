@@ -263,6 +263,37 @@ def test_suspicious_data_paths_are_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-manifest-suspicious-data-path" and f.severity == "high" for f in findings)
 
 
+def test_suspicious_asset_and_qweb_paths_are_reported(tmp_path: Path) -> None:
+    """Asset and legacy qweb manifest paths should not escape the module tree."""
+    module = tmp_path / "suspicious_asset_paths"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Suspicious Asset Paths',
+    'license': 'LGPL-3',
+    'assets': {
+        'web.assets_backend': [
+            ('include', '../shared/private.js'),
+            '/opt/odoo/debug.css',
+            'https://cdn.example.com/safe.js',
+        ],
+    },
+    'qweb': ['../../shared/template.xml'],
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-suspicious-data-path"
+        and "../shared/private.js" in f.message
+        and "/opt/odoo/debug.css" in f.message
+        and "../../shared/template.xml" in f.message
+        and "https://cdn.example.com/safe.js" not in f.message
+        for f in findings
+    )
+
+
 def test_malformed_manifest_is_reported(tmp_path: Path) -> None:
     """Non-literal manifests should be surfaced for manual review."""
     module = tmp_path / "bad_manifest"

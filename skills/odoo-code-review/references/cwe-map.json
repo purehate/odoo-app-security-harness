@@ -802,6 +802,12 @@
       "capec": ["CAPEC-186"],
       "owasp": "A08:2021 Software and Data Integrity Failures"
     },
+    "manifest_path_integrity": {
+      "label": "Odoo manifest references local paths that may escape the module tree",
+      "cwe": ["CWE-22", "CWE-73", "CWE-829"],
+      "capec": ["CAPEC-126"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
     "manifest_risky_dependency": {
       "label": "Odoo manifest declares dependencies with security-sensitive usage",
       "cwe": ["CWE-1104", "CWE-829"],

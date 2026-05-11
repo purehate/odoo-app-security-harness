@@ -833,6 +833,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "manifest_path_integrity",
+        (
+            "manifest-suspicious-data-path",
+            "manifest loads suspicious local file paths",
+            "absolute or parent-directory traversal entries",
+            "packaged data and assets cannot load files outside the module",
+        ),
+    ),
+    (
         "manifest_risky_dependency",
         (
             "manifest-risky-python-dependency",

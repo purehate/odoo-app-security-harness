@@ -4911,6 +4911,12 @@ def test_taxonomy_coverage_classifies_manifest_supply_chain_and_parse_findings()
             },
             {
                 "source": "manifest",
+                "rule_id": "odoo-manifest-suspicious-data-path",
+                "title": "Manifest loads suspicious local file paths",
+                "message": "Manifest local file paths include absolute or parent-directory traversal entries: ../shared/private.js; verify packaged data and assets cannot load files outside the module",
+            },
+            {
+                "source": "manifest",
                 "rule_id": "odoo-manifest-risky-python-dependency",
                 "title": "Manifest declares dependency with security-sensitive usage",
                 "message": "Review usage of security-sensitive dependency declarations: paramiko, requests",
@@ -4928,6 +4934,7 @@ def test_taxonomy_coverage_classifies_manifest_supply_chain_and_parse_findings()
     shapes = {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]}
     assert shapes["odoo-manifest-parse-error"] == "manifest_parse_integrity"
     assert shapes["odoo-manifest-remote-assets"] == "manifest_remote_asset_supply_chain"
+    assert shapes["odoo-manifest-suspicious-data-path"] == "manifest_path_integrity"
     assert shapes["odoo-manifest-risky-python-dependency"] == "manifest_risky_dependency"
     assert shapes["odoo-manifest-risky-bin-dependency"] == "manifest_risky_dependency"
 
