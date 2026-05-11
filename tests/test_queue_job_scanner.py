@@ -335,6 +335,28 @@ class SaleJob(models.Model):
     assert sum(f.rule_id == "odoo-queue-job-http-no-timeout" for f in findings) == 1
 
 
+def test_flags_queue_job_urllib_request_import_alias_without_timeout(tmp_path: Path) -> None:
+    """from urllib import request aliases should count as outbound HTTP in queue jobs."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+from urllib import request as urlreq
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        urlreq.urlopen(record.callback_url)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-queue-job-http-no-timeout" for f in findings)
+
+
 def test_flags_queue_job_head_without_timeout(tmp_path: Path) -> None:
     """Queue jobs should treat HEAD calls as outbound HTTP."""
     module = tmp_path / "module" / "models"
