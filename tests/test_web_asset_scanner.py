@@ -2199,6 +2199,43 @@ document.head.appendChild(script);
     assert not any(f.rule_id == "odoo-web-external-script-missing-sri" for f in findings)
 
 
+def test_dom_insecure_script_url_detected(tmp_path: Path) -> None:
+    """DOM-created scripts should not load over cleartext HTTP."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """const script = document.createElement('script');
+script.src = 'http://cdn.example.com/widget.js';
+document.head.appendChild(script);
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-insecure-asset-url"
+        and f.sink == "script"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_dom_https_script_url_ignored_for_insecure_url(tmp_path: Path) -> None:
+    """HTTPS generated scripts should not create insecure-asset leads."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """const script = document.createElement('script');
+script.src = 'https://cdn.example.com/widget.js';
+document.head.appendChild(script);
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-insecure-asset-url" for f in findings)
+
+
 def test_dom_external_stylesheet_missing_sri_detected(tmp_path: Path) -> None:
     """DOM-created external stylesheets should show visible SRI pinning."""
     path = tmp_path / "widget.js"
@@ -2231,6 +2268,28 @@ document.head.append(style);
     findings = WebAssetScanner(path).scan_file()
 
     assert any(f.rule_id == "odoo-web-external-stylesheet-missing-sri" and f.sink == "stylesheet" for f in findings)
+
+
+def test_dom_insecure_stylesheet_url_detected(tmp_path: Path) -> None:
+    """DOM-created stylesheets should not load over cleartext HTTP."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """const style = document.createElement('link');
+style.rel = 'stylesheet';
+style.href = 'http://cdn.example.com/theme.css';
+document.head.appendChild(style);
+""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-insecure-asset-url"
+        and f.sink == "stylesheet"
+        and f.severity == "medium"
+        for f in findings
+    )
 
 
 def test_dom_external_stylesheet_with_integrity_ignored(tmp_path: Path) -> None:

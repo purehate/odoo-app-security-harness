@@ -2431,6 +2431,12 @@ def test_taxonomy_coverage_classifies_owl_insecure_asset_url() -> None:
                 "title": "QWeb template loads insecure HTTP URL",
                 "message": "Literal http:// URL in attribute; use HTTPS or same-origin assets",
             },
+            {
+                "rule_id": "odoo-web-insecure-asset-url",
+                "source": "web-asset",
+                "title": "DOM-created asset loads insecure HTTP URL",
+                "message": "Frontend code creates and loads a script over http://",
+            },
         ]
     )
 

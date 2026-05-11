@@ -920,8 +920,10 @@ class WebAssetScanner:
         self._scan_dom_target_blank(lines)
         self._scan_dom_iframe_missing_sandbox(lines)
         self._scan_dom_external_script_missing_sri(lines)
+        self._scan_dom_insecure_script_src(lines)
         self._scan_dom_style_text_injection(lines)
         self._scan_dom_external_stylesheet_missing_sri(lines)
+        self._scan_dom_insecure_stylesheet_href(lines)
         self._scan_owl_inline_templates(lines)
         return self.findings
 
@@ -1080,6 +1082,27 @@ class WebAssetScanner:
                 "script",
             )
 
+    def _scan_dom_insecure_script_src(self, lines: list[str]) -> None:
+        """Find DOM-created scripts loaded over cleartext HTTP."""
+        for index, line in enumerate(lines):
+            match = DOM_SCRIPT_CREATE_RE.search(line)
+            if not match:
+                continue
+            script_name = match.group("name")
+            context = "\n".join(lines[index : index + 12])
+            if not _dom_script_insecure_src(context, script_name):
+                continue
+            if not _dom_script_is_used(context, script_name):
+                continue
+            self._add(
+                "odoo-web-insecure-asset-url",
+                "DOM-created asset loads insecure HTTP URL",
+                "medium",
+                index + 1,
+                "Frontend code creates and loads a script over http://; use HTTPS or same-origin assets to avoid mixed-content downgrade and interception risk",
+                "script",
+            )
+
     def _scan_dom_style_text_injection(self, lines: list[str]) -> None:
         """Find DOM-created style blocks populated with request-derived CSS."""
         for index, line in enumerate(lines):
@@ -1122,6 +1145,29 @@ class WebAssetScanner:
                 "low",
                 index + 1,
                 "Frontend code creates and loads an external stylesheet without a visible integrity assignment; pin third-party CSS with SRI or serve reviewed styles from trusted bundles",
+                "stylesheet",
+            )
+
+    def _scan_dom_insecure_stylesheet_href(self, lines: list[str]) -> None:
+        """Find DOM-created stylesheets loaded over cleartext HTTP."""
+        for index, line in enumerate(lines):
+            match = DOM_LINK_CREATE_RE.search(line)
+            if not match:
+                continue
+            link_name = match.group("name")
+            context = "\n".join(lines[index : index + 12])
+            if not _dom_link_is_stylesheet(context, link_name):
+                continue
+            if not _dom_link_insecure_href(context, link_name):
+                continue
+            if not _dom_script_is_used(context, link_name):
+                continue
+            self._add(
+                "odoo-web-insecure-asset-url",
+                "DOM-created asset loads insecure HTTP URL",
+                "medium",
+                index + 1,
+                "Frontend code creates and loads a stylesheet over http://; use HTTPS or same-origin assets to avoid mixed-content downgrade and interception risk",
                 "stylesheet",
             )
 
@@ -1890,6 +1936,18 @@ def _dom_script_external_src(context: str, script_name: str) -> bool:
     return bool(match and _is_external_url(match.group("src")))
 
 
+def _dom_script_insecure_src(context: str, script_name: str) -> bool:
+    name = re.escape(script_name)
+    src_match = re.search(rf"\b{name}\.src\s*=\s*['\"](?P<src>[^'\"]+)['\"]", context, re.IGNORECASE)
+    attr_match = re.search(
+        rf"\b{name}\.setAttribute\s*\(\s*['\"]src['\"]\s*,\s*['\"](?P<src>[^'\"]+)['\"]",
+        context,
+        re.IGNORECASE,
+    )
+    match = src_match or attr_match
+    return bool(match and _is_insecure_http_url(match.group("src")))
+
+
 def _dom_script_is_used(context: str, script_name: str) -> bool:
     name = re.escape(script_name)
     return bool(re.search(rf"\.(?:append|appendChild)\s*\(\s*{name}\s*\)", context))
@@ -1933,6 +1991,18 @@ def _dom_link_external_href(context: str, link_name: str) -> bool:
     )
     match = href_match or attr_match
     return bool(match and _is_external_url(match.group("href")))
+
+
+def _dom_link_insecure_href(context: str, link_name: str) -> bool:
+    name = re.escape(link_name)
+    href_match = re.search(rf"\b{name}\.href\s*=\s*['\"](?P<href>[^'\"]+)['\"]", context, re.IGNORECASE)
+    attr_match = re.search(
+        rf"\b{name}\.setAttribute\s*\(\s*['\"]href['\"]\s*,\s*['\"](?P<href>[^'\"]+)['\"]",
+        context,
+        re.IGNORECASE,
+    )
+    match = href_match or attr_match
+    return bool(match and _is_insecure_http_url(match.group("href")))
 
 
 def _is_external_url(value: str) -> bool:
