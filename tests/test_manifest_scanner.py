@@ -213,6 +213,45 @@ def test_modern_integration_python_dependencies_are_reported(tmp_path: Path) -> 
     )
 
 
+def test_auth_crypto_and_xml_signature_dependencies_are_reported(tmp_path: Path) -> None:
+    """Auth, crypto, and XML-signature dependencies are security-sensitive review leads."""
+    module = tmp_path / "auth_crypto_xml_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Auth Crypto XML Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'python': [
+            'Authlib',
+            'python-jose[cryptography]',
+            'requests-oauthlib',
+            'pycryptodomex>=3.20',
+            'signxml',
+            'xmlsec',
+            'lxml',
+            'safe-package',
+        ],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-risky-python-dependency"
+        and "Authlib" in f.message
+        and "python-jose[cryptography]" in f.message
+        and "requests-oauthlib" in f.message
+        and "pycryptodomex>=3.20" in f.message
+        and "signxml" in f.message
+        and "xmlsec" in f.message
+        and "lxml" in f.message
+        and "safe-package" not in f.message
+        for f in findings
+    )
+
+
 def test_versioned_python_dependencies_are_reported(tmp_path: Path) -> None:
     """Requirement-style manifest dependency spellings should still be matched."""
     module = tmp_path / "versioned_deps"
