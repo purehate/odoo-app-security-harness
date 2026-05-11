@@ -335,6 +335,52 @@ class SaleJob(models.Model):
     assert sum(f.rule_id == "odoo-queue-job-http-no-timeout" for f in findings) == 1
 
 
+def test_flags_queue_job_http_timeout_none_as_unbounded(tmp_path: Path) -> None:
+    """Queue jobs should treat timeout=None as no effective HTTP timeout."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+import requests
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        requests.post(record.callback_url, timeout=None)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-queue-job-http-no-timeout" for f in findings)
+
+
+def test_flags_queue_job_http_constant_timeout_none_as_unbounded(tmp_path: Path) -> None:
+    """Queue jobs should resolve module constants used for timeout values."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+import requests
+
+QUEUE_TIMEOUT = None
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        requests.post(record.callback_url, timeout=QUEUE_TIMEOUT)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-queue-job-http-no-timeout" for f in findings)
+
+
 def test_flags_queue_job_urllib_request_import_alias_without_timeout(tmp_path: Path) -> None:
     """from urllib import request aliases should count as outbound HTTP in queue jobs."""
     module = tmp_path / "module" / "models"

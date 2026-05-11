@@ -208,7 +208,7 @@ class QueueJobScanner(ast.NodeVisitor):
             elif _is_http_call(
                 node.func, self.http_module_aliases, self.http_function_aliases, current.http_client_vars
             ):
-                if not _has_keyword(node, "timeout"):
+                if not _has_effective_timeout(node, self._effective_constants()):
                     self._add(
                         "odoo-queue-job-http-no-timeout",
                         "Queue job performs HTTP without timeout",
@@ -635,6 +635,20 @@ def _mark_target_names(target: ast.AST, names: set[str]) -> None:
 
 def _has_keyword(node: ast.Call, name: str) -> bool:
     return any(keyword.arg == name for keyword in node.keywords)
+
+
+def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for name, keyword_value in _expanded_keywords(node, constants):
+        if name != "timeout":
+            continue
+        value = _resolve_constant(keyword_value, constants)
+        return not _is_none_constant(value)
+    return False
+
+
+def _is_none_constant(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
 
 
 def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:
