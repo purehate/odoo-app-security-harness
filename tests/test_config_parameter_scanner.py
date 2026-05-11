@@ -454,6 +454,33 @@ class Config(http.Controller):
     )
 
 
+def test_static_unpack_get_param_options_expose_sensitive_read(tmp_path: Path) -> None:
+    """Static **get_param options should not hide sensitive config reads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "config.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+READ_OPTIONS = {'key': 'payment.provider.secret', 'default': 'fallback-secret'}
+
+class Config(http.Controller):
+    @http.route('/public/config', auth='public')
+    def config(self):
+        return request.env['ir.config_parameter'].sudo().get_param(**READ_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-config-param-public-sensitive-read" in rule_ids
+    assert "odoo-config-param-sudo-sensitive-read" in rule_ids
+    assert "odoo-config-param-sensitive-default" in rule_ids
+
+
 def test_flags_tainted_config_key_read(tmp_path: Path) -> None:
     """Request-selected config keys can disclose arbitrary parameters."""
     controllers = tmp_path / "module" / "controllers"
@@ -1132,6 +1159,26 @@ def set_values(self):
     assert any(f.rule_id == "odoo-config-param-security-toggle-enabled" for f in findings)
 
 
+def test_static_unpack_set_param_options_expose_security_toggle(tmp_path: Path) -> None:
+    """Static **set_param options should not hide security-sensitive writes."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+def set_values(self):
+    options = {'key': 'auth.signup.allow_uninvited', 'value': True}
+    self.env['ir.config_parameter'].sudo().set_param(**options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-config-param-sudo-write" in rule_ids
+    assert "odoo-config-param-security-toggle-enabled" in rule_ids
+
+
 def test_flags_public_signup_invitation_scope(tmp_path: Path) -> None:
     """Literal writes that enable public signup should be explicit review leads."""
     models = tmp_path / "module" / "models"
@@ -1420,7 +1467,8 @@ def test_repo_scan_skips_tests(tmp_path: Path) -> None:
     tests = tmp_path / "tests"
     tests.mkdir()
     (tests / "test_config.py").write_text(
-        "def test_config(**kwargs):\n    env['ir.config_parameter'].set_param(kwargs.get('key'), kwargs.get('value'))\n",
+        "def test_config(**kwargs):\n"
+        "    env['ir.config_parameter'].set_param(kwargs.get('key'), kwargs.get('value'))\n",
         encoding="utf-8",
     )
 

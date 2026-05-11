@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -241,12 +242,12 @@ class ConfigParameterScanner(ast.NodeVisitor):
         key_node = (
             _resolve_constant(node.args[0], constants)
             if node.args
-            else _resolve_optional_constant(_keyword_value(node, "key"), constants)
+            else _resolve_optional_constant(_keyword_value(node, "key", constants), constants)
         )
         default_node = (
             _resolve_constant(node.args[1], constants)
             if len(node.args) >= 2
-            else _resolve_optional_constant(_keyword_value(node, "default"), constants)
+            else _resolve_optional_constant(_keyword_value(node, "default", constants), constants)
         )
         key = _literal_string(key_node)
         default = _literal_string(default_node)
@@ -258,7 +259,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                 "Config parameter key is request-controlled",
                 "high",
                 node.lineno,
-                "get_param key is request-derived; constrain allowed keys to prevent arbitrary system-parameter disclosure",
+                "get_param key is request-derived; constrain allowed keys to prevent arbitrary system-parameter "
+                "disclosure",
                 key,
                 sink,
             )
@@ -269,7 +271,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                 "Public route reads sensitive config parameter",
                 "critical",
                 node.lineno,
-                f"Public route reads sensitive ir.config_parameter key '{key}'; verify it cannot be returned, logged, or used to authorize attacker-controlled flows",
+                f"Public route reads sensitive ir.config_parameter key '{key}'; verify it cannot be returned, "
+                "logged, or used to authorize attacker-controlled flows",
                 key,
                 sink,
             )
@@ -284,7 +287,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                 "Sensitive config parameter is read with elevated environment",
                 "medium",
                 node.lineno,
-                f"sudo()/with_user(SUPERUSER_ID).get_param reads sensitive key '{key}'; verify callers cannot expose or misuse global secrets",
+                f"sudo()/with_user(SUPERUSER_ID).get_param reads sensitive key '{key}'; verify callers cannot "
+                "expose or misuse global secrets",
                 key,
                 sink,
             )
@@ -295,7 +299,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                 "Sensitive config parameter has hardcoded default",
                 "high",
                 node.lineno,
-                f"get_param for sensitive key '{key}' uses a literal default; avoid deployable fallback secrets and require explicit configured values",
+                f"get_param for sensitive key '{key}' uses a literal default; avoid deployable fallback secrets "
+                "and require explicit configured values",
                 key,
                 sink,
             )
@@ -305,12 +310,12 @@ class ConfigParameterScanner(ast.NodeVisitor):
         key_node = (
             _resolve_constant(node.args[0], constants)
             if node.args
-            else _resolve_optional_constant(_keyword_value(node, "key"), constants)
+            else _resolve_optional_constant(_keyword_value(node, "key", constants), constants)
         )
         value_node = (
             _resolve_constant(node.args[1], constants)
             if len(node.args) >= 2
-            else _resolve_optional_constant(_keyword_value(node, "value"), constants)
+            else _resolve_optional_constant(_keyword_value(node, "value", constants), constants)
         )
         key = _literal_string(key_node)
         route = self._current_route()
@@ -333,7 +338,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                 "Config parameter value is request-controlled",
                 severity,
                 node.lineno,
-                f"set_param writes request-derived value to key '{key or '<dynamic>'}'; verify authentication, authorization, validation, and auditability",
+                f"set_param writes request-derived value to key '{key or '<dynamic>'}'; verify authentication, "
+                "authorization, validation, and auditability",
                 key,
                 sink,
             )
@@ -343,7 +349,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                     "Security-sensitive config toggle receives request-controlled value",
                     severity,
                     node.lineno,
-                    f"set_param writes a request-derived value to security-sensitive key '{key}'; verify only trusted administrators can change runtime security posture",
+                    f"set_param writes a request-derived value to security-sensitive key '{key}'; verify only "
+                    "trusted administrators can change runtime security posture",
                     key,
                     sink,
                 )
@@ -353,7 +360,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                     "Base URL config parameter receives request-controlled value",
                     severity,
                     node.lineno,
-                    "set_param writes request-derived web.base.url; attackers may be able to poison generated portal, OAuth, payment, or password-reset links",
+                    "set_param writes request-derived web.base.url; attackers may be able to poison generated "
+                    "portal, OAuth, payment, or password-reset links",
                     key,
                     sink,
                 )
@@ -366,7 +374,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                 "Config parameter is written with elevated environment",
                 "high",
                 node.lineno,
-                f"sudo()/with_user(SUPERUSER_ID).set_param writes key '{key or '<dynamic>'}'; verify callers cannot alter global security, mail, OAuth, signup, or integration settings",
+                f"sudo()/with_user(SUPERUSER_ID).set_param writes key '{key or '<dynamic>'}'; verify callers "
+                "cannot alter global security, mail, OAuth, signup, or integration settings",
                 key,
                 sink,
             )
@@ -378,7 +387,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                 "Sensitive config parameter is set to a hardcoded value",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                f"set_param writes a literal value to sensitive key '{key}'; avoid committing deployable secrets and rotate any value that reached source control",
+                f"set_param writes a literal value to sensitive key '{key}'; avoid committing deployable secrets "
+                "and rotate any value that reached source control",
                 key,
                 sink,
             )
@@ -389,7 +399,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                 "Security-sensitive config toggle is enabled",
                 "high",
                 node.lineno,
-                f"set_param enables security-sensitive key '{key}' with value '{literal_value}'; verify this is admin-only, audited, and acceptable for production",
+                f"set_param enables security-sensitive key '{key}' with value '{literal_value}'; verify this is "
+                "admin-only, audited, and acceptable for production",
                 key,
                 sink,
             )
@@ -400,7 +411,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                 "Base URL config parameter is set to an insecure endpoint",
                 "medium",
                 node.lineno,
-                "set_param writes web.base.url to HTTP or a local host; generated portal, OAuth, and password-reset links should use the public HTTPS origin",
+                "set_param writes web.base.url to HTTP or a local host; generated portal, OAuth, and password-reset "
+                "links should use the public HTTPS origin",
                 key,
                 sink,
             )
@@ -410,7 +422,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
                 "Base URL config parameter embeds credentials",
                 "high",
                 node.lineno,
-                "set_param writes web.base.url with username, password, or token material; generated portal, OAuth, payment, and password-reset links can leak those credentials",
+                "set_param writes web.base.url with username, password, or token material; generated portal, OAuth, "
+                "payment, and password-reset links can leak those credentials",
                 key,
                 sink,
             )
@@ -791,10 +804,19 @@ def _is_http_module_expr(
     )
 
 
-def _keyword_value(node: ast.Call, name: str) -> ast.AST | None:
+def _keyword_value(node: ast.Call, name: str, constants: dict[str, ast.AST]) -> ast.AST | None:
     for keyword in node.keywords:
         if keyword.arg == name:
             return keyword.value
+        if keyword.arg is not None:
+            continue
+        options = _resolve_static_dict(keyword.value, constants)
+        if options is None:
+            continue
+        for key, value in zip(options.keys, options.values, strict=False):
+            resolved_key = _resolve_constant(key, constants) if key is not None else None
+            if isinstance(resolved_key, ast.Constant) and resolved_key.value == name:
+                return value
     return None
 
 
