@@ -647,6 +647,54 @@ class Api(http.Controller):
     assert any(f.rule_id == "odoo-route-bearer-save-session" for f in findings)
 
 
+def test_flags_inherited_route_security_relaxation(tmp_path: Path) -> None:
+    """Pathless route decorators override inherited Odoo route options."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "inheritance.py").write_text(
+        """
+from odoo import http
+from odoo.addons.web.controllers.home import Home
+
+class PublicHome(Home):
+    @http.route(auth='public', csrf=False, cors='*')
+    def web_login(self, **kwargs):
+        return super().web_login(**kwargs)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_route_security(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-route-inherited-security-relaxed" in rule_ids
+    assert any(
+        f.rule_id == "odoo-route-inherited-security-relaxed"
+        and f.route == "<unknown>"
+        and f.attribute == "inheritance"
+        for f in findings
+    )
+
+
+def test_ignores_safe_inherited_route_republication(tmp_path: Path) -> None:
+    """Republishing an inherited route without weaker security options should stay quiet."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "inheritance.py").write_text(
+        """
+from odoo import http
+
+class Portal(http.Controller):
+    @http.route()
+    def account(self, **kwargs):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_route_security(tmp_path) == []
+
+
 def test_flags_constant_backed_bearer_save_session(tmp_path: Path) -> None:
     """Bearer save_session posture should be checked through static constants."""
     controllers = tmp_path / "module" / "controllers"

@@ -8493,6 +8493,10 @@ class TestController(http.Controller):
     def bearer_sync(self):
         return '{}'
 
+    @http.route(auth='public', csrf=False, cors='*')
+    def inherited_login(self, **kwargs):
+        return super().web_login(**kwargs)
+
     @http.route('/public/form-submit', auth='public', methods=['POST'], csrf=False)
     def form_submit(self, **kwargs):
         return 'ok'
@@ -9861,6 +9865,7 @@ msgstr "<a href=\\"javascript:alert(1)\\">Ouvrir %(name)s</a>"
     assert "odoo-portal-token-exposed-without-check" in rule_ids
     assert "odoo-route-auth-none" in rule_ids
     assert "odoo-route-bearer-save-session" in rule_ids
+    assert "odoo-route-inherited-security-relaxed" in rule_ids
     assert "odoo-route-cors-wildcard" in rule_ids
     assert "odoo-route-csrf-disabled-all-methods" in rule_ids
     assert "odoo-route-unsafe-csrf-disabled" in rule_ids

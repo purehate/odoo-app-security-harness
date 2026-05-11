@@ -391,6 +391,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "route_inherited_security_relaxed",
+        (
+            "odoo-route-inherited-security-relaxed",
+            "inherited route decorator relaxes security options",
+            "omits an explicit path while changing auth/csrf/cors",
+            "republished with weaker security options",
+        ),
+    ),
+    (
         "route_csrf_disabled_all_methods",
         (
             "odoo-route-csrf-disabled-all-methods",

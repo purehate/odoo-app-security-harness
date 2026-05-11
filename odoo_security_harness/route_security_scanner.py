@@ -122,13 +122,26 @@ class RouteSecurityScanner(ast.NodeVisitor):
 
     def _scan_route(self, node: ast.FunctionDef | ast.AsyncFunctionDef, route: RouteInfo) -> None:
         path = route.display_path()
+        if not route.paths and _relaxes_inherited_route_security(route):
+            self._add(
+                "odoo-route-inherited-security-relaxed",
+                "Inherited route decorator relaxes security options",
+                "high" if route.auth in {"public", "none"} or route.csrf is False else "medium",
+                node.lineno,
+                "Route override omits an explicit path while changing auth/csrf/cors; verify the inherited route "
+                "is intended to be republished with weaker security options",
+                path,
+                "inheritance",
+            )
+
         if route.auth == "none":
             self._add(
                 "odoo-route-auth-none",
                 "Route bypasses database user authentication",
                 "critical",
                 node.lineno,
-                f"Route {path} uses auth='none'; verify it is needed before database selection and performs no data access or mutation",
+                f"Route {path} uses auth='none'; verify it is needed before database selection and performs no "
+                "data access or mutation",
                 path,
                 "auth",
             )
@@ -140,7 +153,8 @@ class RouteSecurityScanner(ast.NodeVisitor):
                 "Route allows wildcard CORS",
                 severity,
                 node.lineno,
-                f"Route {path} sets cors='*'; verify cross-origin callers cannot use ambient sessions or access sensitive data",
+                f"Route {path} sets cors='*'; verify cross-origin callers cannot use ambient sessions or access "
+                "sensitive data",
                 path,
                 "cors",
             )
@@ -151,7 +165,8 @@ class RouteSecurityScanner(ast.NodeVisitor):
                 "Bearer route explicitly saves browser session",
                 "medium",
                 node.lineno,
-                f"Bearer route {path} sets save_session=True; verify API-token requests cannot create or persist ambient browser sessions unexpectedly",
+                f"Bearer route {path} sets save_session=True; verify API-token requests cannot create or persist "
+                "ambient browser sessions unexpectedly",
                 path,
                 "save_session",
             )
@@ -163,7 +178,8 @@ class RouteSecurityScanner(ast.NodeVisitor):
                 "Public route disables CSRF without method restriction",
                 "high",
                 node.lineno,
-                f"Public route {path} disables CSRF and does not set methods=; constrain verbs and require a non-browser authentication token for state-changing callbacks",
+                f"Public route {path} disables CSRF and does not set methods=; constrain verbs and require a "
+                "non-browser authentication token for state-changing callbacks",
                 path,
                 "csrf/methods",
             )
@@ -175,7 +191,8 @@ class RouteSecurityScanner(ast.NodeVisitor):
                 "Mutating route disables CSRF",
                 severity,
                 node.lineno,
-                f"Route {path} disables CSRF on a mutating-looking endpoint; verify callers use a stronger non-browser token",
+                f"Route {path} disables CSRF on a mutating-looking endpoint; verify callers use a stronger "
+                "non-browser token",
                 path,
                 "csrf",
             )
@@ -186,7 +203,8 @@ class RouteSecurityScanner(ast.NodeVisitor):
                 "Public route exposes mutating action over GET",
                 "high",
                 node.lineno,
-                f"Public route {path} exposes a mutating-looking action over GET; keep GET idempotent and move state changes to POST with CSRF or a non-browser token",
+                f"Public route {path} exposes a mutating-looking action over GET; keep GET idempotent and move "
+                "state changes to POST with CSRF or a non-browser token",
                 path,
                 "methods",
             )
@@ -197,7 +215,8 @@ class RouteSecurityScanner(ast.NodeVisitor):
                 "Public route does not restrict HTTP methods",
                 "medium",
                 node.lineno,
-                f"Public route {path} does not set methods=; constrain allowed verbs to reduce unexpected GET/POST exposure",
+                f"Public route {path} does not set methods=; constrain allowed verbs to reduce unexpected "
+                "GET/POST exposure",
                 path,
                 "methods",
             )
@@ -486,6 +505,10 @@ def _looks_mutating_route(path: str, function_name: str) -> bool:
 
 def _is_get_only_route(methods: set[str]) -> bool:
     return bool(methods) and "GET" in methods and methods <= {"GET", "HEAD"}
+
+
+def _relaxes_inherited_route_security(route: RouteInfo) -> bool:
+    return route.auth in {"public", "none"} or route.csrf is False or route.cors.strip() == "*"
 
 
 def _should_skip(path: Path) -> bool:

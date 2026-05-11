@@ -80,6 +80,12 @@
       "capec": ["CAPEC-31", "CAPEC-60"],
       "owasp": "A07:2021 Identification and Authentication Failures"
     },
+    "route_inherited_security_relaxed": {
+      "label": "Odoo inherited route override relaxes auth, CSRF, or CORS options",
+      "cwe": ["CWE-287", "CWE-352", "CWE-863", "CWE-942"],
+      "capec": ["CAPEC-21", "CAPEC-62", "CAPEC-115"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "route_csrf_disabled_all_methods": {
       "label": "Public Odoo route disables CSRF without restricting HTTP methods",
       "cwe": ["CWE-352", "CWE-749", "CWE-693"],
