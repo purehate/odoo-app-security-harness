@@ -109,6 +109,56 @@ class Download(odoo_http.Controller):
     )
 
 
+def test_imported_odoo_http_module_public_attachment_datas_response(tmp_path: Path) -> None:
+    """Direct odoo.http imports should preserve public binary severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Download(odoo_http.Controller):
+    @odoo_http.route('/public/download', auth='public')
+    def download(self, **kwargs):
+        attachment = odoo_http.request.env['ir.attachment'].sudo().browse(int(kwargs.get('id')))
+        return odoo_http.request.make_response(attachment.datas)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_imported_odoo_module_public_attachment_datas_response(tmp_path: Path) -> None:
+    """Direct odoo imports should preserve public binary severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+import odoo as od
+
+class Download(od.http.Controller):
+    @od.http.route('/public/download', auth='public')
+    def download(self, **kwargs):
+        attachment = od.http.request.env['ir.attachment'].sudo().browse(int(kwargs.get('id')))
+        return od.http.request.make_response(attachment.datas)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high"
+        for f in findings
+    )
+
+
 def test_non_odoo_route_decorator_attachment_datas_response_is_not_public(tmp_path: Path) -> None:
     """Local route-like decorators should not create public Odoo route context."""
     controllers = tmp_path / "module" / "controllers"
