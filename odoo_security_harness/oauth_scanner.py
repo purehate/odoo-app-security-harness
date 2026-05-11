@@ -520,13 +520,15 @@ class OAuthScanner(ast.NodeVisitor):
         root_name = _call_root_name(node.func.value)
         if not root_name:
             return
-        update_values = node.args[0] if node.args else None
-        if not isinstance(update_values, ast.Dict):
-            return
-        if not _dict_mentions_oauth_identity_field(update_values, self._effective_constants()):
+
+        update_values = [*node.args, *(keyword.value for keyword in node.keywords if keyword.value is not None)]
+        has_identity_update = any(
+            _expr_mentions_oauth_identity_payload(value, self.oauth_identity_payload_names) for value in update_values
+        ) or any(keyword.arg in OAUTH_IDENTITY_FIELDS for keyword in node.keywords)
+        if not has_identity_update:
             return
         self.oauth_identity_payload_names.add(root_name)
-        if any(value is not None and self._expr_is_tainted(value) for value in update_values.values):
+        if any(self._expr_is_tainted(value) for value in update_values):
             self.tainted_names.add(root_name)
 
     def _track_tainted_redirect_uri_payload_subscript_assignment(self, target: ast.AST, value: ast.AST) -> None:
@@ -545,8 +547,11 @@ class OAuthScanner(ast.NodeVisitor):
         root_name = _call_root_name(node.func.value)
         if not root_name:
             return
-        update_values = node.args[0] if node.args else None
-        if update_values is not None and self._expr_contains_tainted_redirect_uri(update_values, self._effective_constants()):
+        constants = self._effective_constants()
+        update_values = [*node.args, *(keyword.value for keyword in node.keywords if keyword.value is not None)]
+        if any(self._expr_contains_tainted_redirect_uri(value, constants) for value in update_values) or any(
+            keyword.arg == "redirect_uri" and self._expr_is_tainted(keyword.value) for keyword in node.keywords
+        ):
             self.tainted_redirect_uri_payload_names.add(root_name)
 
     def _call_contains_tainted_redirect_uri(self, node: ast.Call) -> bool:
