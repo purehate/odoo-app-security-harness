@@ -442,6 +442,32 @@ class Feed(models.Model):
     assert "odoo-model-method-compute-http-no-timeout" in rule_ids
 
 
+def test_flags_urllib_urlopen_without_timeout(tmp_path: Path) -> None:
+    """urllib.request.urlopen in model methods should require a timeout."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "compute.py").write_text(
+        """
+from odoo import api, models
+from urllib.request import urlopen
+import urllib.request as urlreq
+
+class Feed(models.Model):
+    _name = 'x.feed'
+
+    @api.depends('url')
+    def _compute_payload(self):
+        urlopen(self.url)
+        urlreq.urlopen(self.callback_url, timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert len([f for f in findings if f.rule_id == "odoo-model-method-compute-http-no-timeout"]) == 1
+
+
 def test_flags_http_client_without_timeout(tmp_path: Path) -> None:
     """Session/client objects inside model methods can block workers too."""
     models = tmp_path / "module" / "models"

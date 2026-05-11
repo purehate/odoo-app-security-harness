@@ -23,7 +23,7 @@ class ModelMethodFinding:
     method: str = ""
 
 
-HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request"}
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request", "urlopen"}
 MUTATION_METHODS = {"write", "create", "unlink"}
 SENSITIVE_MODEL_MUTATION_METHODS = {*MUTATION_METHODS, "set", "set_param"}
 SENSITIVE_MUTATION_MODELS = {
@@ -77,7 +77,7 @@ class ModelMethodScanner(ast.NodeVisitor):
         self.findings: list[ModelMethodFinding] = []
         self.model_stack: list[str] = []
         self.method_stack: list[MethodContext] = []
-        self.http_modules = {"requests", "httpx"}
+        self.http_modules = {"requests", "httpx", "urllib"}
         self.http_functions: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
@@ -100,10 +100,12 @@ class ModelMethodScanner(ast.NodeVisitor):
         for alias in node.names:
             if alias.name in {"requests", "httpx"}:
                 self.http_modules.add(alias.asname or alias.name)
+            elif alias.name == "urllib.request":
+                self.http_modules.add(alias.asname or "urllib")
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        if node.module not in {"requests", "httpx"}:
+        if node.module not in {"requests", "httpx", "urllib.request"}:
             self.generic_visit(node)
             return
         for alias in node.names:
