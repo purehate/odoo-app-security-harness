@@ -25,6 +25,44 @@ def sync():
     assert any(f.rule_id == "odoo-integration-http-no-timeout" for f in findings)
 
 
+def test_http_call_with_timeout_none_is_reported(tmp_path: Path) -> None:
+    """timeout=None is equivalent to an unbounded outbound HTTP call."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+def sync():
+    return requests.post('https://api.example.test/sync', timeout=None)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-http-no-timeout" for f in findings)
+
+
+def test_http_call_with_timeout_none_constant_is_reported(tmp_path: Path) -> None:
+    """timeout constants should not hide unbounded HTTP calls."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+HTTP_TIMEOUT = None
+
+def sync():
+    return requests.post('https://api.example.test/sync', timeout=HTTP_TIMEOUT)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-http-no-timeout" for f in findings)
+
+
 def test_tls_verification_disabled_is_reported(tmp_path: Path) -> None:
     """verify=False should be visible in review output."""
     py = tmp_path / "integration.py"
@@ -1158,6 +1196,24 @@ def convert(**kwargs):
     assert "odoo-integration-tainted-command-args" in rule_ids
     assert "odoo-integration-process-no-timeout" in rule_ids
     assert "odoo-integration-report-command-review" in rule_ids
+
+
+def test_subprocess_timeout_none_is_reported(tmp_path: Path) -> None:
+    """timeout=None should not suppress process timeout findings."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import subprocess
+
+def convert(path):
+    return subprocess.run(['wkhtmltopdf', path, '/tmp/out.pdf'], timeout=None)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-process-no-timeout" for f in findings)
 
 
 def test_os_system_command_execution_is_reported(tmp_path: Path) -> None:

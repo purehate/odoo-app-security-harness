@@ -235,7 +235,7 @@ class IntegrationScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _scan_http_call(self, node: ast.Call, sink: str) -> None:
-        if not _has_keyword(node, "timeout"):
+        if not _has_effective_timeout(node, self._effective_constants()):
             self._add(
                 "odoo-integration-http-no-timeout",
                 "Outbound HTTP call has no timeout",
@@ -381,7 +381,7 @@ class IntegrationScanner(ast.NodeVisitor):
                 sink,
             )
 
-        if canonical_sink in COMMAND_TIMEOUT_SINKS and not _has_keyword(node, "timeout"):
+        if canonical_sink in COMMAND_TIMEOUT_SINKS and not _has_effective_timeout(node, self._effective_constants()):
             self._add(
                 "odoo-integration-process-no-timeout",
                 "Process execution has no timeout",
@@ -856,7 +856,12 @@ def _has_keyword(node: ast.Call, name: str) -> bool:
     return _keyword(node, name) is not None
 
 
-def _keyword_value_is(keyword: ast.keyword, expected: bool, constants: dict[str, ast.AST] | None = None) -> bool:
+def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+    timeout_keyword = _keyword(node, "timeout")
+    return timeout_keyword is not None and not _keyword_value_is(timeout_keyword, None, constants)
+
+
+def _keyword_value_is(keyword: ast.keyword, expected: object, constants: dict[str, ast.AST] | None = None) -> bool:
     value = _resolve_constant(keyword.value, constants or {})
     return isinstance(value, ast.Constant) and value.value is expected
 
