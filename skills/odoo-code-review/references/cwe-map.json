@@ -2310,6 +2310,12 @@
       "capec": ["CAPEC-115", "CAPEC-21"],
       "owasp": "A07:2021 Identification and Authentication Failures"
     },
+    "attachment_tainted_url": {
+      "label": "Request-derived URL is stored on ir.attachment link metadata",
+      "cwe": ["CWE-601", "CWE-20", "CWE-939"],
+      "capec": ["CAPEC-178", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "attachment_tainted_lookup": {
       "label": "Request-derived input selects ir.attachment records",
       "cwe": ["CWE-639", "CWE-862", "CWE-863"],

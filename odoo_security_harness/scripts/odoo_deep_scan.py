@@ -5448,6 +5448,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "attachment_tainted_url",
+        (
+            "odoo-attachment-tainted-url",
+            "attachment url is request-controlled",
+            "ir.attachment.create stores a request-derived url",
+            "ir.attachment.write stores a request-derived url",
+            "allowed schemes, trusted hosts, portal visibility",
+        ),
+    ),
+    (
         "attachment_tainted_lookup",
         (
             "odoo-attachment-tainted-lookup",

@@ -387,6 +387,65 @@ class AttachmentBuilder(models.Model):
     )
 
 
+def test_tainted_attachment_url_create_is_reported(tmp_path: Path) -> None:
+    """Request-controlled URL attachments should not trust arbitrary link targets."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "attachments.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/link', auth='public', csrf=False)
+    def link(self, **kwargs):
+        return request.env['ir.attachment'].create({
+            'name': 'partner-document',
+            'type': 'url',
+            'url': kwargs.get('target'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-attachment-tainted-url"
+        and finding.severity == "critical"
+        and finding.sink.endswith(".create")
+        for finding in findings
+    )
+
+
+def test_tainted_attachment_url_write_is_reported(tmp_path: Path) -> None:
+    """Attachment URL writes should not accept untrusted link targets."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachments.py").write_text(
+        """
+from odoo import models
+
+class AttachmentBuilder(models.Model):
+    _name = 'x.attachment.builder'
+
+    def update_link(self, attachment_id, **kwargs):
+        attachment = self.env['ir.attachment'].browse(attachment_id)
+        return attachment.write({'type': 'url', 'url': kwargs.get('target')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-attachment-tainted-url"
+        and finding.severity == "high"
+        and finding.sink.endswith(".write")
+        for finding in findings
+    )
+
+
 def test_non_odoo_route_decorator_public_attachment_create_is_ignored(tmp_path: Path) -> None:
     """Local route-like decorators should not create Odoo route context."""
     controllers = tmp_path / "module" / "controllers"

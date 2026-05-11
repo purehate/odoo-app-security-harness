@@ -292,6 +292,7 @@ class AttachmentScanner(ast.NodeVisitor):
         res_model = values.get("res_model")
         res_id = values.get("res_id")
         public = values.get("public")
+        url = values.get("url")
         constants = self._effective_constants()
 
         if res_model is not None and self._expr_is_tainted(res_model):
@@ -335,6 +336,16 @@ class AttachmentScanner(ast.NodeVisitor):
                 route.display_path(),
                 sink,
             )
+        if url is not None and self._expr_is_tainted(url):
+            self._add(
+                "odoo-attachment-tainted-url",
+                "Attachment URL is request-controlled",
+                "critical" if route.auth in {"public", "none"} else "high",
+                node.lineno,
+                "ir.attachment.create stores a request-derived URL; validate allowed schemes, trusted hosts, portal visibility, and whether users can be sent to untrusted document links",
+                route.display_path(),
+                sink,
+            )
         active_content = _active_attachment_content(values, constants)
         if active_content:
             self._add(
@@ -366,6 +377,7 @@ class AttachmentScanner(ast.NodeVisitor):
         res_id = values.get("res_id")
         public = values.get("public")
         access_token = values.get("access_token")
+        url = values.get("url")
         constants = self._effective_constants()
 
         if public is not None and _truthy_constant(public, constants):
@@ -405,6 +417,16 @@ class AttachmentScanner(ast.NodeVisitor):
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
                 "ir.attachment.write stores a request-derived access_token; generate attachment tokens server-side and bind them to explicit ownership checks",
+                route.display_path(),
+                sink,
+            )
+        if url is not None and self._expr_is_tainted(url):
+            self._add(
+                "odoo-attachment-tainted-url",
+                "Attachment URL is request-controlled",
+                "critical" if route.auth in {"public", "none"} else "high",
+                node.lineno,
+                "ir.attachment.write stores a request-derived URL; validate allowed schemes, trusted hosts, portal visibility, and whether users can be sent to untrusted document links",
                 route.display_path(),
                 sink,
             )

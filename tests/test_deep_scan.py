@@ -3602,6 +3602,12 @@ def test_taxonomy_coverage_classifies_attachment_metadata_specific_risks() -> No
             },
             {
                 "source": "attachments",
+                "rule_id": "odoo-attachment-tainted-url",
+                "title": "Attachment URL is request-controlled",
+                "message": "ir.attachment.create stores a request-derived URL; validate allowed schemes, trusted hosts, portal visibility, and whether users can be sent to untrusted document links",
+            },
+            {
+                "source": "attachments",
                 "rule_id": "odoo-attachment-tainted-lookup",
                 "title": "Request-derived attachment lookup",
                 "message": "Request-derived input selects ir.attachment records; verify ownership, res_model/res_id constraints, access_token, and record-rule behavior",
@@ -3609,7 +3615,7 @@ def test_taxonomy_coverage_classifies_attachment_metadata_specific_risks() -> No
         ]
     )
 
-    assert coverage["mapped_rules"] == 13
+    assert coverage["mapped_rules"] == 14
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-attachment-public-route-mutation": "attachment_public_route_mutation",
@@ -3624,6 +3630,7 @@ def test_taxonomy_coverage_classifies_attachment_metadata_specific_risks() -> No
         "odoo-attachment-tainted-res-model-write": "attachment_tainted_res_model_write",
         "odoo-attachment-tainted-res-id-write": "attachment_tainted_res_id_write",
         "odoo-attachment-tainted-access-token-write": "attachment_tainted_access_token_write",
+        "odoo-attachment-tainted-url": "attachment_tainted_url",
         "odoo-attachment-tainted-lookup": "attachment_tainted_lookup",
     }
     assert any("CWE-345" in entry["cwe"] for entry in coverage["mapped_entries"])
