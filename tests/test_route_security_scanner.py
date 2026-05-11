@@ -269,6 +269,40 @@ class Api(http.Controller):
     assert any(f.route == "/public/profile" for f in findings)
 
 
+def test_flags_updated_static_unpack_public_route_options(tmp_path: Path) -> None:
+    """Updated route options should preserve route posture checks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "cors.py").write_text(
+        """
+from odoo import http
+
+PROFILE_OPTIONS = {
+    'route': '/internal/profile',
+    'auth': 'user',
+}
+PROFILE_OPTIONS.update({
+    'route': '/public/profile',
+    'auth': 'none',
+    'cors': '*',
+})
+
+class Api(http.Controller):
+    @http.route(**PROFILE_OPTIONS)
+    def profile(self):
+        return '{}'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_route_security(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-route-cors-wildcard" in rule_ids
+    assert "odoo-route-public-all-methods" in rule_ids
+    assert any(f.route == "/public/profile" for f in findings)
+
+
 def test_flags_imported_route_decorator_options(tmp_path: Path) -> None:
     """Controllers may import route directly instead of using http.route."""
     controllers = tmp_path / "module" / "controllers"

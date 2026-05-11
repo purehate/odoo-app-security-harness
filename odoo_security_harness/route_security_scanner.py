@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -432,6 +433,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
         ):
             if _is_static_literal(statement.value):
                 constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -491,6 +494,45 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
