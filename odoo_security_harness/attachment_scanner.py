@@ -52,6 +52,20 @@ SENSITIVE_RES_MODELS = {
     "sale.order",
     "stock.picking",
 }
+ATTACHMENT_VALUE_KEYS = {
+    "access_token",
+    "datas",
+    "db_datas",
+    "mimetype",
+    "name",
+    "public",
+    "raw",
+    "res_id",
+    "res_model",
+    "store_fname",
+    "type",
+    "url",
+}
 
 
 def scan_attachments(repo_path: Path) -> list[AttachmentFinding]:
@@ -148,6 +162,7 @@ class AttachmentScanner(ast.NodeVisitor):
         for target in node.targets:
             self._mark_attachment_target(target, node.value)
             self._mark_attachment_value_target(target, node.value)
+            self._mark_attachment_value_item_target(target, node.value)
             self._mark_tainted_target(target, node.value)
         self.generic_visit(node)
 
@@ -171,6 +186,7 @@ class AttachmentScanner(ast.NodeVisitor):
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
         self._mark_attachment_target(node.target, node.value)
         self._mark_attachment_value_target(node.target, node.value)
+        self._mark_attachment_value_item_target(node.target, node.value)
         self._mark_tainted_target(node.target, node.value)
         self.generic_visit(node)
 
@@ -178,6 +194,7 @@ class AttachmentScanner(ast.NodeVisitor):
         sink = _call_name(node.func)
         method = sink.rsplit(".", 1)[-1]
         constants = self._effective_constants()
+        self._mark_attachment_value_update_call(node)
         if not _attachment_model_in_expr(node.func, self.attachment_vars, constants):
             self.generic_visit(node)
             return
@@ -432,6 +449,37 @@ class AttachmentScanner(ast.NodeVisitor):
             self.attachment_value_names[target.id] = self.attachment_value_names[value.id]
         else:
             self.attachment_value_names.pop(target.id, None)
+
+    def _mark_attachment_value_item_target(self, target: ast.AST, value: ast.AST) -> None:
+        if not isinstance(target, ast.Subscript) or not isinstance(target.value, ast.Name):
+            return
+        name = target.value.id
+        values_node = self.attachment_value_names.get(name)
+        if values_node is None:
+            return
+        key = _literal_string(target.slice, self._effective_constants())
+        if not key:
+            return
+        self.attachment_value_names[name] = _dict_with_field(values_node, key, value)
+
+    def _mark_attachment_value_update_call(self, node: ast.Call) -> None:
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+            return
+        if not isinstance(node.func.value, ast.Name):
+            return
+        name = node.func.value.id
+        values_node = self.attachment_value_names.get(name)
+        if values_node is None:
+            return
+        update_node = node.args[0] if node.args else None
+        if not isinstance(update_node, ast.Dict):
+            return
+        merged = values_node
+        for key, value in zip(update_node.keys, update_node.values, strict=False):
+            literal_key = _literal_string(key, self._effective_constants()) if key is not None else ""
+            if literal_key:
+                merged = _dict_with_field(merged, literal_key, value)
+        self.attachment_value_names[name] = merged
 
     def _first_dict_arg(self, node: ast.Call) -> dict[str, ast.AST] | None:
         values_node: ast.AST | None = node.args[0] if node.args else None
@@ -702,9 +750,21 @@ def _is_elevated_attachment_expr(
 def _dict_mentions_attachment_values(node: ast.Dict) -> bool:
     return any(
         isinstance(key, ast.Constant)
-        and key.value in {"access_token", "public", "res_id", "res_model"}
+        and key.value in ATTACHMENT_VALUE_KEYS
         for key in node.keys
     )
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _dict_fields(values_node: ast.Dict) -> dict[str, ast.AST]:
