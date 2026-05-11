@@ -305,6 +305,54 @@ class Controller(odoo_http.Controller):
     assert "odoo-report-tainted-render-records" in rule_ids
 
 
+def test_imported_odoo_http_module_route_public_report_render_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http imports should preserve public report context."""
+    controller = tmp_path / "module" / "controllers" / "report.py"
+    controller.parent.mkdir(parents=True)
+    controller.write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/public/invoice', auth='public')
+    def invoice(self, **kwargs):
+        report = odoo_http.request.env.ref('account.account_invoices')
+        return report._render_qweb_pdf([int(kwargs.get('id'))])
+""",
+        encoding="utf-8",
+    )
+
+    findings = ReportPythonScanner(controller).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-report-public-render-route" in rule_ids
+    assert "odoo-report-tainted-render-records" in rule_ids
+
+
+def test_imported_odoo_module_route_public_report_render_is_reported(tmp_path: Path) -> None:
+    """Direct odoo imports should preserve public report context."""
+    controller = tmp_path / "module" / "controllers" / "report.py"
+    controller.parent.mkdir(parents=True)
+    controller.write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/public/invoice', auth='public')
+    def invoice(self, **kwargs):
+        report = od.http.request.env.ref('account.account_invoices')
+        return report._render_qweb_pdf([int(kwargs.get('id'))])
+""",
+        encoding="utf-8",
+    )
+
+    findings = ReportPythonScanner(controller).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-report-public-render-route" in rule_ids
+    assert "odoo-report-tainted-render-records" in rule_ids
+
+
 def test_non_odoo_route_decorator_report_render_is_not_public(tmp_path: Path) -> None:
     """Local route decorators should not create public report route context."""
     controller = tmp_path / "module" / "controllers" / "report.py"
@@ -546,6 +594,31 @@ class Controller(http.Controller):
     def invoice(self):
         params = req.get_http_params()
         report = req.env.ref('account.account_invoices')
+        return report._render_qweb_pdf([int(params.get('id'))])
+""",
+        encoding="utf-8",
+    )
+
+    findings = ReportPythonScanner(controller).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-report-public-render-route" in rule_ids
+    assert "odoo-report-tainted-render-records" in rule_ids
+
+
+def test_imported_odoo_http_request_public_report_render_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http request access should still taint report rendering inputs."""
+    controller = tmp_path / "module" / "controllers" / "report.py"
+    controller.parent.mkdir(parents=True)
+    controller.write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/public/invoice', auth='public')
+    def invoice(self):
+        params = odoo_http.request.get_http_params()
+        report = odoo_http.request.env.ref('account.account_invoices')
         return report._render_qweb_pdf([int(params.get('id'))])
 """,
         encoding="utf-8",
