@@ -193,6 +193,32 @@ class AccountConfig(models.Model):
     assert any(finding.model == "x.account.config" for finding in field_findings)
 
 
+def test_nested_static_unpack_company_dependent_field_options_are_reported(tmp_path: Path) -> None:
+    """Nested static field options should not hide company-dependent property fields."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "account.py").write_text(
+        """
+from odoo import fields, models
+
+BASE_OPTIONS = {'company_dependent': True}
+FIELD_OPTIONS = {**BASE_OPTIONS}
+
+class AccountConfig(models.Model):
+    _name = 'x.account.config'
+    property_journal_id = fields.Many2one('account.journal', **FIELD_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    field_findings = [finding for finding in findings if finding.field == "property_journal_id"]
+    rule_ids = {finding.rule_id for finding in field_findings}
+
+    assert "odoo-property-field-no-company-field" in rule_ids
+    assert "odoo-property-sensitive-field-no-groups" in rule_ids
+
+
 def test_flags_global_ir_property_record(tmp_path: Path) -> None:
     """Global property records can leak defaults across companies."""
     data = tmp_path / "module" / "data"

@@ -247,7 +247,7 @@ class PropertyFieldScanner(ast.NodeVisitor):
             return
 
         model = _extract_model_name(node, constants)
-        fields = _extract_fields(node)
+        fields = _extract_fields(node, constants)
         field_names = {field.name for field in fields}
         for field in fields:
             if not _kw_is_true(field, "company_dependent", constants):
@@ -583,16 +583,17 @@ class RouteContext:
     auth: str = "user"
 
 
-def _extract_fields(node: ast.ClassDef) -> list[FieldDef]:
+def _extract_fields(node: ast.ClassDef, constants: dict[str, ast.AST] | None = None) -> list[FieldDef]:
+    constants = constants or {}
     fields: list[FieldDef] = []
     for item in node.body:
-        field = _field_def_from_assignment(item)
+        field = _field_def_from_assignment(item, constants)
         if field is not None:
             fields.append(field)
     return fields
 
 
-def _field_def_from_assignment(node: ast.stmt) -> FieldDef | None:
+def _field_def_from_assignment(node: ast.stmt, constants: dict[str, ast.AST]) -> FieldDef | None:
     if isinstance(node, ast.Assign):
         if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
             return None
@@ -616,8 +617,34 @@ def _field_def_from_assignment(node: ast.stmt) -> FieldDef | None:
         name=target.id,
         field_type=field_type,
         line=node.lineno,
-        keywords={kw.arg: kw.value for kw in call.keywords if kw.arg},
+        keywords=_call_keywords(call, constants),
     )
+
+
+def _call_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> dict[str, ast.AST]:
+    keywords: dict[str, ast.AST] = {}
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            keywords[keyword.arg] = keyword.value
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Dict):
+            keywords.update(_dict_keywords(value, constants))
+    return keywords
+
+
+def _dict_keywords(node: ast.Dict, constants: dict[str, ast.AST]) -> dict[str, ast.AST]:
+    keywords: dict[str, ast.AST] = {}
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            resolved_value = _resolve_constant(value, constants)
+            if isinstance(resolved_value, ast.Dict):
+                keywords.update(_dict_keywords(resolved_value, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            keywords[resolved_key.value] = value
+    return keywords
 
 
 def _field_call_type(node: ast.AST) -> str:
