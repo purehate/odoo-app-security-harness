@@ -457,6 +457,45 @@ class Window(http.Controller):
     )
 
 
+def test_updated_static_route_options_tainted_domain_is_critical(tmp_path: Path) -> None:
+    """Updated **route options should preserve public action-window severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "window.py").write_text(
+        """
+from odoo import http
+
+ROUTE_OPTIONS = {
+    'route': '/window/internal',
+    'auth': 'user',
+}
+ROUTE_OPTIONS.update({
+    'route': '/window/orders',
+    'auth': 'none',
+})
+
+class Window(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def orders(self, **kwargs):
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'sale.order',
+            'domain': kwargs.get('domain'),
+        }
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_windows(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-act-window-tainted-domain"
+        and f.severity == "critical"
+        and f.route == "/window/orders"
+        for f in findings
+    )
+
+
 def test_flags_public_tainted_domain_and_context_from_unpacking(tmp_path: Path) -> None:
     """Unpacked request data should remain tainted in action window fields."""
     controllers = tmp_path / "module" / "controllers"

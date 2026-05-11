@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _record_fields, _should_skip
 
 
@@ -285,7 +286,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window model uses request-derived data",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "ir.actions.act_window res_model is request-derived; restrict actions to explicit models to avoid exposing unintended records or views",
+                "ir.actions.act_window res_model is request-derived; restrict actions to explicit models to "
+                "avoid exposing unintended records or views",
                 model,
                 route,
                 "python-dict",
@@ -298,7 +300,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window domain uses request-derived data",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "ir.actions.act_window domain is request-derived; validate allowed fields/operators and prevent cross-record discovery",
+                "ir.actions.act_window domain is request-derived; validate allowed fields/operators and "
+                "prevent cross-record discovery",
                 model,
                 route,
                 "python-dict",
@@ -311,7 +314,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window context uses request-derived data",
                 "high",
                 node.lineno,
-                "ir.actions.act_window context is request-derived; prevent forged defaults, company scope, active_test, and framework flags",
+                "ir.actions.act_window context is request-derived; prevent forged defaults, company scope, "
+                "active_test, and framework flags",
                 model,
                 route,
                 "python-dict",
@@ -328,7 +332,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Sensitive action window uses broad domain",
                 "medium",
                 node.lineno,
-                f"Python action window opens sensitive model '{model}' with broad/no domain and no groups; verify caller authorization and record rules",
+                f"Python action window opens sensitive model '{model}' with broad/no domain and no groups; "
+                "verify caller authorization and record rules",
                 model,
                 route,
                 "python-dict",
@@ -357,7 +362,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window seeds privilege-bearing default",
                 "high",
                 node.lineno,
-                f"Action window context sets {flag}=...; verify create flows cannot assign users, groups, companies, share flags, or active state unexpectedly",
+                f"Action window context sets {flag}=...; verify create flows cannot assign users, groups, "
+                "companies, share flags, or active state unexpectedly",
                 model,
                 route,
                 "python-dict",
@@ -370,7 +376,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window disables active_test",
                 "low",
                 node.lineno,
-                "Action window context sets active_test=False; archived/inactive records may become visible in this flow",
+                "Action window context sets active_test=False; archived/inactive records may become visible "
+                "in this flow",
                 model,
                 route,
                 "python-dict",
@@ -383,7 +390,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window changes company scope",
                 "medium",
                 node.lineno,
-                f"Action window context sets {flag}=...; verify users cannot see, create, or edit records under an unintended company scope",
+                f"Action window context sets {flag}=...; verify users cannot see, create, or edit records "
+                "under an unintended company scope",
                 model,
                 route,
                 "python-dict",
@@ -413,7 +421,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Sensitive action window uses broad domain",
                 "medium",
                 line,
-                f"XML action window '{record_id}' opens sensitive model '{model}' with broad/no domain and no groups; verify menus and bindings are not broadly reachable",
+                f"XML action window '{record_id}' opens sensitive model '{model}' with broad/no domain and "
+                "no groups; verify menus and bindings are not broadly reachable",
                 model,
                 route,
                 "ir.actions.act_window",
@@ -426,7 +435,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window seeds privilege-bearing default",
                 "high",
                 line,
-                f"XML action window '{record_id}' context sets {flag}=...; verify create flows cannot assign users, groups, companies, share flags, or active state unexpectedly",
+                f"XML action window '{record_id}' context sets {flag}=...; verify create flows cannot assign "
+                "users, groups, companies, share flags, or active state unexpectedly",
                 model,
                 route,
                 "ir.actions.act_window",
@@ -439,7 +449,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window disables active_test",
                 "low",
                 line,
-                f"XML action window '{record_id}' context sets active_test=False; archived/inactive records may become visible in this flow",
+                f"XML action window '{record_id}' context sets active_test=False; archived/inactive records "
+                "may become visible in this flow",
                 model,
                 route,
                 "ir.actions.act_window",
@@ -452,7 +463,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window changes company scope",
                 "medium",
                 line,
-                f"XML action window '{record_id}' context sets {flag}=...; verify users cannot see, create, or edit records under an unintended company scope",
+                f"XML action window '{record_id}' context sets {flag}=...; verify users cannot see, create, "
+                "or edit records under an unintended company scope",
                 model,
                 route,
                 "ir.actions.act_window",
@@ -496,7 +508,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window model uses request-derived data",
                 "critical" if route.auth in {"public", "none"} else "high",
                 line,
-                "ir.actions.act_window res_model is assigned from request-derived data; restrict actions to explicit models to avoid exposing unintended records or views",
+                "ir.actions.act_window res_model is assigned from request-derived data; restrict actions to "
+                "explicit models to avoid exposing unintended records or views",
                 model,
                 route,
                 sink,
@@ -508,7 +521,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window domain uses request-derived data",
                 "critical" if route.auth in {"public", "none"} else "high",
                 line,
-                "ir.actions.act_window domain is assigned from request-derived data; validate allowed fields/operators and prevent cross-record discovery",
+                "ir.actions.act_window domain is assigned from request-derived data; validate allowed "
+                "fields/operators and prevent cross-record discovery",
                 model,
                 route,
                 sink,
@@ -520,7 +534,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "Action window context uses request-derived data",
                 "high",
                 line,
-                "ir.actions.act_window context is assigned from request-derived data; prevent forged defaults, company scope, active_test, and framework flags",
+                "ir.actions.act_window context is assigned from request-derived data; prevent forged "
+                "defaults, company scope, active_test, and framework flags",
                 model,
                 route,
                 sink,
@@ -550,7 +565,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                     "Action window seeds privilege-bearing default",
                     "high",
                     line,
-                    f"Action window context sets {flag}=...; verify create flows cannot assign users, groups, companies, share flags, or active state unexpectedly",
+                    f"Action window context sets {flag}=...; verify create flows cannot assign users, "
+                    "groups, companies, share flags, or active state unexpectedly",
                     model,
                     route,
                     sink,
@@ -562,7 +578,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                     "Action window disables active_test",
                     "low",
                     line,
-                    "Action window context sets active_test=False; archived/inactive records may become visible in this flow",
+                    "Action window context sets active_test=False; archived/inactive records may become "
+                    "visible in this flow",
                     model,
                     route,
                     sink,
@@ -574,7 +591,8 @@ class ActionWindowScanner(ast.NodeVisitor):
                     "Action window changes company scope",
                     "medium",
                     line,
-                    f"Action window context sets {flag}=...; verify users cannot see, create, or edit records under an unintended company scope",
+                    f"Action window context sets {flag}=...; verify users cannot see, create, or edit "
+                    "records under an unintended company scope",
                     model,
                     route,
                     sink,
@@ -848,6 +866,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -954,6 +974,45 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
