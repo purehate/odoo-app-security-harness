@@ -29,6 +29,39 @@ def test_flags_public_alias_to_sensitive_model(tmp_path: Path) -> None:
     assert "odoo-mail-alias-broad-contact-policy" in rule_ids
 
 
+def test_flags_public_alias_to_sensitive_model_in_csv(tmp_path: Path) -> None:
+    """Public mail.alias CSV rows should get the same review coverage as XML."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "mail.alias.csv").write_text(
+        "id,alias_name,alias_model_id/id,alias_contact\nalias_sale,orders,sale.model_sale_order,everyone\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_aliases(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-alias-public-sensitive-model" in rule_ids
+    assert "odoo-mail-alias-broad-contact-policy" in rule_ids
+
+
+def test_flags_csv_privileged_alias_owner_and_defaults(tmp_path: Path) -> None:
+    """CSV aliases should expose privileged owners and default assignments."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "mail_alias.csv").write_text(
+        "id,alias_name,alias_model,alias_contact,alias_user_id/id,alias_defaults\n"
+        "alias_admin,admin-create,project.task,followers,base.user_admin,\"{'user_id': 1}\"\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_aliases(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-alias-privileged-owner" in rule_ids
+    assert "odoo-mail-alias-elevated-defaults" in rule_ids
+
+
 def test_sensitive_alias_model_external_ids_are_normalized(tmp_path: Path) -> None:
     """Core model external IDs should not hide public aliases to sensitive models."""
     data = tmp_path / "module" / "data"

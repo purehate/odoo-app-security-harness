@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -85,12 +87,16 @@ PRIVILEGED_ALIAS_USER_HINTS = {
 
 
 def scan_mail_aliases(repo_path: Path) -> list[MailAliasFinding]:
-    """Scan XML data files for risky mail.alias records."""
+    """Scan XML/CSV data files for risky mail.alias records."""
     findings: list[MailAliasFinding] = []
-    for path in repo_path.rglob("*.xml"):
-        if _should_skip(path):
+    for path in repo_path.rglob("*"):
+        if not path.is_file() or _should_skip(path):
             continue
-        findings.extend(MailAliasScanner(path).scan_file())
+        scanner = MailAliasScanner(path)
+        if path.suffix == ".xml":
+            findings.extend(scanner.scan_file())
+        elif path.suffix == ".csv":
+            findings.extend(scanner.scan_csv_file())
     return findings
 
 
@@ -117,10 +123,25 @@ class MailAliasScanner:
                 self._scan_alias(record)
         return self.findings
 
+    def scan_csv_file(self) -> list[MailAliasFinding]:
+        """Scan mail.alias CSV data records."""
+        if _csv_model_name(self.path) != "mail.alias":
+            return []
+        try:
+            self.content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+        for fields, line_number in _csv_dict_rows(self.content):
+            self._scan_alias_fields(fields, fields.get("id", ""), line_number)
+        return self.findings
+
     def _scan_alias(self, record: ElementTree.Element) -> None:
         fields = _record_fields(record)
         alias_id = record.get("id", "")
         line = self._line_for_record(record)
+        self._scan_alias_fields(fields, alias_id, line)
+
+    def _scan_alias_fields(self, fields: dict[str, str], alias_id: str, line: int) -> None:
         target_model = _model_value(fields.get("alias_model_id", "") or fields.get("alias_model", ""))
         alias_contact = fields.get("alias_contact", "").strip("'\"").lower()
         defaults = fields.get("alias_defaults", "")
@@ -255,6 +276,36 @@ def _contains_elevated_defaults(value: str) -> bool:
 def _is_privileged_alias_user(value: str) -> bool:
     lowered = value.strip().strip("'\"").lower()
     return lowered in PRIVILEGED_ALIAS_USER_HINTS or lowered.endswith(".user_admin") or lowered.endswith(".user_root")
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    dotted = stem.replace("_", ".")
+    return dotted if dotted == "mail.alias" else stem
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                normalized[name] = str(value or "").strip()
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], str(value or "").strip())
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _line_for(content: str, needle: str) -> int:
