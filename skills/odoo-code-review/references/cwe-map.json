@@ -2239,6 +2239,12 @@
       "capec": ["CAPEC-118"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "file_upload_active_content_attachment": {
+      "label": "Uploaded content is stored as browser-active attachment content",
+      "cwe": ["CWE-79", "CWE-434", "CWE-20"],
+      "capec": ["CAPEC-63", "CAPEC-592"],
+      "owasp": "A03:2021 Injection"
+    },
     "file_upload_archive_extraction": {
       "label": "Uploaded or untrusted archive extraction can write outside the intended directory",
       "cwe": ["CWE-22", "CWE-73", "CWE-434"],

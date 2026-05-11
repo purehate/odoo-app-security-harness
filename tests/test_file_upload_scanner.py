@@ -420,6 +420,59 @@ def upload(self, **kwargs):
     assert any(f.rule_id == "odoo-file-upload-public-attachment-create" for f in findings)
 
 
+def test_active_content_upload_attachment_is_reported(tmp_path: Path) -> None:
+    """Uploaded SVG/HTML-like attachments can execute in browsers if served inline."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def upload(self, **kwargs):
+    vals = {
+        'name': kwargs.get('filename'),
+        'datas': kwargs.get('payload'),
+        'mimetype': 'image/svg+xml',
+    }
+    return self.env['ir.attachment'].create(vals)
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-file-upload-active-content-attachment"
+        and f.severity == "medium"
+        and "image/svg+xml" in f.message
+        for f in findings
+    )
+
+
+def test_public_active_content_attachment_is_high_severity(tmp_path: Path) -> None:
+    """Public browser-active attachments deserve stronger review posture."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def upload(self, **kwargs):
+    return self.env['ir.attachment'].create({
+        'name': 'preview.html',
+        'datas': kwargs.get('payload'),
+        'mimetype': 'text/html',
+        'public': True,
+    })
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-file-upload-active-content-attachment"
+        and f.severity == "high"
+        and "text/html" in f.message
+        and "preview.html" in f.message
+        for f in findings
+    )
+
+
 def test_public_attachment_create_constant_is_reported(tmp_path: Path) -> None:
     """public=True constants should not hide world-readable attachment creation."""
     py = tmp_path / "controller.py"

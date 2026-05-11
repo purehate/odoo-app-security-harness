@@ -3523,6 +3523,12 @@ def test_taxonomy_coverage_classifies_file_upload_specific_risks() -> None:
             },
             {
                 "source": "file-uploads",
+                "rule_id": "odoo-file-upload-active-content-attachment",
+                "title": "Uploaded attachment uses browser-active content type",
+                "message": "ir.attachment.create stores uploaded/browser-active content (mimetype=image/svg+xml); verify MIME allowlists, sanitization, download disposition, and public access",
+            },
+            {
+                "source": "file-uploads",
                 "rule_id": "odoo-file-upload-archive-extraction",
                 "title": "Archive extraction requires traversal review",
                 "message": "Archive extract/extractall can write files outside the intended directory through crafted member names; validate every member path before extraction",
@@ -3542,13 +3548,14 @@ def test_taxonomy_coverage_classifies_file_upload_specific_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 7
+    assert coverage["mapped_rules"] == 8
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-file-upload-tainted-path-write": "file_upload_tainted_path_write",
         "odoo-file-upload-base64-decode": "file_upload_base64_decode",
         "odoo-file-upload-attachment-from-request": "file_upload_attachment_from_request",
         "odoo-file-upload-public-attachment-create": "file_upload_public_attachment_create",
+        "odoo-file-upload-active-content-attachment": "file_upload_active_content_attachment",
         "odoo-file-upload-archive-extraction": "file_upload_archive_extraction",
         "odoo-file-upload-secure-filename-only": "file_upload_secure_filename_only",
         "odoo-file-upload-unsafe-tempfile": "file_upload_unsafe_tempfile",

@@ -39,6 +39,14 @@ ATTACHMENT_CREATE_VALUE_KEYS = {
     "res_id",
     "res_model",
 }
+ACTIVE_ATTACHMENT_MIMETYPES = {
+    "application/javascript",
+    "application/xhtml+xml",
+    "image/svg+xml",
+    "text/html",
+    "text/javascript",
+}
+ACTIVE_ATTACHMENT_EXTENSIONS = (".htm", ".html", ".js", ".mjs", ".svg", ".xhtml")
 
 
 def scan_file_uploads(repo_path: Path) -> list[FileUploadFinding]:
@@ -296,7 +304,8 @@ class FileUploadScanner(ast.NodeVisitor):
             for key, value in zip(values.keys, values.values)
             if isinstance(key, ast.Constant) and isinstance(key.value, str)
         }
-        if "datas" in dict_values and self._expr_is_tainted(dict_values["datas"]):
+        attachment_from_request = "datas" in dict_values and self._expr_is_tainted(dict_values["datas"])
+        if attachment_from_request:
             self._add(
                 "odoo-file-upload-attachment-from-request",
                 "Attachment is created from request-derived upload data",
@@ -306,13 +315,27 @@ class FileUploadScanner(ast.NodeVisitor):
                 "ir.attachment.create",
             )
         public_value = dict_values.get("public")
-        if public_value and _is_true_constant(public_value, self._effective_constants()):
+        public_attachment = bool(public_value and _is_true_constant(public_value, self._effective_constants()))
+        if public_attachment:
             self._add(
                 "odoo-file-upload-public-attachment-create",
                 "Uploaded attachment is created public",
                 "high",
                 node.lineno,
                 "ir.attachment.create sets public=True; verify uploaded content is intentionally world-readable",
+                "ir.attachment.create",
+            )
+        active_content = _active_attachment_content(dict_values, self._effective_constants())
+        mimetype_value = dict_values.get("mimetype")
+        mimetype_is_tainted = mimetype_value is not None and self._expr_is_tainted(mimetype_value)
+        if active_content and (attachment_from_request or public_attachment or mimetype_is_tainted):
+            severity = "high" if public_attachment or mimetype_is_tainted else "medium"
+            self._add(
+                "odoo-file-upload-active-content-attachment",
+                "Uploaded attachment uses browser-active content type",
+                severity,
+                node.lineno,
+                f"ir.attachment.create stores uploaded/browser-active content ({active_content}); verify MIME allowlists, sanitization, download disposition, and public access",
                 "ir.attachment.create",
             )
 
@@ -1042,11 +1065,25 @@ def _expanded_dict_keywords(node: ast.AST, constants: dict[str, ast.AST] | None 
     return keywords
 
 
-def _literal_string(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:
+def _literal_string(node: ast.AST | None, constants: dict[str, ast.AST] | None = None) -> str:
+    if node is None:
+        return ""
     value = _resolve_constant(node, constants)
     if isinstance(value, ast.Constant) and isinstance(value.value, str):
         return value.value
     return ""
+
+
+def _active_attachment_content(values: dict[str, ast.AST], constants: dict[str, ast.AST] | None = None) -> str:
+    constants = constants or {}
+    evidence: list[str] = []
+    mimetype = _literal_string(values.get("mimetype"), constants).strip().lower()
+    if mimetype in ACTIVE_ATTACHMENT_MIMETYPES:
+        evidence.append(f"mimetype={mimetype}")
+    name = _literal_string(values.get("name"), constants).strip().lower()
+    if name.endswith(ACTIVE_ATTACHMENT_EXTENSIONS):
+        evidence.append(f"name={name}")
+    return ", ".join(evidence)
 
 
 def _is_true_constant(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:

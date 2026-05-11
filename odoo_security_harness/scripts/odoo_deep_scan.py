@@ -5214,6 +5214,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "file_upload_active_content_attachment",
+        (
+            "odoo-file-upload-active-content-attachment",
+            "uploaded attachment uses browser-active content type",
+            "ir.attachment.create stores uploaded/browser-active content",
+            "mime allowlists, sanitization, download disposition, and public access",
+        ),
+    ),
+    (
         "file_upload_archive_extraction",
         (
             "odoo-file-upload-archive-extraction",
