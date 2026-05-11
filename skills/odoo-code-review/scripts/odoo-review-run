@@ -645,8 +645,17 @@ class _RouteExtractor(ast.NodeVisitor):
         self.module_constants = module_constants
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.http_module_names = {"http"}
+        self.odoo_module_names = {"odoo"}
         self.route_decorator_names: set[str] = set()
         self.routes: list[dict] = []
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
+        self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         if node.module == "odoo":
@@ -696,14 +705,20 @@ class _RouteExtractor(ast.NodeVisitor):
     def _is_http_route(self, node: ast.AST) -> bool:
         target = node.func if isinstance(node, ast.Call) else node
         if isinstance(target, ast.Attribute):
-            return (
-                target.attr == "route"
-                and isinstance(target.value, ast.Name)
-                and target.value.id in self.http_module_names
-            )
+            return target.attr == "route" and self._is_odoo_http_expr(target.value)
         if isinstance(target, ast.Name):
             return target.id in self.route_decorator_names
         return False
+
+    def _is_odoo_http_expr(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.http_module_names
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "http"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in self.odoo_module_names
+        )
 
     def _effective_constants(self) -> dict[str, ast.AST]:
         if not self.class_constants_stack:
