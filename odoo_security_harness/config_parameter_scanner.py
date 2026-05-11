@@ -192,15 +192,16 @@ class ConfigParameterScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _scan_get_param(self, node: ast.Call, sink: str) -> None:
+        constants = self._effective_constants()
         key_node = (
-            _resolve_constant(node.args[0], self.constants)
+            _resolve_constant(node.args[0], constants)
             if node.args
-            else _resolve_optional_constant(_keyword_value(node, "key"), self.constants)
+            else _resolve_optional_constant(_keyword_value(node, "key"), constants)
         )
         default_node = (
-            _resolve_constant(node.args[1], self.constants)
+            _resolve_constant(node.args[1], constants)
             if len(node.args) >= 2
-            else _resolve_optional_constant(_keyword_value(node, "default"), self.constants)
+            else _resolve_optional_constant(_keyword_value(node, "default"), constants)
         )
         key = _literal_string(key_node)
         default = _literal_string(default_node)
@@ -230,7 +231,7 @@ class ConfigParameterScanner(ast.NodeVisitor):
         if _is_elevated_config_parameter_expr(
             node.func,
             self.sudo_config_parameter_names,
-            self.constants,
+            constants,
         ) and _is_sensitive_key(key):
             self._add(
                 "odoo-config-param-sudo-sensitive-read",
@@ -254,15 +255,16 @@ class ConfigParameterScanner(ast.NodeVisitor):
             )
 
     def _scan_set_param(self, node: ast.Call, sink: str) -> None:
+        constants = self._effective_constants()
         key_node = (
-            _resolve_constant(node.args[0], self.constants)
+            _resolve_constant(node.args[0], constants)
             if node.args
-            else _resolve_optional_constant(_keyword_value(node, "key"), self.constants)
+            else _resolve_optional_constant(_keyword_value(node, "key"), constants)
         )
         value_node = (
-            _resolve_constant(node.args[1], self.constants)
+            _resolve_constant(node.args[1], constants)
             if len(node.args) >= 2
-            else _resolve_optional_constant(_keyword_value(node, "value"), self.constants)
+            else _resolve_optional_constant(_keyword_value(node, "value"), constants)
         )
         key = _literal_string(key_node)
         route = self._current_route()
@@ -310,7 +312,7 @@ class ConfigParameterScanner(ast.NodeVisitor):
                     sink,
                 )
 
-        if _is_elevated_config_parameter_expr(node.func, self.sudo_config_parameter_names, self.constants):
+        if _is_elevated_config_parameter_expr(node.func, self.sudo_config_parameter_names, constants):
             self._add(
                 "odoo-config-param-sudo-write",
                 "Config parameter is written with elevated environment",
@@ -443,9 +445,10 @@ class ConfigParameterScanner(ast.NodeVisitor):
         config_parameter_names: set[str],
         sudo_config_parameter_names: set[str],
     ) -> None:
-        is_config_parameter = _is_config_parameter_expr(value, config_parameter_names, self.constants)
+        constants = self._effective_constants()
+        is_config_parameter = _is_config_parameter_expr(value, config_parameter_names, constants)
         is_sudo_config_parameter = is_config_parameter and _is_elevated_config_parameter_expr(
-            value, sudo_config_parameter_names, self.constants
+            value, sudo_config_parameter_names, constants
         )
         if isinstance(target, ast.Name):
             if is_config_parameter:

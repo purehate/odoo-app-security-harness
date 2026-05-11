@@ -1026,6 +1026,65 @@ class Config(http.Controller):
     )
 
 
+def test_class_constant_config_key_default_and_model_are_resolved(tmp_path: Path) -> None:
+    """Class-scoped constants should label config reads and defaults."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import models
+
+class Settings(models.TransientModel):
+    _inherit = 'res.config.settings'
+    CONFIG_MODEL = 'ir.config_parameter'
+    SECRET_KEY = 'payment.provider.api_key'
+    FALLBACK = 'sk_live_hardcoded_123456'
+
+    def get_values(self):
+        Config = self.env[CONFIG_MODEL].sudo()
+        return Config.get_param(SECRET_KEY, FALLBACK)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-config-param-sudo-sensitive-read" in rule_ids
+    assert "odoo-config-param-sensitive-default" in rule_ids
+    assert any(f.key == "payment.provider.api_key" for f in findings)
+
+
+def test_class_constant_config_write_key_and_value_are_resolved(tmp_path: Path) -> None:
+    """Class-scoped constants should label sensitive config writes."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import SUPERUSER_ID, models
+
+class Settings(models.TransientModel):
+    _inherit = 'res.config.settings'
+    ROOT = SUPERUSER_ID
+    CONFIG_MODEL = 'ir.config_parameter'
+    SECRET_KEY = 'jwt.signing_key'
+    SECRET_VALUE = 'dev-secret-token'
+
+    def set_values(self):
+        Config = self.env[CONFIG_MODEL].with_user(ROOT)
+        Config.set_param(SECRET_KEY, SECRET_VALUE)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-config-param-sudo-write" in rule_ids
+    assert "odoo-config-param-hardcoded-sensitive-write" in rule_ids
+    assert any(f.key == "jwt.signing_key" for f in findings)
+
+
 def test_safe_internal_config_read_is_ignored(tmp_path: Path) -> None:
     """Non-sensitive internal config reads should not create noise."""
     models = tmp_path / "module" / "models"
