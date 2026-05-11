@@ -147,6 +147,64 @@ class Controller(odoo_http.Controller):
     assert "odoo-mail-tainted-recipients" in rule_ids
 
 
+def test_imported_odoo_http_module_public_message_post_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http imports should not hide routes or request taint."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/ticket/comment', auth='public')
+    def comment(self):
+        params = odoo_http.request.get_http_params()
+        ticket = odoo_http.request.env['helpdesk.ticket'].sudo().browse(params.get('id'))
+        return ticket.message_post(
+            body=params.get('body'),
+            partner_ids=params.get('partner_ids'),
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-chatter-public-route-send" in rule_ids
+    assert "odoo-mail-tainted-body" in rule_ids
+    assert "odoo-mail-tainted-recipients" in rule_ids
+
+
+def test_imported_odoo_module_public_message_post_is_reported(tmp_path: Path) -> None:
+    """Direct odoo module imports should not hide routes or request taint."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/ticket/comment', auth='public')
+    def comment(self):
+        params = od.http.request.get_http_params()
+        ticket = od.http.request.env['helpdesk.ticket'].sudo().browse(params.get('id'))
+        return ticket.message_post(
+            body=params.get('body'),
+            partner_ids=params.get('partner_ids'),
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_chatter(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-chatter-public-route-send" in rule_ids
+    assert "odoo-mail-tainted-body" in rule_ids
+    assert "odoo-mail-tainted-recipients" in rule_ids
+
+
 def test_non_odoo_route_decorator_public_message_post_is_ignored(tmp_path: Path) -> None:
     """Local route-like decorators should not create Odoo route context."""
     controllers = tmp_path / "module" / "controllers"
