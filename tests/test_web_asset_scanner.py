@@ -1418,6 +1418,56 @@ def test_owl_inline_template_target_blank_with_noopener_ignored(tmp_path: Path) 
     assert not any(f.rule_id == "odoo-web-owl-qweb-target-blank-no-noopener" for f in findings)
 
 
+def test_owl_inline_template_iframe_missing_sandbox_detected(tmp_path: Path) -> None:
+    """OWL inline iframes should declare sandbox restrictions."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<iframe src=\"https://player.example.com/embed/1\"></iframe>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-iframe-missing-sandbox"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_iframe_with_sandbox_ignored(tmp_path: Path) -> None:
+    """A visible OWL iframe sandbox suppresses the missing-sandbox lead."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<iframe src=\"https://player.example.com/embed/1\" sandbox=\"allow-scripts\"></iframe>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-iframe-missing-sandbox" for f in findings)
+
+
+def test_owl_inline_template_iframe_sandbox_escape_detected(tmp_path: Path) -> None:
+    """OWL iframe sandbox should not combine scripts with same-origin."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<iframe src=\"/my/widget\" sandbox=\"allow-forms allow-scripts allow-same-origin\"></iframe>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-iframe-sandbox-escape"
+        and f.sink == "owl-template"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_iframe_safe_sandbox_tokens_ignored(tmp_path: Path) -> None:
+    """OWL iframe sandbox tokens without the escape combination stay quiet."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<iframe src=\"/my/widget\" sandbox=\"allow-forms allow-popups\"></iframe>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-iframe-sandbox-escape" for f in findings)
+
+
 def test_owl_inline_template_escaped_output_ignored(tmp_path: Path) -> None:
     """Escaped OWL inline template output should not create raw-output leads."""
     path = tmp_path / "widget.js"

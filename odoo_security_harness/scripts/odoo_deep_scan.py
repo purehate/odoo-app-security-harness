@@ -3324,8 +3324,10 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "frontend_iframe_sandbox_missing",
         (
+            "web-owl-qweb-iframe-missing-sandbox",
             "qweb-iframe-missing-sandbox",
             "web-iframe-missing-sandbox",
+            "owl inline template iframe lacks sandbox restrictions",
             "iframe lacks sandbox restrictions",
             "dom-created iframe lacks sandbox restrictions",
             "iframe without a sandbox attribute",
@@ -3337,8 +3339,10 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "frontend_iframe_sandbox_escape",
         (
+            "web-owl-qweb-iframe-sandbox-escape",
             "qweb-iframe-sandbox-escape",
             "web-iframe-sandbox-escape",
+            "owl inline template iframe sandbox allows script same-origin escape",
             "iframe sandbox allows script same-origin escape",
             "dom iframe sandbox allows script same-origin escape",
             "allow-scripts with allow-same-origin",

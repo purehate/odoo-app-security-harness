@@ -316,6 +316,7 @@ OWL_TEMPLATE_T_RAW_RE = re.compile(r"\bt-raw\s*=", re.IGNORECASE)
 OWL_TEMPLATE_RAW_OUTPUT_MODE_RE = re.compile(r"\bt-out-mode\s*=\s*['\"]raw['\"]", re.IGNORECASE)
 OWL_TEMPLATE_DANGEROUS_TAG_RE = re.compile(r"<\s*(?:script|iframe|object|embed|form)\b", re.IGNORECASE)
 OWL_TEMPLATE_POST_FORM_RE = re.compile(r"<form\b(?P<attrs>[^>]*)>(?P<body>.*?)</form>", re.IGNORECASE | re.DOTALL)
+OWL_TEMPLATE_IFRAME_RE = re.compile(r"<iframe\b(?P<attrs>[^>]*)>", re.IGNORECASE | re.DOTALL)
 OWL_TEMPLATE_LINK_RE = re.compile(r"<a\b(?P<attrs>[^>]*)>", re.IGNORECASE | re.DOTALL)
 OWL_TEMPLATE_DYNAMIC_EVENT_RE = re.compile(r"\b(?:on\w+|t-attf?-on\w+)\s*=", re.IGNORECASE)
 OWL_TEMPLATE_SRCDOC_RE = re.compile(
@@ -1167,6 +1168,24 @@ class WebAssetScanner:
                     "OWL xml template link uses target='_blank' without rel='noopener' or rel='noreferrer'; add opener isolation for external links",
                     "owl-template",
                 )
+            if _owl_template_has_iframe_without_sandbox(body):
+                self._add(
+                    "odoo-web-owl-qweb-iframe-missing-sandbox",
+                    "OWL inline template iframe lacks sandbox restrictions",
+                    "medium",
+                    line,
+                    "OWL xml template embeds an iframe without a sandbox attribute; constrain embedded content privileges unless the frame is fully trusted",
+                    "owl-template",
+                )
+            if _owl_template_has_iframe_sandbox_escape(body):
+                self._add(
+                    "odoo-web-owl-qweb-iframe-sandbox-escape",
+                    "OWL inline template iframe sandbox allows script same-origin escape",
+                    "high",
+                    line,
+                    "OWL xml template iframe sandbox combines allow-scripts with allow-same-origin; same-origin content can remove the sandbox or access parent-origin data",
+                    "owl-template",
+                )
             if OWL_TEMPLATE_DYNAMIC_EVENT_RE.search(body):
                 self._add(
                     "odoo-web-owl-qweb-dynamic-event-handler",
@@ -1393,6 +1412,26 @@ def _owl_template_has_target_blank_without_opener(body: str) -> bool:
             continue
         return True
     return False
+
+
+def _owl_template_has_iframe_without_sandbox(body: str) -> bool:
+    return any(_html_attr_value(match.group("attrs"), "sandbox") is None for match in OWL_TEMPLATE_IFRAME_RE.finditer(body))
+
+
+def _owl_template_has_iframe_sandbox_escape(body: str) -> bool:
+    for match in OWL_TEMPLATE_IFRAME_RE.finditer(body):
+        sandbox = _html_attr_value(match.group("attrs"), "sandbox")
+        if sandbox is None:
+            continue
+        tokens = set(sandbox.lower().split())
+        if {"allow-scripts", "allow-same-origin"}.issubset(tokens):
+            return True
+    return False
+
+
+def _html_attr_value(attrs: str, name: str) -> str | None:
+    attr_match = re.search(rf"\b{re.escape(name)}\s*=\s*['\"](?P<value>[^'\"]*)['\"]", attrs, re.IGNORECASE)
+    return attr_match.group("value") if attr_match else None
 
 
 def _looks_risky_css_text(css_text: str) -> bool:

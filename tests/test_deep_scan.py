@@ -2231,13 +2231,19 @@ def test_taxonomy_coverage_classifies_qweb_iframe_sandbox_missing() -> None:
                 "source": "qweb",
                 "title": "QWeb iframe lacks sandbox restrictions",
                 "message": "QWeb template embeds an iframe without a sandbox attribute",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-iframe-missing-sandbox",
+                "source": "web-asset",
+                "title": "OWL inline template iframe lacks sandbox restrictions",
+                "message": "OWL xml template embeds an iframe without a sandbox attribute",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_iframe_sandbox_missing"
-    assert "CWE-693" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_iframe_sandbox_missing"}
+    assert all("CWE-693" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_web_iframe_sandbox_missing() -> None:
@@ -2267,13 +2273,19 @@ def test_taxonomy_coverage_classifies_qweb_iframe_sandbox_escape() -> None:
                 "source": "qweb",
                 "title": "QWeb iframe sandbox allows script same-origin escape",
                 "message": "QWeb iframe sandbox combines allow-scripts with allow-same-origin",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-iframe-sandbox-escape",
+                "source": "web-asset",
+                "title": "OWL inline template iframe sandbox allows script same-origin escape",
+                "message": "OWL xml template iframe sandbox combines allow-scripts with allow-same-origin",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_iframe_sandbox_escape"
-    assert "CWE-1021" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_iframe_sandbox_escape"}
+    assert all("CWE-1021" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_web_iframe_sandbox_escape() -> None:
