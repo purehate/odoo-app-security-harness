@@ -1246,6 +1246,37 @@ def test_detects_insecure_http_url_attribute(tmp_path: Path) -> None:
     )
 
 
+def test_detects_url_attribute_embedded_credentials(tmp_path: Path) -> None:
+    """Browser-visible template URLs should not carry userinfo credentials."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><a href="https://api_user:secret@example.com/hook">Hook</a></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-qweb-url-embedded-credentials"
+        and f.attribute == "href"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_regex_fallback_detects_url_attribute_embedded_credentials(tmp_path: Path) -> None:
+    """Malformed templates still expose credential-bearing URL attributes."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><img src="https://cdn_user:secret@example.com/logo.png"><span></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-url-embedded-credentials" and f.attribute == "src" for f in findings)
+
+
 def test_https_url_attribute_ignored(tmp_path: Path) -> None:
     """HTTPS template URL attributes should not create mixed-content leads."""
     template = tmp_path / "template.xml"

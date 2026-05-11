@@ -3589,6 +3589,20 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "frontend_url_embedded_credentials",
+        (
+            "qweb-url-embedded-credentials",
+            "web-url-embedded-credentials",
+            "web-owl-qweb-url-embedded-credentials",
+            "frontend url embeds credentials",
+            "qweb url embeds credentials",
+            "owl inline template url embeds credentials",
+            "embeds username, password, or token material in a url",
+            "browser-visible links, assets, forms, and redirects",
+            "browser-visible requests, navigation, assets, and redirects",
+        ),
+    ),
+    (
         "frontend_reverse_tabnabbing",
         (
             "web-owl-qweb-target-blank-no-noopener",

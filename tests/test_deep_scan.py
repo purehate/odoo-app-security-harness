@@ -1382,6 +1382,36 @@ def test_taxonomy_coverage_classifies_owl_sensitive_url_exposure() -> None:
     assert "CWE-598" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_frontend_url_embedded_credentials() -> None:
+    """Frontend/QWeb credential-bearing URLs should map to credential leakage taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "rule_id": "odoo-qweb-url-embedded-credentials",
+                "source": "qweb",
+                "title": "QWeb URL embeds credentials",
+                "message": "href embeds username, password, or token material in a URL",
+            },
+            {
+                "rule_id": "odoo-web-url-embedded-credentials",
+                "source": "web-assets",
+                "title": "Frontend URL embeds credentials",
+                "message": "Frontend code embeds username, password, or token material in a URL",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-url-embedded-credentials",
+                "source": "web-assets",
+                "title": "OWL inline template URL embeds credentials",
+                "message": "OWL xml template embeds username, password, or token material in a URL attribute",
+            },
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_url_embedded_credentials"}
+    assert all("CWE-798" in entry["cwe"] for entry in coverage["mapped_entries"])
+
+
 def test_taxonomy_coverage_classifies_web_dangerous_url_scheme() -> None:
     """Executable frontend URL schemes should map to XSS/navigation taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(

@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -813,6 +814,16 @@ class WebAssetScanner:
                     "url-token",
                 )
 
+            if _has_url_embedded_credentials(line):
+                self._add(
+                    "odoo-web-url-embedded-credentials",
+                    "Frontend URL embeds credentials",
+                    "high",
+                    line_number,
+                    "Frontend code embeds username, password, or token material in a URL; keep credentials out of browser-visible requests, navigation, assets, and redirects",
+                    "url-credentials",
+                )
+
             history_match = HISTORY_STATE_RE.search(line)
             if history_match and _looks_sensitive_history_state_url(history_match.group("args")):
                 self._add(
@@ -1407,6 +1418,15 @@ class WebAssetScanner:
                     "OWL xml template contains a literal http:// URL in a link, frame, form, or media attribute; use HTTPS or same-origin assets to avoid mixed-content downgrade and interception risk",
                     "owl-template",
                 )
+            if _owl_template_has_url_embedded_credentials(body):
+                self._add(
+                    "odoo-web-owl-qweb-url-embedded-credentials",
+                    "OWL inline template URL embeds credentials",
+                    "high",
+                    line,
+                    "OWL xml template embeds username, password, or token material in a URL attribute; keep credentials out of browser-visible links, assets, forms, and redirects",
+                    "owl-template",
+                )
             if OWL_TEMPLATE_DYNAMIC_EVENT_RE.search(body):
                 self._add(
                     "odoo-web-owl-qweb-dynamic-event-handler",
@@ -1706,6 +1726,14 @@ def _owl_template_has_insecure_static_url(body: str) -> bool:
     for tag_match in OWL_TEMPLATE_ANY_TAG_RE.finditer(body):
         for attr_match in OWL_TEMPLATE_STATIC_URL_ATTR_RE.finditer(tag_match.group("attrs")):
             if _is_insecure_http_url(attr_match.group("value")):
+                return True
+    return False
+
+
+def _owl_template_has_url_embedded_credentials(body: str) -> bool:
+    for tag_match in OWL_TEMPLATE_ANY_TAG_RE.finditer(body):
+        for attr_match in OWL_TEMPLATE_STATIC_URL_ATTR_RE.finditer(tag_match.group("attrs")):
+            if _has_url_embedded_credentials(attr_match.group("value")):
                 return True
     return False
 
@@ -2165,6 +2193,14 @@ def _is_external_url(value: str) -> bool:
 
 def _is_insecure_http_url(value: str) -> bool:
     return bool(re.match(r"^http://", value.strip(), re.IGNORECASE))
+
+
+def _has_url_embedded_credentials(value: str) -> bool:
+    for match in re.finditer(r"https?://[^\s'\"<>)]+", value, re.IGNORECASE):
+        parsed = urlparse(match.group(0).rstrip(".,;"))
+        if parsed.hostname and (parsed.username is not None or parsed.password is not None):
+            return True
+    return False
 
 
 def _is_static_js_literal(value: str) -> bool:

@@ -16,6 +16,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from defusedxml import ElementTree
 
@@ -332,6 +333,7 @@ class QWebScanner:
                 attribute=attr,
                 message=f"{attr}='{value}' sets a URL dynamically; verify javascript: URLs cannot be injected",
             )
+            self._check_url_embedded_credentials(tag, attr, value)
             self._check_sensitive_url_token(tag, attr, value)
 
     def _check_t_att_mapping(self, element: ElementTree.Element, tag: str, attr: str, value: str) -> None:
@@ -408,6 +410,7 @@ class QWebScanner:
             attribute=attr,
             message=f"{attr}='{value}' can set URL-bearing attributes dynamically; verify untrusted values cannot produce javascript: URLs or unsafe destinations",
         )
+        self._check_url_embedded_credentials(tag, attr, value)
         self._check_sensitive_url_token(tag, attr, value)
 
     def _check_t_attf(self, tag: str, attr: str, value: str) -> None:
@@ -458,6 +461,7 @@ class QWebScanner:
                 attribute=attr,
                 message=f"{attr}='{value}' formats a URL dynamically; verify untrusted values cannot produce javascript: URLs",
             )
+            self._check_url_embedded_credentials(tag, attr, value)
             self._check_sensitive_url_token(tag, attr, value)
 
     def _check_t_options(self, tag: str, attr: str, value: str) -> None:
@@ -592,6 +596,7 @@ class QWebScanner:
                 attribute=attr,
                 message=f"{attr}='{value}' contains a literal http:// URL; use HTTPS or same-origin assets to avoid mixed-content downgrade and interception risk",
             )
+        self._check_url_embedded_credentials(tag, attr, value)
         self._check_sensitive_url_token(tag, attr, value)
 
     def _has_dangerous_url_scheme(self, value: str) -> bool:
@@ -627,6 +632,19 @@ class QWebScanner:
             element=tag,
             attribute=attr,
             message=f"{attr}='{value}' places token, secret, password, or API-key-like data in a URL; verify it cannot leak through logs, referrers, browser history, or shared links",
+        )
+
+    def _check_url_embedded_credentials(self, tag: str, attr: str, value: str) -> None:
+        """Check URL-bearing QWeb attributes for username/password material."""
+        if not _has_url_embedded_credentials(value):
+            return
+        self._add_finding(
+            rule_id="odoo-qweb-url-embedded-credentials",
+            title="QWeb URL embeds credentials",
+            severity="high",
+            element=tag,
+            attribute=attr,
+            message=f"{attr}='{value}' embeds username, password, or token material in a URL; keep credentials out of browser-visible links, assets, forms, and redirects",
         )
 
     def _looks_sensitive_url_token(self, value: str) -> bool:
@@ -895,6 +913,7 @@ class QWebScanner:
                 attribute=attr,
                 message=f"{attr}='{value}' creates a client-side redirect with a dynamic target; restrict meta refresh redirects to local paths or reviewed allowlists",
             )
+            self._check_url_embedded_credentials(tag, attr, value)
             self._check_sensitive_url_token(tag, attr, value)
             return
 
@@ -953,6 +972,27 @@ class QWebScanner:
                     element="",
                     attribute=match.group(1),
                     message="Literal http:// URL in attribute; use HTTPS or same-origin assets to avoid mixed-content downgrade and interception risk",
+                )
+            )
+
+        embedded_credentials_attr_re = re.compile(
+            rf"({self.URL_BEARING_ATTRIBUTE_RE})\s*=\s*([\"'])(?P<value>[^\"']+)\2",
+            re.IGNORECASE,
+        )
+        for match in embedded_credentials_attr_re.finditer(content):
+            if not _has_url_embedded_credentials(match.group("value")):
+                continue
+            line = content[: match.start()].count("\n") + 1
+            findings.append(
+                QWebFinding(
+                    rule_id="odoo-qweb-url-embedded-credentials",
+                    title="QWeb URL embeds credentials",
+                    severity="high",
+                    file=self.file_path,
+                    line=line,
+                    element="",
+                    attribute=match.group(1),
+                    message="URL-bearing attribute embeds username, password, or token material; keep credentials out of browser-visible links, assets, forms, and redirects",
                 )
             )
 
@@ -1663,6 +1703,14 @@ def _xml_has_attr(element: ElementTree.Element, attr_name: str) -> bool:
 
 def _is_external_url(value: str) -> bool:
     return bool(re.match(r"^(?:https?:)?//", value.strip(), re.IGNORECASE))
+
+
+def _has_url_embedded_credentials(value: str) -> bool:
+    for match in re.finditer(r"https?://[^\s'\"<>)]+", value, re.IGNORECASE):
+        parsed = urlparse(match.group(0).rstrip(".,;"))
+        if parsed.hostname and (parsed.username is not None or parsed.password is not None):
+            return True
+    return False
 
 
 def findings_to_json(findings: list[QWebFinding]) -> list[dict[str, Any]]:

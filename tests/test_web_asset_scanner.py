@@ -1999,6 +1999,24 @@ def test_owl_inline_template_https_static_url_ignored(tmp_path: Path) -> None:
     assert not any(f.rule_id == "odoo-web-owl-qweb-insecure-asset-url" for f in findings)
 
 
+def test_owl_inline_template_url_embedded_credentials_detected(tmp_path: Path) -> None:
+    """OWL inline template URLs should not expose embedded credentials."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "export const template = xml`<a href=\"https://api_user:secret@example.com/hook\">Hook</a>`;\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-url-embedded-credentials"
+        and f.sink == "owl-template"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
 def test_owl_inline_template_sensitive_url_token_detected(tmp_path: Path) -> None:
     """OWL inline template URLs should not expose dynamic credential parameters."""
     path = tmp_path / "widget.js"
@@ -2525,6 +2543,24 @@ document.head.appendChild(script);
         f.rule_id == "odoo-web-insecure-asset-url"
         and f.sink == "script"
         and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_frontend_url_embedded_credentials_detected(tmp_path: Path) -> None:
+    """Browser-visible frontend URLs should not carry userinfo credentials."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        """fetch("https://api_user:secret@example.com/jsonrpc");\n""",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-url-embedded-credentials"
+        and f.sink == "url-credentials"
+        and f.severity == "high"
         for f in findings
     )
 
