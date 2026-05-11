@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import ast
+import ipaddress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 @dataclass
@@ -53,6 +55,10 @@ SENSITIVE_OUTBOUND_HEADER_NAMES = {
     "x-auth-token",
     "x-csrf-token",
     "x-forwarded-authorization",
+}
+METADATA_HOSTS = {
+    "169.254.169.254",
+    "metadata.google.internal",
 }
 REQUEST_SOURCE_ATTRS = {"httprequest", "jsonrequest", "params"}
 REQUEST_SOURCE_METHODS = {"get_http_params", "get_json_data"}
@@ -240,6 +246,15 @@ class IntegrationScanner(ast.NodeVisitor):
                 "Outbound HTTP URL is derived from request/controller input; validate scheme, host, and private-network reachability to prevent SSRF",
                 sink,
             )
+        if node.args and _is_internal_literal_url(node.args[0], self._effective_constants()):
+            self._add(
+                "odoo-integration-internal-url-ssrf",
+                "Outbound HTTP targets internal URL",
+                "high",
+                node.lineno,
+                "Outbound HTTP call targets a literal loopback, private, link-local, or metadata URL; verify the integration cannot expose cloud metadata or internal Odoo/admin services",
+                sink,
+            )
         url_keyword = _keyword(node, "url")
         if url_keyword and self._expr_is_tainted(url_keyword.value):
             self._add(
@@ -248,6 +263,15 @@ class IntegrationScanner(ast.NodeVisitor):
                 "high",
                 node.lineno,
                 "Outbound HTTP url= value is derived from request/controller input; validate scheme, host, and private-network reachability to prevent SSRF",
+                sink,
+            )
+        if url_keyword and _is_internal_literal_url(url_keyword.value, self._effective_constants()):
+            self._add(
+                "odoo-integration-internal-url-ssrf",
+                "Outbound HTTP targets internal URL",
+                "high",
+                node.lineno,
+                "Outbound HTTP url= targets a literal loopback, private, link-local, or metadata URL; verify the integration cannot expose cloud metadata or internal Odoo/admin services",
                 sink,
             )
         self._scan_auth_material(node, sink)
@@ -648,6 +672,29 @@ def _literal_header_pairs_with_constants(node: ast.AST, constants: dict[str, ast
 
 def _is_sensitive_outbound_header(name: str) -> bool:
     return name.strip().lower() in SENSITIVE_OUTBOUND_HEADER_NAMES
+
+
+def _is_internal_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    url = _constant_string(node, constants).strip()
+    if not url:
+        return False
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    host = parsed.hostname.strip().lower().rstrip(".")
+    if host in METADATA_HOSTS or host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_unspecified
+        or address.is_reserved
+    )
 
 
 def _constant_string(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:

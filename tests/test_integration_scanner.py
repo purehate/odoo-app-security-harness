@@ -125,6 +125,62 @@ def sync():
     assert any(f.rule_id == "odoo-integration-tls-verify-disabled" for f in findings)
 
 
+def test_literal_metadata_url_is_reported(tmp_path: Path) -> None:
+    """Hardcoded metadata endpoints should be surfaced as integration SSRF leads."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+def sync():
+    return requests.get('http://169.254.169.254/latest/meta-data/', timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-internal-url-ssrf" for f in findings)
+
+
+def test_literal_internal_url_keyword_constant_is_reported(tmp_path: Path) -> None:
+    """Constant-backed url= values should not hide internal integration targets."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+ODOO_ADMIN_URL = 'http://localhost:8069/web/database/list'
+
+def sync():
+    return requests.request('GET', url=ODOO_ADMIN_URL, timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-internal-url-ssrf" for f in findings)
+
+
+def test_public_literal_url_is_not_internal_ssrf(tmp_path: Path) -> None:
+    """Normal public integration endpoints should not be treated as internal URLs."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+def sync():
+    return requests.get('https://api.example.test/sync', timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-integration-internal-url-ssrf" for f in findings)
+
+
 def test_request_controlled_url_is_reported_as_ssrf(tmp_path: Path) -> None:
     """Controller/request-derived URLs should be flagged as SSRF review leads."""
     py = tmp_path / "controller.py"

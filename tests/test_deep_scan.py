@@ -7050,15 +7050,22 @@ def test_taxonomy_coverage_classifies_integration_http_risks() -> None:
                 "title": "Outbound HTTP URL is request-controlled",
                 "message": "Outbound HTTP URL is derived from request/controller input; validate scheme, host, and private-network reachability to prevent SSRF",
             },
+            {
+                "source": "integrations",
+                "rule_id": "odoo-integration-internal-url-ssrf",
+                "title": "Outbound HTTP targets internal URL",
+                "message": "Outbound HTTP call targets a literal loopback, private, link-local, or metadata URL; verify the integration cannot expose cloud metadata or internal Odoo/admin services",
+            },
         ]
     )
 
-    assert coverage["mapped_rules"] == 3
+    assert coverage["mapped_rules"] == 4
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-integration-http-no-timeout": "integration_http_no_timeout",
         "odoo-integration-tls-verify-disabled": "integration_tls_verify_disabled",
         "odoo-integration-tainted-url-ssrf": "integration_tainted_url_ssrf",
+        "odoo-integration-internal-url-ssrf": "integration_internal_url_ssrf",
     }
     assert any("CWE-295" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-918" in entry["cwe"] for entry in coverage["mapped_entries"])

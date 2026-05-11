@@ -2554,6 +2554,12 @@
       "capec": ["CAPEC-664", "CAPEC-21"],
       "owasp": "A10:2021 Server-Side Request Forgery"
     },
+    "integration_internal_url_ssrf": {
+      "label": "Outbound integration targets a loopback, private, link-local, or metadata URL",
+      "cwe": ["CWE-918", "CWE-200", "CWE-284"],
+      "capec": ["CAPEC-664", "CAPEC-115"],
+      "owasp": "A10:2021 Server-Side Request Forgery"
+    },
     "integration_subprocess_shell_true": {
       "label": "Integration subprocess uses shell=True",
       "cwe": ["CWE-78", "CWE-88"],

@@ -2872,7 +2872,6 @@ _TAXONOMY_SHAPE_HINTS = (
             "odoo-xml-server-action-tls-verify-disabled",
             "server action disables tls verification",
             "ir.actions.server code passes verify=false to outbound http",
-            "man-in-the-middle attacks",
         ),
     ),
     (
@@ -4322,6 +4321,15 @@ _TAXONOMY_SHAPE_HINTS = (
             "outbound http url is request-controlled",
             "outbound http url is derived from request/controller input",
             "private-network reachability to prevent ssrf",
+        ),
+    ),
+    (
+        "integration_internal_url_ssrf",
+        (
+            "odoo-integration-internal-url-ssrf",
+            "outbound http targets internal url",
+            "literal loopback, private, link-local, or metadata url",
+            "cloud metadata or internal odoo/admin services",
         ),
     ),
     (
