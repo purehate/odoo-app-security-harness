@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _record_fields, _should_skip
 
 
@@ -240,7 +241,8 @@ class SequenceScanner(ast.NodeVisitor):
                 "Public route consumes a sequence",
                 "high" if route.auth == "public" else "critical",
                 node.lineno,
-                f"Public route {route.display_path()} calls {method}(); verify attackers cannot enumerate or exhaust business identifiers, coupons, invites, or tokens",
+                f"Public route {route.display_path()} calls {method}(); "
+                "verify attackers cannot enumerate or exhaust business identifiers, coupons, invites, or tokens",
                 code,
                 route,
                 sink,
@@ -252,7 +254,8 @@ class SequenceScanner(ast.NodeVisitor):
                 "Request controls sequence code",
                 "high",
                 node.lineno,
-                "Request-derived data controls next_by_code(); constrain allowed sequence codes to prevent unintended counter consumption or information disclosure",
+                "Request-derived data controls next_by_code(); "
+                "constrain allowed sequence codes to prevent unintended counter consumption or information disclosure",
                 code,
                 route,
                 sink,
@@ -264,7 +267,8 @@ class SequenceScanner(ast.NodeVisitor):
                 "Sensitive flow uses predictable sequence",
                 "high",
                 node.lineno,
-                f"Sequence code '{code}' looks security-sensitive; do not use ir.sequence for access tokens, reset codes, API keys, or invite secrets",
+                f"Sequence code '{code}' looks security-sensitive; "
+                "do not use ir.sequence for access tokens, reset codes, API keys, or invite secrets",
                 code,
                 route,
                 sink,
@@ -290,7 +294,8 @@ class SequenceScanner(ast.NodeVisitor):
                 "Sequence appears to generate sensitive values",
                 "high",
                 line,
-                f"ir.sequence '{record_id}' appears tied to tokens, passwords, coupons, invites, or secrets; sequences are predictable counters and should not generate security secrets",
+                f"ir.sequence '{record_id}' appears tied to tokens, passwords, coupons, invites, or secrets; "
+                "sequences are predictable counters and should not generate security secrets",
                 code,
                 RouteContext(is_route=False),
                 "ir.sequence",
@@ -303,7 +308,8 @@ class SequenceScanner(ast.NodeVisitor):
                 "Sensitive sequence has global scope",
                 "medium",
                 line,
-                f"ir.sequence '{record_id}' has no company_id while appearing security-sensitive; verify scope and collision/isolation assumptions",
+                f"ir.sequence '{record_id}' has no company_id while appearing security-sensitive; "
+                "verify scope and collision/isolation assumptions",
                 code,
                 RouteContext(is_route=False),
                 "ir.sequence",
@@ -316,7 +322,8 @@ class SequenceScanner(ast.NodeVisitor):
                 "Business sequence has no company scope",
                 "medium",
                 line,
-                f"ir.sequence '{record_id}' appears to generate accounting/sales/stock identifiers without company_id; verify multi-company numbering requirements",
+                f"ir.sequence '{record_id}' appears to generate accounting/sales/stock identifiers without company_id; "
+                "verify multi-company numbering requirements",
                 code,
                 RouteContext(is_route=False),
                 "ir.sequence",
@@ -611,7 +618,50 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_keywords(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_with_field(values_node: ast.Dict, key: str | None, value: ast.AST) -> ast.Dict:
+    if key is None:
+        return values_node
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
