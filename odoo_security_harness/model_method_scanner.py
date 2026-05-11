@@ -64,6 +64,12 @@ TLS_VERIFY_DISABLED_RULES = {
     "constraint": "odoo-model-method-constraint-tls-verify-disabled",
     "inverse": "odoo-model-method-inverse-tls-verify-disabled",
 }
+CLEARTEXT_HTTP_URL_RULES = {
+    "onchange": "odoo-model-method-onchange-cleartext-http-url",
+    "compute": "odoo-model-method-compute-cleartext-http-url",
+    "constraint": "odoo-model-method-constraint-cleartext-http-url",
+    "inverse": "odoo-model-method-inverse-cleartext-http-url",
+}
 API_METHOD_DECORATORS = {"constrains", "depends", "onchange"}
 
 
@@ -364,6 +370,16 @@ class ModelMethodScanner(ast.NodeVisitor):
                     f"{context.kind} model method passes verify=False to outbound HTTP; user-triggered integrations should not permit man-in-the-middle attacks",
                     context.name,
                 )
+            for url_value in _http_url_values(node, sink, constants):
+                if _is_cleartext_literal_url(url_value, constants):
+                    self._add(
+                        CLEARTEXT_HTTP_URL_RULES[context.kind],
+                        "Odoo model method uses cleartext HTTP URL",
+                        "medium",
+                        node.lineno,
+                        f"{context.kind} model method targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+                        context.name,
+                    )
 
         self.generic_visit(node)
 
@@ -700,6 +716,28 @@ def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None 
 def _is_none_constant(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
     value = _resolve_constant(node, constants or {})
     return isinstance(value, ast.Constant) and value.value is None
+
+
+def _http_url_values(node: ast.Call, sink: str, constants: dict[str, ast.AST] | None = None) -> list[ast.AST]:
+    constants = constants or {}
+    values: list[ast.AST] = []
+    if node.args:
+        method = sink.rsplit(".", 1)[-1]
+        if method == "request" and len(node.args) >= 2:
+            values.append(node.args[1])
+        else:
+            values.append(node.args[0])
+    values.extend(_keyword_values(node, "url", constants))
+    return values
+
+
+def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+    value = _resolve_constant(node, constants or {})
+    return (
+        isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+        and value.value.strip().lower().startswith("http://")
+    )
 
 
 def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:

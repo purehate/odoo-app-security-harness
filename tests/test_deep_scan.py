@@ -5434,6 +5434,30 @@ def test_taxonomy_coverage_classifies_model_method_sudo_and_http_side_effects() 
                 "title": "Odoo model method performs HTTP without timeout",
                 "message": "inverse model method performs outbound HTTP without timeout; form/render/background flows can block Odoo workers",
             },
+            {
+                "source": "model-methods",
+                "rule_id": "odoo-model-method-onchange-cleartext-http-url",
+                "title": "Odoo model method uses cleartext HTTP URL",
+                "message": "onchange model method targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+            },
+            {
+                "source": "model-methods",
+                "rule_id": "odoo-model-method-compute-cleartext-http-url",
+                "title": "Odoo model method uses cleartext HTTP URL",
+                "message": "compute model method targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+            },
+            {
+                "source": "model-methods",
+                "rule_id": "odoo-model-method-constraint-cleartext-http-url",
+                "title": "Odoo model method uses cleartext HTTP URL",
+                "message": "constraint model method targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+            },
+            {
+                "source": "model-methods",
+                "rule_id": "odoo-model-method-inverse-cleartext-http-url",
+                "title": "Odoo model method uses cleartext HTTP URL",
+                "message": "inverse model method targets a literal http:// URL; use HTTPS to protect integration payloads and response data from interception or downgrade",
+            },
         ]
     )
 
@@ -5444,6 +5468,9 @@ def test_taxonomy_coverage_classifies_model_method_sudo_and_http_side_effects() 
     }
     assert {shape for rule_id, shape in shapes.items() if rule_id.endswith("http-no-timeout")} == {
         "model_method_http_without_timeout"
+    }
+    assert {shape for rule_id, shape in shapes.items() if rule_id.endswith("cleartext-http-url")} == {
+        "model_method_cleartext_http_url"
     }
 
 

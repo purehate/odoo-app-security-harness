@@ -915,6 +915,12 @@
       "capec": ["CAPEC-94"],
       "owasp": "A02:2021 Cryptographic Failures"
     },
+    "model_method_cleartext_http_url": {
+      "label": "Odoo lifecycle model method uses cleartext HTTP transport",
+      "cwe": ["CWE-319", "CWE-311", "CWE-200"],
+      "capec": ["CAPEC-117", "CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "constraint_sudo_visibility_gap": {
       "label": "Odoo constraint validates through sudo and may hide record-rule or company visibility issues",
       "cwe": ["CWE-284", "CWE-863", "CWE-178"],

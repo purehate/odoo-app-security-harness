@@ -2082,6 +2082,18 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "model_method_cleartext_http_url",
+        (
+            "model-method-onchange-cleartext-http-url",
+            "model-method-compute-cleartext-http-url",
+            "model-method-constraint-cleartext-http-url",
+            "model-method-inverse-cleartext-http-url",
+            "odoo model method uses cleartext http url",
+            "model method targets a literal http:// url",
+            "protect integration payloads and response data",
+        ),
+    ),
+    (
         "constraint_sudo_visibility_gap",
         (
             "constraint-sudo-search",

@@ -857,6 +857,49 @@ class Feed(models.Model):
     assert any(f.rule_id == "odoo-model-method-constraint-tls-verify-disabled" for f in findings)
 
 
+def test_flags_model_method_cleartext_http_urls(tmp_path: Path) -> None:
+    """Lifecycle model methods should flag literal cleartext HTTP integration URLs."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "cleartext.py").write_text(
+        """
+from odoo import api, fields, models
+import requests
+
+CALLBACK_URL = 'http://hooks.example.test/onchange'
+HTTP_OPTIONS = {'url': 'http://partner.example.test/compute', 'timeout': 10}
+
+class Feed(models.Model):
+    _name = 'x.feed'
+    status = fields.Char(compute='_compute_status', inverse='_inverse_status')
+
+    @api.onchange('url')
+    def _onchange_url(self):
+        requests.post(CALLBACK_URL, timeout=10)
+
+    @api.depends('url')
+    def _compute_status(self):
+        requests.request('POST', **HTTP_OPTIONS)
+
+    @api.constrains('url')
+    def _check_url(self):
+        requests.get('http://feeds.example.test/check', timeout=10)
+
+    def _inverse_status(self):
+        requests.get(url='http://feeds.example.test/inverse', timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+    rule_ids = {f.rule_id for f in findings}
+
+    assert "odoo-model-method-onchange-cleartext-http-url" in rule_ids
+    assert "odoo-model-method-compute-cleartext-http-url" in rule_ids
+    assert "odoo-model-method-constraint-cleartext-http-url" in rule_ids
+    assert "odoo-model-method-inverse-cleartext-http-url" in rule_ids
+
+
 def test_flags_named_expression_http_client_without_timeout(tmp_path: Path) -> None:
     """Walrus-bound HTTP client aliases should still be treated as blocking calls."""
     models = tmp_path / "module" / "models"
