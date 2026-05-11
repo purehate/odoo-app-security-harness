@@ -582,7 +582,7 @@ def find_loose_python(repo: Path, args: argparse.Namespace) -> list[dict]:
 
 
 ROUTE_RE = re.compile(
-    r"@(?:(?:[A-Za-z_][A-Za-z0-9_]*\.)?http|[A-Za-z_][A-Za-z0-9_]*_http)\.route\((?P<args>.*?)\)",
+    r"@(?P<decorator>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){0,2})\((?P<args>.*?)\)",
     re.DOTALL,
 )
 KW_RE = re.compile(r"(?P<key>auth|csrf|type|methods)\s*=\s*(?P<value>[^,\)]*)")
@@ -617,7 +617,10 @@ def extract_routes(repo: Path, manifests: list[dict]) -> list[dict]:
 def _regex_extract_routes(text: str, module: str, path: Path, repo: Path) -> list[dict]:
     """Fallback route extraction for syntactically invalid files."""
     routes = []
+    route_decorator_names = _regex_route_decorator_names(text)
     for match in ROUTE_RE.finditer(text):
+        if not _is_regex_route_decorator(match.group("decorator"), route_decorator_names):
+            continue
         line = text.count("\n", 0, match.start()) + 1
         tail = text[match.end() : match.end() + 500]
         def_match = re.search(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", tail)
@@ -638,6 +641,34 @@ def _regex_extract_routes(text: str, module: str, path: Path, repo: Path) -> lis
             }
         )
     return routes
+
+
+def _regex_route_decorator_names(text: str) -> set[str]:
+    names = {"http.route", "odoo.http.route"}
+    for match in re.finditer(r"from\s+odoo\s+import\s+([^\n]+)", text):
+        for part in match.group(1).replace("(", "").replace(")", "").split(","):
+            tokens = part.strip().split()
+            if not tokens or tokens[0] != "http":
+                continue
+            names.add(f"{tokens[2]}.route" if len(tokens) >= 3 and tokens[1] == "as" else "http.route")
+    for match in re.finditer(r"import\s+odoo\.http(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?", text):
+        alias = match.group(1)
+        names.add(f"{alias}.route" if alias else "odoo.http.route")
+    for match in re.finditer(r"from\s+odoo\.http\s+import\s+([^\n]+)", text):
+        for part in match.group(1).replace("(", "").replace(")", "").split(","):
+            tokens = part.strip().split()
+            if not tokens or tokens[0] != "route":
+                continue
+            names.add(tokens[2] if len(tokens) >= 3 and tokens[1] == "as" else "route")
+    return names
+
+
+def _is_regex_route_decorator(decorator: str, route_decorator_names: set[str]) -> bool:
+    return (
+        decorator in route_decorator_names
+        or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\.http\.route", decorator) is not None
+        or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*_http\.route", decorator) is not None
+    )
 
 
 class _RouteExtractor(ast.NodeVisitor):

@@ -8885,14 +8885,17 @@ def _route_inventory(repo: Path, python_files: list[Path]) -> list[dict[str, str
 
 
 ROUTE_DECORATOR_RE = re.compile(
-    r"@(?:(?:[A-Za-z_][A-Za-z0-9_]*\.)?http|[A-Za-z_][A-Za-z0-9_]*_http)\.route\((?P<args>.*?)\)",
+    r"@(?P<decorator>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){0,2})\((?P<args>.*?)\)",
     re.DOTALL,
 )
 
 
 def _regex_route_inventory(repo: Path, path: Path, text: str) -> list[dict[str, str | int]]:
     routes: list[dict[str, str | int]] = []
+    route_decorator_names = _regex_route_decorator_names(text)
     for match in ROUTE_DECORATOR_RE.finditer(text):
+        if not _is_regex_route_decorator(match.group("decorator"), route_decorator_names):
+            continue
         line = text.count("\n", 0, match.start()) + 1
         tail = text[match.end() : match.end() + 500]
         def_match = re.search(r"(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", tail)
@@ -8911,6 +8914,34 @@ def _regex_route_inventory(repo: Path, path: Path, text: str) -> list[dict[str, 
             }
         )
     return routes
+
+
+def _regex_route_decorator_names(text: str) -> set[str]:
+    names = {"http.route", "odoo.http.route"}
+    for match in re.finditer(r"from\s+odoo\s+import\s+([^\n]+)", text):
+        for part in match.group(1).replace("(", "").replace(")", "").split(","):
+            tokens = part.strip().split()
+            if not tokens or tokens[0] != "http":
+                continue
+            names.add(f"{tokens[2]}.route" if len(tokens) >= 3 and tokens[1] == "as" else "http.route")
+    for match in re.finditer(r"import\s+odoo\.http(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?", text):
+        alias = match.group(1)
+        names.add(f"{alias}.route" if alias else "odoo.http.route")
+    for match in re.finditer(r"from\s+odoo\.http\s+import\s+([^\n]+)", text):
+        for part in match.group(1).replace("(", "").replace(")", "").split(","):
+            tokens = part.strip().split()
+            if not tokens or tokens[0] != "route":
+                continue
+            names.add(tokens[2] if len(tokens) >= 3 and tokens[1] == "as" else "route")
+    return names
+
+
+def _is_regex_route_decorator(decorator: str, route_decorator_names: set[str]) -> bool:
+    return (
+        decorator in route_decorator_names
+        or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\.http\.route", decorator) is not None
+        or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*_http\.route", decorator) is not None
+    )
 
 
 def _regex_route_from_args(args_text: str) -> dict[str, str]:
