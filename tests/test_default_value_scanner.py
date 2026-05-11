@@ -943,6 +943,26 @@ class Defaults:
     assert len(sensitive_model_defaults) == 2
 
 
+def test_flags_integration_secret_runtime_default(tmp_path: Path) -> None:
+    """Integration key defaults should be treated as sensitive even on custom models."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "defaults.py").write_text(
+        """
+class Defaults:
+    def set_defaults(self):
+        self.env['ir.default'].set('x.connector', 'access_key', 'ak_live_abcdef1234567890')
+        self.env['ir.default'].set('x.connector', 'license_key', 'lic_live_abcdef1234567890')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    sensitive_fields = {finding.field for finding in findings if finding.rule_id == "odoo-default-sensitive-field-set"}
+
+    assert {"access_key", "license_key"} <= sensitive_fields
+
+
 def test_flags_global_sensitive_xml_default(tmp_path: Path) -> None:
     """Global ir.default XML records can seed sensitive values broadly."""
     data = tmp_path / "module" / "data"

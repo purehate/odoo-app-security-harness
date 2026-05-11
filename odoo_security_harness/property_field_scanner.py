@@ -40,18 +40,34 @@ class FieldDef:
 
 
 SENSITIVE_FIELD_MARKERS = (
+    "access_key",
     "account",
     "api_key",
     "apikey",
+    "auth_token",
+    "bearer_token",
+    "client_secret",
     "credential",
+    "csrf_token",
+    "hmac_secret",
     "journal",
+    "jwt_secret",
+    "license_key",
+    "oauth_token",
     "payable",
     "provider",
+    "private_key",
     "receivable",
     "price",
+    "secret",
+    "secret_key",
+    "session_token",
+    "signature_secret",
+    "signing_key",
     "tax",
     "token",
-    "secret",
+    "totp_secret",
+    "webhook_secret",
 )
 PROPERTY_VALUE_FIELDS = {"value_binary", "value_float", "value_integer", "value_reference", "value_text"}
 PROPERTY_MUTATION_METHODS = {"create", "write"}

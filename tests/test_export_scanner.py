@@ -374,6 +374,28 @@ def export(self):
     assert any(f.rule_id == "odoo-export-sensitive-fields" and f.sink == "export_data" for f in findings)
 
 
+def test_flags_integration_key_export_data_fields(tmp_path: Path) -> None:
+    """Integration-key shaped ORM fields in exports should be surfaced."""
+    py = tmp_path / "export.py"
+    py.write_text(
+        """
+def export(self):
+    return self.env['x.connector'].export_data(['name', 'access_key', 'license_key'])
+""",
+        encoding="utf-8",
+    )
+
+    findings = ExportScanner(py).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-export-sensitive-fields"
+        and f.sink == "export_data"
+        and "access_key" in f.message
+        and "license_key" in f.message
+        for f in findings
+    )
+
+
 def test_flags_search_read_sensitive_or_request_fields(tmp_path: Path) -> None:
     """search_read/read field arguments can become direct export surfaces."""
     py = tmp_path / "export.py"

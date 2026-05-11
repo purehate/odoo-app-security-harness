@@ -273,6 +273,33 @@ def test_flags_credential_and_provider_property_values(tmp_path: Path) -> None:
     } <= sensitive_fields
 
 
+def test_flags_integration_key_property_values(tmp_path: Path) -> None:
+    """Integration-key shaped ir.property fields should be sensitive defaults."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "properties.xml").write_text(
+        """<odoo>
+  <record id="property_connector_access_key" model="ir.property">
+    <field name="fields_id" ref="x_connector.field_x_connector__access_key"/>
+    <field name="value_text">ak_live_abcdef1234567890</field>
+  </record>
+  <record id="property_connector_license_key" model="ir.property">
+    <field name="fields_id" ref="x_connector.field_x_connector__license_key"/>
+    <field name="value_text">lic_live_abcdef1234567890</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    sensitive_fields = {finding.field for finding in findings if finding.rule_id == "odoo-property-sensitive-value"}
+
+    assert {
+        "x_connector.field_x_connector__access_key",
+        "x_connector.field_x_connector__license_key",
+    } <= sensitive_fields
+
+
 def test_flags_public_sudo_runtime_property_create(tmp_path: Path) -> None:
     """Public routes must not create request-controlled property defaults."""
     controllers = tmp_path / "module" / "controllers"
