@@ -209,6 +209,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         if node.attr in ("params", "jsonrequest"):
             if self._is_request_name(node.value):
                 return True
+        if node.attr in {"args", "data", "files", "form", "json", "values"}:
+            return self._is_request_httprequest_attr(node.value)
         return False
 
     def _is_request_params_subscript(self, node: ast.Subscript) -> bool:
@@ -217,6 +219,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
             if node.value.attr in ("params", "jsonrequest"):
                 if self._is_request_name(node.value.value):
                     return True
+            if node.value.attr in {"args", "data", "files", "form", "json", "values"}:
+                return self._is_request_httprequest_attr(node.value.value)
         return False
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -248,9 +252,10 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
         # Detect request.params usage in calls
         for arg in node.args:
-            if isinstance(arg, (ast.Attribute, ast.Subscript)):
-                if self._is_request_params_attr(arg) or self._is_request_params_subscript(arg):
-                    self.current_function.has_request_params = True
+            if isinstance(arg, ast.Attribute) and self._is_request_params_attr(arg):
+                self.current_function.has_request_params = True
+            if isinstance(arg, ast.Subscript) and self._is_request_params_subscript(arg):
+                self.current_function.has_request_params = True
             if isinstance(arg, ast.Attribute) and self._is_request_env_attr(arg):
                 self.current_function.has_request_env = True
 
@@ -471,10 +476,13 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         if isinstance(node, ast.Subscript):
             return self._is_request_params_subscript(node)
         if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Attribute):
+                return False
             return (
-                isinstance(node.func, ast.Attribute)
-                and node.func.attr in {"get_http_params", "get_json_data"}
+                node.func.attr in {"get_http_params", "get_json_data"}
                 and self._is_request_name(node.func.value)
+                or node.func.attr in {"get", "getlist", "get_json"}
+                and self._is_tainted_expr(node.func.value)
             )
         return False
 
@@ -484,6 +492,13 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
     def _is_request_name(self, node: ast.AST) -> bool:
         return isinstance(node, ast.Name) and node.id in self.request_names
+
+    def _is_request_httprequest_attr(self, node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "httprequest"
+            and self._is_request_name(node.value)
+        )
 
     def _is_orm_write(self, node: ast.Call) -> bool:
         """Check if call is an ORM write()."""
@@ -565,7 +580,11 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         if isinstance(node, ast.Name):
             return node.id in self.tainted_vars
         if isinstance(node, ast.Call):
-            return self._call_has_tainted_arg(node)
+            return (
+                isinstance(node.func, ast.Attribute)
+                and self._is_tainted_expr(node.func.value)
+                or self._call_has_tainted_arg(node)
+            )
         if isinstance(node, ast.BinOp):
             return self._is_tainted_expr(node.left) or self._is_tainted_expr(node.right)
         if isinstance(node, ast.BoolOp):
@@ -736,9 +755,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
             # Direct request.params['something'] / request.jsonrequest['something'] / request payload helper.
             if isinstance(first_arg, ast.Subscript):
-                if isinstance(first_arg.value, ast.Attribute):
-                    if first_arg.value.attr in ("params", "jsonrequest"):
-                        is_tainted = True
+                if self._is_tainted_expr(first_arg):
+                    is_tainted = True
             elif self._is_tainted_expr(first_arg):
                 is_tainted = True
 

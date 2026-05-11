@@ -276,6 +276,60 @@ class TestController(http.Controller):
         assert "odoo-deep-mass-assignment" in rule_ids
         assert "odoo-deep-request-sudo-write" in rule_ids
 
+    def test_httprequest_form_get_taints_privileged_write(self) -> None:
+        """Werkzeug request form helpers should be treated as request-controlled."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+class TestController(http.Controller):
+    @http.route('/test/public', auth='public', csrf=False)
+    def test_public(self):
+        payload = request.httprequest.form.get('payload')
+        return request.env['res.partner'].sudo().write(payload)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-mass-assignment" in rule_ids
+        assert "odoo-deep-request-sudo-write" in rule_ids
+
+    def test_httprequest_args_subscript_taints_safe_eval(self) -> None:
+        """Werkzeug query-string access should taint dynamic evaluation."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+class TestController(http.Controller):
+    @http.route('/test/eval', auth='public')
+    def test_eval(self):
+        return safe_eval(request.httprequest.args['expr'])
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-safe-eval-user-input" for f in findings)
+
+    def test_request_params_get_taints_raw_sql(self) -> None:
+        """Method calls on tainted request containers should remain tainted."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+class TestController(http.Controller):
+    @http.route('/lookup', auth='user')
+    def lookup(self):
+        table = request.params.get('table')
+        request.env.cr.execute('SELECT * FROM ' + table)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-sql-concat" in rule_ids
+        assert "odoo-deep-request-to-sql" in rule_ids
+
     def test_cr_execute_fstring(self) -> None:
         """Test detecting SQL injection with f-string."""
         source = """
