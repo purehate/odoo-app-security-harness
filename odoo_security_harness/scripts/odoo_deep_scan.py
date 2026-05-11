@@ -4338,6 +4338,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "integration_hardcoded_http_auth",
+        (
+            "odoo-integration-hardcoded-http-auth",
+            "outbound http auth parameter is hardcoded",
+            "auth= material contains literal credential-like values",
+            "move integration credentials to trusted server-side configuration",
+        ),
+    ),
+    (
         "integration_http_no_timeout",
         (
             "odoo-integration-http-no-timeout",

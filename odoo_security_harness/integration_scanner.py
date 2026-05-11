@@ -88,6 +88,7 @@ class IntegrationScanner(ast.NodeVisitor):
         self.http_client_names: set[str] = set()
         self.tainted_auth_header_names: set[str] = set()
         self.hardcoded_auth_header_names: set[str] = set()
+        self.hardcoded_http_auth_names: set[str] = set()
         self.command_module_names: dict[str, str] = {"os": "os", "subprocess": "subprocess"}
         self.command_function_names: dict[str, str] = {}
         self.request_names: set[str] = {"request"}
@@ -119,6 +120,7 @@ class IntegrationScanner(ast.NodeVisitor):
         previous_http_clients = set(self.http_client_names)
         previous_tainted_auth_headers = set(self.tainted_auth_header_names)
         previous_hardcoded_auth_headers = set(self.hardcoded_auth_header_names)
+        previous_hardcoded_http_auth_names = set(self.hardcoded_http_auth_names)
         previous_local_constants = self.local_constants
         self.local_constants = {}
         for arg in [*node.args.args, *node.args.kwonlyargs]:
@@ -134,6 +136,7 @@ class IntegrationScanner(ast.NodeVisitor):
         self.http_client_names = previous_http_clients
         self.tainted_auth_header_names = previous_tainted_auth_headers
         self.hardcoded_auth_header_names = previous_hardcoded_auth_headers
+        self.hardcoded_http_auth_names = previous_hardcoded_http_auth_names
         self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
@@ -178,6 +181,7 @@ class IntegrationScanner(ast.NodeVisitor):
             self._mark_http_client_target(target, node.value, previous_http_clients)
             self._mark_tainted_auth_header_target(target, node.value)
             self._mark_hardcoded_auth_header_target(target, node.value)
+            self._mark_hardcoded_http_auth_target(target, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
@@ -188,6 +192,7 @@ class IntegrationScanner(ast.NodeVisitor):
             self._mark_http_client_target(node.target, node.value, previous_http_clients)
             self._mark_tainted_auth_header_target(node.target, node.value)
             self._mark_hardcoded_auth_header_target(node.target, node.value)
+            self._mark_hardcoded_http_auth_target(node.target, node.value)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
@@ -197,6 +202,7 @@ class IntegrationScanner(ast.NodeVisitor):
         self._mark_http_client_target(node.target, node.value, previous_http_clients)
         self._mark_tainted_auth_header_target(node.target, node.value)
         self._mark_hardcoded_auth_header_target(node.target, node.value)
+        self._mark_hardcoded_http_auth_target(node.target, node.value)
         self.generic_visit(node)
 
     def visit_For(self, node: ast.For) -> Any:
@@ -326,6 +332,15 @@ class IntegrationScanner(ast.NodeVisitor):
                 "high",
                 node.lineno,
                 "Outbound HTTP auth= material is request-derived; ensure upstream credentials come from trusted server-side configuration and cannot be attacker supplied",
+                sink,
+            )
+        if auth_keyword and self._expr_contains_hardcoded_http_auth(auth_keyword.value):
+            self._add(
+                "odoo-integration-hardcoded-http-auth",
+                "Outbound HTTP auth parameter is hardcoded",
+                "high",
+                node.lineno,
+                "Outbound HTTP auth= material contains literal credential-like values; move integration credentials to trusted server-side configuration and rotate any value committed to source",
                 sink,
             )
 
@@ -530,6 +545,21 @@ class IntegrationScanner(ast.NodeVisitor):
             if _is_sensitive_outbound_header(header_name) and _is_hardcoded_secret_value(value, self._effective_constants()):
                 return True
         return False
+
+    def _expr_contains_hardcoded_http_auth(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Starred):
+            return self._expr_contains_hardcoded_http_auth(node.value)
+        if isinstance(node, ast.Name) and node.id in self.hardcoded_http_auth_names:
+            return True
+        if isinstance(node, ast.Subscript):
+            return self._expr_contains_hardcoded_http_auth(node.value)
+        return _expr_contains_hardcoded_secret_value(node, self._effective_constants())
+
+    def _mark_hardcoded_http_auth_target(self, target: ast.AST, value: ast.AST) -> None:
+        if self._expr_contains_hardcoded_http_auth(value):
+            self._mark_name_target(target, self.hardcoded_http_auth_names)
+        else:
+            self._discard_name_target(target, self.hardcoded_http_auth_names)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
         if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
@@ -744,6 +774,24 @@ def _is_hardcoded_secret_value(node: ast.AST, constants: dict[str, ast.AST]) -> 
     if _looks_low_value_secret_placeholder(lowered):
         return False
     return len(value) >= 12 or any(marker in lowered for marker in ("sk_live", "ghp_", "xoxb-", "eyj"))
+
+
+def _expr_contains_hardcoded_secret_value(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    node = _resolve_constant(node, constants)
+    if isinstance(node, ast.Starred):
+        return _expr_contains_hardcoded_secret_value(node.value, constants)
+    if _is_hardcoded_secret_value(node, constants):
+        return True
+    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        return any(_expr_contains_hardcoded_secret_value(element, constants) for element in node.elts)
+    if isinstance(node, ast.Dict):
+        return any(_expr_contains_hardcoded_secret_value(value, constants) for value in node.values)
+    if isinstance(node, ast.Call):
+        return any(_expr_contains_hardcoded_secret_value(arg, constants) for arg in node.args) or any(
+            keyword.value is not None and _expr_contains_hardcoded_secret_value(keyword.value, constants)
+            for keyword in node.keywords
+        )
+    return False
 
 
 def _looks_low_value_secret_placeholder(value: str) -> bool:

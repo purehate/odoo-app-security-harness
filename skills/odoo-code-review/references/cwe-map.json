@@ -2554,6 +2554,12 @@
       "capec": ["CAPEC-191"],
       "owasp": "A07:2021 Identification and Authentication Failures"
     },
+    "integration_hardcoded_http_auth": {
+      "label": "Outbound integration sends hardcoded HTTP auth credentials",
+      "cwe": ["CWE-798", "CWE-522", "CWE-321"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A07:2021 Identification and Authentication Failures"
+    },
     "integration_http_no_timeout": {
       "label": "Outbound integration HTTP call lacks an explicit timeout",
       "cwe": ["CWE-400", "CWE-770"],

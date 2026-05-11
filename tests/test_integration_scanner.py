@@ -894,6 +894,61 @@ def sync(**kwargs):
     assert any(f.rule_id == "odoo-integration-tainted-http-auth" for f in findings)
 
 
+def test_hardcoded_http_auth_tuple_is_reported(tmp_path: Path) -> None:
+    """Committed HTTP Basic credentials should be visible in integration review."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+def sync():
+    return requests.get('https://api.example.test/user', auth=('integration_user', 'sk_live_1234567890abcdef'), timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-hardcoded-http-auth" and f.sink == "requests.get" for f in findings)
+
+
+def test_hardcoded_http_basic_auth_constructor_is_reported(tmp_path: Path) -> None:
+    """requests.auth.HTTPBasicAuth literals should get hardcoded auth coverage."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+def sync():
+    auth = requests.auth.HTTPBasicAuth('integration_user', 'supersecret12345')
+    return requests.get('https://api.example.test/user', auth=auth, timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-hardcoded-http-auth" for f in findings)
+
+
+def test_placeholder_http_auth_tuple_is_ignored(tmp_path: Path) -> None:
+    """Example Basic auth snippets should not create hardcoded credential noise."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+def sync():
+    return requests.get('https://api.example.test/user', auth=('example_user', 'example_token'), timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-integration-hardcoded-http-auth" for f in findings)
+
+
 def test_static_server_side_auth_header_is_ignored(tmp_path: Path) -> None:
     """Server-owned integration credentials should not look attacker supplied."""
     py = tmp_path / "integration.py"
