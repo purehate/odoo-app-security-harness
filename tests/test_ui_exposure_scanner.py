@@ -119,6 +119,71 @@ def test_sensitive_csv_action_with_groups_is_ignored(tmp_path: Path) -> None:
     assert scan_ui_exposure(tmp_path) == []
 
 
+def test_csv_menu_exposing_csv_sensitive_action_is_reported(tmp_path: Path) -> None:
+    """Repository scans should correlate menu CSV rows with action CSV rows."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_window.csv").write_text(
+        "id,name,res_model\n"
+        "action_users,Users,res.users\n",
+        encoding="utf-8",
+    )
+    (data / "ir.ui.menu.csv").write_text(
+        "id,name,action\n"
+        "menu_users,Users,\"ir.actions.act_window,action_users\"\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_ui_exposure(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-ui-sensitive-menu-no-groups" and finding.target == "menu_users"
+        for finding in findings
+    )
+
+
+def test_xml_menu_exposing_cross_file_csv_action_is_reported(tmp_path: Path) -> None:
+    """XML menus should be correlated with CSV action declarations in another file."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_window.csv").write_text(
+        "id,name,res_model\n"
+        "action_params,Parameters,ir.config_parameter\n",
+        encoding="utf-8",
+    )
+    (data / "menus.xml").write_text(
+        """<odoo>
+  <menuitem id="menu_params" name="Parameters" action="%(action_params)d"/>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_ui_exposure(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-ui-sensitive-menu-no-groups" and finding.target == "menu_params"
+        for finding in findings
+    )
+
+
+def test_csv_menu_for_grouped_csv_action_is_ignored(tmp_path: Path) -> None:
+    """A grouped action should keep an ungrouped menu from becoming a broad menu finding."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_window.csv").write_text(
+        "id,name,res_model,groups_id/id\n"
+        "action_users,Users,res.users,base.group_system\n",
+        encoding="utf-8",
+    )
+    (data / "ir.ui.menu.csv").write_text(
+        "id,name,action\n"
+        "menu_users,Users,\"ir.actions.act_window,action_users\"\n",
+        encoding="utf-8",
+    )
+
+    assert not any(f.rule_id == "odoo-ui-sensitive-menu-no-groups" for f in scan_ui_exposure(tmp_path))
+
+
 def test_xml_entities_are_not_expanded_into_ui_exposure_findings(tmp_path: Path) -> None:
     """XML entities must not synthesize sensitive UI action targets."""
     xml = tmp_path / "menus.xml"

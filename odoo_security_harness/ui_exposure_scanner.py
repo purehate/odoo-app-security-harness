@@ -84,7 +84,9 @@ def scan_ui_exposure(repo_path: Path) -> list[UIExposureFinding]:
             findings.extend(scanner.scan_file())
         elif path.suffix == ".csv":
             findings.extend(scanner.scan_csv_file())
-    return findings
+
+    findings.extend(_scan_repository_menus(repo_path, _collect_repository_actions(repo_path)))
+    return _dedupe_findings(findings)
 
 
 class UIExposureScanner:
@@ -307,6 +309,8 @@ def _csv_model_name(path: Path) -> str:
         "ir.actions.report": "ir.actions.report",
         "ir_actions_server": "ir.actions.server",
         "ir.actions.server": "ir.actions.server",
+        "ir_ui_menu": "ir.ui.menu",
+        "ir.ui.menu": "ir.ui.menu",
     }
     return aliases.get(stem, stem.replace("_", "."))
 
@@ -346,6 +350,8 @@ def _normalize_action_ref(action: str) -> str:
     match = re.fullmatch(r"%\(([^)]+)\)d", action)
     if match:
         action = match.group(1)
+    if "," in action:
+        action = action.rsplit(",", 1)[1]
     if "." in action:
         return action.rsplit(".", 1)[1]
     return action
@@ -380,6 +386,179 @@ def _line_for(content: str, needle: str) -> int:
 
 def _should_skip(path: Path) -> bool:
     return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov"})
+
+
+def _collect_repository_actions(repo_path: Path) -> dict[str, dict[str, str]]:
+    actions: dict[str, dict[str, str]] = {}
+    for path in repo_path.rglob("*"):
+        if not path.is_file() or _should_skip(path):
+            continue
+        if path.suffix == ".xml":
+            actions.update(_collect_xml_actions(path))
+        elif path.suffix == ".csv":
+            actions.update(_collect_csv_actions(path))
+    return actions
+
+
+def _collect_xml_actions(path: Path) -> dict[str, dict[str, str]]:
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+        root = ElementTree.fromstring(content)
+    except ElementTree.ParseError:
+        return {}
+    except Exception:
+        return {}
+
+    actions: dict[str, dict[str, str]] = {}
+    for record in root.iter("record"):
+        model = record.get("model", "")
+        if model not in {"ir.actions.act_window", "ir.actions.report", "ir.actions.server"}:
+            continue
+        record_id = record.get("id", "")
+        if not record_id:
+            continue
+        fields = _record_fields(record)
+        actions[record_id] = {
+            "record_model": model,
+            "target_model": _model_value(
+                fields.get("res_model", "")
+                or fields.get("model", "")
+                or fields.get("binding_model_id", "")
+                or fields.get("model_id", "")
+            ),
+            "groups": fields.get("groups_id", "") or fields.get("groups", ""),
+        }
+    return actions
+
+
+def _collect_csv_actions(path: Path) -> dict[str, dict[str, str]]:
+    model = _csv_model_name(path)
+    if model not in {"ir.actions.act_window", "ir.actions.report", "ir.actions.server"}:
+        return {}
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return {}
+
+    actions: dict[str, dict[str, str]] = {}
+    for fields, _line in _csv_dict_rows(content):
+        record_id = fields.get("id", "")
+        if not record_id:
+            continue
+        actions[record_id] = {
+            "record_model": model,
+            "target_model": _model_value(
+                fields.get("res_model", "")
+                or fields.get("model", "")
+                or fields.get("binding_model_id", "")
+                or fields.get("model_id", "")
+            ),
+            "groups": fields.get("groups_id", "") or fields.get("groups", ""),
+        }
+    return actions
+
+
+def _scan_repository_menus(repo_path: Path, actions: dict[str, dict[str, str]]) -> list[UIExposureFinding]:
+    findings: list[UIExposureFinding] = []
+    if not actions:
+        return findings
+    for path in repo_path.rglob("*"):
+        if not path.is_file() or _should_skip(path):
+            continue
+        if path.suffix == ".xml":
+            findings.extend(_scan_xml_menus(path, actions))
+        elif path.suffix == ".csv" and _csv_model_name(path) == "ir.ui.menu":
+            findings.extend(_scan_csv_menus(path, actions))
+    return findings
+
+
+def _scan_xml_menus(path: Path, actions: dict[str, dict[str, str]]) -> list[UIExposureFinding]:
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+        root = ElementTree.fromstring(content)
+    except ElementTree.ParseError:
+        return []
+    except Exception:
+        return []
+
+    findings: list[UIExposureFinding] = []
+    for menu in root.iter("menuitem"):
+        groups = menu.get("groups", "")
+        action_ref = _normalize_action_ref(menu.get("action", ""))
+        menu_id = menu.get("id", action_ref)
+        finding = _menu_finding(
+            path,
+            _line_for(content, f'id="{menu_id}"'),
+            menu_id,
+            groups,
+            action_ref,
+            actions,
+        )
+        if finding:
+            findings.append(finding)
+    return findings
+
+
+def _scan_csv_menus(path: Path, actions: dict[str, dict[str, str]]) -> list[UIExposureFinding]:
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return []
+
+    findings: list[UIExposureFinding] = []
+    for fields, line in _csv_dict_rows(content):
+        action_ref = _normalize_action_ref(fields.get("action", "") or fields.get("action/id", ""))
+        finding = _menu_finding(
+            path,
+            line,
+            fields.get("id", action_ref),
+            fields.get("groups_id", "") or fields.get("groups", ""),
+            action_ref,
+            actions,
+        )
+        if finding:
+            findings.append(finding)
+    return findings
+
+
+def _menu_finding(
+    path: Path,
+    line: int,
+    menu_id: str,
+    groups: str,
+    action_ref: str,
+    actions: dict[str, dict[str, str]],
+) -> UIExposureFinding | None:
+    if groups or not action_ref:
+        return None
+    action = actions.get(action_ref)
+    if not action:
+        return None
+    target_model = action.get("target_model", "")
+    if target_model not in SENSITIVE_MODELS or action.get("groups"):
+        return None
+    return UIExposureFinding(
+        rule_id="odoo-ui-sensitive-menu-no-groups",
+        title="Sensitive menu has no groups restriction",
+        severity="medium",
+        file=str(path),
+        line=line,
+        message=f"Menu exposes action for sensitive model '{target_model}' without groups; confirm ACLs and record rules make this intentional",
+        element="menuitem",
+        target=menu_id,
+    )
+
+
+def _dedupe_findings(findings: list[UIExposureFinding]) -> list[UIExposureFinding]:
+    seen: set[tuple[str, str, int, str, str]] = set()
+    unique: list[UIExposureFinding] = []
+    for finding in findings:
+        key = (finding.rule_id, finding.file, finding.line, finding.element, finding.target)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(finding)
+    return unique
 
 
 def findings_to_json(findings: list[UIExposureFinding]) -> list[dict[str, Any]]:
