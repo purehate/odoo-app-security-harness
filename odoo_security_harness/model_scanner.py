@@ -63,6 +63,8 @@ class ModelStructureScanner(ast.NodeVisitor):
         self.findings: list[ModelFinding] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.field_module_names: set[str] = {"fields"}
+        self.odoo_module_names: set[str] = {"odoo"}
 
     def scan_file(self) -> list[ModelFinding]:
         """Scan a Python file for model-structure findings."""
@@ -231,6 +233,21 @@ class ModelStructureScanner(ast.NodeVisitor):
         self.generic_visit(node)
         self.class_constants_stack.pop()
 
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.fields" and alias.asname:
+                self.field_module_names.add(alias.asname)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "fields":
+                    self.field_module_names.add(alias.asname or alias.name)
+        self.generic_visit(node)
+
     def _is_odoo_model(self, node: ast.ClassDef) -> bool:
         return any(
             isinstance(base, ast.Attribute)
@@ -311,11 +328,21 @@ class ModelStructureScanner(ast.NodeVisitor):
         return keywords
 
     def _field_call_type(self, node: ast.AST) -> str:
-        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "fields":
+        if isinstance(node, ast.Attribute) and self._is_odoo_fields_module_expr(node.value):
             return node.attr
         if isinstance(node, ast.Name):
             return node.id
         return ""
+
+    def _is_odoo_fields_module_expr(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.field_module_names
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "fields"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in self.odoo_module_names
+        )
 
     def _extract_sql_constraints(self, node: ast.ClassDef) -> list[str]:
         for item in node.body:

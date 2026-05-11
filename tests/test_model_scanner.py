@@ -51,6 +51,61 @@ class Thing(models.Model):
     assert any(f.rule_id == "odoo-model-secret-copyable" for f in findings)
 
 
+def test_aliased_odoo_fields_module_secret_like_field_should_not_be_copyable(tmp_path: Path) -> None:
+    """Aliased Odoo fields modules should still be scanned."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import fields as odoo_fields, models
+
+class Thing(models.Model):
+    _name = 'x.thing'
+    access_token = odoo_fields.Char()
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+
+    assert any(f.rule_id == "odoo-model-secret-copyable" for f in findings)
+
+
+def test_imported_odoo_fields_module_secret_like_field_should_not_be_copyable(tmp_path: Path) -> None:
+    """Direct odoo.fields imports should still be scanned."""
+    model = _write_model(
+        tmp_path,
+        """
+from odoo import models
+import odoo.fields as odoo_fields
+
+class Thing(models.Model):
+    _name = 'x.thing'
+    access_token = odoo_fields.Char()
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+
+    assert any(f.rule_id == "odoo-model-secret-copyable" for f in findings)
+
+
+def test_imported_odoo_module_fields_secret_like_field_should_not_be_copyable(tmp_path: Path) -> None:
+    """Direct odoo module imports should still expose field declarations."""
+    model = _write_model(
+        tmp_path,
+        """
+import odoo as od
+
+class Thing(od.models.Model):
+    _name = 'x.thing'
+    access_token = od.fields.Char()
+""",
+    )
+
+    findings = ModelStructureScanner(str(model)).scan_file()
+
+    assert any(f.rule_id == "odoo-model-secret-copyable" for f in findings)
+
+
 def test_direct_model_base_secret_like_field_should_not_be_copyable(tmp_path: Path) -> None:
     """Direct Model bases should not hide model field findings."""
     model = _write_model(
