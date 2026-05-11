@@ -568,6 +568,25 @@ client.get(record.callback_url)
     assert any(f.rule_id == "odoo-loose-python-http-no-timeout" for f in findings)
 
 
+def test_server_action_detects_aiohttp_client_session_context_without_timeout(tmp_path: Path) -> None:
+    """aiohttp ClientSession context aliases should still require timeout review."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+import aiohttp
+
+async def sync():
+    async with aiohttp.ClientSession() as client:
+        await client.get(record.callback_url)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-http-no-timeout" for f in findings)
+
+
 def test_server_action_tracks_starred_rest_http_client_alias(tmp_path: Path) -> None:
     """Starred-rest HTTP client aliases should still require timeouts."""
     script = tmp_path / "action.py"

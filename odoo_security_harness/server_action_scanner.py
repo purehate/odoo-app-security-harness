@@ -35,6 +35,7 @@ class LoosePythonScanner(ast.NodeVisitor):
 
     HTTP_METHODS = {"requests.delete", "requests.get", "requests.patch", "requests.post", "requests.put"}
     HTTP_CLIENT_METHODS = {"delete", "get", "patch", "post", "put", "request"}
+    HTTP_CLIENT_CONSTRUCTORS = {"aiohttp.ClientSession", "httpx.AsyncClient", "httpx.Client", "requests.Session"}
     SENSITIVE_MUTATION_METHODS = {"create", "set", "set_param", "unlink", "write"}
     SENSITIVE_MUTATION_MODELS = {
         "account.move",
@@ -90,12 +91,12 @@ class LoosePythonScanner(ast.NodeVisitor):
             if alias.name == "urllib.request" and alias.asname is None:
                 continue
             local_name = alias.asname or alias.name.split(".", 1)[0]
-            if alias.name in {"requests", "httpx", "urllib.request", "odoo.tools.safe_eval"}:
+            if alias.name in {"aiohttp", "requests", "httpx", "urllib.request", "odoo.tools.safe_eval"}:
                 self.module_aliases[local_name] = alias.name
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        if node.module in {"requests", "httpx", "urllib.request", "odoo.tools.safe_eval"}:
+        if node.module in {"aiohttp", "requests", "httpx", "urllib.request", "odoo.tools.safe_eval"}:
             for alias in node.names:
                 self.function_aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
         self.generic_visit(node)
@@ -127,6 +128,16 @@ class LoosePythonScanner(ast.NodeVisitor):
         self._mark_http_client_target(node.target, node.value)
         self._mark_elevated_record_target(node.target, node.value)
         self.generic_visit(node)
+
+    def visit_With(self, node: ast.With) -> None:
+        """Track HTTP client aliases introduced by context managers."""
+        for item in node.items:
+            if item.optional_vars is not None:
+                self._mark_http_client_target(item.optional_vars, item.context_expr)
+        self.generic_visit(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self.visit_With(node)
 
     def visit_Call(self, node: ast.Call) -> None:
         """Detect high-risk calls in loose Python contexts."""
@@ -302,7 +313,7 @@ class LoosePythonScanner(ast.NodeVisitor):
         if (
             isinstance(node.func, ast.Attribute)
             and node.func.attr in self.HTTP_CLIENT_METHODS
-            and _call_name(node.func.value).endswith("Client")
+            and _call_name(node.func.value).endswith(("Client", "ClientSession"))
         ):
             return True
         return (
@@ -403,7 +414,7 @@ class LoosePythonScanner(ast.NodeVisitor):
         if isinstance(node, ast.Attribute):
             return self._is_http_client_expr(node.value)
         if isinstance(node, ast.Call):
-            return self._canonical_call_name(node.func) in {"httpx.Client", "requests.Session"}
+            return self._canonical_call_name(node.func) in self.HTTP_CLIENT_CONSTRUCTORS
         if isinstance(node, ast.List | ast.Tuple | ast.Set):
             return any(self._is_http_client_expr(element) for element in node.elts)
         return False
