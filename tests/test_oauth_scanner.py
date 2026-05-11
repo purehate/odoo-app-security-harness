@@ -74,6 +74,30 @@ class Controller(http.Controller):
     assert "odoo-oauth-http-verify-disabled" in rule_ids
 
 
+def test_urllib_oauth_validation_url_is_reported(tmp_path: Path) -> None:
+    """urllib URL fetches in OAuth callbacks should receive timeout and SSRF review."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+from urllib.request import urlopen
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        return urlopen(kwargs.get('userinfo_url'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-oauth-http-no-timeout" in rule_ids
+    assert "odoo-oauth-tainted-validation-url" in rule_ids
+
+
 def test_local_constant_oauth_verification_disablement_is_reported(tmp_path: Path) -> None:
     """Function-local constants should not hide disabled OAuth TLS or JWT verification."""
     controllers = tmp_path / "module" / "controllers"

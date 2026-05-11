@@ -22,7 +22,7 @@ class OAuthFinding:
     sink: str = ""
 
 
-HTTP_METHODS = {"get", "post", "request"}
+HTTP_METHODS = {"get", "post", "request", "urlopen"}
 TAINTED_ARG_NAMES = {"access_token", "code", "id_token", "jwt", "oauth_uid", "state", "token", "kwargs", "kw", "post"}
 REQUEST_MARKERS = (
     "kwargs.get",
@@ -763,7 +763,11 @@ def _expr_contains_key(node: ast.AST, key_name: str, constants: dict[str, ast.AS
 def _is_http_client_call(node: ast.Call) -> bool:
     sink = _call_name(node.func)
     method = sink.rsplit(".", 1)[-1]
-    return method in HTTP_METHODS and sink.startswith(("requests.", "httpx."))
+    return method in HTTP_METHODS and (
+        sink.startswith(("requests.", "httpx."))
+        or sink in {"urllib.request.urlopen", "urlopen"}
+        or sink.endswith(".urlopen")
+    )
 
 
 def _is_user_model_expr(
