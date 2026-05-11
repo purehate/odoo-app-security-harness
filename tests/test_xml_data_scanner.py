@@ -493,6 +493,29 @@ def test_csv_config_parameter_security_toggle_is_reported(tmp_path: Path) -> Non
     assert sum(1 for finding in findings if finding.rule_id == "odoo-xml-config-param-security-toggle-enabled") == 2
 
 
+def test_xml_config_parameter_public_signup_scope_is_reported(tmp_path: Path) -> None:
+    """Module XML data should not silently switch signup policy to public signup."""
+    xml = tmp_path / "config.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="config_public_signup" model="ir.config_parameter">
+    <field name="key">auth_signup.invitation_scope</field>
+    <field name="value">b2c</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(
+        finding.rule_id == "odoo-xml-config-param-security-toggle-enabled"
+        and finding.record_id == "config_public_signup"
+        and "auth_signup.invitation_scope" in finding.message
+        for finding in findings
+    )
+
+
 def test_xml_config_parameter_insecure_base_url_is_reported(tmp_path: Path) -> None:
     """Module XML data should not ship insecure generated-link origins."""
     xml = tmp_path / "config.xml"
