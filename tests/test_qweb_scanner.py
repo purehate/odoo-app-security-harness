@@ -855,6 +855,42 @@ def test_detects_dynamic_attribute_mapping_class(tmp_path: Path) -> None:
     )
 
 
+def test_detects_sensitive_attribute_mapping_values(tmp_path: Path) -> None:
+    """Generic t-att mappings should not expose credential-shaped data attributes."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><div t-att="{'data-client-secret': record.client_secret}">Pay</div></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-qweb-sensitive-field-render"
+        and f.attribute == "t-att"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_regex_fallback_detects_sensitive_attribute_mapping_values(tmp_path: Path) -> None:
+    """Malformed XML fallback should still catch sensitive t-att mappings."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><div t-att="{'data-session': request.session_token}"><span></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-qweb-sensitive-field-render"
+        and f.attribute == "t-att"
+        and f.severity == "high"
+        for f in findings
+    )
+
+
 def test_static_attribute_mapping_class_ignored(tmp_path: Path) -> None:
     """Static class mapping literals should not trigger the dynamic class rule."""
     template = tmp_path / "template.xml"

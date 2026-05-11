@@ -314,9 +314,8 @@ class QWebScanner:
                 message=f"{attr}='{value}' maps dynamic CSS classes; verify untrusted data cannot hide controls, spoof status, or alter privileged UI affordances",
             )
 
-        for sensitive_attr in ("value", "content", "data-token", "data-secret", "data-access-token", "data-api-key"):
-            sensitive_value = self._mapped_attribute_value(value, sensitive_attr)
-            if sensitive_value is not None and self._looks_sensitive_attribute_render(sensitive_attr, sensitive_value):
+        for sensitive_attr, sensitive_value in self._mapped_sensitive_attribute_values(value):
+            if self._looks_sensitive_attribute_render(sensitive_attr, sensitive_value):
                 self._check_sensitive_render(tag, attr, sensitive_value)
                 break
 
@@ -611,6 +610,27 @@ class QWebScanner:
         if not match:
             return None
         return match.group(1).split(",", 1)[0]
+
+    def _mapped_sensitive_attribute_values(self, mapping: str) -> list[tuple[str, str]]:
+        """Return sensitive-looking attribute/value pairs from a QWeb t-att mapping."""
+        pairs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for match in re.finditer(r"['\"](?P<attr>[\w:-]+)['\"]\s*:", mapping):
+            attr = match.group("attr")
+            lowered_attr = attr.lower()
+            if not (
+                lowered_attr in {"value", "content"}
+                or lowered_attr.startswith("data-")
+                or any(marker in lowered_attr for marker in self.SENSITIVE_FIELD_MARKERS)
+            ):
+                continue
+            if lowered_attr in seen:
+                continue
+            seen.add(lowered_attr)
+            mapped_value = self._mapped_attribute_value(mapping, attr)
+            if mapped_value is not None:
+                pairs.append((attr, mapped_value))
+        return pairs
 
     def _check_post_form_csrf(self, element: ElementTree.Element, tag: str) -> None:
         """Check template POST forms for a visible CSRF token field."""
@@ -1307,6 +1327,23 @@ class QWebScanner:
                         message="t-att maps dynamic CSS classes; verify untrusted data cannot hide controls, spoof status, or alter privileged UI affordances",
                     )
                 )
+
+            for sensitive_attr, sensitive_value in self._mapped_sensitive_attribute_values(value):
+                if not self._looks_sensitive_attribute_render(sensitive_attr, sensitive_value):
+                    continue
+                findings.append(
+                    QWebFinding(
+                        rule_id="odoo-qweb-sensitive-field-render",
+                        title="QWeb renders sensitive-looking field",
+                        severity="high",
+                        file=self.file_path,
+                        line=line,
+                        element="",
+                        attribute="t-att",
+                        message="t-att maps token, secret, password, or API-key-like data into an HTML attribute; verify templates cannot expose credentials",
+                    )
+                )
+                break
 
             if not re.search(r"['\"](?:href|src|action)['\"]", value):
                 continue
