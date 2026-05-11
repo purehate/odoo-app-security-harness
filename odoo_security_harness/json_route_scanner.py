@@ -516,6 +516,16 @@ def _apply_route_options(
     if not isinstance(value, ast.Dict):
         return auth, csrf, route_type, paths
     for key, option_value in zip(value.keys, value.values, strict=False):
+        if key is None:
+            auth, csrf, route_type, paths = _apply_route_options(
+                option_value,
+                constants,
+                auth,
+                csrf,
+                route_type,
+                paths,
+            )
+            continue
         key = _resolve_constant(key, constants) if key is not None else None
         if isinstance(key, ast.Constant) and isinstance(key.value, str):
             auth, csrf, route_type, paths = _apply_route_keyword(
