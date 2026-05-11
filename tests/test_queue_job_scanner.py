@@ -63,6 +63,27 @@ class SaleJob(models.Model):
     assert sum(f.rule_id == "odoo-queue-job-http-no-timeout" for f in findings) == 3
 
 
+def test_flags_aliased_queue_job_decorator(tmp_path: Path) -> None:
+    """Aliased queue_job decorators should still mark job functions."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job as queued_job
+
+class SaleJob(models.Model):
+    @queued_job
+    def sync_background(self, record):
+        record.sudo().write({'state': 'done'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-queue-job-sudo-mutation" for f in findings)
+
+
 def test_flags_queue_job_aiohttp_client_session_context(tmp_path: Path) -> None:
     """Queue jobs should track aiohttp ClientSession context aliases."""
     module = tmp_path / "module" / "models"
@@ -687,6 +708,30 @@ from odoo.http import route
 
 class Controller(http.Controller):
     @route('/sync', auth='public', csrf=False)
+    def sync(self, **kwargs):
+        self.env['sale.order'].with_delay().sync_order(kwargs.get('id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-queue-job-missing-identity-key" in rule_ids
+    assert "odoo-queue-job-public-enqueue" in rule_ids
+
+
+def test_flags_aliased_imported_route_decorator_public_enqueue(tmp_path: Path) -> None:
+    """Aliased directly imported route decorators should keep public route context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import route as odoo_route
+
+class Controller(http.Controller):
+    @odoo_route('/sync', auth='public', csrf=False)
     def sync(self, **kwargs):
         self.env['sale.order'].with_delay().sync_order(kwargs.get('id'))
 """,

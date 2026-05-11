@@ -62,6 +62,8 @@ class QueueJobScanner(ast.NodeVisitor):
         self.http_function_aliases: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.job_decorator_names: set[str] = {"job"}
+        self.route_decorator_names: set[str] = {"route"}
 
     def scan_file(self) -> list[QueueJobFinding]:
         """Scan the file."""
@@ -94,13 +96,21 @@ class QueueJobScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "request":
                     self.http_module_aliases.add(alias.asname or alias.name)
+        elif node.module == "odoo.addons.queue_job.job":
+            for alias in node.names:
+                if alias.name == "job":
+                    self.job_decorator_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.http":
+            for alias in node.names:
+                if alias.name == "route":
+                    self.route_decorator_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         context = FunctionContext(
             name=node.name,
-            is_job=_is_job_function(node),
-            route_auth=_route_auth(node, self._effective_constants()),
+            is_job=_is_job_function(node, self.job_decorator_names),
+            route_auth=_route_auth(node, self._effective_constants(), self.route_decorator_names),
         )
         self.function_stack.append(context)
         self.generic_visit(node)
@@ -308,11 +318,12 @@ class FunctionContext:
             self.http_client_vars = set()
 
 
-def _is_job_function(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    if any(
-        _decorator_name(decorator).endswith(".job") or _decorator_name(decorator) == "job"
-        for decorator in node.decorator_list
-    ):
+def _is_job_function(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    job_decorator_names: set[str] | None = None,
+) -> bool:
+    job_decorator_names = job_decorator_names or {"job"}
+    if any(_is_job_decorator(decorator, job_decorator_names) for decorator in node.decorator_list):
         return True
     return node.name.startswith(("_job_", "job_")) or "queue" in node.name.lower()
 
@@ -320,10 +331,12 @@ def _is_job_function(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 def _route_auth(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     constants: dict[str, ast.AST] | None = None,
+    route_decorator_names: set[str] | None = None,
 ) -> str:
     constants = constants or {}
+    route_decorator_names = route_decorator_names or {"route"}
     for decorator in node.decorator_list:
-        if not _decorator_name(decorator).endswith("route"):
+        if not _is_route_decorator(decorator, route_decorator_names):
             continue
         call = decorator if isinstance(decorator, ast.Call) else None
         if not call:
@@ -333,6 +346,16 @@ def _route_auth(
             if name == "auth" and isinstance(value, ast.Constant):
                 return str(value.value)
     return ""
+
+
+def _is_job_decorator(node: ast.AST, job_decorator_names: set[str]) -> bool:
+    name = _decorator_name(node)
+    return name in job_decorator_names or name.endswith(".job")
+
+
+def _is_route_decorator(node: ast.AST, route_decorator_names: set[str]) -> bool:
+    name = _decorator_name(node)
+    return name in route_decorator_names or name.endswith(".route")
 
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
