@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
@@ -196,7 +197,8 @@ class WebsiteFormScanner:
             "Website form posts directly to an Odoo model",
             severity,
             line,
-            "Website form submits to Odoo model creation; verify website_form allowed fields, required authentication, rate limiting, and post-create side effects",
+            "Website form submits to Odoo model creation; verify website_form allowed fields, required "
+            "authentication, rate limiting, and post-create side effects",
             model,
             "",
         )
@@ -207,7 +209,8 @@ class WebsiteFormScanner:
                 "Website form uses GET for model submission",
                 "high" if model in SENSITIVE_MODELS else "medium",
                 line,
-                "Website form targets model submission with method=GET; verify state changes cannot be triggered by links, crawlers, prefetchers, or cross-site navigation",
+                "Website form targets model submission with method=GET; verify state changes cannot be triggered "
+                "by links, crawlers, prefetchers, or cross-site navigation",
                 model,
                 "method",
             )
@@ -218,7 +221,8 @@ class WebsiteFormScanner:
                 "Website form accepts file uploads",
                 "medium",
                 line,
-                "Public website form accepts file uploads; verify MIME/type checks, size limits, attachment visibility, and malware scanning",
+                "Public website form accepts file uploads; verify MIME/type checks, size limits, attachment "
+                "visibility, and malware scanning",
                 model,
                 "",
             )
@@ -229,7 +233,9 @@ class WebsiteFormScanner:
                     "Website form allows browser-active file uploads",
                     "high",
                     line,
-                    f"Public website form file input accepts browser-active upload types ({active_accept}); restrict accept lists and enforce server-side MIME/content validation before creating attachments",
+                    f"Public website form file input accepts browser-active upload types ({active_accept}); "
+                    "restrict accept lists and enforce server-side MIME/content validation before creating "
+                    "attachments",
                     model,
                     "accept",
                 )
@@ -240,7 +246,8 @@ class WebsiteFormScanner:
                 "Website form has no visible CSRF token",
                 "high" if model in SENSITIVE_MODELS else "medium",
                 line,
-                "Website form posts to model creation without a visible csrf_token input; verify Odoo CSRF protection is present and cannot be bypassed cross-site",
+                "Website form posts to model creation without a visible csrf_token input; verify Odoo CSRF "
+                "protection is present and cannot be bypassed cross-site",
                 model,
                 "csrf_token",
             )
@@ -252,7 +259,8 @@ class WebsiteFormScanner:
                 "Website form success redirect uses dangerous URL scheme",
                 "high",
                 line,
-                f"Website form success page uses dangerous URL '{success_page}'; restrict success redirects to local routes or reviewed HTTPS destinations",
+                f"Website form success page uses dangerous URL '{success_page}'; restrict success redirects to "
+                "local routes or reviewed HTTPS destinations",
                 model,
                 "success_page",
             )
@@ -262,7 +270,8 @@ class WebsiteFormScanner:
                 "Website form success redirect embeds credentials",
                 "high",
                 line,
-                f"Website form success page embeds username, password, or token material in URL '{success_page}'; keep credentials out of browser-visible redirects, history, referrers, and logs",
+                f"Website form success page embeds username, password, or token material in URL '{success_page}'; "
+                "keep credentials out of browser-visible redirects, history, referrers, and logs",
                 model,
                 "success_page",
             )
@@ -272,7 +281,8 @@ class WebsiteFormScanner:
                 "Website form redirects to external success URL",
                 "medium",
                 line,
-                f"Website form success page points to external URL '{success_page}'; verify it cannot become phishing, token leakage, or open-redirect surface",
+                f"Website form success page points to external URL '{success_page}'; verify it cannot become "
+                "phishing, token leakage, or open-redirect surface",
                 model,
                 "success_page",
             )
@@ -284,7 +294,8 @@ class WebsiteFormScanner:
                 "Website form success redirect is request-derived",
                 "medium",
                 line,
-                f"Website form success page is built from request-derived expression '{dynamic_success_page}'; validate against local routes or allowlisted hosts before redirecting",
+                f"Website form success page is built from request-derived expression '{dynamic_success_page}'; "
+                "validate against local routes or allowlisted hosts before redirecting",
                 model,
                 "success_page",
             )
@@ -295,7 +306,8 @@ class WebsiteFormScanner:
                 "Website form exposes sensitive model field",
                 "high",
                 _line_for(self.content, f'name="{field}"'),
-                f"Website form includes field '{field}'; verify public users cannot set ownership, workflow, company, token, privilege, or visibility fields",
+                f"Website form includes field '{field}'; verify public users cannot set ownership, workflow, "
+                "company, token, privilege, or visibility fields",
                 model,
                 field,
             )
@@ -306,7 +318,8 @@ class WebsiteFormScanner:
                 "Website form carries model selector in hidden input",
                 "medium",
                 line,
-                "Website form includes a hidden model selector; verify clients cannot tamper with submitted model/field metadata",
+                "Website form includes a hidden model selector; verify clients cannot tamper with submitted "
+                "model/field metadata",
                 model,
                 "model_name",
             )
@@ -317,7 +330,8 @@ class WebsiteFormScanner:
                 "Website form disables input sanitization",
                 "high",
                 _line_for(self.content, 'name="sanitize_form"'),
-                "Website form submits sanitize_form=false; verify public users cannot persist unsafe HTML through website_form handling",
+                "Website form submits sanitize_form=false; verify public users cannot persist unsafe HTML through "
+                "website_form handling",
                 model,
                 "sanitize_form",
             )
@@ -524,7 +538,8 @@ class WebsiteFormFieldScanner(ast.NodeVisitor):
                 file=str(self.path),
                 line=line,
                 message=(
-                    f"Model field '{field}' sets website_form_blacklisted=False; verify public website forms cannot set "
+                    f"Model field '{field}' sets website_form_blacklisted=False; verify public website forms "
+                    "cannot set "
                     "ownership, workflow, company, token, privilege, or visibility fields"
                 ),
                 model=model,
@@ -639,6 +654,7 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
+        _mark_static_dict_update(node, self.local_constants)
         if _call_disables_sanitize_form(node, self._effective_constants()):
             self.findings.append(
                 WebsiteFormFinding(
@@ -647,7 +663,10 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
                     severity="high",
                     file=str(self.path),
                     line=node.lineno,
-                    message="Call passes sanitize_form=False; verify public users cannot persist unsafe HTML through website_form handling",
+                    message=(
+                        "Call passes sanitize_form=False; verify public users cannot persist unsafe HTML through "
+                        "website_form handling"
+                    ),
                     model="",
                     field="sanitize_form",
                 )
@@ -998,6 +1017,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -1044,6 +1065,41 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for keyword in _expanded_dict_keywords(arg_values, constants):
+                values_node = _dict_with_keyword(values_node, keyword.arg or "", keyword.value)
+    for keyword in _expanded_keywords(node, constants):
+        values_node = _dict_with_keyword(values_node, keyword.arg or "", keyword.value)
+    constants[name] = values_node
+
+
+def _dict_with_keyword(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    if not key:
+        return values_node
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[ast.keyword]:

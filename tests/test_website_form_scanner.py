@@ -676,7 +676,8 @@ def test_flags_qweb_mapped_external_success_redirect(tmp_path: Path) -> None:
     (views / "forms.xml").write_text(
         """<odoo>
   <template id="lead">
-    <form action="/website/form/crm.lead" method="post" t-att="{'data-success-page': 'https://evil.example/thanks', 'aria-label': 'Lead'}">
+    <form action="/website/form/crm.lead" method="post"
+          t-att="{'data-success-page': 'https://evil.example/thanks', 'aria-label': 'Lead'}">
       <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
       <input name="name"/>
     </form>
@@ -754,7 +755,8 @@ def test_flags_request_derived_formatted_success_redirect(tmp_path: Path) -> Non
     (views / "forms.xml").write_text(
         """<odoo>
   <template id="lead">
-    <form action="/website/form/crm.lead" method="post" t-attf-data-success_page="/thanks?next=#{post.get('return_url')}">
+    <form action="/website/form/crm.lead" method="post"
+          t-attf-data-success_page="/thanks?next=#{post.get('return_url')}">
       <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
       <input name="name"/>
     </form>
@@ -775,7 +777,8 @@ def test_flags_qweb_dangerous_success_redirect_scheme(tmp_path: Path) -> None:
     (views / "forms.xml").write_text(
         """<odoo>
   <template id="lead">
-    <form action="/website/form/crm.lead" method="post" t-att-data-success-page="'data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;'">
+    <form action="/website/form/crm.lead" method="post"
+          t-att-data-success-page="'data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;'">
       <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
       <input name="name"/>
     </form>
@@ -796,7 +799,8 @@ def test_flags_qweb_dangerous_svg_success_redirect_scheme(tmp_path: Path) -> Non
     (views / "forms.xml").write_text(
         """<odoo>
   <template id="lead">
-    <form action="/website/form/crm.lead" method="post" t-att-data-success-page="'data:image/svg+xml,&lt;svg onload=&quot;alert(1)&quot;/&gt;'">
+    <form action="/website/form/crm.lead" method="post"
+          t-att-data-success-page="'data:image/svg+xml,&lt;svg onload=&quot;alert(1)&quot;/&gt;'">
       <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
       <input name="name"/>
     </form>
@@ -1100,6 +1104,35 @@ class Lead(models.Model):
     )
 
 
+def test_flags_updated_sensitive_field_allowlisted_for_website_form(tmp_path: Path) -> None:
+    """Updated field kwargs should not hide sensitive website form allowlists."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "lead.py").write_text(
+        """
+from odoo import fields, models
+
+FIELD_OPTIONS = {'string': 'Partner'}
+FIELD_OPTIONS.update({'website_form_blacklisted': False})
+
+class Lead(models.Model):
+    _inherit = 'crm.lead'
+
+    partner_id = fields.Many2one('res.partner', **FIELD_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-website-form-field-allowlisted-sensitive"
+        and f.model == "crm.lead"
+        and f.field == "partner_id"
+        for f in findings
+    )
+
+
 def test_flags_class_constant_backed_sensitive_field_allowlisted_for_website_form(tmp_path: Path) -> None:
     """Class-body website_form_blacklisted constants should not hide sensitive field allowlists."""
     models = tmp_path / "module" / "models"
@@ -1347,6 +1380,33 @@ BASE_OPTIONS = {
 ROUTE_OPTIONS = BASE_OPTIONS | {'auth': 'public', 'csrf': False}
 
 class WebsiteForm(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def submit(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-route-csrf-disabled" for f in findings)
+
+
+def test_flags_updated_website_form_route_with_csrf_disabled(tmp_path: Path) -> None:
+    """Updated route kwargs should not hide website_form CSRF disablement."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+
+ROUTE_OPTIONS = {
+    'route': ['/contactus', '/website/form/helpdesk.ticket'],
+    'auth': 'public',
+}
+ROUTE_OPTIONS.update({'csrf': False})
+
+class Controller(http.Controller):
     @http.route(**ROUTE_OPTIONS)
     def submit(self, **post):
         return 'ok'
