@@ -220,6 +220,60 @@ class Controller(odoo_http.Controller):
     assert "odoo-module-tainted-selection" in rule_ids
 
 
+def test_imported_odoo_http_module_immediate_install_from_request_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http imports should not hide routes or request-selected modules."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "modules.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/public/install', auth='public', csrf=False)
+    def install(self):
+        params = odoo_http.request.get_http_params()
+        module = odoo_http.request.env['ir.module.module'].sudo().search([('name', '=', params.get('module'))])
+        return module.button_immediate_install()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_module_lifecycle(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-module-public-route-lifecycle" in rule_ids
+    assert "odoo-module-sudo-lifecycle" in rule_ids
+    assert "odoo-module-immediate-lifecycle" in rule_ids
+    assert "odoo-module-tainted-selection" in rule_ids
+
+
+def test_imported_odoo_module_immediate_install_from_request_is_reported(tmp_path: Path) -> None:
+    """Direct odoo module imports should not hide routes or request-selected modules."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "modules.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/public/install', auth='public', csrf=False)
+    def install(self):
+        params = od.http.request.get_http_params()
+        module = od.http.request.env['ir.module.module'].sudo().search([('name', '=', params.get('module'))])
+        return module.button_immediate_install()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_module_lifecycle(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-module-public-route-lifecycle" in rule_ids
+    assert "odoo-module-sudo-lifecycle" in rule_ids
+    assert "odoo-module-immediate-lifecycle" in rule_ids
+    assert "odoo-module-tainted-selection" in rule_ids
+
+
 def test_non_odoo_route_decorator_module_lifecycle_is_not_public(tmp_path: Path) -> None:
     """Local route decorators should not make module lifecycle calls public routes."""
     controllers = tmp_path / "module" / "controllers"
