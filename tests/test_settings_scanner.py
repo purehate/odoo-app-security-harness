@@ -600,6 +600,32 @@ class ResConfigSettings(models.TransientModel):
     assert any(f.rule_id == "odoo-settings-sudo-set-param" and f.field == "auth_oauth.allow_signup" for f in findings)
 
 
+def test_flags_local_constant_backed_with_user_root_set_param_in_settings_method(tmp_path: Path) -> None:
+    """Function-local superuser IDs, model names, and set_param keys should be recognized."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import models
+
+class ResConfigSettings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    def set_values(self):
+        root_uid = 1
+        signup_key = 'auth_oauth.allow_signup'
+        config_model = 'ir.config_parameter'
+        Config = self.env[config_model].with_user(root_uid)
+        Config.set_param(signup_key, 'True')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_settings(tmp_path)
+
+    assert any(f.rule_id == "odoo-settings-sudo-set-param" and f.field == "auth_oauth.allow_signup" for f in findings)
+
+
 def test_flags_env_ref_root_set_param_in_settings_method(tmp_path: Path) -> None:
     """with_user(base.user_root) config aliases should preserve elevated posture."""
     models = tmp_path / "module" / "models"

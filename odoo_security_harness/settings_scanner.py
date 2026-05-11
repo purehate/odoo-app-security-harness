@@ -109,6 +109,7 @@ class SettingsScanner(ast.NodeVisitor):
         self.sudo_config_parameter_names: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
         self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_file(self) -> list[SettingsFinding]:
@@ -142,9 +143,12 @@ class SettingsScanner(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_config_parameter_names = set(self.config_parameter_names)
         previous_sudo_config_parameter_names = set(self.sudo_config_parameter_names)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         self.generic_visit(node)
         self.config_parameter_names = previous_config_parameter_names
         self.sudo_config_parameter_names = previous_sudo_config_parameter_names
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -161,15 +165,19 @@ class SettingsScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> Any:
+        for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
         self._track_config_parameter_aliases(node.targets, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._track_config_parameter_aliases([node.target], node.value)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._track_config_parameter_aliases([node.target], node.value)
         self.generic_visit(node)
 
@@ -224,6 +232,24 @@ class SettingsScanner(ast.NodeVisitor):
                 self.sudo_config_parameter_names.add(name)
             else:
                 self.sudo_config_parameter_names.discard(name)
+
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for child_target, child_value in _unpack_target_value_pairs(target, value):
+                self._mark_local_constant_target(child_target, child_value)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for name in _target_names(target):
+                self.local_constants.pop(name, None)
 
     def _scan_settings_fields(self, node: ast.ClassDef, model_name: str) -> None:
         for item in node.body:
@@ -327,11 +353,12 @@ class SettingsScanner(ast.NodeVisitor):
         )
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
 
