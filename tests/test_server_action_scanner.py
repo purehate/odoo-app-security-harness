@@ -910,6 +910,20 @@ def test_repository_scan_detects_csv_server_action_code(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-loose-python-safe-eval" and f.context == "server_action_csv" for f in findings)
 
 
+def test_repository_scan_detects_csv_colon_header_server_action_code(tmp_path: Path) -> None:
+    """CSV ir.actions.server export headers with colon suffixes should still scan code."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_server.csv").write_text(
+        "id,name,state:name,code:raw\naction_eval,Eval,code,safe_eval(record.domain)\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_loose_python(tmp_path)
+
+    assert any(f.rule_id == "odoo-loose-python-safe-eval" and f.context == "server_action_csv" for f in findings)
+
+
 def test_repository_scan_ignores_non_code_xml_server_actions(tmp_path: Path) -> None:
     """Only state='code' XML server actions should be parsed as loose Python."""
     data = tmp_path / "module" / "data"
