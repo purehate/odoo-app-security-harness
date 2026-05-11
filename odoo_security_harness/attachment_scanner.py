@@ -67,6 +67,14 @@ ATTACHMENT_VALUE_KEYS = {
     "type",
     "url",
 }
+ACTIVE_ATTACHMENT_MIMETYPES = {
+    "application/javascript",
+    "application/xhtml+xml",
+    "image/svg+xml",
+    "text/html",
+    "text/javascript",
+}
+ACTIVE_ATTACHMENT_EXTENSIONS = (".htm", ".html", ".js", ".mjs", ".svg", ".xhtml")
 
 
 def scan_attachments(repo_path: Path) -> list[AttachmentFinding]:
@@ -310,6 +318,17 @@ class AttachmentScanner(ast.NodeVisitor):
                 route.display_path(),
                 sink,
             )
+        active_content = _active_attachment_content(values, constants)
+        if active_content:
+            self._add(
+                "odoo-attachment-active-content",
+                "Attachment uses browser-active content type",
+                _active_content_severity(route, public, constants),
+                node.lineno,
+                f"ir.attachment.create stores browser-active content ({active_content}); verify MIME allowlists, sanitization, download disposition, and public access",
+                route.display_path(),
+                sink,
+            )
 
     def _scan_attachment_write(self, node: ast.Call, route: RouteContext, sink: str) -> None:
         values = self._first_dict_arg(node)
@@ -358,6 +377,17 @@ class AttachmentScanner(ast.NodeVisitor):
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
                 "ir.attachment.write stores a request-derived access_token; generate attachment tokens server-side and bind them to explicit ownership checks",
+                route.display_path(),
+                sink,
+            )
+        active_content = _active_attachment_content(values, constants)
+        if active_content:
+            self._add(
+                "odoo-attachment-active-content",
+                "Attachment uses browser-active content type",
+                _active_content_severity(route, public, constants),
+                node.lineno,
+                f"ir.attachment.write stores browser-active content ({active_content}); verify MIME allowlists, sanitization, download disposition, and public access",
                 route.display_path(),
                 sink,
             )
@@ -945,6 +975,25 @@ def _is_superuser_arg(
 def _truthy_constant(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
     value = _resolve_constant(node, constants or {})
     return isinstance(value, ast.Constant) and value.value is True
+
+
+def _active_content_severity(route: RouteContext, public: ast.AST | None, constants: dict[str, ast.AST]) -> str:
+    if route.auth in {"public", "none"} and public is not None and _truthy_constant(public, constants):
+        return "critical"
+    if route.auth in {"public", "none"} or (public is not None and _truthy_constant(public, constants)):
+        return "high"
+    return "medium"
+
+
+def _active_attachment_content(values: dict[str, ast.AST], constants: dict[str, ast.AST]) -> str:
+    evidence: list[str] = []
+    mimetype = _literal_string(values.get("mimetype"), constants).strip().lower()
+    if mimetype in ACTIVE_ATTACHMENT_MIMETYPES:
+        evidence.append(f"mimetype={mimetype}")
+    name = _literal_string(values.get("name"), constants).strip().lower()
+    if name.endswith(ACTIVE_ATTACHMENT_EXTENSIONS):
+        evidence.append(f"name={name}")
+    return ", ".join(evidence)
 
 
 def _looks_route_id_arg(name: str) -> bool:

@@ -230,6 +230,102 @@ class Controller(od.http.Controller):
     assert "odoo-attachment-tainted-res-id" in rule_ids
 
 
+def test_active_content_attachment_create_is_reported(tmp_path: Path) -> None:
+    """Browser-active attachment types need inline-serving review."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachments.py").write_text(
+        """
+from odoo import models
+
+class AttachmentBuilder(models.Model):
+    _name = 'x.attachment.builder'
+
+    def build(self, payload):
+        return self.env['ir.attachment'].create({
+            'name': 'preview.html',
+            'datas': payload,
+            'mimetype': 'text/html',
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-attachment-active-content"
+        and finding.severity == "medium"
+        and "mimetype=text/html" in finding.message
+        and "name=preview.html" in finding.message
+        for finding in findings
+    )
+
+
+def test_public_active_content_attachment_create_is_critical(tmp_path: Path) -> None:
+    """Public routes creating public active content are high-impact XSS leads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "attachments.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/svg', auth='public', csrf=False)
+    def build_svg(self, **kwargs):
+        return request.env['ir.attachment'].sudo().create({
+            'name': 'badge.svg',
+            'datas': kwargs.get('payload'),
+            'mimetype': 'image/svg+xml',
+            'public': True,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-attachment-active-content"
+        and finding.severity == "critical"
+        and "mimetype=image/svg+xml" in finding.message
+        for finding in findings
+    )
+
+
+def test_active_content_attachment_write_is_reported(tmp_path: Path) -> None:
+    """Attachment writes can turn an existing file into browser-active content."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachments.py").write_text(
+        """
+from odoo import models
+
+class AttachmentBuilder(models.Model):
+    _name = 'x.attachment.builder'
+
+    def publish_script(self, attachment_id):
+        attachment = self.env['ir.attachment'].browse(attachment_id)
+        return attachment.write({
+            'name': 'snippet.js',
+            'mimetype': 'application/javascript',
+            'public': True,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-attachment-active-content"
+        and finding.severity == "high"
+        and finding.sink.endswith(".write")
+        for finding in findings
+    )
+
+
 def test_non_odoo_route_decorator_public_attachment_create_is_ignored(tmp_path: Path) -> None:
     """Local route-like decorators should not create Odoo route context."""
     controllers = tmp_path / "module" / "controllers"

@@ -2185,6 +2185,12 @@
       "capec": ["CAPEC-118"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "attachment_active_content": {
+      "label": "ir.attachment stores browser-active content",
+      "cwe": ["CWE-79", "CWE-434", "CWE-20"],
+      "capec": ["CAPEC-63", "CAPEC-592"],
+      "owasp": "A03:2021 Injection"
+    },
     "attachment_public_write": {
       "label": "ir.attachment write makes an existing file public",
       "cwe": ["CWE-200", "CWE-284", "CWE-732"],
