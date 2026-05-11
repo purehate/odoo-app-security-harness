@@ -118,6 +118,31 @@ class Sale(models.Model):
     assert any(f.model == "sale.order" for f in findings)
 
 
+def test_flags_local_constant_allow_all_access_override(tmp_path: Path) -> None:
+    """Function-local allow-all constants should not hide access bypasses."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import models
+
+class Sale(models.Model):
+    _inherit = 'sale.order'
+
+    def check_access_rule(self, operation):
+        allow_all = True
+        return allow_all
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_access_overrides(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-access-override-missing-super" in rule_ids
+    assert "odoo-access-override-allow-all" in rule_ids
+
+
 def test_flags_direct_model_base_access_override(tmp_path: Path) -> None:
     """Direct Model bases should not hide risky access overrides."""
     models = tmp_path / "module" / "models"
@@ -449,6 +474,30 @@ class Product(models.Model):
     findings = scan_access_overrides(tmp_path)
 
     assert any(f.rule_id == "odoo-access-override-sudo-search" and f.model == "product.template" for f in findings)
+
+
+def test_flags_local_constant_with_user_superuser_search_override(tmp_path: Path) -> None:
+    """Function-local SUPERUSER_ID aliases should still be treated as elevated reads."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "product.py").write_text(
+        """
+from odoo import models
+
+class Product(models.Model):
+    _inherit = 'product.template'
+
+    def search_read(self, domain=None, fields=None, offset=0, limit=None, order=None):
+        root_uid = 1
+        Products = self.env['product.template'].with_user(root_uid)
+        return Products.search([]).read(fields)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_access_overrides(tmp_path)
+
+    assert any(f.rule_id == "odoo-access-override-sudo-search" for f in findings)
 
 
 def test_flags_env_ref_admin_search_override(tmp_path: Path) -> None:

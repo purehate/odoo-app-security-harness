@@ -52,6 +52,7 @@ class AccessOverrideScanner(ast.NodeVisitor):
         self.method_stack: list[MethodContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
         self.model_base_names: set[str] = {"Model", "TransientModel", "AbstractModel"}
         self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
@@ -94,27 +95,34 @@ class AccessOverrideScanner(ast.NodeVisitor):
         if not self.model_stack or node.name not in ACCESS_OVERRIDE_METHODS | SEARCH_OVERRIDE_METHODS:
             self.generic_visit(node)
             return
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         context = MethodContext(name=node.name)
         self.method_stack.append(context)
         self.generic_visit(node)
         self._finish_method(node, context)
         self.method_stack.pop()
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         if self.method_stack:
+            for target in node.targets:
+                self._mark_local_constant_target(target, node.value)
             self._track_sudo_aliases(node.targets, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if self.method_stack and node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._track_sudo_aliases([node.target], node.value)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
         if self.method_stack:
+            self._mark_local_constant_target(node.target, node.value)
             self._track_sudo_aliases([node.target], node.value)
         self.generic_visit(node)
 
@@ -221,12 +229,31 @@ class AccessOverrideScanner(ast.NodeVisitor):
         else:
             context.sudo_vars.discard(target.id)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for child_target, child_value in _unpack_target_value_pairs(target, value):
+                self._mark_local_constant_target(child_target, child_value)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for name in _target_names(target):
+                self.local_constants.pop(name, None)
+
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
 
@@ -311,6 +338,19 @@ def _unpack_target_value_pairs(
     rest_container: ast.expr = ast.List(elts=rest_values, ctx=ast.Load())
     after = list(zip(target.elts[starred_index + 1 :], value.elts[after_values_start:], strict=False))
     return [*before, (target.elts[starred_index], rest_container), *after]
+
+
+def _target_names(node: ast.AST) -> set[str]:
+    if isinstance(node, ast.Name):
+        return {node.id}
+    if isinstance(node, ast.Starred):
+        return _target_names(node.value)
+    if isinstance(node, ast.Tuple | ast.List):
+        names: set[str] = set()
+        for element in node.elts:
+            names |= _target_names(element)
+        return names
+    return set()
 
 
 def _returns_true(node: ast.Return, constants: dict[str, ast.AST] | None = None) -> bool:
