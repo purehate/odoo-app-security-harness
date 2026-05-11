@@ -88,6 +88,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants_stack: list[dict[str, ast.AST]] = []
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
@@ -152,6 +153,7 @@ class SignupTokenScanner(ast.NodeVisitor):
             is_route=False,
         )
         self.route_stack.append(route)
+        self.local_constants_stack.append({})
         for arg in [*node.args.args, *node.args.kwonlyargs]:
             if arg.arg in TAINTED_ARG_NAMES or (route.is_route and _looks_route_id_arg(arg.arg)):
                 self.tainted_names.add(arg.arg)
@@ -172,6 +174,7 @@ class SignupTokenScanner(ast.NodeVisitor):
             )
 
         self.generic_visit(node)
+        self.local_constants_stack.pop()
         self.route_stack.pop()
         self.tainted_names = previous_tainted
         self.identity_model_names = previous_identity_model_names
@@ -188,6 +191,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         previous_elevated_identity_names = set(self.elevated_identity_names)
         previous_token_mutation_names = set(self.token_mutation_names)
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_tainted_target(target, node.value)
             self._mark_identity_model_target(target, node.value, previous_identity_model_names)
             self._mark_identity_record_target(
@@ -214,6 +218,7 @@ class SignupTokenScanner(ast.NodeVisitor):
             previous_identity_record_names = set(self.identity_record_names)
             previous_elevated_identity_names = set(self.elevated_identity_names)
             previous_token_mutation_names = set(self.token_mutation_names)
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_tainted_target(node.target, node.value)
             self._mark_identity_model_target(node.target, node.value, previous_identity_model_names)
             self._mark_identity_record_target(
@@ -248,6 +253,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         previous_identity_record_names = set(self.identity_record_names)
         previous_elevated_identity_names = set(self.elevated_identity_names)
         previous_token_mutation_names = set(self.token_mutation_names)
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_tainted_target(node.target, node.value)
         self._mark_identity_model_target(node.target, node.value, previous_identity_model_names)
         self._mark_identity_record_target(
@@ -566,6 +572,11 @@ class SignupTokenScanner(ast.NodeVisitor):
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if not self.local_constants_stack:
+            return
+        _mark_local_constant_target(self.local_constants_stack[-1], target, value)
+
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
 
@@ -630,11 +641,13 @@ class SignupTokenScanner(ast.NodeVisitor):
         return _is_request_derived(node, self.request_names, self.http_module_names, self.odoo_module_names)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants_stack:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        for local_constants in self.local_constants_stack:
+            constants.update(local_constants)
         return constants
 
 
@@ -816,6 +829,36 @@ def _is_static_literal(node: ast.AST) -> bool:
             for key, value in zip(node.keys, node.values, strict=False)
         )
     return False
+
+
+def _mark_local_constant_target(constants: dict[str, ast.AST], target: ast.AST, value: ast.AST) -> None:
+    if isinstance(target, ast.Name):
+        if _is_static_literal(value):
+            constants[target.id] = value
+        else:
+            constants.pop(target.id, None)
+        return
+
+    if isinstance(target, ast.Starred):
+        _mark_local_constant_target(constants, target.value, value)
+        return
+
+    if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
+                _mark_local_constant_target(constants, target_element, value_element)
+        else:
+            _discard_local_constant_target(constants, target)
+
+
+def _discard_local_constant_target(constants: dict[str, ast.AST], target: ast.AST) -> None:
+    if isinstance(target, ast.Name):
+        constants.pop(target.id, None)
+    elif isinstance(target, ast.Starred):
+        _discard_local_constant_target(constants, target.value)
+    elif isinstance(target, ast.Tuple | ast.List):
+        for element in target.elts:
+            _discard_local_constant_target(constants, element)
 
 
 def _looks_route_id_arg(name: str) -> bool:
@@ -1050,6 +1093,10 @@ def _expr_mentions_token_mutation(
     constants: dict[str, ast.AST] | None = None,
 ) -> bool:
     constants = constants or {}
+    if isinstance(node, ast.Name) and node.id in token_mutation_names:
+        return True
+    if isinstance(node, ast.Subscript) and _call_root_name(node) in token_mutation_names:
+        return True
     node = _resolve_constant(node, constants)
     if isinstance(node, ast.Name):
         return node.id in token_mutation_names

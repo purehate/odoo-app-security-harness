@@ -466,6 +466,38 @@ class Controller(http.Controller):
     )
 
 
+def test_local_constant_alias_reset_model_token_fields_are_reported(tmp_path: Path) -> None:
+    """Function-local model and token constants should not hide token lookups."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/web/reset_password', auth='public', csrf=False)
+    def reset_password(self, **kwargs):
+        partner_model = 'res.partner'
+        token_field = 'signup_token'
+        password_field = 'password'
+        Partners = request.env[partner_model].sudo()
+        Users = request.env['res.users'].sudo()
+        token = kwargs.get('token')
+        Partners.search([(token_field, '=', token)], limit=1)
+        return Users.write({token_field: token, password_field: kwargs.get('password')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-signup-tainted-token-lookup" in rule_ids
+    assert "odoo-signup-token-lookup-without-expiry" in rule_ids
+    assert "odoo-signup-tainted-identity-token-write" in rule_ids
+
+
 def test_keyword_constant_backed_none_reset_token_write_is_critical(tmp_path: Path) -> None:
     """Keyword route constants with auth='none' should keep reset token writes critical."""
     controllers = tmp_path / "module" / "controllers"
@@ -512,6 +544,34 @@ class Controller(http.Controller):
         return request.env['res.partner'].sudo().search([
             ('signup_token', '=', kwargs.get('token')),
             ('signup_expiration', '>', fields.Datetime.now()),
+        ], limit=1)
+""",
+        encoding="utf-8",
+    )
+
+    rule_ids = {finding.rule_id for finding in scan_signup_tokens(tmp_path)}
+
+    assert "odoo-signup-tainted-token-lookup" in rule_ids
+    assert "odoo-signup-token-lookup-without-expiry" not in rule_ids
+
+
+def test_local_constant_signup_token_expiry_constraint_avoids_expiry_finding(tmp_path: Path) -> None:
+    """Function-local expiry field constants should count as visible expiry constraints."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+from odoo import http, fields
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/web/reset_password', auth='public', csrf=False)
+    def reset_password(self, **kwargs):
+        token_field = 'signup_token'
+        expiry_field = 'signup_expiration'
+        return request.env['res.partner'].sudo().search([
+            (token_field, '=', kwargs.get('token')),
+            (expiry_field, '>', fields.Datetime.now()),
         ], limit=1)
 """,
         encoding="utf-8",
