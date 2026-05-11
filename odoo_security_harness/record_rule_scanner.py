@@ -11,6 +11,8 @@ from typing import Any
 
 from defusedxml import ElementTree
 
+from odoo_security_harness.base_scanner import XmlScanner, _should_skip
+
 
 @dataclass
 class RecordRuleFinding:
@@ -108,28 +110,18 @@ def scan_record_rules(repo_path: Path) -> list[RecordRuleFinding]:
     return findings
 
 
-class RecordRuleScanner:
+class RecordRuleScanner(XmlScanner):
     """Scanner for one XML file."""
 
     def __init__(self, path: Path) -> None:
-        self.path = path
-        self.content = ""
+        super().__init__(path)
         self.findings: list[RecordRuleFinding] = []
 
-    def scan_file(self) -> list[RecordRuleFinding]:
+    def scan_xml(self) -> None:
         """Scan record-rule declarations."""
-        try:
-            self.content = self.path.read_text(encoding="utf-8", errors="replace")
-            root = ElementTree.fromstring(self.content)
-        except ElementTree.ParseError:
-            return []
-        except Exception:
-            return []
-
-        for record in root.iter("record"):
+        for record in self.root.iter("record"):
             if record.get("model") == "ir.rule":
                 self._scan_rule(record)
-        return self.findings
 
     def scan_csv_file(self) -> list[RecordRuleFinding]:
         """Scan CSV ir.rule declarations."""
@@ -440,10 +432,6 @@ def _line_for(content: str, needle: str) -> int:
     if index < 0:
         return 1
     return content[:index].count("\n") + 1
-
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})
 
 
 def findings_to_json(findings: list[RecordRuleFinding]) -> list[dict[str, Any]]:

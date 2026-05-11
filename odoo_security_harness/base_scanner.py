@@ -364,6 +364,7 @@ class BaseScanner(ABC):
 
     def __init__(self, source_path: Path) -> None:
         self.source_path = source_path
+        self.path = source_path
         self.findings: list[BaseFinding] = []
 
     @abstractmethod
