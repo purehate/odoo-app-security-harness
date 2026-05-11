@@ -367,6 +367,36 @@ def test_insecure_python_dependency_references_are_reported(tmp_path: Path) -> N
     )
 
 
+def test_floating_vcs_python_dependency_references_are_reported(tmp_path: Path) -> None:
+    """VCS dependencies should not follow moving branches during installs."""
+    module = tmp_path / "floating_vcs_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Floating VCS Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'python': [
+            'git+https://github.com/example/helper.git@main',
+            'git+https://github.com/example/other-helper.git',
+            'git+https://github.com/example/pinned-helper.git@6f1e2d3c4b5a697887766554433221100ffeeabc',
+        ],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-floating-vcs-python-dependency"
+        and f.severity == "medium"
+        and "git+https://github.com/example/helper.git@main" in f.message
+        and "git+https://github.com/example/other-helper.git" in f.message
+        and "pinned-helper" not in f.message
+        for f in findings
+    )
+
+
 def test_risky_binary_dependencies_are_reported(tmp_path: Path) -> None:
     """Security-sensitive binary dependency declarations should be visible in manifest review."""
     module = tmp_path / "risky_bin_deps"

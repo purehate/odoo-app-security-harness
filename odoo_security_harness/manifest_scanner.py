@@ -95,6 +95,9 @@ DIRECT_PYTHON_DEPENDENCY_PREFIXES = (
     "https://",
     "file://",
 )
+VCS_PYTHON_DEPENDENCY_PREFIXES = ("git+", "hg+", "svn+", "bzr+")
+FLOATING_VCS_REFS = {"main", "master", "develop", "dev", "trunk", "head"}
+IMMUTABLE_VCS_REF_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
 
 
 @dataclass
@@ -269,6 +272,14 @@ class ManifestScanner:
                     "high",
                     f"Manifest Python dependencies include cleartext http:// package references: {', '.join(insecure_direct_refs)}; fetch dependencies over HTTPS or a trusted internal package index with immutable pins",
                 )
+            floating_vcs_refs = _floating_vcs_python_dependency_references(python_deps)
+            if floating_vcs_refs:
+                self._add(
+                    "odoo-manifest-floating-vcs-python-dependency",
+                    "Manifest declares floating VCS Python dependency",
+                    "medium",
+                    f"Manifest Python dependencies include VCS references without immutable commit pins: {', '.join(floating_vcs_refs)}; pin reviewed commit hashes to avoid unreviewed install-time code changes",
+                )
             bin_deps = _as_string_list(external_dependencies.get("bin"))
             risky_bins = _risky_binary_dependencies(bin_deps)
             if risky_bins:
@@ -416,6 +427,23 @@ def _insecure_direct_python_dependency_references(dependencies: list[str]) -> li
         if normalized.startswith("http://") or "+http://" in normalized or " @ http://" in normalized:
             insecure.append(dependency)
     return sorted(set(insecure), key=str.lower)
+
+
+def _floating_vcs_python_dependency_references(dependencies: list[str]) -> list[str]:
+    """Return VCS dependency declarations that are not pinned to immutable commits."""
+    floating: list[str] = []
+    for dependency in dependencies:
+        normalized = dependency.strip().lower()
+        if not normalized.startswith(VCS_PYTHON_DEPENDENCY_PREFIXES):
+            continue
+        ref_source = normalized.split("#", 1)[0]
+        if "@" not in ref_source:
+            floating.append(dependency)
+            continue
+        ref = ref_source.rsplit("@", 1)[1].strip()
+        if not ref or ref in FLOATING_VCS_REFS or not IMMUTABLE_VCS_REF_RE.fullmatch(ref):
+            floating.append(dependency)
+    return sorted(set(floating), key=str.lower)
 
 
 def _risky_binary_dependencies(dependencies: list[str]) -> list[str]:
