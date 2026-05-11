@@ -327,6 +327,10 @@ OWL_TEMPLATE_DYNAMIC_STYLESHEET_RE = re.compile(
     r"<link\b(?=[^>]*\brel\s*=\s*['\"][^'\"]*\bstylesheet\b)(?=[^>]*\bt-attf?-href\s*=)",
     re.IGNORECASE,
 )
+OWL_TEMPLATE_DYNAMIC_STYLE_ATTR_RE = re.compile(
+    r"\bt-attf?-style\s*=|\bt-att\s*=\s*['\"][^>]*(?:['\"]style['\"]|style\s*:)",
+    re.IGNORECASE,
+)
 OWL_TEMPLATE_DYNAMIC_URL_ATTR_RE = re.compile(
     r"\bt-attf?-(?:href|src|action|formaction|poster|srcset|ping|xlink:href)\s*=|"
     r"\bt-att\s*=\s*['\"][^>]*(?:['\"](?:href|src|action|formAction|poster|srcset|ping|xlink:href)['\"]|"
@@ -1163,6 +1167,15 @@ class WebAssetScanner:
                     "medium",
                     line,
                     "OWL xml template loads CSS from an external or dynamic target; verify untrusted data cannot choose stylesheets that hide, overlay, or restyle privileged UI",
+                    "owl-template",
+                )
+            if OWL_TEMPLATE_DYNAMIC_STYLE_ATTR_RE.search(body):
+                self._add(
+                    "odoo-web-owl-qweb-dynamic-style-attribute",
+                    "OWL inline template binds dynamic style attribute",
+                    "medium",
+                    line,
+                    "OWL xml template binds dynamic CSS into a style attribute; verify untrusted data cannot hide, overlay, or restyle privileged UI",
                     "owl-template",
                 )
             if OWL_TEMPLATE_DYNAMIC_URL_ATTR_RE.search(body):

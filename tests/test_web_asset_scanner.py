@@ -1426,6 +1426,31 @@ def test_owl_inline_template_dynamic_stylesheet_href_detected(tmp_path: Path) ->
     )
 
 
+def test_owl_inline_template_dynamic_style_attribute_detected(tmp_path: Path) -> None:
+    """OWL inline style attributes should not render runtime-selected CSS."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<div t-att-style=\"props.css_text\">Panel</div>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-dynamic-style-attribute"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_dynamic_style_mapping_detected(tmp_path: Path) -> None:
+    """OWL t-att mappings can also bind dynamic inline style attributes."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<div t-att=\"{'style': props.css_text}\"/>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-owl-qweb-dynamic-style-attribute" for f in findings)
+
+
 def test_owl_inline_template_dynamic_url_attribute_detected(tmp_path: Path) -> None:
     """OWL inline URL-bearing attributes should not use runtime-selected targets."""
     path = tmp_path / "widget.js"

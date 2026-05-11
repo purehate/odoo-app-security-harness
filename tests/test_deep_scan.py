@@ -2495,13 +2495,19 @@ def test_taxonomy_coverage_classifies_qweb_dynamic_style_attribute() -> None:
                 "source": "qweb",
                 "title": "QWeb dynamic style attribute",
                 "message": "QWeb t-att-style writes dynamic CSS into a style attribute",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-dynamic-style-attribute",
+                "source": "web-asset",
+                "title": "OWL inline template binds dynamic style attribute",
+                "message": "OWL xml template binds dynamic CSS into a style attribute",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_dynamic_css_injection"
-    assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_dynamic_css_injection"}
+    assert all("CWE-79" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_qweb_dynamic_stylesheet_href() -> None:
