@@ -96,8 +96,10 @@ DIRECT_PYTHON_DEPENDENCY_PREFIXES = (
     "file://",
 )
 VCS_PYTHON_DEPENDENCY_PREFIXES = ("git+", "hg+", "svn+", "bzr+")
+LOCAL_PYTHON_DEPENDENCY_PREFIXES = ("file://", "./", "../", "/", "~/", ".\\", "..\\", "\\\\", "~\\")
 FLOATING_VCS_REFS = {"main", "master", "develop", "dev", "trunk", "head"}
 IMMUTABLE_VCS_REF_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
+WINDOWS_ABSOLUTE_DEPENDENCY_RE = re.compile(r"^[a-z]:[\\/]", re.IGNORECASE)
 
 
 @dataclass
@@ -280,6 +282,14 @@ class ManifestScanner:
                     "medium",
                     f"Manifest Python dependencies include VCS references without immutable commit pins: {', '.join(floating_vcs_refs)}; pin reviewed commit hashes to avoid unreviewed install-time code changes",
                 )
+            local_refs = _local_python_dependency_references(python_deps)
+            if local_refs:
+                self._add(
+                    "odoo-manifest-local-python-dependency",
+                    "Manifest declares local Python dependency path",
+                    "medium",
+                    f"Manifest Python dependencies include local filesystem paths: {', '.join(local_refs)}; use reviewed package indexes or immutable artifacts instead of environment-dependent install paths",
+                )
             bin_deps = _as_string_list(external_dependencies.get("bin"))
             risky_bins = _risky_binary_dependencies(bin_deps)
             if risky_bins:
@@ -444,6 +454,17 @@ def _floating_vcs_python_dependency_references(dependencies: list[str]) -> list[
         if not ref or ref in FLOATING_VCS_REFS or not IMMUTABLE_VCS_REF_RE.fullmatch(ref):
             floating.append(dependency)
     return sorted(set(floating), key=str.lower)
+
+
+def _local_python_dependency_references(dependencies: list[str]) -> list[str]:
+    """Return direct Python dependency declarations that point at local filesystem paths."""
+    local: list[str] = []
+    for dependency in dependencies:
+        normalized = dependency.strip().lower()
+        reference = normalized.rsplit(" @ ", 1)[1].strip() if " @ " in normalized else normalized
+        if reference.startswith(LOCAL_PYTHON_DEPENDENCY_PREFIXES) or WINDOWS_ABSOLUTE_DEPENDENCY_RE.match(reference):
+            local.append(dependency)
+    return sorted(set(local), key=str.lower)
 
 
 def _risky_binary_dependencies(dependencies: list[str]) -> list[str]:

@@ -397,6 +397,38 @@ def test_floating_vcs_python_dependency_references_are_reported(tmp_path: Path) 
     )
 
 
+def test_local_python_dependency_references_are_reported(tmp_path: Path) -> None:
+    """Local package paths make installs depend on unreviewed host filesystem state."""
+    module = tmp_path / "local_python_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Local Python Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'python': [
+            './vendor/helper.whl',
+            'helper @ ../shared/helper',
+            '/opt/vendor/private_helper.whl',
+            'safe-package',
+        ],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-local-python-dependency"
+        and f.severity == "medium"
+        and "./vendor/helper.whl" in f.message
+        and "helper @ ../shared/helper" in f.message
+        and "/opt/vendor/private_helper.whl" in f.message
+        and "safe-package" not in f.message
+        for f in findings
+    )
+
+
 def test_risky_binary_dependencies_are_reported(tmp_path: Path) -> None:
     """Security-sensitive binary dependency declarations should be visible in manifest review."""
     module = tmp_path / "risky_bin_deps"

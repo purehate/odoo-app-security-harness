@@ -5091,6 +5091,12 @@ def test_taxonomy_coverage_classifies_manifest_supply_chain_and_parse_findings()
                 "title": "Manifest declares floating VCS Python dependency",
                 "message": "Manifest Python dependencies include VCS references without immutable commit pins",
             },
+            {
+                "source": "manifest",
+                "rule_id": "odoo-manifest-local-python-dependency",
+                "title": "Manifest declares local Python dependency path",
+                "message": "Manifest Python dependencies include local filesystem paths",
+            },
         ]
     )
 
@@ -5103,6 +5109,7 @@ def test_taxonomy_coverage_classifies_manifest_supply_chain_and_parse_findings()
     assert shapes["odoo-manifest-risky-bin-dependency"] == "manifest_risky_dependency"
     assert shapes["odoo-manifest-insecure-python-dependency"] == "manifest_risky_dependency"
     assert shapes["odoo-manifest-floating-vcs-python-dependency"] == "manifest_risky_dependency"
+    assert shapes["odoo-manifest-local-python-dependency"] == "manifest_risky_dependency"
 
 
 def test_taxonomy_coverage_classifies_view_inheritance_group_and_xpath_risks() -> None:
