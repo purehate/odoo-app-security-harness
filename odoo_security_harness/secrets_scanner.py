@@ -371,11 +371,15 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
     rows: list[tuple[dict[str, str], int]] = []
     try:
         for index, row in enumerate(reader, start=2):
-            normalized = {
-                str(key or "").strip().lower(): str(value or "").strip()
-                for key, value in row.items()
-                if key is not None
-            }
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name or ":" in name:
+                    normalized.setdefault(re.split(r"[/:]", name, maxsplit=1)[0], text)
             rows.append((normalized, index))
     except Exception:
         return []

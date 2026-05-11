@@ -232,6 +232,19 @@ def test_ir_config_parameter_secret_in_csv(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-secret-config-parameter" and f.severity == "high" for f in findings)
 
 
+def test_ir_config_parameter_secret_in_csv_colon_headers(tmp_path: Path) -> None:
+    """CSV config parameter headers with colon suffixes should still expose secrets."""
+    path = tmp_path / "ir.config_parameter.csv"
+    path.write_text(
+        "id,key:id,value:raw\npayment_secret,payment.secret_key,live_secret_abcdef123456\n",
+        encoding="utf-8",
+    )
+
+    findings = SecretScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-secret-config-parameter" and f.severity == "high" for f in findings)
+
+
 def test_ir_config_parameter_integration_key_in_csv(tmp_path: Path) -> None:
     """CSV data should report key-shaped integration secrets."""
     path = tmp_path / "ir.config_parameter.csv"
