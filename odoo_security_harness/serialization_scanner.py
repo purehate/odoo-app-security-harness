@@ -47,6 +47,14 @@ YAML_FULL_LOAD_SINKS = {"yaml.full_load", "yaml.full_load_all"}
 LITERAL_EVAL_SINKS = {"ast.literal_eval"}
 JSON_LOAD_SINKS = {"json.load", "json.loads"}
 NUMPY_LOAD_SINKS = {"numpy.load"}
+XML_TAINTED_PARSE_SINKS = {
+    "xml.etree.ElementTree.fromstring",
+    "xml.etree.ElementTree.XML",
+    "lxml.etree.fromstring",
+    "lxml.etree.XML",
+    "xml.dom.minidom.parseString",
+    "xml.sax.parseString",
+}
 SIZE_GUARD_HINTS = {
     "content_length",
     "Content-Length",
@@ -154,10 +162,8 @@ class SerializationScanner(ast.NodeVisitor):
                 "torch",
             }:
                 self.module_aliases[local_name] = alias.name
-            elif alias.name == "xml.etree.ElementTree":
-                self.module_aliases[local_name] = alias.name
-            elif alias.name == "lxml.etree":
-                self.module_aliases[local_name] = alias.name
+            elif alias.name in {"xml.etree.ElementTree", "xml.dom.minidom", "xml.sax", "lxml.etree"}:
+                self.module_aliases[alias.asname or alias.name] = alias.name
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
@@ -181,6 +187,13 @@ class SerializationScanner(ast.NodeVisitor):
                 canonical = f"{node.module}.{alias.name}"
                 self.function_aliases[alias.asname or alias.name] = canonical
         elif node.module == "xml.etree.ElementTree":
+            for alias in node.names:
+                self.function_aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+        elif node.module == "xml.dom":
+            for alias in node.names:
+                if alias.name == "minidom":
+                    self.module_aliases[alias.asname or alias.name] = "xml.dom.minidom"
+        elif node.module in {"xml.dom.minidom", "xml.sax"}:
             for alias in node.names:
                 self.function_aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
         elif node.module == "lxml":
@@ -300,15 +313,13 @@ class SerializationScanner(ast.NodeVisitor):
                 "numpy.load(..., allow_pickle=True) can load pickle object arrays; never use it on request, attachment, or integration data",
                 sink,
             )
-        elif sink in {"xml.etree.ElementTree.fromstring", "ET.fromstring"} and _call_has_tainted_input(
-            node, self._expr_is_tainted
-        ):
+        elif sink in XML_TAINTED_PARSE_SINKS and _call_has_tainted_input(node, self._expr_is_tainted):
             self._add(
                 "odoo-serialization-xml-fromstring-tainted",
                 "Tainted XML parsed without hardened parser",
                 "medium",
                 node.lineno,
-                "Request/attachment-derived XML is parsed with ElementTree.fromstring; review entity expansion, parser hardening, and size limits",
+                "Request/attachment-derived XML is parsed without a hardened parser; review entity expansion, parser hardening, and size limits",
                 sink,
             )
         elif sink in {"lxml.etree.XMLParser", "etree.XMLParser"} and _has_unsafe_xml_parser_option(
@@ -430,9 +441,9 @@ class SerializationScanner(ast.NodeVisitor):
         sink = _call_name(node)
         if sink in self.function_aliases:
             return self.function_aliases[sink]
-        parts = sink.split(".")
-        if parts and parts[0] in self.module_aliases:
-            return ".".join([self.module_aliases[parts[0]], *parts[1:]])
+        for local_name, canonical_name in sorted(self.module_aliases.items(), key=lambda item: len(item[0]), reverse=True):
+            if sink == local_name or sink.startswith(f"{local_name}."):
+                return f"{canonical_name}{sink[len(local_name):]}"
         return sink
 
     def _current_function_has_size_guard(self) -> bool:

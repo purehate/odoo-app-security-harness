@@ -960,6 +960,86 @@ def import_xml(**kwargs):
     assert any(f.rule_id == "odoo-serialization-xml-fromstring-tainted" for f in findings)
 
 
+def test_dotted_elementtree_import_xml_constructor_is_reported(tmp_path: Path) -> None:
+    """Dotted ElementTree imports and XML() should still flag tainted XML parsing."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+import xml.etree.ElementTree
+
+def import_xml(payload):
+    return xml.etree.ElementTree.XML(payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-serialization-xml-fromstring-tainted"
+        and f.sink == "xml.etree.ElementTree.XML"
+        for f in findings
+    )
+
+
+def test_lxml_tainted_fromstring_and_xml_are_reported(tmp_path: Path) -> None:
+    """lxml XML constructors should get the same tainted parser-hardening review."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+from lxml import etree
+from lxml.etree import XML as parse_xml
+
+def import_xml(payload):
+    doc = etree.fromstring(payload)
+    return parse_xml(payload), doc
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-serialization-xml-fromstring-tainted"
+        and f.sink == "lxml.etree.fromstring"
+        for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-serialization-xml-fromstring-tainted"
+        and f.sink == "lxml.etree.XML"
+        for f in findings
+    )
+
+
+def test_minidom_and_sax_tainted_parse_string_are_reported(tmp_path: Path) -> None:
+    """stdlib XML parseString helpers should be visible for entity/size review."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+import xml.dom.minidom as minidom
+from xml.sax import parseString as sax_parse
+
+def import_xml(payload):
+    minidom.parseString(payload)
+    return sax_parse(payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-serialization-xml-fromstring-tainted"
+        and f.sink == "xml.dom.minidom.parseString"
+        for f in findings
+    )
+    assert any(
+        f.rule_id == "odoo-serialization-xml-fromstring-tainted"
+        and f.sink == "xml.sax.parseString"
+        for f in findings
+    )
+
+
 def test_unsafe_lxml_parser_options_are_reported(tmp_path: Path) -> None:
     """lxml parser options that enable DTD/entity behavior should be visible."""
     py = tmp_path / "importer.py"
