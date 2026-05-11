@@ -203,6 +203,34 @@ class Download(http.Controller):
     )
 
 
+def test_nested_static_unpack_public_attachment_datas_response(tmp_path: Path) -> None:
+    """Nested static **route options should preserve public binary response severity."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public'}
+ROUTE_OPTIONS = {**BASE_OPTIONS, 'type': 'http'}
+
+class Download(http.Controller):
+    @http.route('/public/download', **ROUTE_OPTIONS)
+    def download(self, **kwargs):
+        attachment = request.env['ir.attachment'].sudo().browse(int(kwargs.get('id')))
+        return request.make_response(attachment.datas)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings
+    )
+
+
 def test_keyword_constant_backed_none_binary_content_args(tmp_path: Path) -> None:
     """Constant-backed auth='none' should escalate tainted binary_content inputs."""
     controllers = tmp_path / "module" / "controllers"
