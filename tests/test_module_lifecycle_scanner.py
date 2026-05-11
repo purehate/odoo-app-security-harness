@@ -291,6 +291,43 @@ class Controller(http.Controller):
     )
 
 
+def test_nested_static_unpack_public_route_immediate_install_from_request_is_reported(tmp_path: Path) -> None:
+    """Nested static **route options should not hide public module lifecycle calls."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "modules.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public', 'csrf': False}
+INSTALL_OPTIONS = {**BASE_OPTIONS, 'route': '/public/install'}
+
+class Controller(http.Controller):
+    @http.route(**INSTALL_OPTIONS)
+    def install(self, **kwargs):
+        module = request.env['ir.module.module'].sudo().search([('name', '=', kwargs.get('module'))])
+        return module.button_immediate_install()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_module_lifecycle(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-module-public-route-lifecycle"
+        and finding.severity == "critical"
+        and finding.route == "/public/install"
+        for finding in findings
+    )
+    assert any(
+        finding.rule_id == "odoo-module-tainted-selection"
+        and finding.severity == "critical"
+        and finding.route == "/public/install"
+        for finding in findings
+    )
+
+
 def test_class_constant_public_route_immediate_install_from_request_is_reported(tmp_path: Path) -> None:
     """Class-scoped route and module constants should not hide lifecycle calls."""
     controllers = tmp_path / "module" / "controllers"

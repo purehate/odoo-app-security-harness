@@ -580,6 +580,32 @@ class Controller(http.Controller):
     assert "odoo-queue-job-public-enqueue" in rule_ids
 
 
+def test_nested_static_unpack_public_route_enqueue_without_identity_key(tmp_path: Path) -> None:
+    """Nested route option unpacking should keep public queue enqueue context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+
+BASE_OPTIONS = {'auth': 'public', 'csrf': False}
+ROUTE_OPTIONS = {**BASE_OPTIONS, 'route': '/sync'}
+
+class Controller(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
+    def sync(self, **kwargs):
+        self.env['sale.order'].with_delay().sync_order(kwargs.get('id'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-queue-job-missing-identity-key" in rule_ids
+    assert "odoo-queue-job-public-enqueue" in rule_ids
+
+
 def test_flags_imported_route_decorator_public_enqueue(tmp_path: Path) -> None:
     """Directly imported route decorators should keep public route context."""
     controllers = tmp_path / "module" / "controllers"

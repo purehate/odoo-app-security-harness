@@ -431,10 +431,21 @@ def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[tu
         value = _resolve_constant(keyword.value, constants)
         if not isinstance(value, ast.Dict):
             continue
-        for key, item_value in zip(value.keys, value.values, strict=False):
-            resolved_key = _resolve_constant(key, constants) if key is not None else None
-            if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
-                keywords.append((resolved_key.value, item_value))
+        keywords.extend(_expanded_dict_keywords(value, constants))
+    return keywords
+
+
+def _expanded_dict_keywords(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    keywords: list[tuple[str, ast.AST]] = []
+    for key, item_value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            value = _resolve_constant(item_value, constants)
+            if isinstance(value, ast.Dict):
+                keywords.extend(_expanded_dict_keywords(value, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            keywords.append((resolved_key.value, item_value))
     return keywords
 
 
