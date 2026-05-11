@@ -465,6 +465,19 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 f"Controller sets a weak Strict-Transport-Security header ({weak_hsts_reason}); use a long max-age such as 31536000 and includeSubDomains where appropriate",
                 sink,
             )
+        weak_cross_origin_policy = _weak_cross_origin_policy_value(
+            lowered_header, value, self._effective_constants()
+        )
+        if weak_cross_origin_policy:
+            route = self._current_route()
+            self._add(
+                "odoo-controller-weak-cross-origin-policy",
+                "Controller sets weak cross-origin isolation policy",
+                "medium" if route.auth in {"public", "none"} else "low",
+                line,
+                f"Controller sets {header_name} to {weak_cross_origin_policy!r}; use explicit same-origin or require-corp style policies where cross-origin isolation is needed",
+                sink,
+            )
         weak_permissions_policy = _weak_permissions_policy_reason(
             lowered_header, value, self._effective_constants()
         )
@@ -1100,6 +1113,18 @@ def _weak_hsts_reason(header_name: str, value: ast.AST, constants: dict[str, ast
         return "max-age=0 disables HSTS"
     if max_age < MIN_HSTS_MAX_AGE_SECONDS:
         return f"max-age={max_age} is shorter than {MIN_HSTS_MAX_AGE_SECONDS}"
+    return ""
+
+
+def _weak_cross_origin_policy_value(header_name: str, value: ast.AST, constants: dict[str, ast.AST]) -> str:
+    policy = _constant_string(value, constants).strip()
+    if not policy:
+        return ""
+    normalized = policy.lower()
+    if header_name in {"cross-origin-opener-policy", "cross-origin-embedder-policy"} and normalized == "unsafe-none":
+        return policy
+    if header_name == "cross-origin-resource-policy" and normalized == "cross-origin":
+        return policy
     return ""
 
 

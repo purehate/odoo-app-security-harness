@@ -3832,6 +3832,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "controller_weak_cross_origin_policy",
+        (
+            "odoo-controller-weak-cross-origin-policy",
+            "controller sets weak cross-origin isolation policy",
+            "cross-origin-opener-policy to unsafe-none",
+            "cross-origin-resource-policy to cross-origin",
+            "same-origin or require-corp style policies",
+        ),
+    ),
+    (
         "controller_weak_permissions_policy",
         (
             "odoo-controller-weak-permissions-policy",

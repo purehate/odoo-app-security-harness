@@ -1913,6 +1913,86 @@ class Controller(http.Controller):
     assert scan_controller_responses(tmp_path) == []
 
 
+def test_flags_weak_cross_origin_policy_header(tmp_path: Path) -> None:
+    """Controllers should not explicitly disable cross-origin isolation posture."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/page', auth='public')
+    def page(self):
+        return request.make_response('ok', headers={'Cross-Origin-Opener-Policy': 'unsafe-none'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-weak-cross-origin-policy"
+        and f.severity == "medium"
+        and "unsafe-none" in f.message
+        for f in findings
+    )
+
+
+def test_flags_weak_cross_origin_resource_policy_header(tmp_path: Path) -> None:
+    """CORP should not explicitly allow arbitrary cross-origin resource embedding."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/account/page', auth='user')
+    def page(self):
+        response = request.make_response('ok')
+        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-weak-cross-origin-policy"
+        and f.severity == "low"
+        and "cross-origin" in f.message
+        for f in findings
+    )
+
+
+def test_strong_cross_origin_policy_header_is_ignored(tmp_path: Path) -> None:
+    """Same-origin cross-origin policies should avoid isolation-posture noise."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/page', auth='public')
+    def page(self):
+        response = request.make_response('ok')
+        response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
+        response.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
+        response.headers['Cross-Origin-Embedder-Policy'] = 'require-corp'
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_controller_responses(tmp_path) == []
+
+
 def test_flags_weak_permissions_policy_header(tmp_path: Path) -> None:
     """Permissions-Policy should not grant sensitive APIs to arbitrary origins."""
     controllers = tmp_path / "module" / "controllers"

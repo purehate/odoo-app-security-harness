@@ -6685,6 +6685,24 @@ def test_taxonomy_coverage_classifies_controller_weak_hsts_header() -> None:
     assert "CWE-319" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_controller_weak_cross_origin_policy() -> None:
+    """Weak cross-origin isolation headers should map to header posture taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "source": "controller-responses",
+                "rule_id": "odoo-controller-weak-cross-origin-policy",
+                "title": "Controller sets weak cross-origin isolation policy",
+                "message": "Controller sets Cross-Origin-Opener-Policy to 'unsafe-none'; use explicit same-origin or require-corp style policies where cross-origin isolation is needed",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "controller_weak_cross_origin_policy"
+    assert "CWE-346" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_controller_weak_permissions_policy() -> None:
     """Weak browser permissions policies should map to protection-mechanism taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(
@@ -7934,6 +7952,7 @@ class TestController(http.Controller):
         response.headers['X-Frame-Options'] = 'ALLOW-FROM https://partner.example'
         response.headers['Referrer-Policy'] = 'unsafe-url'
         response.headers['Strict-Transport-Security'] = 'max-age=0'
+        response.headers['Cross-Origin-Opener-Policy'] = 'unsafe-none'
         response.headers['Permissions-Policy'] = 'geolocation=*'
         response.headers['X-Accel-Redirect'] = kwargs.get('path')
         response.set_cookie('session_token', kwargs.get('token'))
@@ -8940,6 +8959,7 @@ msgstr "<a href=\\"javascript:alert(1)\\">Ouvrir %(name)s</a>"
     assert "odoo-controller-weak-frame-options" in rule_ids
     assert "odoo-controller-weak-referrer-policy" in rule_ids
     assert "odoo-controller-weak-hsts-header" in rule_ids
+    assert "odoo-controller-weak-cross-origin-policy" in rule_ids
     assert "odoo-controller-weak-permissions-policy" in rule_ids
     assert "odoo-controller-tainted-file-read" in rule_ids
     assert sum(1 for finding in findings if finding["rule_id"] == "odoo-controller-tainted-file-read") >= 2

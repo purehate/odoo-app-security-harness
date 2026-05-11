@@ -2276,6 +2276,12 @@
       "capec": ["CAPEC-94"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "controller_weak_cross_origin_policy": {
+      "label": "Controller sets weak cross-origin isolation headers",
+      "cwe": ["CWE-346", "CWE-693", "CWE-200"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A05:2021 Security Misconfiguration"
+    },
     "controller_weak_permissions_policy": {
       "label": "Controller sets a weak Permissions-Policy or Feature-Policy header",
       "cwe": ["CWE-693", "CWE-200", "CWE-284"],
