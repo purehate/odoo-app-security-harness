@@ -21,7 +21,7 @@ class PaymentFinding:
     handler: str = ""
 
 
-CALLBACK_PATH_HINTS = ("payment", "webhook", "notify", "notification", "callback", "return")
+CALLBACK_PATH_HINTS = ("payment", "webhook", "notify", "notification", "callback", "return", "ipn")
 SIGNATURE_MARKERS = (
     "signature",
     "sign",
@@ -31,6 +31,7 @@ SIGNATURE_MARKERS = (
     "_validate",
     "compare_digest",
 )
+PROVIDER_SIGNATURE_VALIDATORS = ("construct_event",)
 PAYMENT_STATE_METHODS = {"_set_done", "_set_authorized", "_set_pending", "_set_canceled", "_set_error"}
 PAYMENT_FINAL_STATES = {"authorized", "done", "pending", "cancel", "cancelled", "canceled", "error"}
 NOTIFICATION_METHODS = {
@@ -345,6 +346,8 @@ def _has_signature_check(node: ast.FunctionDef) -> bool:
         sink = _call_name(child.func).lower()
         func_text = _safe_unparse(child.func).lower()
         if "compare_digest" in sink:
+            return True
+        if any(marker in sink for marker in PROVIDER_SIGNATURE_VALIDATORS):
             return True
         if any(marker in sink for marker in SIGNATURE_MARKERS) and any(
             marker in func_text for marker in ("signature", "sign", "verify", "validate", "hmac")

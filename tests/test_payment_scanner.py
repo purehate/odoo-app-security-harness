@@ -155,6 +155,26 @@ class PaymentController(http.Controller):
     assert any(f.rule_id == "odoo-payment-public-callback-no-signature" for f in findings)
 
 
+def test_ipn_callback_without_signature_is_reported(tmp_path: Path) -> None:
+    """IPN endpoints are payment callbacks even when the route omits payment/webhook words."""
+    py = tmp_path / "controllers.py"
+    py.write_text(
+        """
+from odoo import http
+
+class PaymentController(http.Controller):
+    @http.route('/paypal/ipn', auth='public', csrf=False)
+    def ipn(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-payment-public-callback-no-signature" for f in findings)
+
+
 def test_hmac_compare_digest_counts_as_signature_validation(tmp_path: Path) -> None:
     """Provider HMAC comparison should count as visible signature validation."""
     py = tmp_path / "controllers.py"
@@ -168,6 +188,31 @@ class PaymentController(http.Controller):
     def webhook(self, **post):
         if not hmac.compare_digest(post.get('signature'), self._expected_signature(post)):
             return 'invalid'
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-payment-public-callback-no-signature" for f in findings)
+
+
+def test_stripe_construct_event_counts_as_signature_validation(tmp_path: Path) -> None:
+    """Stripe construct_event verifies webhook signatures through provider SDKs."""
+    py = tmp_path / "controllers.py"
+    py.write_text(
+        """
+import stripe
+from odoo import http
+from odoo.http import request
+
+class PaymentController(http.Controller):
+    @http.route('/stripe/webhook', auth='public', csrf=False)
+    def webhook(self, **post):
+        payload = request.httprequest.get_data()
+        sig_header = request.httprequest.headers.get('Stripe-Signature')
+        stripe.Webhook.construct_event(payload, sig_header, self._webhook_secret())
         return 'ok'
 """,
         encoding="utf-8",
