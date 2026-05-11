@@ -99,6 +99,17 @@ SENSITIVE_FIELDS = {
     "get_portal_url",
     "portal_url",
 }
+TOKEN_EXPRESSION_FIELDS = (
+    "body_html",
+    "subject",
+    "email_to",
+    "email_cc",
+    "partner_to",
+    "reply_to",
+    "email_from",
+    "report_name",
+)
+PRIVILEGED_EXPRESSION_FIELDS = (*TOKEN_EXPRESSION_FIELDS, "lang", "scheduled_date")
 EXTERNAL_URL_RE = re.compile(r"\bhttps?://|//[a-zA-Z0-9.-]+")
 DANGEROUS_URL_SCHEME_RE = re.compile(
     r"(?:javascript|vbscript)\s*:|file\s*:|data\s*:\s*(?:text/html|application/(?:javascript|xhtml\+xml))",
@@ -170,7 +181,6 @@ class MailTemplateScanner:
     def _scan_template_values(self, template_id: str, fields: dict[str, str], line: int) -> None:
         model = _normalize_model_ref(fields.get("model_id", "") or fields.get("model", ""))
         body = fields.get("body_html", "")
-        subject = fields.get("subject", "")
         recipients = " ".join(fields.get(name, "") for name in ("email_to", "email_cc", "partner_to", "reply_to"))
         sender_fields = " ".join(fields.get(name, "") for name in ("email_from", "reply_to"))
 
@@ -196,7 +206,9 @@ class MailTemplateScanner:
                 "body_html",
             )
 
-        if _references_sensitive_value(body + " " + subject):
+        token_text = _join_fields(fields, TOKEN_EXPRESSION_FIELDS)
+        if _references_sensitive_value(token_text):
+            token_field = _first_sensitive_field(fields, TOKEN_EXPRESSION_FIELDS) or "body_html"
             self._add(
                 "odoo-mail-template-sensitive-token",
                 "Mail template includes token/access fields",
@@ -204,7 +216,7 @@ class MailTemplateScanner:
                 line,
                 "Mail template references access/password/signup token fields; verify recipients are constrained and links expire appropriately",
                 template_id,
-                "body_html",
+                token_field,
             )
 
             if not _is_truthy(fields.get("auto_delete", "")):
@@ -229,7 +241,7 @@ class MailTemplateScanner:
                     "email_to",
                 )
 
-        expression_text = " ".join((body, subject, recipients, sender_fields))
+        expression_text = _join_fields(fields, PRIVILEGED_EXPRESSION_FIELDS)
         if _contains_privileged_expression(expression_text):
             self._add(
                 "odoo-mail-template-sudo-expression",
@@ -357,6 +369,17 @@ def _contains_raw_html_rendering(value: str) -> bool:
 def _references_sensitive_value(value: str) -> bool:
     lowered = value.lower()
     return any(field in lowered for field in SENSITIVE_FIELDS)
+
+
+def _join_fields(fields: dict[str, str], names: tuple[str, ...]) -> str:
+    return " ".join(fields.get(name, "") for name in names)
+
+
+def _first_sensitive_field(fields: dict[str, str], names: tuple[str, ...]) -> str:
+    for name in names:
+        if _references_sensitive_value(fields.get(name, "")):
+            return name
+    return ""
 
 
 def _looks_dynamic_recipient(value: str) -> bool:

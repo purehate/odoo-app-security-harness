@@ -163,6 +163,30 @@ def test_sensitive_reset_url_in_subject_is_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-mail-template-sensitive-token" for f in findings)
 
 
+def test_sensitive_token_in_report_name_is_reported(tmp_path: Path) -> None:
+    """Generated report names can retain tokenized values in attachments and logs."""
+    xml = tmp_path / "mail.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="template_report_token" model="mail.template">
+    <field name="report_name">Invoice-${object.access_token}</field>
+    <field name="body_html">Invoice attached</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = MailTemplateScanner(xml).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-mail-template-sensitive-token"
+        and f.field == "report_name"
+        and f.template == "template_report_token"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-mail-template-token-not-auto-deleted" for f in findings)
+
+
 def test_token_template_without_auto_delete_is_reported(tmp_path: Path) -> None:
     """Token-bearing generated email should not be retained by default."""
     xml = tmp_path / "mail.xml"
@@ -321,6 +345,27 @@ def test_sudo_sender_expression_is_reported(tmp_path: Path) -> None:
     findings = MailTemplateScanner(xml).scan_file()
 
     assert any(f.rule_id == "odoo-mail-template-sudo-expression" for f in findings)
+
+
+def test_sudo_report_name_expression_is_reported(tmp_path: Path) -> None:
+    """Privileged template expressions outside the body can still disclose values."""
+    xml = tmp_path / "mail.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="template_sudo_report_name" model="mail.template">
+    <field name="report_name">${object.sudo().secret_note}</field>
+    <field name="body_html">Attached</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = MailTemplateScanner(xml).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-mail-template-sudo-expression" and f.template == "template_sudo_report_name"
+        for f in findings
+    )
 
 
 def test_sensitive_template_dynamic_recipient_is_reported(tmp_path: Path) -> None:
