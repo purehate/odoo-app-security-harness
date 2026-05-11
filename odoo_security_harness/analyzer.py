@@ -586,6 +586,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
             return self._is_tainted_expr(node.value)
         if isinstance(node, ast.Name):
             return node.id in self.tainted_vars
+        if isinstance(node, ast.Subscript):
+            return self._is_tainted_expr(node.value) or self._is_tainted_expr(node.slice)
         if isinstance(node, ast.Call):
             return (
                 isinstance(node.func, ast.Attribute)

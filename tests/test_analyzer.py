@@ -450,6 +450,36 @@ class TestController(http.Controller):
 
         assert any(f.rule_id == "odoo-deep-mass-assignment" for f in findings)
 
+    def test_subscript_from_tainted_params_taints_safe_eval(self) -> None:
+        """Aliases of request containers should taint values read by subscript."""
+        source = """
+class TestController(http.Controller):
+    @http.route('/test/eval', auth='public')
+    def test_eval(self):
+        params = request.params
+        expr = params['expression']
+        return safe_eval(expr)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-safe-eval-user-input" for f in findings)
+
+    def test_subscript_from_json_payload_taints_mass_assignment(self) -> None:
+        """Subscript reads from tainted JSON payload aliases should stay tainted."""
+        source = """
+class TestController(http.Controller):
+    @http.route('/test/create', auth='user', type='json')
+    def test_create(self):
+        payload = request.get_json_data()
+        values = payload['values']
+        return request.env['test.model'].create(values)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+
+        assert any(f.rule_id == "odoo-deep-mass-assignment" for f in findings)
+
     def test_nested_function_does_not_clear_outer_taint(self) -> None:
         """Nested helpers should not clear taint tracked for the outer controller."""
         source = """
