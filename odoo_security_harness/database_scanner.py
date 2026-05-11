@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -191,7 +192,8 @@ class DatabaseScanner(ast.NodeVisitor):
                 "Route lists available databases",
                 severity,
                 node.lineno,
-                "Controller lists database names; verify list_db/dbfilter posture and avoid exposing tenant names to unauthenticated callers",
+                "Controller lists database names; "
+                "verify list_db/dbfilter posture and avoid exposing tenant names to unauthenticated callers",
                 route.display_path(),
                 sink,
             )
@@ -203,7 +205,8 @@ class DatabaseScanner(ast.NodeVisitor):
                 "Controller calls database manager operation",
                 severity,
                 node.lineno,
-                "Controller invokes database create/drop/backup/restore behavior; verify this is admin-only, CSRF-protected, audited, and not reachable pre-auth",
+                "Controller invokes database create/drop/backup/restore behavior; "
+                "verify this is admin-only, CSRF-protected, audited, and not reachable pre-auth",
                 route.display_path(),
                 sink,
             )
@@ -214,7 +217,8 @@ class DatabaseScanner(ast.NodeVisitor):
                 "Request-derived database selection",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "Request-derived data reaches database selection/filtering; enforce hostname dbfilter and reject user-controlled database names",
+                "Request-derived data reaches database selection/filtering; "
+                "enforce hostname dbfilter and reject user-controlled database names",
                 route.display_path(),
                 sink,
             )
@@ -227,7 +231,8 @@ class DatabaseScanner(ast.NodeVisitor):
                 "Request-derived input reaches database manager operation",
                 "critical",
                 node.lineno,
-                "Request-derived data reaches database create/drop/backup/restore behavior; prevent attacker-chosen database names, passwords, or backup payloads",
+                "Request-derived data reaches database create/drop/backup/restore behavior; "
+                "prevent attacker-chosen database names, passwords, or backup payloads",
                 route.display_path(),
                 sink,
             )
@@ -363,7 +368,8 @@ class DatabaseScanner(ast.NodeVisitor):
             "Controller assigns database session directly",
             severity,
             line,
-            "Controller assigns request.session.db or request.db directly; verify database selection cannot be attacker-controlled across tenants",
+            "Controller assigns request.session.db or request.db directly; "
+            "verify database selection cannot be attacker-controlled across tenants",
             route.display_path(),
             _safe_unparse(target),
         )
@@ -373,7 +379,8 @@ class DatabaseScanner(ast.NodeVisitor):
                 "Request-derived database selection",
                 "critical" if route.auth in {"public", "none"} else "high",
                 line,
-                "Request-derived data controls database selection; enforce dbfilter/host mapping and avoid trusting user-supplied database names",
+                "Request-derived data controls database selection; "
+                "enforce dbfilter/host mapping and avoid trusting user-supplied database names",
                 route.display_path(),
                 _safe_unparse(target),
             )
@@ -505,7 +512,64 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _expanded_dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _expanded_dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _expanded_dict_items(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key_node, value_node in zip(node.keys, node.values, strict=False):
+        if key_node is None:
+            value = _resolve_static_dict(value_node, constants)
+            if value is not None:
+                items.extend(_expanded_dict_items(value, constants))
+            continue
+        key = _literal_string(key_node, constants)
+        if key:
+            items.append((key, value_node))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str | None, value: ast.AST) -> ast.Dict:
+    if key is None:
+        return values_node
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:

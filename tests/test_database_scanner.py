@@ -354,6 +354,44 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-database-tainted-management-input" for f in findings)
 
 
+def test_updated_public_database_manager_route_is_reported(tmp_path: Path) -> None:
+    """Updated route option dictionaries should preserve DB manager route metadata."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "db.py").write_text(
+        """
+from odoo import http, service
+
+DB_OPTIONS = {
+    'route': '/internal/db/drop',
+    'auth': 'user',
+    'csrf': True,
+}
+DB_OPTIONS.update({
+    'route': '/db/drop',
+    'auth': 'none',
+    'csrf': False,
+})
+
+class Controller(http.Controller):
+    @http.route(**DB_OPTIONS)
+    def drop(self, **kwargs):
+        return service.db.exp_drop(kwargs.get('password'), kwargs.get('db'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_database_operations(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-database-management-call"
+        and f.severity == "critical"
+        and f.route == "/db/drop"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-database-tainted-management-input" for f in findings)
+
+
 def test_nested_static_unpack_public_database_manager_route_is_reported(tmp_path: Path) -> None:
     """Nested static route option dictionaries should preserve DB manager route metadata."""
     controllers = tmp_path / "module" / "controllers"
