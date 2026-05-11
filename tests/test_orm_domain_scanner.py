@@ -238,6 +238,54 @@ class Search(odoo_http.Controller):
     )
 
 
+def test_imported_odoo_http_module_route_public_tainted_sudo_search_domain(tmp_path: Path) -> None:
+    """Direct odoo.http route decorators should remain recognized."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Search(odoo_http.Controller):
+    @odoo_http.route('/public/search', auth='public')
+    def search(self, **kwargs):
+        domain = kwargs.get('domain')
+        return odoo_http.request.env['res.partner'].sudo().search(domain)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_domains(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings
+    )
+
+
+def test_imported_odoo_module_route_public_tainted_sudo_search_domain(tmp_path: Path) -> None:
+    """Direct odoo module route decorators should remain recognized."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo as od
+
+class Search(od.http.Controller):
+    @od.http.route('/public/search', auth='public')
+    def search(self, **kwargs):
+        domain = kwargs.get('domain')
+        return od.http.request.env['res.partner'].sudo().search(domain)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_domains(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-orm-domain-tainted-sudo-search" and f.severity == "critical" for f in findings
+    )
+
+
 def test_non_odoo_route_decorator_tainted_sudo_search_domain_is_not_public(tmp_path: Path) -> None:
     """Local route decorators should not make tainted sudo searches public routes."""
     controllers = tmp_path / "module" / "controllers"
@@ -366,6 +414,28 @@ class Search(http.Controller):
     def search(self):
         payload = req.get_http_params()
         return req.env['res.partner'].sudo().search(payload.get('domain'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_domains(tmp_path)
+
+    assert any(f.rule_id == "odoo-orm-domain-tainted-sudo-search" for f in findings)
+
+
+def test_imported_odoo_http_request_public_tainted_sudo_search_domain(tmp_path: Path) -> None:
+    """Direct odoo.http request access should still taint sudo search domains."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Search(odoo_http.Controller):
+    @odoo_http.route('/public/search', auth='public')
+    def search(self):
+        payload = odoo_http.request.get_http_params()
+        return odoo_http.request.env['res.partner'].sudo().search(payload.get('domain'))
 """,
         encoding="utf-8",
     )
