@@ -63,6 +63,8 @@ class OrmContextScanner(ast.NodeVisitor):
         self.reported_context_calls: set[int] = set()
         self.scope_stack: list[ContextScope] = []
         self.request_names: set[str] = {"request"}
+        self.http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
 
@@ -85,9 +87,22 @@ class OrmContextScanner(ast.NodeVisitor):
         self.generic_visit(node)
         self.class_constants_stack.pop()
 
+    def visit_Import(self, node: ast.Import) -> Any:
+        """Track direct Odoo module aliases for the request proxy."""
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
+        self.generic_visit(node)
+
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         """Track aliases for the Odoo HTTP request proxy."""
-        if node.module == "odoo.http":
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "http":
+                    self.http_module_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
                     self.request_names.add(alias.asname or alias.name)
@@ -123,7 +138,9 @@ class OrmContextScanner(ast.NodeVisitor):
 
         if _is_with_context_call(node):
             self._scan_with_context_call(node, sink)
-        elif _is_request_update_context_call(node, self.request_names):
+        elif _is_request_update_context_call(
+            node, self.request_names, self.http_module_names, self.odoo_module_names
+        ):
             self._scan_request_update_context_call(node, sink)
 
         flags = _context_flags_in_chain(
@@ -373,16 +390,49 @@ def _is_with_context_call(node: ast.Call) -> bool:
     return isinstance(node.func, ast.Attribute) and node.func.attr == "with_context"
 
 
-def _is_request_update_context_call(node: ast.Call, request_names: set[str]) -> bool:
+def _is_request_update_context_call(
+    node: ast.Call,
+    request_names: set[str],
+    http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
+) -> bool:
+    http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     return (
         isinstance(node.func, ast.Attribute)
         and node.func.attr == "update_context"
-        and _is_request_expr(node.func.value, request_names)
+        and _is_request_expr(node.func.value, request_names, http_module_names, odoo_module_names)
     )
 
 
-def _is_request_expr(node: ast.AST, request_names: set[str]) -> bool:
-    return isinstance(node, ast.Name) and node.id in request_names
+def _is_request_expr(
+    node: ast.AST,
+    request_names: set[str],
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in request_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "request"
+        and _is_http_module_expr(node.value, http_module_names, odoo_module_names)
+    )
+
+
+def _is_http_module_expr(
+    node: ast.AST,
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in http_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "http"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in odoo_module_names
+    )
 
 
 def _context_flags_in_chain(

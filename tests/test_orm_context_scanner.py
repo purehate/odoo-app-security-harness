@@ -666,6 +666,54 @@ class Controller(http.Controller):
     assert "odoo-orm-context-request-privileged-mode" in rule_ids
 
 
+def test_flags_imported_odoo_http_request_update_context(tmp_path: Path) -> None:
+    """Direct odoo.http request access should expose request-wide context mutation."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/quiet', auth='user')
+    def quiet(self):
+        odoo_http.request.update_context(tracking_disable=True, module_uninstall=True)
+        return odoo_http.request.env['res.partner'].create({'name': 'Quiet'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-orm-context-request-tracking-disabled" in rule_ids
+    assert "odoo-orm-context-request-privileged-mode" in rule_ids
+
+
+def test_flags_imported_odoo_request_update_context(tmp_path: Path) -> None:
+    """Direct odoo module request access should expose request-wide context mutation."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/quiet', auth='user')
+    def quiet(self):
+        od.http.request.update_context(tracking_disable=True, module_uninstall=True)
+        return od.http.request.env['res.partner'].create({'name': 'Quiet'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_orm_context(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-orm-context-request-tracking-disabled" in rule_ids
+    assert "odoo-orm-context-request-privileged-mode" in rule_ids
+
+
 def test_safe_context_is_ignored(tmp_path: Path) -> None:
     """Benign context values should not be noisy."""
     models = tmp_path / "module" / "models"
