@@ -65,6 +65,7 @@ class RouteSecurityScanner(ast.NodeVisitor):
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.route_names: set[str] = set()
 
     def scan_file(self) -> list[RouteSecurityFinding]:
@@ -80,6 +81,14 @@ class RouteSecurityScanner(ast.NodeVisitor):
         self.constants = _module_constants(tree)
         self.visit(tree)
         return self.findings
+
+    def visit_Import(self, node: ast.Import) -> Any:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
+        self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo":
@@ -103,6 +112,7 @@ class RouteSecurityScanner(ast.NodeVisitor):
             self._effective_constants(),
             self.route_names,
             self.http_module_names,
+            self.odoo_module_names,
         ):
             self._scan_route(node, route)
         self.generic_visit(node)
@@ -257,13 +267,15 @@ def _route_infos(
     constants: dict[str, ast.AST] | None = None,
     route_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> list[RouteInfo]:
     routes: list[RouteInfo] = []
     constants = constants or {}
     route_names = route_names or set()
     http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     for decorator in node.decorator_list:
-        if not _is_http_route(decorator, route_names, http_module_names):
+        if not _is_http_route(decorator, route_names, http_module_names, odoo_module_names):
             continue
         paths: list[str] = []
         auth = "user"
@@ -340,18 +352,34 @@ def _is_http_route(
     node: ast.AST,
     route_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> bool:
     route_names = route_names or set()
     http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     if isinstance(node, ast.Call):
-        return _is_http_route(node.func, route_names, http_module_names)
+        return _is_http_route(node.func, route_names, http_module_names, odoo_module_names)
     if isinstance(node, ast.Name):
         return node.id in route_names
     return (
         isinstance(node, ast.Attribute)
         and node.attr == "route"
+        and _is_http_module_expr(node.value, http_module_names, odoo_module_names)
+    )
+
+
+def _is_http_module_expr(
+    node: ast.AST,
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in http_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "http"
         and isinstance(node.value, ast.Name)
-        and node.value.id in http_module_names
+        and node.value.id in odoo_module_names
     )
 
 
