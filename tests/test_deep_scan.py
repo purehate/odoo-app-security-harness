@@ -2501,6 +2501,12 @@ def test_taxonomy_coverage_classifies_qweb_dynamic_style_attribute() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template binds dynamic style attribute",
                 "message": "OWL xml template binds dynamic CSS into a style attribute",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-dynamic-class-attribute",
+                "source": "web-asset",
+                "title": "OWL inline template binds dynamic class attribute",
+                "message": "OWL xml template binds dynamic CSS classes",
             }
         ]
     )

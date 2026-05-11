@@ -1451,6 +1451,31 @@ def test_owl_inline_template_dynamic_style_mapping_detected(tmp_path: Path) -> N
     assert any(f.rule_id == "odoo-web-owl-qweb-dynamic-style-attribute" for f in findings)
 
 
+def test_owl_inline_template_dynamic_class_attribute_detected(tmp_path: Path) -> None:
+    """OWL inline class attributes should not render runtime-selected UI state."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<button t-att-class=\"props.buttonClass\">Pay</button>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-dynamic-class-attribute"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_dynamic_class_mapping_detected(tmp_path: Path) -> None:
+    """OWL t-att mappings can also bind dynamic classes."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<button t-att=\"{'class': props.buttonClass}\"/>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(f.rule_id == "odoo-web-owl-qweb-dynamic-class-attribute" for f in findings)
+
+
 def test_owl_inline_template_dynamic_url_attribute_detected(tmp_path: Path) -> None:
     """OWL inline URL-bearing attributes should not use runtime-selected targets."""
     path = tmp_path / "widget.js"
