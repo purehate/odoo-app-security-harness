@@ -624,6 +624,50 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-raw-sql-request-derived-input" for f in findings)
 
 
+def test_flags_imported_odoo_http_module_sql_parameter(tmp_path: Path) -> None:
+    """Direct odoo.http request access should seed raw SQL taint."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/lookup', auth='user')
+    def lookup(self):
+        payload = odoo_http.request.get_http_params()
+        odoo_http.request.env.cr.execute("SELECT * FROM res_partner WHERE id = %s", (payload.get('partner_id'),))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_raw_sql(tmp_path)
+
+    assert any(f.rule_id == "odoo-raw-sql-request-derived-input" for f in findings)
+
+
+def test_flags_imported_odoo_module_sql_parameter(tmp_path: Path) -> None:
+    """Direct odoo module request access should seed raw SQL taint."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/lookup', auth='user')
+    def lookup(self):
+        payload = od.http.request.get_http_params()
+        od.http.request.env.cr.execute("SELECT * FROM res_partner WHERE id = %s", (payload.get('partner_id'),))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_raw_sql(tmp_path)
+
+    assert any(f.rule_id == "odoo-raw-sql-request-derived-input" for f in findings)
+
+
 def test_flags_route_path_sql_parameter(tmp_path: Path) -> None:
     """Odoo route path parameters should remain request-derived in raw SQL parameters."""
     controllers = tmp_path / "module" / "controllers"
@@ -681,6 +725,48 @@ class Controller(odoo_http.Controller):
     @odoo_http.route('/lookup/<int:partner_id>', auth='public')
     def lookup(self, partner_id):
         request.env.cr.execute("SELECT * FROM res_partner WHERE id = %s", (partner_id,))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_raw_sql(tmp_path)
+
+    assert any(f.rule_id == "odoo-raw-sql-request-derived-input" for f in findings)
+
+
+def test_flags_imported_odoo_http_module_route_path_sql_parameter(tmp_path: Path) -> None:
+    """Direct odoo.http imports should still taint route path parameters."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/lookup/<int:partner_id>', auth='public')
+    def lookup(self, partner_id):
+        odoo_http.request.env.cr.execute("SELECT * FROM res_partner WHERE id = %s", (partner_id,))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_raw_sql(tmp_path)
+
+    assert any(f.rule_id == "odoo-raw-sql-request-derived-input" for f in findings)
+
+
+def test_flags_imported_odoo_module_route_path_sql_parameter(tmp_path: Path) -> None:
+    """Direct odoo module imports should still taint route path parameters."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/lookup/<int:partner_id>', auth='public')
+    def lookup(self, partner_id):
+        od.http.request.env.cr.execute("SELECT * FROM res_partner WHERE id = %s", (partner_id,))
 """,
         encoding="utf-8",
     )

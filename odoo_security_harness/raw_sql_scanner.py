@@ -58,6 +58,7 @@ class RawSqlScanner(ast.NodeVisitor):
         self.tainted_vars: set[str] = set()
         self.cursor_vars: set[str] = {"cr"}
         self.http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
 
     def scan_file(self) -> list[RawSqlFinding]:
@@ -72,6 +73,14 @@ class RawSqlScanner(ast.NodeVisitor):
 
         self.visit(tree)
         return self.findings
+
+    def visit_Import(self, node: ast.Import) -> Any:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
+        self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo":
@@ -88,7 +97,12 @@ class RawSqlScanner(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         previous_tainted = set(self.tainted_vars)
-        if _function_is_http_route(node, self.route_decorator_names, self.http_module_names):
+        if _function_is_http_route(
+            node,
+            self.route_decorator_names,
+            self.http_module_names,
+            self.odoo_module_names,
+        ):
             for arg in [*node.args.args, *node.args.kwonlyargs]:
                 if arg.arg not in {"self", "cls"}:
                     self.tainted_vars.add(arg.arg)
@@ -200,7 +214,12 @@ class RawSqlScanner(ast.NodeVisitor):
 
     def _expr_is_tainted(self, node: ast.AST) -> bool:
         text = _safe_unparse(node)
-        if _is_request_source(node, self.request_names) or any(marker in text for marker in REQUEST_MARKERS):
+        if _is_request_source(
+            node,
+            self.request_names,
+            self.http_module_names,
+            self.odoo_module_names,
+        ) or any(marker in text for marker in REQUEST_MARKERS):
             return True
         if isinstance(node, ast.Starred):
             return self._expr_is_tainted(node.value)
@@ -416,22 +435,43 @@ def _is_unsafe_sql_expr(node: ast.AST) -> bool:
     return False
 
 
-def _is_request_source(node: ast.AST, request_names: set[str]) -> bool:
+def _is_request_source(
+    node: ast.AST,
+    request_names: set[str],
+    http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
+) -> bool:
+    http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     for child in ast.walk(node):
         if isinstance(child, ast.Attribute) and child.attr in {"params", "jsonrequest", "httprequest"}:
-            if _is_request_expr(child.value, request_names):
+            if _is_request_expr(child.value, request_names, http_module_names, odoo_module_names):
                 return True
         if not isinstance(child, ast.Call) or not isinstance(child.func, ast.Attribute):
             continue
         if child.func.attr in {"get_http_params", "get_json_data"} and _is_request_expr(
-            child.func.value, request_names
+            child.func.value,
+            request_names,
+            http_module_names,
+            odoo_module_names,
         ):
             return True
     return False
 
 
-def _is_request_expr(node: ast.AST, request_names: set[str]) -> bool:
-    return isinstance(node, ast.Name) and node.id in request_names
+def _is_request_expr(
+    node: ast.AST,
+    request_names: set[str],
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in request_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "request"
+        and _is_http_module_expr(node.value, http_module_names, odoo_module_names)
+    )
 
 
 def _literal_string(node: ast.AST) -> str:
@@ -490,9 +530,10 @@ def _function_is_http_route(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     route_decorator_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> bool:
     return any(
-        _is_http_route(decorator, route_decorator_names, http_module_names)
+        _is_http_route(decorator, route_decorator_names, http_module_names, odoo_module_names)
         for decorator in node.decorator_list
     )
 
@@ -501,17 +542,33 @@ def _is_http_route(
     node: ast.AST,
     route_decorator_names: set[str] | None = None,
     http_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
 ) -> bool:
     route_decorator_names = route_decorator_names or set()
     http_module_names = http_module_names or {"http"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     target = node.func if isinstance(node, ast.Call) else node
     if isinstance(target, ast.Name):
         return target.id in route_decorator_names
     return (
         isinstance(target, ast.Attribute)
         and target.attr == "route"
-        and isinstance(target.value, ast.Name)
-        and target.value.id in http_module_names
+        and _is_http_module_expr(target.value, http_module_names, odoo_module_names)
+    )
+
+
+def _is_http_module_expr(
+    node: ast.AST,
+    http_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in http_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "http"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in odoo_module_names
     )
 
 
