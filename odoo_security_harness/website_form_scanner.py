@@ -356,6 +356,11 @@ class WebsiteFormScanner:
             value = form.get(attr, "").strip()
             if value:
                 return value.strip("'\"")
+        mapping = form.get("t-att", "")
+        for attr in ("data-success-page", "data-success_page", "success-page", "success_page"):
+            mapped_value = _mapped_attribute_value(mapping, attr)
+            if mapped_value:
+                return mapped_value.strip("'\"")
         return ""
 
     def _dynamic_success_page(self, form: ElementTree.Element) -> str:
@@ -363,6 +368,11 @@ class WebsiteFormScanner:
             value = form.get(attr, "").strip()
             if _is_request_derived_redirect_expr(value):
                 return value
+        mapping = form.get("t-att", "")
+        for attr in ("data-success-page", "data-success_page", "success-page", "success_page"):
+            mapped_value = _mapped_attribute_value(mapping, attr)
+            if mapped_value and _is_request_derived_redirect_expr(mapped_value):
+                return mapped_value
         return ""
 
     def _has_file_input(self, form: ElementTree.Element) -> bool:
@@ -723,8 +733,14 @@ def _form_action(form: ElementTree.Element) -> str:
 
 
 def _mapped_attribute_value(mapping: str, key: str) -> str:
-    match = re.search(rf"['\"]{re.escape(key)}['\"]\s*:\s*(?P<value>[^}}]+)", mapping, re.IGNORECASE)
-    return match.group("value").strip() if match else ""
+    match = re.search(
+        rf"['\"]{re.escape(key)}['\"]\s*:\s*(?:(?P<quote>['\"])(?P<literal>.*?)(?P=quote)|(?P<expr>[^,}}]+))",
+        mapping,
+        re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return (match.group("literal") or match.group("expr") or "").strip()
 
 
 def _line_for_form_action(content: str, action: str) -> int:
