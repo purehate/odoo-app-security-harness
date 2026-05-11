@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -72,6 +73,7 @@ RISKY_BINARY_DEPENDENCIES = {
     "wkhtmltopdf",
     "wget",
 }
+PYTHON_DEPENDENCY_NAME_RE = re.compile(r"^\s*(?P<name>[A-Za-z0-9_.-]+)")
 
 
 @dataclass
@@ -330,13 +332,20 @@ def _risky_python_dependencies(dependencies: list[str]) -> list[str]:
     """Return manifest dependencies whose usage deserves security review."""
     risky: list[str] = []
     for dependency in dependencies:
-        normalized = dependency.strip().lower().replace("_", "-")
-        package_name = normalized.split("[", 1)[0]
+        package_name = _python_dependency_name(dependency)
         if package_name == "yaml":
             package_name = "pyyaml"
         if package_name in RISKY_PYTHON_DEPENDENCIES:
             risky.append(dependency)
     return sorted(set(risky), key=str.lower)
+
+
+def _python_dependency_name(dependency: str) -> str:
+    """Return a normalized package name from common manifest/requirement spellings."""
+    match = PYTHON_DEPENDENCY_NAME_RE.match(dependency)
+    if not match:
+        return ""
+    return match.group("name").lower().replace("_", "-").split("[", 1)[0]
 
 
 def _risky_binary_dependencies(dependencies: list[str]) -> list[str]:

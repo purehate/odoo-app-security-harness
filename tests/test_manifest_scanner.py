@@ -213,6 +213,32 @@ def test_modern_integration_python_dependencies_are_reported(tmp_path: Path) -> 
     )
 
 
+def test_versioned_python_dependencies_are_reported(tmp_path: Path) -> None:
+    """Requirement-style manifest dependency spellings should still be matched."""
+    module = tmp_path / "versioned_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Versioned Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'python': ['requests>=2.31', 'cryptography==42.0.0', 'PyJWT~=2.8', 'safe-package>=1'],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-risky-python-dependency"
+        and "requests>=2.31" in f.message
+        and "cryptography==42.0.0" in f.message
+        and "PyJWT~=2.8" in f.message
+        and "safe-package>=1" not in f.message
+        for f in findings
+    )
+
+
 def test_risky_binary_dependencies_are_reported(tmp_path: Path) -> None:
     """Security-sensitive binary dependency declarations should be visible in manifest review."""
     module = tmp_path / "risky_bin_deps"
