@@ -500,6 +500,35 @@ class PaymentController(http.Controller):
     assert any(f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "notify" for f in findings)
 
 
+def test_updated_static_unpack_payment_callback_without_signature_is_reported(tmp_path: Path) -> None:
+    """Updated route option dictionaries should not hide auth/csrf/path posture."""
+    py = tmp_path / "controllers.py"
+    py.write_text(
+        """
+from odoo import http
+
+PAYMENT_OPTIONS = {
+    'routes': ['/payment/provider/notify'],
+    'auth': 'user',
+}
+PAYMENT_OPTIONS.update({
+    'auth': 'none',
+    'csrf': False,
+})
+
+class PaymentController(http.Controller):
+    @http.route(**PAYMENT_OPTIONS)
+    def notify(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = PaymentScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-payment-public-callback-no-signature" and f.handler == "notify" for f in findings)
+
+
 def test_class_constant_backed_payment_callback_without_signature_is_reported(tmp_path: Path) -> None:
     """Class-scoped route constants should not hide public csrf-disabled payment callbacks."""
     py = tmp_path / "controllers.py"
