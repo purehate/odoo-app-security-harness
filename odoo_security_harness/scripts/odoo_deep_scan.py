@@ -894,6 +894,19 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "manifest_url_embedded_credentials",
+        (
+            "manifest-remote-asset-embedded-credentials",
+            "manifest-python-dependency-embedded-credentials",
+            "manifest remote frontend asset url embeds credentials",
+            "manifest python dependency url embeds credentials",
+            "manifest frontend assets embed username, password, or token material in urls",
+            "manifest python dependencies embed username, password, or token material in urls",
+            "browser-visible asset declarations",
+            "committed dependency urls",
+        ),
+    ),
+    (
         "manifest_path_integrity",
         (
             "manifest-suspicious-data-path",

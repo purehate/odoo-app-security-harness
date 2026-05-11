@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from odoo_security_harness.base_scanner import _should_skip
 
 KNOWN_ODOO_LICENSES = {
@@ -255,6 +256,14 @@ class ManifestScanner:
                 "medium",
                 f"Manifest frontend assets reference protocol-relative URLs: {', '.join(protocol_relative_assets)}; use explicit https:// or packaged same-origin assets to avoid scheme downgrade and CSP ambiguity",
             )
+        credentialed_remote_assets = [asset for asset in remote_assets if _has_url_embedded_credentials(asset)]
+        if credentialed_remote_assets:
+            self._add(
+                "odoo-manifest-remote-asset-embedded-credentials",
+                "Manifest remote frontend asset URL embeds credentials",
+                "high",
+                f"Manifest frontend assets embed username, password, or token material in URLs: {', '.join(credentialed_remote_assets)}; keep credentials out of browser-visible asset declarations and package trusted assets locally",
+            )
 
         external_dependencies = data.get("external_dependencies")
         if isinstance(external_dependencies, dict):
@@ -282,6 +291,14 @@ class ManifestScanner:
                     "Manifest declares insecure HTTP Python dependency",
                     "high",
                     f"Manifest Python dependencies include cleartext http:// package references: {', '.join(insecure_direct_refs)}; fetch dependencies over HTTPS or a trusted internal package index with immutable pins",
+                )
+            credentialed_direct_refs = _credentialed_python_dependency_references(python_deps)
+            if credentialed_direct_refs:
+                self._add(
+                    "odoo-manifest-python-dependency-embedded-credentials",
+                    "Manifest Python dependency URL embeds credentials",
+                    "high",
+                    f"Manifest Python dependencies embed username, password, or token material in URLs: {', '.join(credentialed_direct_refs)}; use credential helpers, private indexes, or deployment secrets instead of committed dependency URLs",
                 )
             floating_vcs_refs = _floating_vcs_python_dependency_references(python_deps)
             if floating_vcs_refs:
@@ -401,6 +418,15 @@ def _is_protocol_relative_url(value: str) -> bool:
     return value.startswith("//")
 
 
+def _has_url_embedded_credentials(value: str) -> bool:
+    """Return whether a manifest string contains URL userinfo credentials."""
+    for match in re.finditer(r"https?://[^\s'\"<>)]+", value, re.IGNORECASE):
+        parsed = urlparse(match.group(0).rstrip(".,;"))
+        if parsed.hostname and (parsed.username is not None or parsed.password is not None):
+            return True
+    return False
+
+
 def _loads_security_data(data_files: list[str]) -> bool:
     """Return whether manifest data paths look like security-affecting XML/CSV."""
     return any(any(hint in path.lower() for hint in SECURITY_DATA_HINTS) for path in data_files)
@@ -459,6 +485,15 @@ def _insecure_direct_python_dependency_references(dependencies: list[str]) -> li
         if normalized.startswith("http://") or "+http://" in normalized or " @ http://" in normalized:
             insecure.append(dependency)
     return sorted(set(insecure), key=str.lower)
+
+
+def _credentialed_python_dependency_references(dependencies: list[str]) -> list[str]:
+    """Return Python dependency declarations with URL-embedded credentials."""
+    credentialed: list[str] = []
+    for dependency in dependencies:
+        if _has_url_embedded_credentials(dependency):
+            credentialed.append(dependency)
+    return sorted(set(credentialed), key=str.lower)
 
 
 def _floating_vcs_python_dependency_references(dependencies: list[str]) -> list[str]:

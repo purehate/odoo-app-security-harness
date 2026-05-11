@@ -214,6 +214,34 @@ def test_protocol_relative_remote_assets_are_reported(tmp_path: Path) -> None:
     )
 
 
+def test_remote_asset_embedded_credentials_are_reported(tmp_path: Path) -> None:
+    """Manifest asset URLs should not commit browser-visible credentials."""
+    module = tmp_path / "credentialed_remote_assets"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Credentialed Remote Assets',
+    'license': 'LGPL-3',
+    'assets': {
+        'web.assets_backend': [
+            'https://cdn_user:secret@cdn.example.com/widget.js',
+            'https://cdn.example.com/theme.css',
+        ],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-remote-asset-embedded-credentials"
+        and f.severity == "high"
+        and "https://cdn_user:secret@cdn.example.com/widget.js" in f.message
+        and "https://cdn.example.com/theme.css" not in f.message
+        for f in findings
+    )
+
+
 def test_risky_python_dependencies_are_reported_with_common_spellings(tmp_path: Path) -> None:
     """Security-sensitive Python dependency declarations should survive package spelling variants."""
     module = tmp_path / "risky_deps"
@@ -390,6 +418,36 @@ def test_insecure_python_dependency_references_are_reported(tmp_path: Path) -> N
         and f.severity == "high"
         and "git+http://git.example.com/private-addon-helper.git@main" in f.message
         and "helper @ http://packages.example.com/helper-1.0.tar.gz" in f.message
+        and "https://packages.example.com/safe-1.0.tar.gz" not in f.message
+        for f in findings
+    )
+
+
+def test_python_dependency_embedded_credentials_are_reported(tmp_path: Path) -> None:
+    """Manifest dependency URLs should not commit install credentials."""
+    module = tmp_path / "credentialed_direct_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Credentialed Direct Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'python': [
+            'git+https://deploy:token@git.example.com/private-addon-helper.git@0123456789abcdef',
+            'helper @ https://user:secret@packages.example.com/helper-1.0.tar.gz',
+            'https://packages.example.com/safe-1.0.tar.gz',
+        ],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-python-dependency-embedded-credentials"
+        and f.severity == "high"
+        and "git+https://deploy:token@git.example.com/private-addon-helper.git@0123456789abcdef" in f.message
+        and "helper @ https://user:secret@packages.example.com/helper-1.0.tar.gz" in f.message
         and "https://packages.example.com/safe-1.0.tar.gz" not in f.message
         for f in findings
     )
