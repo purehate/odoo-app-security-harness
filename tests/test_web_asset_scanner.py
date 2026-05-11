@@ -1286,6 +1286,18 @@ def test_postmessage_wildcard_origin_detected(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-web-postmessage-wildcard-origin" and f.severity == "medium" for f in findings)
 
 
+def test_global_postmessage_wildcard_origin_detected(tmp_path: Path) -> None:
+    """Bare browser postMessage calls should follow the same origin rules."""
+    path = tmp_path / "widget.js"
+    path.write_text("postMessage({invoiceId, token}, '*');\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    rule_ids = {f.rule_id for f in findings}
+    assert "odoo-web-postmessage-wildcard-origin" in rule_ids
+    assert "odoo-web-sensitive-postmessage-payload" in rule_ids
+
+
 def test_postmessage_dynamic_origin_detected(tmp_path: Path) -> None:
     """postMessage target origins should not be chosen from runtime data."""
     path = tmp_path / "widget.js"

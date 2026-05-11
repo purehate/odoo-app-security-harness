@@ -193,6 +193,10 @@ SENSITIVE_URL_PARAM_NAME_RE = re.compile(
     r"(?:access[_-]?token|auth[_-]?token|api[_-]?key|secret|password|session|csrf|jwt|bearer)",
     re.IGNORECASE,
 )
+SENSITIVE_POSTMESSAGE_PAYLOAD_RE = re.compile(
+    r"(?:access[_-]?token|auth[_-]?token|api[_-]?key|secret|password|session|csrf|jwt|bearer|\btoken\b)",
+    re.IGNORECASE,
+)
 SENSITIVE_URL_PARAM_SET_RE = re.compile(r"\.(?:set|append)\s*\(\s*['\"](?P<key>[^'\"]+)['\"]\s*,\s*(?P<value>[^)\n]+)")
 SENSITIVE_URL_PARAM_GET_RE = re.compile(r"\.get\s*\(\s*['\"](?P<key>[^'\"]+)['\"]")
 SENSITIVE_URL_QUERY_RE = re.compile(
@@ -205,8 +209,8 @@ SENSITIVE_URL_DYNAMIC_VALUE_RE = re.compile(
     r"\$\{|(?:^|[^+\w])\+|encodeURIComponent\s*\(|\b(?:response|payload|data|props|params|token|secret|password|session|csrf)\b",
     re.IGNORECASE,
 )
-POSTMESSAGE_CALL_RE = re.compile(r"\.postMessage\s*\((?P<args>[^;\n]+)\)")
-POSTMESSAGE_WILDCARD_RE = re.compile(r"\.postMessage\s*\(.*,\s*['\"]\*['\"]")
+POSTMESSAGE_CALL_RE = re.compile(r"(?:\.|(?<![\w$]))postMessage\s*\((?P<args>[^;\n]+)\)")
+POSTMESSAGE_WILDCARD_RE = re.compile(r"(?:\.|(?<![\w$]))postMessage\s*\(.*,\s*['\"]\*['\"]")
 OBJECT_MERGE_PATTERNS = {
     "Object.assign": re.compile(r"\bObject\.assign\s*\("),
     "extend": re.compile(r"(?:\b_|\$|\bjQuery)\.extend\s*\("),
@@ -1614,7 +1618,7 @@ def _looks_sensitive_postmessage_payload(args: str) -> bool:
     if len(values) < 2:
         return False
     payload = values[0].strip()
-    if not (SENSITIVE_URL_PARAM_NAME_RE.search(payload) and SENSITIVE_URL_DYNAMIC_VALUE_RE.search(payload)):
+    if not (SENSITIVE_POSTMESSAGE_PAYLOAD_RE.search(payload) and SENSITIVE_URL_DYNAMIC_VALUE_RE.search(payload)):
         return False
     target_origin = values[1].strip()
     literal = _strip_js_string(target_origin)
