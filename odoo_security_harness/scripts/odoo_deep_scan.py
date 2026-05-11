@@ -4365,6 +4365,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "integration_tainted_proxy",
+        (
+            "odoo-integration-tainted-proxy",
+            "outbound http proxy is request-controlled",
+            "proxy configuration is derived from request/controller input",
+            "redirect integration traffic through controlled proxies",
+        ),
+    ),
+    (
         "integration_internal_url_ssrf",
         (
             "odoo-integration-internal-url-ssrf",

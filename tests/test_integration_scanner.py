@@ -581,6 +581,62 @@ def webhook(**kwargs):
     assert any(f.rule_id == "odoo-integration-tainted-url-ssrf" for f in findings)
 
 
+def test_tainted_requests_proxy_is_reported(tmp_path: Path) -> None:
+    """Request-controlled proxies can redirect outbound integration traffic."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+def sync(**kwargs):
+    proxies = {'https': kwargs.get('proxy_url')}
+    return requests.get('https://api.example.test/sync', proxies=proxies, timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-tainted-proxy" and f.sink == "requests.get" for f in findings)
+
+
+def test_tainted_httpx_proxy_is_reported(tmp_path: Path) -> None:
+    """httpx proxy= values should get the same request-taint coverage."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import httpx
+
+def sync(**kwargs):
+    return httpx.get('https://api.example.test/sync', proxy=kwargs.get('proxy_url'), timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-tainted-proxy" and f.sink == "httpx.get" for f in findings)
+
+
+def test_static_server_side_proxy_is_ignored(tmp_path: Path) -> None:
+    """Server-owned static proxy settings should not create request-controlled proxy findings."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import requests
+
+def sync():
+    proxies = {'https': 'http://proxy.internal:8080'}
+    return requests.get('https://api.example.test/sync', proxies=proxies, timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-integration-tainted-proxy" for f in findings)
+
+
 def test_tainted_authorization_header_is_reported(tmp_path: Path) -> None:
     """Request-derived outbound auth headers should be visible in review output."""
     py = tmp_path / "integration.py"

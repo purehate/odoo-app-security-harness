@@ -2572,6 +2572,12 @@
       "capec": ["CAPEC-664", "CAPEC-21"],
       "owasp": "A10:2021 Server-Side Request Forgery"
     },
+    "integration_tainted_proxy": {
+      "label": "Outbound integration proxy configuration is request-controlled",
+      "cwe": ["CWE-918", "CWE-441", "CWE-20"],
+      "capec": ["CAPEC-664", "CAPEC-148"],
+      "owasp": "A10:2021 Server-Side Request Forgery"
+    },
     "integration_internal_url_ssrf": {
       "label": "Outbound integration targets a loopback, private, link-local, or metadata URL",
       "cwe": ["CWE-918", "CWE-200", "CWE-284"],
