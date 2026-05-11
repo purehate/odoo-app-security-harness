@@ -134,6 +134,56 @@ class BusController(odoo_http.Controller):
     assert "odoo-realtime-sensitive-payload" in rule_ids
 
 
+def test_imported_odoo_http_module_route_public_bus_send_with_sensitive_payload(tmp_path: Path) -> None:
+    """Direct odoo.http imports should not hide public bus sends."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "bus.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class BusController(odoo_http.Controller):
+    @odoo_http.route('/public/bus', auth='public')
+    def bus(self):
+        payload = odoo_http.request.get_http_params()
+        odoo_http.request.env['bus.bus']._sendone('public_notifications', payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-realtime-public-route-bus-send" in rule_ids
+    assert "odoo-realtime-broad-or-tainted-channel" in rule_ids
+    assert "odoo-realtime-sensitive-payload" in rule_ids
+
+
+def test_imported_odoo_module_route_public_bus_send_with_sensitive_payload(tmp_path: Path) -> None:
+    """Direct odoo imports should not hide public bus sends."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "bus.py").write_text(
+        """
+import odoo as od
+
+class BusController(od.http.Controller):
+    @od.http.route('/public/bus', auth='public')
+    def bus(self):
+        payload = od.http.request.get_http_params()
+        od.http.request.env['bus.bus']._sendone('public_notifications', payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-realtime-public-route-bus-send" in rule_ids
+    assert "odoo-realtime-broad-or-tainted-channel" in rule_ids
+    assert "odoo-realtime-sensitive-payload" in rule_ids
+
+
 def test_non_odoo_route_decorator_bus_send_is_not_public_route(tmp_path: Path) -> None:
     """Local route decorators should not make bus sends public routes."""
     controllers = tmp_path / "module" / "controllers"
