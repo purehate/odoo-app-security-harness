@@ -203,15 +203,25 @@ class QueueJobScanner(ast.NodeVisitor):
                 )
             elif _is_http_call(
                 node.func, self.http_module_aliases, self.http_function_aliases, current.http_client_vars
-            ) and not _has_keyword(node, "timeout"):
-                self._add(
-                    "odoo-queue-job-http-no-timeout",
-                    "Queue job performs HTTP without timeout",
-                    "medium",
-                    node.lineno,
-                    "queue_job/delayed job performs outbound HTTP without timeout; slow upstreams can exhaust workers or stall job channels",
-                    current.name,
-                )
+            ):
+                if not _has_keyword(node, "timeout"):
+                    self._add(
+                        "odoo-queue-job-http-no-timeout",
+                        "Queue job performs HTTP without timeout",
+                        "medium",
+                        node.lineno,
+                        "queue_job/delayed job performs outbound HTTP without timeout; slow upstreams can exhaust workers or stall job channels",
+                        current.name,
+                    )
+                if _keyword_is_false(node, "verify", constants):
+                    self._add(
+                        "odoo-queue-job-tls-verify-disabled",
+                        "Queue job disables TLS verification",
+                        "high",
+                        node.lineno,
+                        "queue_job/delayed job passes verify=False to outbound HTTP; background integrations should not permit man-in-the-middle attacks",
+                        current.name,
+                    )
 
         self.generic_visit(node)
 
@@ -610,6 +620,17 @@ def _mark_target_names(target: ast.AST, names: set[str]) -> None:
 
 def _has_keyword(node: ast.Call, name: str) -> bool:
     return any(keyword.arg == name for keyword in node.keywords)
+
+
+def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for keyword in node.keywords:
+        if keyword.arg != name:
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Constant) and value.value is False:
+            return True
+    return False
 
 
 def _enqueue_has_keyword(node: ast.Call, name: str) -> bool:

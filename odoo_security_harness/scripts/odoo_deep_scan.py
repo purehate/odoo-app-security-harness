@@ -1357,6 +1357,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "queue_job_tls_verification_disabled",
+        (
+            "queue-job-tls-verify-disabled",
+            "queue job disables tls verification",
+            "queue_job/delayed job passes verify=false to outbound http",
+            "man-in-the-middle attacks",
+        ),
+    ),
+    (
         "serialization_unsafe_deserialization",
         (
             "serialization-unsafe-deserialization",
