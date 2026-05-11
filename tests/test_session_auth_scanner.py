@@ -1238,6 +1238,113 @@ class Controller(http.Controller):
     assert "odoo-session-environment-tainted-user" in rule_ids
 
 
+def test_flags_aliased_odoo_api_module_environment(tmp_path: Path) -> None:
+    """Aliased Odoo API modules should not hide manual Environment construction."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "env.py").write_text(
+        """
+from odoo import api as odoo_api, http, SUPERUSER_ID
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/env', auth='public', csrf=False)
+    def env(self, **kwargs):
+        root_env = odoo_api.Environment(request.cr, SUPERUSER_ID, {})
+        user_env = odoo_api.Environment(request.cr, kwargs.get('uid'), {})
+        return root_env['res.users'].browse(user_env.uid)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-session-environment-superuser" in rule_ids
+    assert "odoo-session-environment-tainted-user" in rule_ids
+
+
+def test_flags_imported_odoo_api_module_environment(tmp_path: Path) -> None:
+    """Direct odoo.api module imports should not hide manual Environment construction."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "env.py").write_text(
+        """
+import odoo.api as odoo_api
+from odoo import http, SUPERUSER_ID
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/env', auth='public', csrf=False)
+    def env(self, **kwargs):
+        root_env = odoo_api.Environment(request.cr, SUPERUSER_ID, {})
+        user_env = odoo_api.Environment(request.cr, kwargs.get('uid'), {})
+        return root_env['res.users'].browse(user_env.uid)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-session-environment-superuser" in rule_ids
+    assert "odoo-session-environment-tainted-user" in rule_ids
+
+
+def test_flags_imported_odoo_module_api_environment(tmp_path: Path) -> None:
+    """Direct odoo module imports should not hide manual Environment construction."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "env.py").write_text(
+        """
+import odoo as od
+from odoo import http, SUPERUSER_ID
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/env', auth='public', csrf=False)
+    def env(self, **kwargs):
+        root_env = od.api.Environment(request.cr, SUPERUSER_ID, {})
+        user_env = od.api.Environment(request.cr, kwargs.get('uid'), {})
+        return root_env['res.users'].browse(user_env.uid)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-session-environment-superuser" in rule_ids
+    assert "odoo-session-environment-tainted-user" in rule_ids
+
+
+def test_flags_aliased_imported_environment_constructor(tmp_path: Path) -> None:
+    """Aliased direct Environment imports should remain visible."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "env.py").write_text(
+        """
+from odoo import http, SUPERUSER_ID
+from odoo.api import Environment as OdooEnvironment
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/env', auth='public', csrf=False)
+    def env(self, **kwargs):
+        root_env = OdooEnvironment(request.cr, SUPERUSER_ID, {})
+        user_env = OdooEnvironment(request.cr, kwargs.get('uid'), {})
+        return root_env['res.users'].browse(user_env.uid)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-session-environment-superuser" in rule_ids
+    assert "odoo-session-environment-tainted-user" in rule_ids
+
+
 def test_flags_uid_argument_environment_user(tmp_path: Path) -> None:
     """Uid-shaped function arguments should remain tainted identity input."""
     models = tmp_path / "module" / "models"

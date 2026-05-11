@@ -62,6 +62,8 @@ class SessionAuthScanner(ast.NodeVisitor):
         self.class_stack: list[ClassContext] = []
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
+        self.api_module_names: set[str] = {"api"}
+        self.environment_constructor_names: set[str] = {"Environment"}
         self.route_decorator_names: set[str] = set()
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.session_update_value_names: dict[str, ast.Dict] = {}
@@ -86,6 +88,11 @@ class SessionAuthScanner(ast.NodeVisitor):
                 self.odoo_module_names.add(alias.asname or alias.name)
             elif alias.name == "odoo.http" and alias.asname:
                 self.http_module_names.add(alias.asname)
+            elif alias.name == "odoo.api":
+                if alias.asname:
+                    self.api_module_names.add(alias.asname)
+                else:
+                    self.odoo_module_names.add("odoo")
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
@@ -93,12 +100,18 @@ class SessionAuthScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "api":
+                    self.api_module_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
                     self.request_names.add(alias.asname or alias.name)
                 elif alias.name == "route":
                     self.route_decorator_names.add(alias.asname or alias.name)
+        elif node.module == "odoo.api":
+            for alias in node.names:
+                if alias.name == "Environment":
+                    self.environment_constructor_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
@@ -194,7 +207,7 @@ class SessionAuthScanner(ast.NodeVisitor):
             self._scan_update_env(node, sink)
         elif self._is_request_session_method(node.func, "update"):
             self._scan_session_update(node, sink)
-        elif sink in {"api.Environment", "Environment"}:
+        elif self._is_environment_ctor(node.func):
             self._scan_environment_ctor(node, sink)
         elif (self._is_request_session_method(node.func, "logout") or sink == "logout") and route.is_route:
             if route.auth in {"public", "none"} or not route.csrf or "GET" in route.methods or not route.methods:
@@ -303,6 +316,21 @@ class SessionAuthScanner(ast.NodeVisitor):
                 "Manual Odoo Environment is constructed from request-derived uid; verify attackers cannot select another user's security context",
                 sink,
             )
+
+    def _is_environment_ctor(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.environment_constructor_names
+        return isinstance(node, ast.Attribute) and node.attr == "Environment" and self._is_api_module_expr(node.value)
+
+    def _is_api_module_expr(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.api_module_names
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "api"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in self.odoo_module_names
+        )
 
     def _scan_session_update(self, node: ast.Call, sink: str) -> None:
         constants = self._effective_constants()
