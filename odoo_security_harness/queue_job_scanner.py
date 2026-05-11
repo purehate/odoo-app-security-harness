@@ -653,10 +653,10 @@ def _is_none_constant(node: ast.AST) -> bool:
 
 def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:
     constants = constants or {}
-    for keyword in node.keywords:
-        if keyword.arg != name:
+    for keyword_name, keyword_value in _expanded_keywords(node, constants):
+        if keyword_name != name:
             continue
-        value = _resolve_constant(keyword.value, constants)
+        value = _resolve_constant(keyword_value, constants)
         if isinstance(value, ast.Constant) and value.value is False:
             return True
     return False

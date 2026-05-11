@@ -451,6 +451,30 @@ class SaleJob(models.Model):
     assert any(f.rule_id == "odoo-queue-job-tls-verify-disabled" for f in findings)
 
 
+def test_flags_queue_job_tls_verification_disabled_static_kwargs(tmp_path: Path) -> None:
+    """Static **kwargs dictionaries should not hide queue job TLS verification disabling."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo.addons.queue_job.job import job
+import requests
+
+HTTP_OPTIONS = {'timeout': 10, 'verify': False}
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        requests.post(record.callback_url, **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-queue-job-tls-verify-disabled" for f in findings)
+
+
 def test_flags_sensitive_model_queue_mutation_without_sudo(tmp_path: Path) -> None:
     """Queue jobs mutating sensitive models deserve review even without inline sudo."""
     module = tmp_path / "module" / "models"
