@@ -526,6 +526,27 @@ def migrate(cr, version):
     assert not any(finding.rule_id == "odoo-migration-http-no-timeout" for finding in findings)
 
 
+def test_http_dict_union_static_kwargs_timeout_is_not_reported_in_migration(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should satisfy migration HTTP timeout checks."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'headers': {}}
+
+def migrate(cr, version):
+    requests.post("https://example.test/upgrade", **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert not any(finding.rule_id == "odoo-migration-http-no-timeout" for finding in findings)
+
+
 def test_http_local_kwargs_timeout_is_not_reported_in_migration(tmp_path: Path) -> None:
     """Function-local **kwargs dictionaries should satisfy migration HTTP timeout checks."""
     py = tmp_path / "post-migrate.py"
@@ -585,6 +606,27 @@ def migrate(cr, version):
     assert any(finding.rule_id == "odoo-migration-tls-verify-disabled" for finding in findings)
 
 
+def test_tls_verification_disabled_dict_union_kwargs_is_reported_in_migration(tmp_path: Path) -> None:
+    """Dict-union static **kwargs should not hide migration TLS disabling."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'verify': False}
+
+def migrate(cr, version):
+    requests.post("https://example.test/upgrade", **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(finding.rule_id == "odoo-migration-tls-verify-disabled" for finding in findings)
+
+
 def test_tls_verification_disabled_local_kwargs_is_reported_in_migration(tmp_path: Path) -> None:
     """Function-local **kwargs dictionaries should not hide disabled TLS verification."""
     py = tmp_path / "post-migrate.py"
@@ -624,6 +666,27 @@ def migrate(cr, version):
     findings = MigrationScanner(py, "migration").scan_file()
 
     assert sum(finding.rule_id == "odoo-migration-cleartext-http-url" for finding in findings) == 2
+
+
+def test_cleartext_http_url_dict_union_kwargs_is_reported_in_migration(tmp_path: Path) -> None:
+    """Dict-union static url= kwargs should not hide cleartext migration URLs."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+import requests
+
+BASE_OPTIONS = {'url': 'http://partner.example.test/migration'}
+HTTP_OPTIONS = BASE_OPTIONS | {'timeout': 10}
+
+def migrate(cr, version):
+    requests.request('POST', **HTTP_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(finding.rule_id == "odoo-migration-cleartext-http-url" for finding in findings)
 
 
 def test_manifest_declared_lifecycle_hook_is_scanned(tmp_path: Path) -> None:
