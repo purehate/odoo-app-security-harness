@@ -388,7 +388,7 @@ class WebsiteFormScanner:
 
     def _has_hidden_model_selector(self, form: ElementTree.Element) -> bool:
         return any(
-            element.get("type", "").lower() == "hidden" and _field_name(element) in {"model_name", "model"}
+            _element_attribute(element, "type").lower() == "hidden" and _field_name(element) in {"model_name", "model"}
             for element in form.iter("input")
         )
 
@@ -396,7 +396,7 @@ class WebsiteFormScanner:
         for element in form.iter("input"):
             if _field_name(element) != "sanitize_form":
                 continue
-            if element.get("value", "").strip().lower() in {"0", "false", "no", "off"}:
+            if _element_attribute(element, "value").lower() in {"0", "false", "no", "off"}:
                 return True
         return False
 

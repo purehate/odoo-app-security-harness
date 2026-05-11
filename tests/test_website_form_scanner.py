@@ -342,6 +342,27 @@ def test_flags_hidden_model_selector(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-website-form-hidden-model-selector" for f in findings)
 
 
+def test_flags_qweb_mapped_hidden_model_selector(tmp_path: Path) -> None:
+    """QWeb-mapped hidden model selectors should still be surfaced for tamper review."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "legacy.xml").write_text(
+        """<odoo>
+  <template id="legacy">
+    <form method="post">
+      <input t-att="{'type': 'hidden', 'name': 'model_name', 'value': 'res.partner'}"/>
+      <input name="name"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-hidden-model-selector" for f in findings)
+
+
 def test_flags_website_form_sanitize_form_disabled_input(tmp_path: Path) -> None:
     """Forms should not let clients turn off website_form sanitization."""
     views = tmp_path / "module" / "views"
@@ -351,6 +372,27 @@ def test_flags_website_form_sanitize_form_disabled_input(tmp_path: Path) -> None
   <template id="contact">
     <form action="/website/form/crm.lead" method="post">
       <input type="hidden" name="sanitize_form" value="false"/>
+      <textarea name="description"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-sanitize-disabled" and f.severity == "high" for f in findings)
+
+
+def test_flags_qweb_mapped_sanitize_form_disabled_input(tmp_path: Path) -> None:
+    """QWeb-mapped values should not hide client-controlled sanitization disabling."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "forms.xml").write_text(
+        """<odoo>
+  <template id="contact">
+    <form action="/website/form/crm.lead" method="post">
+      <input t-att="{'type': 'hidden', 'name': 'sanitize_form', 'value': 'false'}"/>
       <textarea name="description"/>
     </form>
   </template>
