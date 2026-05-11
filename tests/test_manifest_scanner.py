@@ -481,6 +481,33 @@ def test_cloud_and_container_binary_dependencies_are_reported(tmp_path: Path) ->
     )
 
 
+def test_local_binary_dependency_references_are_reported(tmp_path: Path) -> None:
+    """Binary dependency declarations should not rely on host-local executable paths."""
+    module = tmp_path / "local_bin_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Local Bin Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'bin': ['./bin/custom-tool', '../tools/helper', '/opt/vendor/private-tool', 'safe-tool'],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-local-bin-dependency"
+        and f.severity == "medium"
+        and "./bin/custom-tool" in f.message
+        and "../tools/helper" in f.message
+        and "/opt/vendor/private-tool" in f.message
+        and "safe-tool" not in f.message
+        for f in findings
+    )
+
+
 def test_lifecycle_hooks_are_reported(tmp_path: Path) -> None:
     """Install/uninstall hooks deserve explicit privileged-code review."""
     module = tmp_path / "hooks"

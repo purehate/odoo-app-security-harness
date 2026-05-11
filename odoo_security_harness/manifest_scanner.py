@@ -96,7 +96,7 @@ DIRECT_PYTHON_DEPENDENCY_PREFIXES = (
     "file://",
 )
 VCS_PYTHON_DEPENDENCY_PREFIXES = ("git+", "hg+", "svn+", "bzr+")
-LOCAL_PYTHON_DEPENDENCY_PREFIXES = ("file://", "./", "../", "/", "~/", ".\\", "..\\", "\\\\", "~\\")
+LOCAL_DEPENDENCY_PATH_PREFIXES = ("file://", "./", "../", "/", "~/", ".\\", "..\\", "\\\\", "~\\")
 FLOATING_VCS_REFS = {"main", "master", "develop", "dev", "trunk", "head"}
 IMMUTABLE_VCS_REF_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
 WINDOWS_ABSOLUTE_DEPENDENCY_RE = re.compile(r"^[a-z]:[\\/]", re.IGNORECASE)
@@ -299,6 +299,14 @@ class ManifestScanner:
                     "info",
                     f"Review usage of security-sensitive binary dependency declarations: {', '.join(risky_bins)}",
                 )
+            local_bins = _local_binary_dependency_references(bin_deps)
+            if local_bins:
+                self._add(
+                    "odoo-manifest-local-bin-dependency",
+                    "Manifest declares local binary dependency path",
+                    "medium",
+                    f"Manifest binary dependencies include local filesystem paths: {', '.join(local_bins)}; prefer named system dependencies or documented container packages over environment-specific executable paths",
+                )
 
         lifecycle_hooks = [field for field in LIFECYCLE_HOOK_FIELDS if data.get(field)]
         if lifecycle_hooks:
@@ -462,7 +470,7 @@ def _local_python_dependency_references(dependencies: list[str]) -> list[str]:
     for dependency in dependencies:
         normalized = dependency.strip().lower()
         reference = normalized.rsplit(" @ ", 1)[1].strip() if " @ " in normalized else normalized
-        if reference.startswith(LOCAL_PYTHON_DEPENDENCY_PREFIXES) or WINDOWS_ABSOLUTE_DEPENDENCY_RE.match(reference):
+        if reference.startswith(LOCAL_DEPENDENCY_PATH_PREFIXES) or WINDOWS_ABSOLUTE_DEPENDENCY_RE.match(reference):
             local.append(dependency)
     return sorted(set(local), key=str.lower)
 
@@ -475,6 +483,16 @@ def _risky_binary_dependencies(dependencies: list[str]) -> list[str]:
         if package_name in RISKY_BINARY_DEPENDENCIES:
             risky.append(dependency)
     return sorted(set(risky), key=str.lower)
+
+
+def _local_binary_dependency_references(dependencies: list[str]) -> list[str]:
+    """Return binary dependency declarations that point at local filesystem paths."""
+    local: list[str] = []
+    for dependency in dependencies:
+        normalized = dependency.strip().lower()
+        if normalized.startswith(LOCAL_DEPENDENCY_PATH_PREFIXES) or WINDOWS_ABSOLUTE_DEPENDENCY_RE.match(normalized):
+            local.append(dependency)
+    return sorted(set(local), key=str.lower)
 
 
 def _should_skip(path: Path) -> bool:
