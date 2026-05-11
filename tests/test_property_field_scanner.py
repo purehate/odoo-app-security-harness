@@ -842,6 +842,39 @@ class Properties(http.Controller):
     assert "odoo-property-runtime-sensitive-value" in rule_ids
 
 
+def test_local_constant_public_sudo_runtime_property_create(tmp_path: Path) -> None:
+    """Function-local mutation constants should keep public ir.property writes visible."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "properties.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Properties(http.Controller):
+    @http.route('/properties/account', auth='public', csrf=False)
+    def set_property(self, **kwargs):
+        property_model = 'ir.property'
+        field_key = 'fields_id'
+        value_key = 'value_reference'
+        field_ref = 'account.field_res_partner__property_account_receivable_id'
+        return request.env[property_model].sudo().create({
+            field_key: field_ref,
+            value_key: kwargs.get('account'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-property-public-route-mutation" in rule_ids
+    assert "odoo-property-sudo-mutation" in rule_ids
+    assert "odoo-property-request-derived-mutation" in rule_ids
+    assert "odoo-property-runtime-sensitive-value" in rule_ids
+
+
 def test_class_constant_static_unpack_public_route_options_property_create(tmp_path: Path) -> None:
     """Class-scoped static route option unpacking should preserve public mutation context."""
     controllers = tmp_path / "module" / "controllers"
@@ -971,6 +1004,33 @@ class Properties(models.Model):
 
     def set_property(self):
         return self.env[MODEL_ALIAS].with_user(user=ADMIN_UID).create({
+            'fields_id': 'account.field_res_partner__property_account_receivable_id',
+            'value_reference': 'account.account,1',
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+
+    assert any(finding.rule_id == "odoo-property-sudo-mutation" for finding in findings)
+
+
+def test_local_constant_superuser_property_mutation_is_elevated(tmp_path: Path) -> None:
+    """Function-local superuser aliases should be treated like sudo for ir.property mutation."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "properties.py").write_text(
+        """
+from odoo import models
+
+class Properties(models.Model):
+    _name = 'x.properties'
+
+    def set_property(self):
+        root_uid = 1
+        property_model = 'ir.property'
+        return self.env[property_model].with_user(user=root_uid).create({
             'fields_id': 'account.field_res_partner__property_account_receivable_id',
             'value_reference': 'account.account,1',
         })
