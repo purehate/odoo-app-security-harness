@@ -577,6 +577,39 @@ def test_flags_external_xml_act_url_without_groups(tmp_path: Path) -> None:
     assert "odoo-act-url-sensitive-url" in rule_ids
 
 
+def test_flags_external_csv_act_url_without_groups(tmp_path: Path) -> None:
+    """CSV URL action declarations should get the same exposure checks as XML."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_act_url.csv").write_text(
+        "id,name,url,target\n"
+        "action_external_docs,External Docs,https://evil.example.com/path?access_token=abc,new\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-act-url-external-no-groups" in rule_ids
+    assert "odoo-act-url-external-new-window" in rule_ids
+    assert "odoo-act-url-sensitive-url" in rule_ids
+
+
+def test_flags_unsafe_scheme_csv_act_url(tmp_path: Path) -> None:
+    """CSV URL actions should not use executable schemes."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_url.csv").write_text(
+        "id,name,url,target,groups_id/id\n"
+        "action_javascript,Run Script,javascript:alert(document.domain),self,base.group_user\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_action_urls(tmp_path)
+
+    assert any(f.rule_id == "odoo-act-url-unsafe-scheme" for f in findings)
+
+
 def test_empty_groups_eval_does_not_hide_external_xml_act_url(tmp_path: Path) -> None:
     """Empty groups eval values still leave external URL actions unrestricted."""
     views = tmp_path / "module" / "views"

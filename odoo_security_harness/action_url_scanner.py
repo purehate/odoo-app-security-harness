@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import ast
 import re
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +49,8 @@ def scan_action_urls(repo_path: Path) -> list[ActionUrlFinding]:
             findings.extend(ActionUrlScanner(path).scan_python_file())
         elif path.suffix == ".xml":
             findings.extend(ActionUrlScanner(path).scan_xml_file())
+        elif path.suffix == ".csv":
+            findings.extend(ActionUrlScanner(path).scan_csv_file())
     return findings
 
 
@@ -112,6 +116,19 @@ class ActionUrlScanner(ast.NodeVisitor):
         for record in root.iter("record"):
             if record.get("model") == "ir.actions.act_url":
                 self._scan_action_url_record(record)
+        return self.findings
+
+    def scan_csv_file(self) -> list[ActionUrlFinding]:
+        """Scan CSV records for ir.actions.act_url declarations."""
+        if _csv_model_name(self.path) != "ir.actions.act.url":
+            return []
+        try:
+            self.content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+        for fields, line in _csv_dict_rows(self.content):
+            self._scan_action_url_fields(fields, fields.get("id", ""), line)
         return self.findings
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
@@ -257,6 +274,9 @@ class ActionUrlScanner(ast.NodeVisitor):
             if record_id
             else _line_for(self.content, 'model="ir.actions.act_url"')
         )
+        self._scan_action_url_fields(fields, record_id, line)
+
+    def _scan_action_url_fields(self, fields: dict[str, str], record_id: str, line: int) -> None:
         url = fields.get("url", "")
         groups = fields.get("groups_id", "") or fields.get("groups", "")
         target = fields.get("target", "")
@@ -777,6 +797,36 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("ref") or field.get("eval") or "".join(field.itertext()).strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    return path.stem.strip().lower().replace("_", ".")
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _literal_string(node: ast.AST | None, constants: dict[str, ast.AST] | None = None) -> str:
