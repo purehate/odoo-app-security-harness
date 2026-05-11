@@ -28,6 +28,16 @@ ARCHIVE_OPEN_SINKS = {"tarfile.open", "zipfile.ZipFile"}
 ARCHIVE_EXTRACT_METHODS = {"extract", "extractall"}
 SECURE_FILENAME_SINKS = {"werkzeug.utils.secure_filename", "secure_filename"}
 UNSAFE_TEMPFILE_SINKS = {"tempfile.mktemp", "mktemp"}
+ATTACHMENT_CREATE_VALUE_KEYS = {
+    "access_token",
+    "datas",
+    "mimetype",
+    "name",
+    "public",
+    "raw",
+    "res_id",
+    "res_model",
+}
 
 
 def scan_file_uploads(repo_path: Path) -> list[FileUploadFinding]:
@@ -149,6 +159,7 @@ class FileUploadScanner(ast.NodeVisitor):
             self._mark_decoded_upload_target(target, is_decoded_upload)
             self._mark_attachment_target(target, is_attachment)
             self._mark_attachment_value_target(target, node.value)
+            self._mark_attachment_value_item_target(target, node.value)
             self._mark_archive_target_from_value(target, node.value, is_tainted_archive)
             self._mark_secure_filename_target(target, is_secure_filename)
         self.generic_visit(node)
@@ -197,6 +208,7 @@ class FileUploadScanner(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Any:
         sink = self._canonical_call_name(node.func)
+        self._mark_attachment_value_update_call(node)
         if sink == "open":
             self._scan_open(node)
         elif sink in SHUTIL_WRITE_SINKS:
@@ -505,6 +517,36 @@ class FileUploadScanner(ast.NodeVisitor):
             else:
                 self.attachment_value_names.pop(target.id, None)
 
+    def _mark_attachment_value_item_target(self, target: ast.AST, value: ast.AST) -> None:
+        if not isinstance(target, ast.Subscript) or not isinstance(target.value, ast.Name):
+            return
+        name = target.value.id
+        values = self.attachment_value_names.get(name)
+        if values is None:
+            return
+        key = _literal_string(target.slice, self._effective_constants())
+        if key:
+            self.attachment_value_names[name] = _dict_with_field(values, key, value)
+
+    def _mark_attachment_value_update_call(self, node: ast.Call) -> None:
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+            return
+        if not isinstance(node.func.value, ast.Name):
+            return
+        name = node.func.value.id
+        values = self.attachment_value_names.get(name)
+        if values is None:
+            return
+        update_values = node.args[0] if node.args else None
+        if not isinstance(update_values, ast.Dict):
+            return
+        merged = values
+        for key, value in zip(update_values.keys, update_values.values, strict=False):
+            literal_key = _literal_string(key, self._effective_constants()) if key is not None else ""
+            if literal_key:
+                merged = _dict_with_field(merged, literal_key, value)
+        self.attachment_value_names[name] = merged
+
     def _attachment_create_values(self, node: ast.Call) -> ast.Dict | None:
         values = node.args[0] if node.args else None
         if values is None:
@@ -747,9 +789,21 @@ def _is_attachment_create(
 
 def _dict_mentions_attachment_create_values(node: ast.Dict) -> bool:
     for key in node.keys:
-        if isinstance(key, ast.Constant) and key.value in {"datas", "raw", "public"}:
+        if isinstance(key, ast.Constant) and key.value in ATTACHMENT_CREATE_VALUE_KEYS:
             return True
     return False
+
+
+def _dict_with_field(values: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values.keys)
+    values_list = list(values.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values_list[index] = value
+            return ast.Dict(keys=keys, values=values_list)
+    keys.append(ast.Constant(value=key))
+    values_list.append(value)
+    return ast.Dict(keys=keys, values=values_list)
 
 
 def _attachment_model_in_expr(

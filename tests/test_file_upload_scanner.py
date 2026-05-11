@@ -521,6 +521,47 @@ def upload(self, **kwargs):
     assert "odoo-file-upload-public-attachment-create" in rule_ids
 
 
+def test_incremental_attachment_values_alias_from_request_is_reported(tmp_path: Path) -> None:
+    """Attachment value dictionaries populated in steps should keep upload checks."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def upload(self, **kwargs):
+    vals = {'name': kwargs.get('filename')}
+    vals['datas'] = kwargs.get('payload')
+    vals['public'] = True
+    return self.env['ir.attachment'].sudo().create(vals)
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-file-upload-attachment-from-request" in rule_ids
+    assert "odoo-file-upload-public-attachment-create" in rule_ids
+
+
+def test_updated_attachment_values_alias_from_request_is_reported(tmp_path: Path) -> None:
+    """dict.update calls should not hide uploaded attachment values."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def upload(self, **kwargs):
+    vals = {'name': kwargs.get('filename')}
+    vals.update({'datas': kwargs.get('payload'), 'public': True})
+    return self.env['ir.attachment'].sudo().create(vals)
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-file-upload-attachment-from-request" in rule_ids
+    assert "odoo-file-upload-public-attachment-create" in rule_ids
+
+
 def test_reassigned_attachment_values_alias_is_not_stale(tmp_path: Path) -> None:
     """Reusing attachment values aliases for static data should clear upload state."""
     py = tmp_path / "controller.py"
