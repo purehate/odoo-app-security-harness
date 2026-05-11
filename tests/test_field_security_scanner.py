@@ -90,6 +90,70 @@ class Connector(models.Model):
     assert any(f.rule_id == "odoo-field-sensitive-no-groups" for f in findings)
 
 
+def test_flags_aliased_odoo_fields_module_sensitive_field(tmp_path: Path) -> None:
+    """Aliased Odoo fields modules should still be scanned."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "connector.py").write_text(
+        """
+from odoo import fields as odoo_fields, models
+
+class Connector(models.Model):
+    _name = 'x.connector'
+
+    api_key = odoo_fields.Char()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert any(f.rule_id == "odoo-field-sensitive-no-groups" for f in findings)
+
+
+def test_flags_imported_odoo_fields_module_sensitive_field(tmp_path: Path) -> None:
+    """Direct odoo.fields imports should still be scanned."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "connector.py").write_text(
+        """
+from odoo import models
+import odoo.fields as odoo_fields
+
+class Connector(models.Model):
+    _name = 'x.connector'
+
+    api_key = odoo_fields.Char()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert any(f.rule_id == "odoo-field-sensitive-no-groups" for f in findings)
+
+
+def test_flags_imported_odoo_module_fields_sensitive_field(tmp_path: Path) -> None:
+    """Direct odoo module imports should still expose fields declarations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "connector.py").write_text(
+        """
+import odoo as od
+
+class Connector(od.models.Model):
+    _name = 'x.connector'
+
+    api_key = od.fields.Char()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert any(f.rule_id == "odoo-field-sensitive-no-groups" for f in findings)
+
+
 def test_flags_direct_model_base_sensitive_field(tmp_path: Path) -> None:
     """Direct Model bases should not hide sensitive fields."""
     models = tmp_path / "module" / "models"

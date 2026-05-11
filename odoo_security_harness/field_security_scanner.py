@@ -81,6 +81,8 @@ class FieldSecurityScanner(ast.NodeVisitor):
         self.findings: list[FieldSecurityFinding] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.field_module_names: set[str] = {"fields"}
+        self.odoo_module_names: set[str] = {"odoo"}
 
     def scan_file(self) -> list[FieldSecurityFinding]:
         """Scan the file."""
@@ -103,11 +105,31 @@ class FieldSecurityScanner(ast.NodeVisitor):
 
         self.class_constants_stack.append(_static_constants_from_body(node.body))
         model = _extract_model_name(node, self._effective_constants())
-        for field in _extract_fields(node, self._effective_constants()):
+        for field in _extract_fields(
+            node,
+            self._effective_constants(),
+            self.field_module_names,
+            self.odoo_module_names,
+        ):
             self._scan_field(model, field)
 
         self.generic_visit(node)
         self.class_constants_stack.pop()
+
+    def visit_Import(self, node: ast.Import) -> Any:
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.fields" and alias.asname:
+                self.field_module_names.add(alias.asname)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
+        if node.module == "odoo":
+            for alias in node.names:
+                if alias.name == "fields":
+                    self.field_module_names.add(alias.asname or alias.name)
+        self.generic_visit(node)
 
     def _scan_field(self, model: str, field: FieldDef) -> None:
         constants = self._effective_constants()
@@ -277,17 +299,29 @@ class FieldSecurityScanner(ast.NodeVisitor):
         return constants
 
 
-def _extract_fields(node: ast.ClassDef, constants: dict[str, ast.AST] | None = None) -> list[FieldDef]:
+def _extract_fields(
+    node: ast.ClassDef,
+    constants: dict[str, ast.AST] | None = None,
+    field_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
+) -> list[FieldDef]:
     constants = constants or {}
+    field_module_names = field_module_names or {"fields"}
+    odoo_module_names = odoo_module_names or {"odoo"}
     fields: list[FieldDef] = []
     for item in node.body:
-        field = _field_def_from_assignment(item, constants)
+        field = _field_def_from_assignment(item, constants, field_module_names, odoo_module_names)
         if field is not None:
             fields.append(field)
     return fields
 
 
-def _field_def_from_assignment(node: ast.stmt, constants: dict[str, ast.AST]) -> FieldDef | None:
+def _field_def_from_assignment(
+    node: ast.stmt,
+    constants: dict[str, ast.AST],
+    field_module_names: set[str],
+    odoo_module_names: set[str],
+) -> FieldDef | None:
     if isinstance(node, ast.Assign):
         if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
             return None
@@ -304,7 +338,7 @@ def _field_def_from_assignment(node: ast.stmt, constants: dict[str, ast.AST]) ->
     if not isinstance(value, ast.Call):
         return None
     call = value
-    field_type = _field_call_type(call.func)
+    field_type = _field_call_type(call.func, field_module_names, odoo_module_names)
     if not field_type:
         return None
     return FieldDef(
@@ -341,12 +375,37 @@ def _dict_keywords(node: ast.Dict, constants: dict[str, ast.AST]) -> dict[str, a
     return keywords
 
 
-def _field_call_type(node: ast.AST) -> str:
-    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "fields":
+def _field_call_type(
+    node: ast.AST,
+    field_module_names: set[str] | None = None,
+    odoo_module_names: set[str] | None = None,
+) -> str:
+    field_module_names = field_module_names or {"fields"}
+    odoo_module_names = odoo_module_names or {"odoo"}
+    if isinstance(node, ast.Attribute) and _is_odoo_fields_module_expr(
+        node.value,
+        field_module_names,
+        odoo_module_names,
+    ):
         return node.attr
     if isinstance(node, ast.Name):
         return node.id
     return ""
+
+
+def _is_odoo_fields_module_expr(
+    node: ast.AST,
+    field_module_names: set[str],
+    odoo_module_names: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in field_module_names
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "fields"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in odoo_module_names
+    )
 
 
 def _is_odoo_model(node: ast.ClassDef) -> bool:
