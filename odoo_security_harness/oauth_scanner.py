@@ -23,7 +23,26 @@ class OAuthFinding:
 
 
 HTTP_METHODS = {"get", "post", "head", "request", "urlopen"}
-TAINTED_ARG_NAMES = {"access_token", "code", "id_token", "jwt", "oauth_uid", "state", "token", "kwargs", "kw", "post"}
+TAINTED_ARG_NAMES = {
+    "access_token",
+    "code",
+    "id_token",
+    "issuer_url",
+    "jwks_uri",
+    "jwt",
+    "kwargs",
+    "kw",
+    "oauth_uid",
+    "post",
+    "provider_url",
+    "redirect_uri",
+    "state",
+    "token",
+    "token_endpoint",
+    "token_url",
+    "userinfo_endpoint",
+    "userinfo_url",
+}
 REQUEST_MARKERS = (
     "kwargs.get",
     "kw.get",

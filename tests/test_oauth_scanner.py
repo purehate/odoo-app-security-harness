@@ -1137,6 +1137,28 @@ class OAuthProvider:
     assert scan_oauth_flows(tmp_path) == []
 
 
+def test_helper_oauth_endpoint_arguments_are_tainted(tmp_path: Path) -> None:
+    """OAuth helper methods should not trust caller-supplied provider endpoints."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "oauth.py").write_text(
+        """
+import requests
+
+class OAuthProvider:
+    def fetch_userinfo(self, userinfo_url):
+        return requests.get(userinfo_url)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-oauth-http-no-timeout" in rule_ids
+    assert "odoo-oauth-tainted-validation-url" in rule_ids
+
+
 def test_authorization_code_exchange_without_pkce_is_reported(tmp_path: Path) -> None:
     """Authorization-code token exchanges should show PKCE or equivalent binding."""
     controllers = tmp_path / "module" / "controllers"
