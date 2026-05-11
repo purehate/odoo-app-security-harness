@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -169,7 +170,8 @@ class SignupTokenScanner(ast.NodeVisitor):
                 "Public signup/reset token route",
                 "medium",
                 node.lineno,
-                "Public signup/reset route should validate token expiry, audience, redirect target, and account state before mutating identity data",
+                "Public signup/reset route should validate token expiry, audience, redirect target, and "
+                "account state before mutating identity data",
                 route.display_path(),
                 "route",
             )
@@ -283,7 +285,8 @@ class SignupTokenScanner(ast.NodeVisitor):
                 "Request-derived signup/reset trigger",
                 "high" if route.is_public else "medium",
                 node.lineno,
-                "Request-derived data reaches signup/reset-password helper; verify rate limiting, account enumeration resistance, and token expiry",
+                "Request-derived data reaches signup/reset-password helper; verify rate limiting, account "
+                "enumeration resistance, and token expiry",
                 route.display_path(),
                 sink,
             )
@@ -298,7 +301,8 @@ class SignupTokenScanner(ast.NodeVisitor):
                 "Request-derived token lookup",
                 "critical" if route.is_public else "high",
                 node.lineno,
-                "Request-derived signup/access token is used to look up identity records; verify constant-time token checks, expiry, and ownership constraints",
+                "Request-derived signup/access token is used to look up identity records; verify constant-time "
+                "token checks, expiry, and ownership constraints",
                 route.display_path(),
                 sink,
             )
@@ -316,7 +320,8 @@ class SignupTokenScanner(ast.NodeVisitor):
                 "Signup/reset token lookup lacks expiry constraint",
                 "critical" if route.is_public else "high",
                 node.lineno,
-                "Request-derived signup/reset token lookup does not visibly constrain signup_expiration; verify expired tokens cannot authenticate or mutate accounts",
+                "Request-derived signup/reset token lookup does not visibly constrain signup_expiration; "
+                "verify expired tokens cannot authenticate or mutate accounts",
                 route.display_path(),
                 sink,
             )
@@ -329,7 +334,8 @@ class SignupTokenScanner(ast.NodeVisitor):
                 "Request-derived signup token or password mutation",
                 "critical" if route.is_public else "high",
                 node.lineno,
-                "Request-derived data writes signup/access token or password fields on res.users/res.partner; require validated reset/signup flow state first",
+                "Request-derived data writes signup/access token or password fields on res.users/res.partner; "
+                "require validated reset/signup flow state first",
                 route.display_path(),
                 sink,
             )
@@ -350,7 +356,8 @@ class SignupTokenScanner(ast.NodeVisitor):
                 "Public signup/reset flow uses sudo identity access",
                 "high",
                 node.lineno,
-                "Public signup/reset flow uses sudo()/with_user(SUPERUSER_ID) on res.users/res.partner; verify token checks happen before privileged reads or writes",
+                "Public signup/reset flow uses sudo()/with_user(SUPERUSER_ID) on res.users/res.partner; "
+                "verify token checks happen before privileged reads or writes",
                 route.display_path(),
                 sink,
             )
@@ -369,7 +376,8 @@ class SignupTokenScanner(ast.NodeVisitor):
                 "Signup/reset token exposed from public route",
                 "critical",
                 node.lineno,
-                "Public signup/reset response includes signup/access token data; avoid exposing reusable account takeover tokens in rendered values, JSON, redirects, logs, or referrers",
+                "Public signup/reset response includes signup/access token data; avoid exposing reusable "
+                "account takeover tokens in rendered values, JSON, redirects, logs, or referrers",
                 route.display_path(),
                 "return",
             )
@@ -594,7 +602,8 @@ class SignupTokenScanner(ast.NodeVisitor):
             "Request-derived signup token or password mutation",
             "critical" if route.is_public else "high",
             line,
-            "Request-derived data is assigned directly to signup/access token or password fields on res.users/res.partner; require validated reset/signup flow state first",
+            "Request-derived data is assigned directly to signup/access token or password fields on "
+            "res.users/res.partner; require validated reset/signup flow state first",
             route.display_path(),
             _safe_unparse(target),
         )
@@ -801,6 +810,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -831,6 +842,59 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(values_node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(values_node.keys, values_node.values, strict=False):
+        key = _resolve_constant(key, constants) if key is not None else None
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            items.append((key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:

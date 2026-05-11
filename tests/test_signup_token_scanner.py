@@ -144,7 +144,10 @@ import odoo.http as odoo_http
 class Controller(odoo_http.Controller):
     @odoo_http.route('/web/reset_password', auth='public', csrf=False)
     def reset_password(self, **kwargs):
-        partner = odoo_http.request.env['res.partner'].sudo().search([('signup_token', '=', kwargs.get('token'))], limit=1)
+        partner = odoo_http.request.env['res.partner'].sudo().search(
+            [('signup_token', '=', kwargs.get('token'))],
+            limit=1,
+        )
         return odoo_http.request.render('auth_signup.reset_password', {'signup_token': partner.signup_token})
 """,
         encoding="utf-8",
@@ -170,7 +173,10 @@ import odoo as od
 class Controller(od.http.Controller):
     @od.http.route('/web/reset_password', auth='public', csrf=False)
     def reset_password(self, **kwargs):
-        partner = od.http.request.env['res.partner'].sudo().search([('signup_token', '=', kwargs.get('token'))], limit=1)
+        partner = od.http.request.env['res.partner'].sudo().search(
+            [('signup_token', '=', kwargs.get('token'))],
+            limit=1,
+        )
         return od.http.request.render('auth_signup.reset_password', {'signup_token': partner.signup_token})
 """,
         encoding="utf-8",
@@ -339,6 +345,46 @@ BASE_OPTIONS = {'auth': 'public'}
 RESET_OPTIONS = BASE_OPTIONS | {
     'routes': ['/web/reset_password', '/web/signup/reset'],
 }
+
+class Controller(http.Controller):
+    @http.route(**RESET_OPTIONS)
+    def reset_password(self, **kwargs):
+        partner = request.env['res.partner'].sudo().search([('signup_token', '=', kwargs.get('token'))], limit=1)
+        return request.render('auth_signup.reset_password', {'signup_token': partner.signup_token})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-signup-public-token-route" in rule_ids
+    assert "odoo-signup-tainted-token-lookup" in rule_ids
+    assert "odoo-signup-token-lookup-without-expiry" in rule_ids
+    assert "odoo-signup-public-sudo-identity-flow" in rule_ids
+    assert "odoo-signup-token-exposed" in rule_ids
+    assert any(f.route == "/web/reset_password,/web/signup/reset" for f in findings)
+
+
+def test_updated_static_unpack_route_options_public_reset_token_lifecycle_risks_are_reported(
+    tmp_path: Path,
+) -> None:
+    """Updated ** route options must not hide public reset token risks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+RESET_OPTIONS = {
+    'routes': ['/internal/reset'],
+    'auth': 'user',
+}
+RESET_OPTIONS.update({
+    'routes': ['/web/reset_password', '/web/signup/reset'],
+    'auth': 'none',
+})
 
 class Controller(http.Controller):
     @http.route(**RESET_OPTIONS)
@@ -776,7 +822,10 @@ from odoo.http import request
 class Controller(http.Controller):
     @http.route('/web/reset_password', auth='public', csrf=False)
     def reset_password(self, **kwargs):
-        return request.env['res.users'].with_user(user=SUPERUSER_ID).search([('login', '=', kwargs.get('login'))], limit=1)
+        return request.env['res.users'].with_user(user=SUPERUSER_ID).search(
+            [('login', '=', kwargs.get('login'))],
+            limit=1,
+        )
 """,
         encoding="utf-8",
     )
@@ -1595,7 +1644,10 @@ class Controller(odoo_http.Controller):
     @odoo_http.route('/web/reset_password', auth='public', csrf=False)
     def reset_password(self):
         payload = odoo_http.request.get_http_params()
-        return odoo_http.request.env['res.partner'].sudo().search([('signup_token', '=', payload.get('token'))], limit=1)
+        return odoo_http.request.env['res.partner'].sudo().search(
+            [('signup_token', '=', payload.get('token'))],
+            limit=1,
+        )
 """,
         encoding="utf-8",
     )
