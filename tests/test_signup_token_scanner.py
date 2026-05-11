@@ -133,6 +133,58 @@ class Controller(odoo_http.Controller):
     assert "odoo-signup-token-exposed" in rule_ids
 
 
+def test_imported_odoo_http_module_public_reset_token_lifecycle_risks_are_reported(tmp_path: Path) -> None:
+    """Direct odoo.http imports must not hide public reset token risks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/web/reset_password', auth='public', csrf=False)
+    def reset_password(self, **kwargs):
+        partner = odoo_http.request.env['res.partner'].sudo().search([('signup_token', '=', kwargs.get('token'))], limit=1)
+        return odoo_http.request.render('auth_signup.reset_password', {'signup_token': partner.signup_token})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-signup-public-token-route" in rule_ids
+    assert "odoo-signup-tainted-token-lookup" in rule_ids
+    assert "odoo-signup-token-lookup-without-expiry" in rule_ids
+    assert "odoo-signup-token-exposed" in rule_ids
+
+
+def test_imported_odoo_module_public_reset_token_lifecycle_risks_are_reported(tmp_path: Path) -> None:
+    """Direct odoo imports must not hide public reset token risks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/web/reset_password', auth='public', csrf=False)
+    def reset_password(self, **kwargs):
+        partner = od.http.request.env['res.partner'].sudo().search([('signup_token', '=', kwargs.get('token'))], limit=1)
+        return od.http.request.render('auth_signup.reset_password', {'signup_token': partner.signup_token})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-signup-public-token-route" in rule_ids
+    assert "odoo-signup-tainted-token-lookup" in rule_ids
+    assert "odoo-signup-token-lookup-without-expiry" in rule_ids
+    assert "odoo-signup-token-exposed" in rule_ids
+
+
 def test_non_odoo_route_decorator_public_reset_token_route_is_ignored(tmp_path: Path) -> None:
     """Local route-like decorators should not create Odoo route context."""
     controllers = tmp_path / "module" / "controllers"
@@ -1351,6 +1403,29 @@ class Controller(http.Controller):
     assert "odoo-signup-token-lookup-without-expiry" in rule_ids
 
 
+def test_imported_odoo_http_request_signup_token_lookup_is_reported(tmp_path: Path) -> None:
+    """Direct odoo.http request access should not hide reset-token lookup taint."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+import odoo.http as odoo_http
+
+class Controller(odoo_http.Controller):
+    @odoo_http.route('/web/reset_password', auth='public', csrf=False)
+    def reset_password(self):
+        payload = odoo_http.request.get_http_params()
+        return odoo_http.request.env['res.partner'].sudo().search([('signup_token', '=', payload.get('token'))], limit=1)
+""",
+        encoding="utf-8",
+    )
+
+    rule_ids = {finding.rule_id for finding in scan_signup_tokens(tmp_path)}
+
+    assert "odoo-signup-tainted-token-lookup" in rule_ids
+    assert "odoo-signup-token-lookup-without-expiry" in rule_ids
+
+
 def test_request_alias_signup_token_write_is_reported(tmp_path: Path) -> None:
     """Aliased request payloads remain tainted for identity token/password writes."""
     controllers = tmp_path / "module" / "controllers"
@@ -1365,6 +1440,29 @@ class Controller(http.Controller):
     def reset_password(self):
         payload = req.params
         Users = req.env['res.users'].sudo()
+        return Users.write({'signup_token': payload.get('token'), 'password': payload.get('password')})
+""",
+        encoding="utf-8",
+    )
+
+    rule_ids = {finding.rule_id for finding in scan_signup_tokens(tmp_path)}
+
+    assert "odoo-signup-tainted-identity-token-write" in rule_ids
+
+
+def test_imported_odoo_request_signup_token_write_is_reported(tmp_path: Path) -> None:
+    """Direct odoo request access should not hide identity token/password writes."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "reset.py").write_text(
+        """
+import odoo as od
+
+class Controller(od.http.Controller):
+    @od.http.route('/web/reset_password', auth='public', csrf=False)
+    def reset_password(self):
+        payload = od.http.request.get_http_params()
+        Users = od.http.request.env['res.users'].sudo()
         return Users.write({'signup_token': payload.get('token'), 'password': payload.get('password')})
 """,
         encoding="utf-8",
