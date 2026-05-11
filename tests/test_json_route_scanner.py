@@ -378,6 +378,39 @@ class Api(http.Controller):
     assert any(f.route == "/api/public,/api/public/v2" for f in findings)
 
 
+def test_flags_dict_union_static_unpack_route_options_public_json_route(tmp_path: Path) -> None:
+    """Dict-union ** route option dictionaries should preserve JSON exposure."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "api.py").write_text(
+        """
+from odoo import http
+
+BASE_OPTIONS = {
+    'auth': 'none',
+    'type': 'jsonrpc',
+}
+JSON_OPTIONS = BASE_OPTIONS | {
+    'routes': ['/api/public', '/api/public/v2'],
+    'csrf': False,
+}
+
+class Api(http.Controller):
+    @http.route(**JSON_OPTIONS)
+    def public(self, **kwargs):
+        return {'ok': True}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_json_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-json-route-public-auth" in rule_ids
+    assert "odoo-json-route-csrf-disabled" in rule_ids
+    assert any(f.route == "/api/public,/api/public/v2" for f in findings)
+
+
 def test_flags_class_constant_static_unpack_route_options_public_json_route(tmp_path: Path) -> None:
     """Class-body ** route option dictionaries should preserve JSON route posture."""
     controllers = tmp_path / "module" / "controllers"

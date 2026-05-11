@@ -529,8 +529,8 @@ def _apply_route_options(
     route_type: str,
     paths: list[str],
 ) -> tuple[str, bool | None, str, list[str]]:
-    value = _resolve_constant(node, constants)
-    if not isinstance(value, ast.Dict):
+    value = _resolve_static_dict(node, constants)
+    if value is None:
         return auth, csrf, route_type, paths
     for key, option_value in zip(value.keys, value.values, strict=False):
         if key is None:
@@ -664,6 +664,20 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
     return node
 
 
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
+    seen = seen or set()
+    node = _resolve_constant_seen(node, constants, seen)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants, set(seen))
+        right = _resolve_static_dict(node.right, constants, set(seen))
+        if left is None or right is None:
+            return None
+        return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
+    return None
+
+
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
         return isinstance(node.value, str | bool | int | float | type(None))
@@ -677,6 +691,8 @@ def _is_static_literal(node: ast.AST) -> bool:
             and isinstance(value, ast.Constant | ast.Name | ast.List | ast.Tuple)
             for key, value in zip(node.keys, node.values, strict=False)
         )
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_literal(node.left) and _is_static_literal(node.right)
     return False
 
 
