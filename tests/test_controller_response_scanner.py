@@ -438,6 +438,35 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-controller-open-redirect" and f.sink == "werkzeug.utils.redirect" for f in findings)
 
 
+def test_flags_redirect_embedded_credentials(tmp_path: Path) -> None:
+    """Controller redirects should not put credentials in browser-visible URLs."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+PARTNER_URL = 'https://user:token@partner.example/callback'
+
+class Controller(http.Controller):
+    @http.route('/go', auth='public')
+    def go(self):
+        return request.redirect(PARTNER_URL)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-redirect-embedded-credentials"
+        and f.severity == "high"
+        and f.sink == "request.redirect"
+        for f in findings
+    )
+
+
 def test_reassigned_redirect_target_alias_is_not_stale(tmp_path: Path) -> None:
     """Reusing a redirect target for a safe local path should clear taint."""
     controllers = tmp_path / "module" / "controllers"
@@ -863,6 +892,33 @@ class Controller(http.Controller):
 
     assert "odoo-controller-response-header-injection" in rule_ids
     assert "odoo-controller-tainted-cookie-value" in rule_ids
+
+
+def test_flags_location_header_embedded_credentials(tmp_path: Path) -> None:
+    """Manual redirect headers should not embed credentials in URLs."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/go', auth='public')
+    def go(self):
+        return request.make_response('', headers={'Location': 'https://user:token@partner.example/callback'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-redirect-embedded-credentials"
+        and f.severity == "high"
+        and f.sink == "request.make_response"
+        for f in findings
+    )
 
 
 def test_flags_keyword_tainted_cookie_value(tmp_path: Path) -> None:

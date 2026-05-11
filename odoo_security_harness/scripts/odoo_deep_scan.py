@@ -4641,6 +4641,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "controller_redirect_embedded_credentials",
+        (
+            "odoo-controller-redirect-embedded-credentials",
+            "controller redirect embeds credentials",
+            "controller redirects to a url with embedded username, password, or token material",
+            "controller sets location to a url with embedded username, password, or token material",
+            "browser-visible redirects, history, referrers, and logs",
+        ),
+    ),
+    (
         "website_form_dynamic_success_redirect",
         (
             "odoo-website-form-dynamic-success-redirect",

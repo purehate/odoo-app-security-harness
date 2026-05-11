@@ -2514,6 +2514,12 @@
       "capec": ["CAPEC-178"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "controller_redirect_embedded_credentials": {
+      "label": "Controller redirect embeds username, password, or token material in browser-visible URLs",
+      "cwe": ["CWE-598", "CWE-522", "CWE-798"],
+      "capec": ["CAPEC-191", "CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "controller_cors_wildcard_origin": {
       "label": "Controller response allows cross-origin reads from any origin",
       "cwe": ["CWE-346", "CWE-942", "CWE-200"],

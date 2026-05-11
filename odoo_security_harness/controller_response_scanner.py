@@ -7,6 +7,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -280,17 +282,27 @@ class ControllerResponseScanner(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Any:
         sink = self._canonical_call_name(node.func)
-        if self._is_redirect_sink(node.func) and self._redirect_target_is_tainted(node):
-            route = self._current_route()
-            severity = "high" if route.auth in {"public", "none"} else "medium"
-            self._add(
-                "odoo-controller-open-redirect",
-                "Controller redirects to request-controlled URL",
-                severity,
-                node.lineno,
-                "Controller redirects to a request-derived URL; restrict redirects to local paths or an allowlisted host set",
-                sink,
-            )
+        if self._is_redirect_sink(node.func):
+            if self._redirect_target_embeds_credentials(node):
+                self._add(
+                    "odoo-controller-redirect-embedded-credentials",
+                    "Controller redirect embeds credentials",
+                    "high",
+                    node.lineno,
+                    "Controller redirects to a URL with embedded username, password, or token material; keep credentials out of browser-visible redirects, history, referrers, and logs",
+                    sink,
+                )
+            if self._redirect_target_is_tainted(node):
+                route = self._current_route()
+                severity = "high" if route.auth in {"public", "none"} else "medium"
+                self._add(
+                    "odoo-controller-open-redirect",
+                    "Controller redirects to request-controlled URL",
+                    severity,
+                    node.lineno,
+                    "Controller redirects to a request-derived URL; restrict redirects to local paths or an allowlisted host set",
+                    sink,
+                )
         elif self._is_file_response_sink(node.func) and self._file_response_target_is_tainted(node):
             self._add(
                 "odoo-controller-tainted-file-download",
@@ -327,6 +339,12 @@ class ControllerResponseScanner(ast.NodeVisitor):
             and keyword.value is not None
             and self._expr_is_tainted(keyword.value)
             for keyword in node.keywords
+        )
+
+    def _redirect_target_embeds_credentials(self, node: ast.Call) -> bool:
+        return any(
+            _expr_has_url_embedded_credentials(target, self._effective_constants())
+            for target in _redirect_target_nodes(node)
         )
 
     def _file_response_target_is_tainted(self, node: ast.Call) -> bool:
@@ -482,6 +500,17 @@ class ControllerResponseScanner(ast.NodeVisitor):
 
     def _scan_static_header_value(self, header_name: str, value: ast.AST, line: int, sink: str) -> None:
         lowered_header = header_name.lower()
+        if lowered_header in {"location", "refresh"} and _expr_has_url_embedded_credentials(
+            value, self._effective_constants()
+        ):
+            self._add(
+                "odoo-controller-redirect-embedded-credentials",
+                "Controller redirect embeds credentials",
+                "high",
+                line,
+                f"Controller sets {header_name} to a URL with embedded username, password, or token material; keep credentials out of browser-visible redirects, history, referrers, and logs",
+                sink,
+            )
         if lowered_header in FILE_OFFLOAD_HEADERS and self._expr_is_tainted(value):
             route = self._current_route()
             self._add(
@@ -1105,6 +1134,30 @@ def _is_headers_mutation(node: ast.Call) -> bool:
         and node.func.attr in HEADER_MUTATION_METHODS
         and _is_response_header_target(node.func.value)
     )
+
+
+def _redirect_target_nodes(node: ast.Call) -> list[ast.AST]:
+    targets: list[ast.AST] = []
+    if node.args:
+        targets.append(node.args[0])
+    targets.extend(
+        keyword.value
+        for keyword in node.keywords
+        if keyword.arg in REDIRECT_TARGET_KEYWORDS and keyword.value is not None
+    )
+    return targets
+
+
+def _expr_has_url_embedded_credentials(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+    return _url_has_embedded_credentials(_constant_string(node, constants))
+
+
+def _url_has_embedded_credentials(value: str) -> bool:
+    for match in re.finditer(r"https?://[^\s'\"<>)]+", value, re.IGNORECASE):
+        parsed = urlparse(match.group(0).rstrip(".,;"))
+        if parsed.hostname and (parsed.username is not None or parsed.password is not None):
+            return True
+    return False
 
 
 def _constant_string(node: ast.AST | None, constants: dict[str, ast.AST] | None = None) -> str:

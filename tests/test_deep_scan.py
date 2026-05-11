@@ -7206,6 +7206,24 @@ def test_taxonomy_coverage_classifies_controller_open_redirect() -> None:
     assert "CWE-601" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_controller_redirect_embedded_credentials() -> None:
+    """Credential-bearing controller redirects should map to browser URL credential leakage."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "source": "controller-responses",
+                "rule_id": "odoo-controller-redirect-embedded-credentials",
+                "title": "Controller redirect embeds credentials",
+                "message": "Controller redirects to a URL with embedded username, password, or token material; keep credentials out of browser-visible redirects, history, referrers, and logs",
+            },
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "controller_redirect_embedded_credentials"
+    assert "CWE-598" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_controller_cors_wildcard_origin() -> None:
     """Permissive CORS response headers should not map through generic access-control hints."""
     coverage = odoo_deep_scan._taxonomy_coverage(
