@@ -1063,6 +1063,36 @@ class Config(http.Controller):
     )
 
 
+def test_flags_tainted_public_signup_scope_write(tmp_path: Path) -> None:
+    """Request-controlled public signup policy changes should get the specific toggle finding."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "config.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Config(http.Controller):
+    @http.route('/public/config/signup-policy', auth='public', csrf=False)
+    def write_signup_policy(self, **kwargs):
+        return request.env['ir.config_parameter'].sudo().set_param(
+            'auth_signup.invitation_scope',
+            kwargs.get('scope'),
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-config-param-tainted-security-toggle-write"
+        and f.key == "auth_signup.invitation_scope"
+        and f.severity == "critical"
+        for f in findings
+    )
+
+
 def test_flags_tainted_base_url_write(tmp_path: Path) -> None:
     """Request-controlled web.base.url writes can poison generated external links."""
     controllers = tmp_path / "module" / "controllers"
