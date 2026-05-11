@@ -63,8 +63,7 @@ def test_sensitive_access_tokens_in_csv_are_reported(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "mail_template.csv").write_text(
-        "id,name,body_html\n"
-        "template_token,Token,Open ${object.access_url}\n",
+        "id,name,body_html\ntemplate_token,Token,Open ${object.access_url}\n",
         encoding="utf-8",
     )
 
@@ -80,8 +79,7 @@ def test_csv_token_template_with_auto_delete_is_ignored(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "mail.template.csv").write_text(
-        "id,name,body_html,auto_delete\n"
-        "template_token,Token,Open ${object.access_url},True\n",
+        "id,name,body_html,auto_delete\ntemplate_token,Token,Open ${object.access_url},True\n",
         encoding="utf-8",
     )
 
@@ -104,8 +102,7 @@ def test_sensitive_csv_template_model_external_id_is_normalized(tmp_path: Path) 
     findings = scan_mail_templates(tmp_path)
 
     assert any(
-        finding.rule_id == "odoo-mail-template-dynamic-sensitive-recipient"
-        and finding.template == "template_invoice"
+        finding.rule_id == "odoo-mail-template-dynamic-sensitive-recipient" and finding.template == "template_invoice"
         for finding in findings
     )
 
@@ -255,6 +252,38 @@ def test_superuser_with_user_expression_is_reported(tmp_path: Path) -> None:
     )
 
     findings = MailTemplateScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-mail-template-sudo-expression" for f in findings)
+
+
+def test_env_ref_superuser_with_user_expression_is_reported(tmp_path: Path) -> None:
+    """Template expressions using admin XML-ID with_user should be treated like sudo."""
+    xml = tmp_path / "mail.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="template_env_ref_superuser" model="mail.template">
+    <field name="body_html">${object.with_user(object.env.ref('base.user_admin')).secret_note}</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = MailTemplateScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-mail-template-sudo-expression" for f in findings)
+
+
+def test_csv_ref_superuser_with_user_expression_is_reported(tmp_path: Path) -> None:
+    """CSV mail.template rows should catch admin XML-ID with_user expressions."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "mail_template.csv").write_text(
+        "id,name,body_html\n"
+        "template_ref_superuser,Ref Superuser,${object.with_user(ref('base.user_root')).secret_note}\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_templates(tmp_path)
 
     assert any(f.rule_id == "odoo-mail-template-sudo-expression" for f in findings)
 

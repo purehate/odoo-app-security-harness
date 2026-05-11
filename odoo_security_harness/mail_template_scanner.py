@@ -105,7 +105,9 @@ DANGEROUS_URL_SCHEME_RE = re.compile(
     re.IGNORECASE,
 )
 SUPERUSER_WITH_USER_RE = re.compile(
-    r"\.with_user\(\s*(?:(?:user|uid)\s*=\s*)?(?:SUPERUSER_ID|1|['\"]base\.user_(?:admin|root)['\"])",
+    r"\.with_user\(\s*(?:(?:user|uid)\s*=\s*)?"
+    r"(?:SUPERUSER_ID|1|['\"]base\.user_(?:admin|root)['\"]|(?:[\w.]+\.)?ref\(\s*['\"]base\.user_(?:admin|root)['\"]\s*\))",
+    re.DOTALL,
 )
 
 
