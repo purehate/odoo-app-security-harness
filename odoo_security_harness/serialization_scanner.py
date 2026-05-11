@@ -624,9 +624,21 @@ def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[as
             continue
         value = _resolve_constant(keyword.value, constants)
         if isinstance(value, ast.Dict):
-            for key, dict_value in zip(value.keys, value.values, strict=False):
-                if isinstance(key, ast.Constant) and isinstance(key.value, str):
-                    keywords.append(ast.keyword(arg=key.value, value=dict_value))
+            keywords.extend(_expanded_dict_keywords(value, constants))
+    return keywords
+
+
+def _expanded_dict_keywords(node: ast.Dict, constants: dict[str, ast.AST]) -> list[ast.keyword]:
+    keywords: list[ast.keyword] = []
+    for key, dict_value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            value = _resolve_constant(dict_value, constants)
+            if isinstance(value, ast.Dict):
+                keywords.extend(_expanded_dict_keywords(value, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            keywords.append(ast.keyword(arg=resolved_key.value, value=dict_value))
     return keywords
 
 
@@ -645,7 +657,8 @@ def _is_static_constant(node: ast.AST) -> bool:
         return True
     if isinstance(node, ast.Dict):
         return all(
-            isinstance(key, ast.Constant) and isinstance(key.value, str) and _is_static_constant(value)
+            (key is None or (isinstance(key, ast.Constant) and isinstance(key.value, str)))
+            and _is_static_constant(value)
             for key, value in zip(node.keys, node.values, strict=False)
         )
     if isinstance(node, ast.List | ast.Tuple | ast.Set):

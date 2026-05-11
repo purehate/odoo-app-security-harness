@@ -599,6 +599,38 @@ class Properties(http.Controller):
     assert "odoo-property-runtime-sensitive-value" in rule_ids
 
 
+def test_nested_static_unpack_public_route_options_property_create(tmp_path: Path) -> None:
+    """Nested route option unpacking should preserve public property-mutation context."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "properties.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public'}
+ROUTE_OPTIONS = {**BASE_OPTIONS, 'csrf': False}
+
+class Properties(http.Controller):
+    @http.route('/properties/account', **ROUTE_OPTIONS)
+    def set_property(self, **kwargs):
+        return request.env['ir.property'].sudo().create({
+            'fields_id': 'account.field_res_partner__property_account_receivable_id',
+            'value_reference': kwargs.get('account'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-property-public-route-mutation" in rule_ids
+    assert "odoo-property-sudo-mutation" in rule_ids
+    assert "odoo-property-request-derived-mutation" in rule_ids
+    assert "odoo-property-runtime-sensitive-value" in rule_ids
+
+
 def test_class_constant_public_sudo_runtime_property_create(tmp_path: Path) -> None:
     """Class-scoped route and mutation constants should keep public ir.property writes visible."""
     controllers = tmp_path / "module" / "controllers"

@@ -169,6 +169,27 @@ def import_config(payload):
     assert not any(f.rule_id == "odoo-serialization-unsafe-yaml-load" for f in findings)
 
 
+def test_yaml_safe_loader_nested_unpack_constant_is_not_reported(tmp_path: Path) -> None:
+    """Nested static **options should preserve SafeLoader handling."""
+    py = tmp_path / "importer.py"
+    py.write_text(
+        """
+import yaml
+
+BASE_OPTIONS = {'Loader': yaml.SafeLoader}
+YAML_OPTIONS = {**BASE_OPTIONS}
+
+def import_config(payload):
+    return yaml.load(payload, **YAML_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = SerializationScanner(py).scan_file()
+
+    assert not any(f.rule_id == "odoo-serialization-unsafe-yaml-load" for f in findings)
+
+
 def test_yaml_safe_loader_class_constant_is_not_reported(tmp_path: Path) -> None:
     """Class-level static **options should preserve SafeLoader handling."""
     py = tmp_path / "importer.py"
