@@ -169,6 +169,28 @@ requests.post(record.callback_url, **HTTP_OPTIONS)
     assert not any(f.rule_id == "odoo-xml-server-action-http-no-timeout" for f in findings)
 
 
+def test_server_action_dict_union_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """XML server actions should resolve dict-union static **kwargs timeout values."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_static_timeout" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'headers': {}}
+requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert not any(f.rule_id == "odoo-xml-server-action-http-no-timeout" for f in findings)
+
+
 def test_server_action_tls_verification_disabled(tmp_path: Path) -> None:
     """Executable server actions should surface disabled HTTP TLS verification."""
     xml = tmp_path / "actions.xml"
@@ -213,6 +235,28 @@ requests.post(record.callback_url, **HTTP_OPTIONS)
     assert any(f.rule_id == "odoo-xml-server-action-tls-verify-disabled" for f in findings)
 
 
+def test_server_action_dict_union_static_kwargs_tls_verify_disabled(tmp_path: Path) -> None:
+    """XML server actions should flag verify=False from dict-union static **kwargs."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_http_tls_kwargs" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'verify': False}
+requests.post(record.callback_url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-server-action-tls-verify-disabled" for f in findings)
+
+
 def test_server_action_cleartext_http_url(tmp_path: Path) -> None:
     """XML server action inline Python should flag literal cleartext HTTP URLs."""
     xml = tmp_path / "actions.xml"
@@ -234,6 +278,28 @@ requests.request('POST', **HTTP_OPTIONS)
     findings = XmlDataScanner(xml).scan_file()
 
     assert sum(f.rule_id == "odoo-xml-server-action-cleartext-http-url" for f in findings) == 1
+
+
+def test_server_action_dict_union_static_kwargs_cleartext_http_url(tmp_path: Path) -> None:
+    """XML server actions should flag cleartext URLs from dict-union static **kwargs."""
+    xml = tmp_path / "actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_http_cleartext" model="ir.actions.server">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+BASE_OPTIONS = {'url': 'http://partner.example.test/action'}
+HTTP_OPTIONS = BASE_OPTIONS | {'timeout': 10}
+requests.request('POST', **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-server-action-cleartext-http-url" for f in findings)
 
 
 def test_server_action_keyword_with_user_mutation_is_reported(tmp_path: Path) -> None:
@@ -589,6 +655,28 @@ requests.get(record.url, **HTTP_OPTIONS)
     assert not any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
 
 
+def test_cron_dict_union_static_kwargs_timeout_is_not_reported(tmp_path: Path) -> None:
+    """XML cron inline Python should resolve dict-union static **kwargs timeout values."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_static_timeout" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'headers': {}}
+requests.get(record.url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert not any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
+
+
 def test_cron_tls_verification_disabled(tmp_path: Path) -> None:
     """Cron inline Python should surface disabled HTTP TLS verification."""
     xml = tmp_path / "cron.xml"
@@ -633,6 +721,28 @@ requests.get(record.url, **HTTP_OPTIONS)
     assert any(f.rule_id == "odoo-xml-cron-tls-verify-disabled" for f in findings)
 
 
+def test_cron_dict_union_static_kwargs_tls_verify_disabled(tmp_path: Path) -> None:
+    """XML cron inline Python should flag verify=False from dict-union static **kwargs."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_http_tls_kwargs" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+BASE_OPTIONS = {'timeout': 10}
+HTTP_OPTIONS = BASE_OPTIONS | {'verify': False}
+requests.get(record.url, **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-cron-tls-verify-disabled" for f in findings)
+
+
 def test_cron_cleartext_http_url(tmp_path: Path) -> None:
     """XML cron inline Python should flag literal cleartext HTTP URLs."""
     xml = tmp_path / "cron.xml"
@@ -654,6 +764,28 @@ requests.request('POST', **HTTP_OPTIONS)
     findings = XmlDataScanner(xml).scan_file()
 
     assert sum(f.rule_id == "odoo-xml-cron-cleartext-http-url" for f in findings) == 1
+
+
+def test_cron_dict_union_static_kwargs_cleartext_http_url(tmp_path: Path) -> None:
+    """XML cron inline Python should flag cleartext URLs from dict-union static **kwargs."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_http_cleartext" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+BASE_OPTIONS = {'url': 'http://partner.example.test/cron'}
+HTTP_OPTIONS = BASE_OPTIONS | {'timeout': 10}
+requests.request('POST', **HTTP_OPTIONS)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-cron-cleartext-http-url" for f in findings)
 
 
 def test_admin_method_cron_without_state_code_is_reported(tmp_path: Path) -> None:
