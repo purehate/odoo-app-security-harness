@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
-from odoo_security_harness.base_scanner import _should_skip
+from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
 @dataclass
@@ -473,16 +473,6 @@ def _line_for_expression(content: str, attribute: str, value: str) -> int:
         if line != 1:
             return line
     return _line_for(content, f'name="{attribute}"') or _line_for(content, attribute)
-
-
-def _line_for(content: str, needle: str) -> int:
-    if not needle:
-        return 1
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
-
 
 
 def findings_to_json(findings: list[ViewDomainFinding]) -> list[dict[str, Any]]:

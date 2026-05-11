@@ -12,6 +12,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -417,10 +418,7 @@ class ModelStructureScanner(ast.NodeVisitor):
             if value is None:
                 continue
             for target in targets:
-                if (
-                    isinstance(target, ast.Name)
-                    and target.id == attr
-                ):
+                if isinstance(target, ast.Name) and target.id == attr:
                     resolved = self._resolve_constant(value)
                     if isinstance(resolved, ast.Constant) and isinstance(resolved.value, bool):
                         return resolved.value
@@ -539,9 +537,7 @@ class ModelStructureScanner(ast.NodeVisitor):
             return all(self._is_static_literal(element) for element in node.elts)
         if isinstance(node, ast.Dict):
             keys = [key for key in node.keys if key is not None]
-            return all(
-                self._is_static_literal(key) for key in keys
-            ) and all(
+            return all(self._is_static_literal(key) for key in keys) and all(
                 self._is_static_literal(value) for value in node.values
             )
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
@@ -582,10 +578,6 @@ def scan_models(repo_path: Path) -> list[ModelFinding]:
             continue
         findings.extend(ModelStructureScanner(str(py_file)).scan_file())
     return findings
-
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"tests", "__pycache__", ".venv", "venv", ".git", "node_modules"})
 
 
 def findings_to_json(findings: list[ModelFinding]) -> list[dict[str, Any]]:

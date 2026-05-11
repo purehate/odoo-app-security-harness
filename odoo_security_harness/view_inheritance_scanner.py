@@ -9,7 +9,7 @@ from typing import Any
 
 from defusedxml import ElementTree
 
-from odoo_security_harness.base_scanner import _record_fields, XmlScanner, _should_skip
+from odoo_security_harness.base_scanner import _line_for, _record_fields, XmlScanner, _should_skip
 
 
 @dataclass
@@ -358,7 +358,6 @@ class ViewInheritanceScanner(XmlScanner):
         )
 
 
-
 def _is_broad_security_xpath(expr: str) -> bool:
     compact = re.sub(r"\s+", "", expr)
     if not compact:
@@ -410,15 +409,6 @@ def _is_sensitive_name(name: str) -> bool:
 
 def _contains_public_group(groups: str) -> bool:
     return any(group in groups for group in PUBLIC_GROUPS)
-
-
-def _line_for(content: str, needle: str) -> int:
-    if not needle:
-        return 1
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
 
 
 def findings_to_json(findings: list[ViewInheritanceFinding]) -> list[dict[str, Any]]:

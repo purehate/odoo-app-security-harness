@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
 @dataclass
@@ -472,17 +473,6 @@ def _falsey(value: str) -> bool:
 def _contains_dynamic_compute(value: str) -> bool:
     lowered = value.lower()
     return any(marker in lowered for marker in ("eval(", "exec(", "safe_eval", ".sudo(", "env[", "request."))
-
-
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
-
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov"})
 
 
 def findings_to_json(findings: list[MetadataFinding]) -> list[dict[str, Any]]:

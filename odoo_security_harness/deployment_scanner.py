@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import yaml
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
+from odoo_security_harness.base_scanner import _line_for
 
 
 @dataclass
@@ -759,13 +760,6 @@ def _redact(value: str) -> str:
     if len(value) <= 8:
         return "<redacted>"
     return f"{value[:4]}...{value[-4:]}"
-
-
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
 
 
 def _should_skip(path: Path) -> bool:

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
 @dataclass
@@ -438,17 +439,6 @@ def _line_for_button(content: str, name: str) -> int:
     if name:
         return _line_for(content, f'name="{name}"')
     return _line_for(content, "<button")
-
-
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
-
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov"})
 
 
 def _collect_repository_actions(repo_path: Path) -> dict[str, dict[str, str]]:

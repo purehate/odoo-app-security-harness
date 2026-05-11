@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
-from odoo_security_harness.base_scanner import _record_fields, _should_skip
+from odoo_security_harness.base_scanner import _line_for, _record_fields, _should_skip
 
 
 @dataclass
@@ -225,15 +225,11 @@ class SequenceScanner(ast.NodeVisitor):
         sink = _call_name(node.func)
         method = sink.rsplit(".", 1)[-1]
         constants = self._effective_constants()
-        if method in {"next_by_code", "next_by_id"} and _is_ir_sequence_expr(
-            node.func, self.sequence_vars, constants
-        ):
+        if method in {"next_by_code", "next_by_id"} and _is_ir_sequence_expr(node.func, self.sequence_vars, constants):
             self._scan_sequence_call(node, sink, method, constants)
         self.generic_visit(node)
 
-    def _scan_sequence_call(
-        self, node: ast.Call, sink: str, method: str, constants: dict[str, ast.AST]
-    ) -> None:
+    def _scan_sequence_call(self, node: ast.Call, sink: str, method: str, constants: dict[str, ast.AST]) -> None:
         route = self._current_route()
         code_node = node.args[0] if node.args and method == "next_by_code" else _keyword_value(node, "sequence_code")
         code = _literal_string(code_node, constants)
@@ -633,9 +629,7 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
     return node
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant_seen(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -689,7 +683,6 @@ def _env_model_name(node: ast.Subscript, constants: dict[str, ast.AST] | None = 
     if isinstance(value, ast.Constant) and isinstance(value.value, str):
         return value.value
     return ""
-
 
 
 def _csv_model_name(path: Path) -> str:
@@ -861,14 +854,6 @@ def _unpack_target_value_pairs(
     rest_values = value.elts[starred_index:after_values_start]
     after = list(zip(target.elts[starred_index + 1 :], value.elts[after_values_start:], strict=False))
     return [*before, (target.elts[starred_index], ast.List(elts=list(rest_values), ctx=ast.Load())), *after]
-
-
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
-
 
 
 def findings_to_json(findings: list[SequenceFinding]) -> list[dict[str, Any]]:

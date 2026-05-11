@@ -279,12 +279,6 @@ class RecordRuleScanner(XmlScanner):
                 group_text,
             )
 
-    def _line_for_record(self, record: ElementTree.Element) -> int:
-        record_id = record.get("id")
-        if record_id:
-            return _line_for(self.content, f'id="{record_id}"')
-        return _line_for(self.content, 'model="ir.rule"')
-
     def _add(
         self,
         rule_id: str,
@@ -309,7 +303,6 @@ class RecordRuleScanner(XmlScanner):
                 group=group,
             )
         )
-
 
 
 def _csv_model_name(path: Path) -> str:
@@ -414,15 +407,6 @@ def _truthy(value: str) -> bool:
 def _explicitly_all_perms_false(fields: dict[str, str]) -> bool:
     perm_names = {"perm_read", "perm_write", "perm_create", "perm_unlink"}
     return perm_names <= set(fields) and not any(_truthy(fields[name]) for name in perm_names)
-
-
-def _line_for(content: str, needle: str) -> int:
-    if not needle:
-        return 1
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
 
 
 def findings_to_json(findings: list[RecordRuleFinding]) -> list[dict[str, Any]]:

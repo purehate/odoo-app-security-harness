@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
-from odoo_security_harness.base_scanner import _record_fields, _should_skip
+from odoo_security_harness.base_scanner import _line_for, _record_fields, _should_skip
 
 
 @dataclass
@@ -318,7 +318,11 @@ class ActionWindowScanner(ast.NodeVisitor):
                 "context",
             )
 
-        if model in SENSITIVE_MODELS and not _has_group_restriction(groups) and _is_broad_domain(domain_node, constants):
+        if (
+            model in SENSITIVE_MODELS
+            and not _has_group_restriction(groups)
+            and _is_broad_domain(domain_node, constants)
+        ):
             self._add(
                 "odoo-act-window-sensitive-broad-domain",
                 "Sensitive action window uses broad domain",
@@ -937,9 +941,7 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
     return node
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant_seen(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -1008,7 +1010,6 @@ def _subscript_constant_key(node: ast.Subscript, constants: dict[str, ast.AST] |
     if isinstance(value, ast.Constant) and isinstance(value.value, str):
         return value.value
     return ""
-
 
 
 def _csv_model_name(path: Path) -> str:
@@ -1223,14 +1224,6 @@ def _safe_unparse(node: ast.AST) -> str:
         return ast.unparse(node)
     except Exception:
         return ""
-
-
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
-
 
 
 def findings_to_json(findings: list[ActionWindowFinding]) -> list[dict[str, Any]]:

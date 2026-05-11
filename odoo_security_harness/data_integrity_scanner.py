@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
-from odoo_security_harness.base_scanner import _should_skip
+from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
 @dataclass
@@ -337,14 +337,6 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
     except Exception:
         return []
     return rows
-
-
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
-
 
 
 def findings_to_json(findings: list[DataIntegrityFinding]) -> list[dict[str, Any]]:

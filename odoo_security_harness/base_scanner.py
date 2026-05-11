@@ -22,6 +22,7 @@ from defusedxml import ElementTree
 # Finding dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BaseFinding:
     """Unified security finding dataclass used by all scanners."""
@@ -70,7 +71,18 @@ class BaseFinding:
 # File filtering
 # ---------------------------------------------------------------------------
 
-_SKIP_DIRS = {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+_SKIP_DIRS = {
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".git",
+    "node_modules",
+    "htmlcov",
+    "tests",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+}
 
 
 def _should_skip(path: Path) -> bool:
@@ -81,6 +93,7 @@ def _should_skip(path: Path) -> bool:
 # ---------------------------------------------------------------------------
 # AST helpers (duplicated in ~40 scanners)
 # ---------------------------------------------------------------------------
+
 
 def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
     """Extract module-level constant assignments from an AST."""
@@ -213,8 +226,7 @@ def _is_odoo_model(node: ast.ClassDef, model_base_names: set[str] | None = None)
     """Return True if a class definition inherits from an Odoo model base."""
     bases = model_base_names or _DEFAULT_MODEL_BASES
     return any(
-        (isinstance(base, ast.Attribute) and base.attr in bases)
-        or (isinstance(base, ast.Name) and base.id in bases)
+        (isinstance(base, ast.Attribute) and base.attr in bases) or (isinstance(base, ast.Name) and base.id in bases)
         for base in node.bases
     )
 
@@ -340,6 +352,26 @@ def _returns_true(node: ast.Return, constants: dict[str, ast.AST] | None = None)
 # XML helpers (duplicated in ~20 scanners)
 # ---------------------------------------------------------------------------
 
+
+def _line_for(content: str, needle: str) -> int:
+    """Return the 1-based line number of *needle* inside *content*."""
+    if not needle:
+        return 1
+    index = content.find(needle)
+    if index < 0:
+        return 1
+    return content[:index].count("\n") + 1
+
+
+def _line_for_record(content: str, record: ElementTree.Element) -> int:
+    """Return the line number for an XML <record> element."""
+    record_id = record.get("id")
+    if record_id:
+        return _line_for(content, f'id="{record_id}"')
+    model = record.get("model", "")
+    return _line_for(content, f'model="{model}"')
+
+
 def _record_fields(record: ElementTree.Element) -> dict[str, str]:
     """Extract field names and values from an Odoo XML <record> element.
 
@@ -359,6 +391,7 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 # Base scanner classes
 # ---------------------------------------------------------------------------
+
 
 class BaseScanner(ABC):
     """Abstract base for all security scanners.
@@ -518,3 +551,7 @@ class XmlScanner(BaseScanner):
     def scan_xml(self) -> None:
         """Subclasses implement their XML scanning logic here."""
         ...
+
+    def _line_for_record(self, record: ElementTree.Element) -> int:
+        """Return the line number for an XML <record> element."""
+        return _line_for_record(self.content, record)

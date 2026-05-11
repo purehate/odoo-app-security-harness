@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -579,7 +580,9 @@ class CacheHeaderScanner(ast.NodeVisitor):
     def _is_file_sink(self, node: ast.AST) -> bool:
         if _call_name(node) in FILE_SINKS:
             return True
-        return _is_request_method(node, self.request_names, self.http_module_names, self.odoo_module_names, {"send_file"})
+        return _is_request_method(
+            node, self.request_names, self.http_module_names, self.odoo_module_names, {"send_file"}
+        )
 
     def _is_response_expr(self, node: ast.AST, response_names: set[str]) -> bool:
         if isinstance(node, ast.Name) and node.id in response_names:
@@ -938,11 +941,7 @@ def _set_cookie_name(node: ast.Call, constants: dict[str, ast.AST] | None = None
             return value.value
     for keyword in node.keywords:
         value = _resolve_constant(keyword.value, constants or {})
-        if (
-            keyword.arg in {"key", "name"}
-            and isinstance(value, ast.Constant)
-            and isinstance(value.value, str)
-        ):
+        if keyword.arg in {"key", "name"} and isinstance(value, ast.Constant) and isinstance(value.value, str):
             return value.value
     return ""
 
@@ -1058,7 +1057,3 @@ def _safe_unparse(node: ast.AST) -> str:
         return ast.unparse(node)
     except Exception:
         return ""
-
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests"})

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
 @dataclass
@@ -1075,8 +1076,10 @@ def _ast_truthy(node: ast.AST | None, constants: dict[str, ast.AST] | None = Non
         return False
     resolved = _resolve_constant(node, constants or {})
     if isinstance(resolved, ast.Constant):
-        return resolved.value is True or resolved.value == 1 or (
-            isinstance(resolved.value, str) and _truthy(resolved.value)
+        return (
+            resolved.value is True
+            or resolved.value == 1
+            or (isinstance(resolved.value, str) and _truthy(resolved.value))
         )
     return False
 
@@ -1104,17 +1107,6 @@ def _safe_unparse(node: ast.AST) -> str:
         return ast.unparse(node)
     except Exception:
         return ""
-
-
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
-
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov"})
 
 
 def findings_to_json(findings: list[PublicationFinding]) -> list[dict[str, Any]]:

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
 @dataclass
@@ -771,9 +772,7 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[st
     return node
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -1092,17 +1091,6 @@ def _model_value(value: str) -> str:
     if ".model_" in normalized:
         return normalized.rsplit(".model_", 1)[1].replace("_", ".")
     return normalized
-
-
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
-
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov"})
 
 
 def findings_to_json(findings: list[ReportFinding]) -> list[dict[str, Any]]:

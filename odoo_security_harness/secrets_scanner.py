@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
 @dataclass
@@ -95,7 +96,18 @@ CONFIG_EXTENSIONS = {".cfg", ".cnf", ".conf", ".env", ".ini", ".properties"}
 DOCKERFILE_NAMES = {"containerfile", "dockerfile"}
 KEY_MATERIAL_EXTENSIONS = {".key", ".pem"}
 SHELL_EXTENSIONS = {".bash", ".sh", ".zsh"}
-TEXT_EXTENSIONS = {".csv", ".json", ".py", ".toml", ".txt", ".xml", ".yaml", ".yml", *CONFIG_EXTENSIONS, *SHELL_EXTENSIONS}
+TEXT_EXTENSIONS = {
+    ".csv",
+    ".json",
+    ".py",
+    ".toml",
+    ".txt",
+    ".xml",
+    ".yaml",
+    ".yml",
+    *CONFIG_EXTENSIONS,
+    *SHELL_EXTENSIONS,
+}
 LOW_VALUE_PLACEHOLDERS = {"changeme", "change_me", "example", "dummy", "password", "secret", "token", "admin"}
 WEAK_USER_PASSWORDS = {"admin", "demo", "password", "changeme", "change_me", "odoo", "test"}
 
@@ -505,17 +517,6 @@ def _redact(value: str) -> str:
     if len(value) <= 8:
         return "***"
     return f"{value[:4]}...{value[-4:]}"
-
-
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
-
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov"})
 
 
 def _is_dockerfile(path: Path) -> bool:

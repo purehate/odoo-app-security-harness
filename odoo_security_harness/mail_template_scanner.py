@@ -288,12 +288,6 @@ class MailTemplateScanner(XmlScanner):
                 "body_html",
             )
 
-    def _line_for_record(self, record: ElementTree.Element) -> int:
-        record_id = record.get("id")
-        if record_id:
-            return _line_for(self.content, f'id="{record_id}"')
-        return _line_for(self.content, 'model="mail.template"')
-
     def _add(
         self,
         rule_id: str,
@@ -413,13 +407,6 @@ def _normalize_model_ref(value: str) -> str:
     if ".model_" in normalized:
         return normalized.rsplit(".model_", 1)[1].replace("_", ".")
     return normalized
-
-
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
 
 
 def findings_to_json(findings: list[MailTemplateFinding]) -> list[dict[str, Any]]:

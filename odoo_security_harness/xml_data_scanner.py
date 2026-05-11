@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 ADMIN_GROUP_RE = re.compile(r"\bbase\.(group_system|group_erp_manager)\b")
 INTERNAL_GROUP_RE = re.compile(r"\bbase\.group_user\b")
@@ -491,13 +492,6 @@ class XmlDataScanner:
         )
 
 
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
-
-
 def _is_truthy(value: str) -> bool:
     return value.strip().strip("'\"").lower() in {"1", "true", "yes"}
 
@@ -957,9 +951,7 @@ def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST
     return values
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant_seen(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -1072,10 +1064,6 @@ def _mentions_user_groups(value: str) -> bool:
 
 def _mentions_privileged_group(value: str) -> bool:
     return bool(ADMIN_GROUP_RE.search(value) or INTERNAL_GROUP_RE.search(value))
-
-
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov"})
 
 
 def findings_to_json(findings: list[XmlDataFinding]) -> list[dict[str, Any]]:

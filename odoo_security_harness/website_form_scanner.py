@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
-from odoo_security_harness.base_scanner import _should_skip
+from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
 @dataclass
@@ -711,13 +711,6 @@ def _line_for_form_action(content: str, action: str) -> int:
     return _line_for(content, action)
 
 
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
-
-
 def _is_external_url(value: str) -> bool:
     lowered = value.strip().lower()
     return lowered.startswith(("http://", "https://", "//"))
@@ -983,9 +976,7 @@ def _is_static_literal(node: ast.AST) -> bool:
     return False
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant_seen(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -1051,7 +1042,6 @@ def _active_accept_tokens(accept: str) -> list[str]:
         ):
             active.append(token)
     return active
-
 
 
 def findings_to_json(findings: list[WebsiteFormFinding]) -> list[dict[str, Any]]:

@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from odoo_security_harness.base_scanner import _should_skip
 
 KNOWN_ODOO_LICENSES = {
     "AGPL-3",
@@ -506,11 +507,6 @@ def _local_binary_dependency_references(dependencies: list[str]) -> list[str]:
         if normalized.startswith(LOCAL_DEPENDENCY_PATH_PREFIXES) or WINDOWS_ABSOLUTE_DEPENDENCY_RE.match(normalized):
             local.append(dependency)
     return sorted(set(local), key=str.lower)
-
-
-def _should_skip(path: Path) -> bool:
-    """Skip generated/cache directories."""
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules"})
 
 
 def findings_to_json(findings: list[ManifestFinding]) -> list[dict[str, Any]]:

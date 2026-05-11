@@ -206,12 +206,6 @@ class MailAliasScanner(XmlScanner):
                 target_model,
             )
 
-    def _line_for_record(self, record: ElementTree.Element) -> int:
-        record_id = record.get("id")
-        if record_id:
-            return _line_for(self.content, f'id="{record_id}"')
-        return _line_for(self.content, 'model="mail.alias"')
-
     def _add(
         self,
         rule_id: str,
@@ -234,7 +228,6 @@ class MailAliasScanner(XmlScanner):
                 model=model,
             )
         )
-
 
 
 def _model_value(value: str) -> str:
@@ -290,13 +283,6 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
     except Exception:
         return []
     return rows
-
-
-def _line_for(content: str, needle: str) -> int:
-    index = content.find(needle)
-    if index < 0:
-        return 1
-    return content[:index].count("\n") + 1
 
 
 def findings_to_json(findings: list[MailAliasFinding]) -> list[dict[str, Any]]:

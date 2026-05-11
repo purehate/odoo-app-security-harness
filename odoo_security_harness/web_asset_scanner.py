@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from odoo_security_harness.base_scanner import _should_skip
 
 
 @dataclass
@@ -1502,10 +1503,6 @@ class WebAssetScanner:
         )
 
 
-def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"node_modules", "__pycache__", ".venv", "venv", ".git", "htmlcov"})
-
-
 def _looks_dynamic_navigation_target(line: str) -> bool:
     if CLIENT_NAVIGATION_TAINT_RE.search(line):
         return True
@@ -1644,7 +1641,9 @@ def _owl_template_has_target_blank_without_opener(body: str) -> bool:
 
 
 def _owl_template_has_iframe_without_sandbox(body: str) -> bool:
-    return any(_html_attr_value(match.group("attrs"), "sandbox") is None for match in OWL_TEMPLATE_IFRAME_RE.finditer(body))
+    return any(
+        _html_attr_value(match.group("attrs"), "sandbox") is None for match in OWL_TEMPLATE_IFRAME_RE.finditer(body)
+    )
 
 
 def _owl_template_has_iframe_sandbox_escape(body: str) -> bool:
@@ -1685,7 +1684,12 @@ def _owl_template_has_external_stylesheet_without_sri(body: str) -> bool:
         attrs = match.group("attrs")
         rel = _html_attr_value(attrs, "rel") or ""
         href = _html_attr_value(attrs, "href")
-        if "stylesheet" in rel.lower().split() and href and _is_external_url(href) and not _html_attr_value(attrs, "integrity"):
+        if (
+            "stylesheet" in rel.lower().split()
+            and href
+            and _is_external_url(href)
+            and not _html_attr_value(attrs, "integrity")
+        ):
             return True
     return False
 
@@ -1897,7 +1901,9 @@ def _looks_risky_bus_channel_subscription(args: str) -> bool:
         literal = _strip_js_string(value)
         if literal != value and BROAD_BUS_CHANNEL_RE.match(literal.strip()):
             return True
-        if _strip_js_string(value) == value and re.search(r"\b(?:channel|channels|topic|topics)\b", value, re.IGNORECASE):
+        if _strip_js_string(value) == value and re.search(
+            r"\b(?:channel|channels|topic|topics)\b", value, re.IGNORECASE
+        ):
             return True
     return False
 
