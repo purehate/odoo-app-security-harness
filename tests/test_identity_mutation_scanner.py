@@ -511,6 +511,35 @@ class Users(http.Controller):
     assert any(finding.rule_id == "odoo-identity-privilege-field-write" for finding in findings)
 
 
+def test_local_constant_model_superuser_and_privilege_key_are_reported(tmp_path: Path) -> None:
+    """Function-local constants should not hide identity model writes or privilege keys."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "users.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Users(http.Controller):
+    @http.route('/users/promote', auth='user', type='json')
+    def promote(self, **kwargs):
+        target_model = 'res.users'
+        root_uid = 1
+        privilege_field = 'groups_id'
+        user = request.env[target_model].with_user(root_uid).browse(kwargs.get('user_id'))
+        return user.write({privilege_field: kwargs.get('groups_id')})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_identity_mutations(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-identity-elevated-mutation" in rule_ids
+    assert "odoo-identity-request-derived-mutation" in rule_ids
+    assert "odoo-identity-privilege-field-write" in rule_ids
+
+
 def test_class_constant_static_unpack_public_route_identity_mutation_is_reported(tmp_path: Path) -> None:
     """Class-scoped **route options should not hide public identity mutations."""
     controllers = tmp_path / "module" / "controllers"

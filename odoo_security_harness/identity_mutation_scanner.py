@@ -74,6 +74,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
         self.route_stack: list[RouteContext] = []
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
 
     def scan_file(self) -> list[IdentityMutationFinding]:
         """Scan the file."""
@@ -117,6 +118,8 @@ class IdentityMutationScanner(ast.NodeVisitor):
         previous_elevated_identity_vars = set(self.elevated_identity_vars)
         previous_tainted = set(self.tainted_names)
         previous_dict_fields = dict(self.dict_fields_by_var)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         route = _route_info(
             node,
             self._effective_constants(),
@@ -140,6 +143,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
         self.elevated_identity_vars = previous_elevated_identity_vars
         self.tainted_names = previous_tainted
         self.dict_fields_by_var = previous_dict_fields
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -155,6 +159,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
         previous_dict_fields = dict(self.dict_fields_by_var)
 
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_identity_target(target, node.value, previous_identity_vars, previous_elevated_identity_vars)
             self._mark_dict_fields_target(target, node.value, previous_dict_fields)
             self._mark_tainted_target(target, node.value)
@@ -162,6 +167,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_identity_target(
                 node.target,
                 node.value,
@@ -173,6 +179,7 @@ class IdentityMutationScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_identity_target(
             node.target,
             node.value,
@@ -342,12 +349,31 @@ class IdentityMutationScanner(ast.NodeVisitor):
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
+
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+
+        names = _target_names(target)
+        if not names:
+            return
+        if isinstance(target, ast.Name) and _is_static_literal(value):
+            self.local_constants[target.id] = value
+            return
+        for name in names:
+            self.local_constants.pop(name, None)
 
     def _mark_identity_target(
         self,
