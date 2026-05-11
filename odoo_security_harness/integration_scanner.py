@@ -22,7 +22,8 @@ class IntegrationFinding:
 
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request", "head", "urlopen"}
-REQUEST_MODULES = {"requests", "httpx", "urllib.request"}
+REQUEST_MODULES = {"aiohttp", "requests", "httpx", "urllib.request"}
+HTTP_CLIENT_FACTORIES = {"AsyncClient", "Client", "ClientSession", "Session"}
 TAINTED_ARG_NAMES = {
     "args",
     "cmd",
@@ -142,7 +143,7 @@ class IntegrationScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name in HTTP_METHODS:
                     self.http_function_names[alias.asname or alias.name] = f"{node.module}.{alias.name}"
-                elif alias.name in {"Session", "Client"}:
+                elif alias.name in HTTP_CLIENT_FACTORIES:
                     self.http_function_names[alias.asname or alias.name] = f"{node.module}.{alias.name}"
         elif node.module == "odoo.http":
             for alias in node.names:
@@ -190,6 +191,16 @@ class IntegrationScanner(ast.NodeVisitor):
 
     def visit_AsyncFor(self, node: ast.AsyncFor) -> Any:
         self.visit_For(node)
+
+    def visit_With(self, node: ast.With) -> Any:
+        previous_http_clients = set(self.http_client_names)
+        for item in node.items:
+            if item.optional_vars is not None:
+                self._mark_http_client_target(item.optional_vars, item.context_expr, previous_http_clients)
+        self.generic_visit(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> Any:
+        self.visit_With(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
@@ -506,7 +517,7 @@ class IntegrationScanner(ast.NodeVisitor):
         return (
             len(parts) >= 2
             and parts[-1] in HTTP_METHODS
-            and parts[-2] in self.http_client_names | {"Session", "Client"}
+            and parts[-2] in self.http_client_names | HTTP_CLIENT_FACTORIES
         )
 
     def _is_http_client_factory(self, node: ast.AST) -> bool:
@@ -514,7 +525,7 @@ class IntegrationScanner(ast.NodeVisitor):
             return False
         sink = self._canonical_sink(_call_name(node.func))
         parts = sink.split(".")
-        return len(parts) >= 2 and parts[0] in REQUEST_MODULES and parts[-1] in {"Session", "Client"}
+        return len(parts) >= 2 and ".".join(parts[:-1]) in REQUEST_MODULES and parts[-1] in HTTP_CLIENT_FACTORIES
 
     def _is_http_client_expr(self, node: ast.AST, http_client_names: set[str]) -> bool:
         if isinstance(node, ast.Starred):

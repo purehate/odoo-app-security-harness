@@ -308,6 +308,27 @@ def sync(**kwargs):
     assert "odoo-integration-tls-verify-disabled" in rule_ids
 
 
+def test_aiohttp_client_session_context_is_reported(tmp_path: Path) -> None:
+    """aiohttp ClientSession context managers should be recognized as outbound HTTP clients."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+import aiohttp
+
+async def sync(**kwargs):
+    async with aiohttp.ClientSession() as session:
+        return await session.get(kwargs.get('webhook_url'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+    rule_ids = {f.rule_id for f in findings}
+
+    assert "odoo-integration-http-no-timeout" in rule_ids
+    assert "odoo-integration-tainted-url-ssrf" in rule_ids
+
+
 def test_reassigned_http_client_alias_is_not_stale(tmp_path: Path) -> None:
     """Reassigned HTTP client aliases should not keep outbound-call state."""
     py = tmp_path / "integration.py"
