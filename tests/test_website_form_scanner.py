@@ -402,6 +402,33 @@ def test_flags_data_model_alias_and_qweb_sensitive_field(tmp_path: Path) -> None
     assert any(f.model == "res.users" and f.severity == "high" for f in findings)
 
 
+def test_flags_qweb_mapped_sensitive_field_name(tmp_path: Path) -> None:
+    """Generic QWeb t-att mappings can provide sensitive submitted field names."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "forms.xml").write_text(
+        """<odoo>
+  <template id="signup">
+    <form data-model="res.users" method="post">
+      <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+      <input t-att="{'name': 'groups_id', 'aria-label': 'Groups'}"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-website-form-sensitive-field"
+        and finding.model == "res.users"
+        and finding.field == "groups_id"
+        and finding.severity == "high"
+        for finding in findings
+    )
+
+
 def test_flags_token_visibility_and_relational_website_form_fields(tmp_path: Path) -> None:
     """Public website forms should not expose token, visibility, or chatter controls."""
     views = tmp_path / "module" / "views"

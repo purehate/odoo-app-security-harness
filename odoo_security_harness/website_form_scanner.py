@@ -694,6 +694,9 @@ def _field_name(element: ElementTree.Element) -> str:
         value = element.get(attr, "").strip()
         if value:
             return value.strip("'\"")
+    mapped_value = _mapped_attribute_value(element.get("t-att", ""), "name")
+    if mapped_value:
+        return mapped_value.strip("'\"")
     return ""
 
 
