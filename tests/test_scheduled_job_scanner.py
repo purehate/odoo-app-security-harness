@@ -667,6 +667,54 @@ class Sync(models.Model):
     assert sum(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings) == 1
 
 
+def test_flags_http_timeout_none(tmp_path: Path) -> None:
+    """Cron jobs should treat timeout=None as no effective HTTP timeout."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import requests
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        return requests.post(self.feed_url, timeout=None)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings)
+
+
+def test_flags_http_constant_timeout_none(tmp_path: Path) -> None:
+    """Cron jobs should resolve constants used for timeout values."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import requests
+
+CRON_TIMEOUT = None
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        return requests.post(self.feed_url, timeout=CRON_TIMEOUT)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings)
+
+
 def test_flags_tuple_unpacked_sudo_cron_mutation(tmp_path: Path) -> None:
     """Tuple-unpacked sudo aliases should still be recognized in cron methods."""
     models = tmp_path / "module" / "models"

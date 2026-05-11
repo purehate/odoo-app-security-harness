@@ -221,7 +221,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
             )
 
         if _is_http_call(node.func, self.http_module_aliases, self.http_function_aliases, context.http_client_vars):
-            if not _has_keyword(node, "timeout"):
+            if not _has_effective_timeout(node, constants):
                 self._add(
                     "odoo-scheduled-job-http-no-timeout",
                     "Scheduled job performs HTTP without timeout",
@@ -582,6 +582,20 @@ def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
 
 def _has_keyword(node: ast.Call, name: str) -> bool:
     return any(keyword.arg == name for keyword in node.keywords)
+
+
+def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for keyword in node.keywords:
+        if keyword.arg != "timeout":
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        return not _is_none_constant(value)
+    return False
+
+
+def _is_none_constant(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
 
 
 def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:

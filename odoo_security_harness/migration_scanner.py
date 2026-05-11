@@ -160,7 +160,7 @@ class MigrationScanner(ast.NodeVisitor):
             )
         elif _is_http_call(node.func, self.http_module_aliases, self.http_function_aliases):
             constants = self._effective_constants()
-            if not _has_keyword(node, "timeout"):
+            if not _has_effective_timeout(node, constants):
                 self._add(
                     "odoo-migration-http-no-timeout",
                     "Migration/hook performs HTTP without timeout",
@@ -519,6 +519,20 @@ def _is_process_call(node: ast.AST, module_aliases: set[str], function_aliases: 
 
 def _has_keyword(node: ast.Call, name: str) -> bool:
     return any(keyword.arg == name for keyword in node.keywords)
+
+
+def _has_effective_timeout(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for keyword in node.keywords:
+        if keyword.arg != "timeout":
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        return not _is_none_constant(value)
+    return False
+
+
+def _is_none_constant(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
 
 
 def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:

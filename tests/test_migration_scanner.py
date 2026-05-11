@@ -414,6 +414,44 @@ def migrate(cr, version):
     assert len([finding for finding in findings if finding.rule_id == "odoo-migration-http-no-timeout"]) == 1
 
 
+def test_http_timeout_none_is_reported_in_migration(tmp_path: Path) -> None:
+    """Migration HTTP should treat timeout=None as no effective timeout."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+import requests
+
+def migrate(cr, version):
+    requests.post("https://example.test/upgrade", timeout=None)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(finding.rule_id == "odoo-migration-http-no-timeout" for finding in findings)
+
+
+def test_http_constant_timeout_none_is_reported_in_migration(tmp_path: Path) -> None:
+    """Migration HTTP should resolve constants used for timeout values."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+import requests
+
+MIGRATION_TIMEOUT = None
+
+def migrate(cr, version):
+    requests.post("https://example.test/upgrade", timeout=MIGRATION_TIMEOUT)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert any(finding.rule_id == "odoo-migration-http-no-timeout" for finding in findings)
+
+
 def test_tls_verification_disabled_is_reported_in_migration(tmp_path: Path) -> None:
     """Migration outbound HTTP should not disable TLS verification."""
     py = tmp_path / "post-migrate.py"
