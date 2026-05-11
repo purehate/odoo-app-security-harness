@@ -332,6 +332,8 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
 
 def _extract_groups(value: str) -> list[str]:
     groups = re.findall(r"ref\(['\"]([^'\"]+)['\"]\)", value)
+    if not groups:
+        groups = re.findall(r"[A-Za-z_][\w]*\.[A-Za-z_][\w]*", value)
     if value and not groups and "." in value:
         groups.append(value)
     return groups

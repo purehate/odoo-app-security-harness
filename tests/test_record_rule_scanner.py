@@ -122,6 +122,25 @@ def test_flags_portal_write_on_sensitive_model_in_csv(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-record-rule-portal-write-sensitive" for f in findings)
 
 
+def test_flags_portal_scope_inside_multi_group_csv_rule(tmp_path: Path) -> None:
+    """CSV rules with multiple external-id groups should still detect portal scope."""
+    security = tmp_path / "module" / "security"
+    security.mkdir(parents=True)
+    (security / "ir_rule.csv").write_text(
+        "id,model_id/id,groups/id,domain_force,perm_write\n"
+        "mixed_portal_invoice,account.model_account_move,\"base.group_user,base.group_portal\","
+        "\"[('partner_id', '=', user.partner_id.id)]\",1\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_record_rules(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-record-rule-portal-write-sensitive" and f.group == "base.group_user,base.group_portal"
+        for f in findings
+    )
+
+
 def test_flags_record_rule_domain_logic_in_csv(tmp_path: Path) -> None:
     """CSV domains should still surface group, context, hierarchy, and disabled-perm risks."""
     security = tmp_path / "module" / "security"
