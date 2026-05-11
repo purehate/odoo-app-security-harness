@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -184,6 +185,7 @@ class ScheduledJobScanner(ast.NodeVisitor):
             self.generic_visit(node)
             return
 
+        _mark_static_dict_update(node, self.local_constants)
         sink = _call_name(node.func)
         method = sink.rsplit(".", 1)[-1]
         constants = self._effective_constants()
@@ -194,7 +196,8 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 "Scheduled job performs elevated mutation",
                 "high",
                 node.lineno,
-                "Scheduled job mutates records through sudo()/with_user(SUPERUSER_ID); verify record rules, company isolation, input trust, and retry idempotency",
+                "Scheduled job mutates records through sudo()/with_user(SUPERUSER_ID); verify record rules, "
+                "company isolation, input trust, and retry idempotency",
                 context.name,
                 sink,
             )
@@ -204,7 +207,8 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 "Scheduled job calls elevated business method",
                 "high",
                 node.lineno,
-                "Scheduled job uses sudo()/with_user(SUPERUSER_ID) to call a business/action method; verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
+                "Scheduled job uses sudo()/with_user(SUPERUSER_ID) to call a business/action method; verify "
+                "workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
                 context.name,
                 sink,
             )
@@ -216,7 +220,8 @@ class ScheduledJobScanner(ast.NodeVisitor):
                     "Scheduled job mutates sensitive model",
                     "high",
                     node.lineno,
-                    f"Scheduled job mutates sensitive model '{sensitive_model}'; verify the cron user, domain scope, idempotency, and audit trail",
+                    f"Scheduled job mutates sensitive model '{sensitive_model}'; verify the cron user, "
+                    "domain scope, idempotency, and audit trail",
                     context.name,
                     sink,
                 )
@@ -226,7 +231,8 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 "Scheduled job performs dynamic evaluation",
                 "critical",
                 node.lineno,
-                "Scheduled job calls eval/exec/safe_eval; verify no synchronized data, records, or config values can control evaluated code",
+                "Scheduled job calls eval/exec/safe_eval; verify no synchronized data, records, or config "
+                "values can control evaluated code",
                 context.name,
                 sink,
             )
@@ -236,7 +242,8 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 "Scheduled job controls transactions manually",
                 "medium",
                 node.lineno,
-                "Scheduled job calls commit()/rollback(); verify partial progress, retry behavior, and security state cannot become inconsistent",
+                "Scheduled job calls commit()/rollback(); verify partial progress, retry behavior, and security "
+                "state cannot become inconsistent",
                 context.name,
                 sink,
             )
@@ -249,7 +256,8 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 "Scheduled job performs unbounded ORM search",
                 severity,
                 node.lineno,
-                "Scheduled job searches with an empty domain and no visible limit; verify batching, locking, company scoping, and idempotency",
+                "Scheduled job searches with an empty domain and no visible limit; verify batching, locking, "
+                "company scoping, and idempotency",
                 context.name,
                 sink,
             )
@@ -261,7 +269,8 @@ class ScheduledJobScanner(ast.NodeVisitor):
                     "Scheduled job performs HTTP without timeout",
                     "medium",
                     node.lineno,
-                    "Scheduled job performs outbound HTTP without timeout; slow upstreams can exhaust cron workers and cause repeated overlap",
+                    "Scheduled job performs outbound HTTP without timeout; slow upstreams can exhaust cron "
+                    "workers and cause repeated overlap",
                     context.name,
                     sink,
                 )
@@ -271,7 +280,8 @@ class ScheduledJobScanner(ast.NodeVisitor):
                     "Scheduled job disables TLS verification",
                     "high",
                     node.lineno,
-                    "Scheduled job passes verify=False to outbound HTTP; recurring integrations should not permit man-in-the-middle attacks",
+                    "Scheduled job passes verify=False to outbound HTTP; recurring integrations should not "
+                    "permit man-in-the-middle attacks",
                     context.name,
                     sink,
                 )
@@ -282,7 +292,8 @@ class ScheduledJobScanner(ast.NodeVisitor):
                         "Scheduled job uses cleartext HTTP URL",
                         "medium",
                         node.lineno,
-                        "Scheduled job outbound HTTP targets a literal http:// URL; use HTTPS to protect recurring integration payloads and response data from interception or downgrade",
+                        "Scheduled job outbound HTTP targets a literal http:// URL; use HTTPS to protect "
+                        "recurring integration payloads and response data from interception or downgrade",
                         context.name,
                         sink,
                     )
@@ -292,7 +303,8 @@ class ScheduledJobScanner(ast.NodeVisitor):
                         "Scheduled job URL embeds credentials",
                         "high",
                         node.lineno,
-                        "Scheduled job embeds username, password, or token material in an outbound HTTP URL authority; move credentials to server-side configuration",
+                        "Scheduled job embeds username, password, or token material in an outbound HTTP URL "
+                        "authority; move credentials to server-side configuration",
                         context.name,
                         sink,
                     )
@@ -303,7 +315,8 @@ class ScheduledJobScanner(ast.NodeVisitor):
                 "External-sync scheduled job lacks visible batch limit",
                 "low",
                 node.lineno,
-                "Scheduled sync/import/fetch job searches without a visible limit; verify batching, locking, timeout, and retry behavior",
+                "Scheduled sync/import/fetch job searches without a visible limit; verify batching, locking, "
+                "timeout, and retry behavior",
                 context.name,
                 sink,
             )
@@ -844,6 +857,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -871,6 +886,59 @@ def _resolve_static_dict(
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            items.append((resolved_key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
