@@ -1035,7 +1035,7 @@ class Controller(http.Controller):
     @http.route('/account/connector-key', auth='user', type='json')
     def connector_key(self):
         access_key = request.env['ir.config_parameter'].sudo().get_param('connector.access_key')
-        return request.make_json_response({'access_key': access_key, 'license_key': 'redacted'})
+        return request.make_json_response({'access_key': access_key, 'license_key': 'redacted', 'reset_password_url': '/reset'})
 """,
         encoding="utf-8",
     )
