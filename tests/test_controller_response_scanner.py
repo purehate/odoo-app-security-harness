@@ -1766,6 +1766,54 @@ class Controller(http.Controller):
     assert scan_controller_responses(tmp_path) == []
 
 
+def test_flags_public_jsonp_callback_response(tmp_path: Path) -> None:
+    """Public controllers should not build JavaScript callbacks from request data."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/jsonp', auth='public')
+    def jsonp(self, **kwargs):
+        callback = kwargs.get('callback')
+        return request.make_response(f"{callback}({{'ok': true}})", headers={'Content-Type': 'application/javascript'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-controller-jsonp-callback-response"
+        and f.severity == "high"
+        and "JSONP" in f.message
+        for f in findings
+    )
+
+
+def test_static_javascript_response_is_ignored(tmp_path: Path) -> None:
+    """Static JavaScript responses should not be treated as JSONP callbacks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/script', auth='public')
+    def script(self):
+        return request.make_response("odoo.define('x', function () {});", headers={'Content-Type': 'application/javascript'})
+""",
+        encoding="utf-8",
+    )
+
+    assert scan_controller_responses(tmp_path) == []
+
+
 def test_flags_weak_x_frame_options_header(tmp_path: Path) -> None:
     """Controllers should not set permissive or legacy frame options headers."""
     controllers = tmp_path / "module" / "controllers"

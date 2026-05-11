@@ -6739,6 +6739,24 @@ def test_taxonomy_coverage_classifies_controller_tainted_html_response() -> None
     assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
 
 
+def test_taxonomy_coverage_classifies_controller_jsonp_callback_response() -> None:
+    """Request-controlled JSONP callbacks should map to XSS taxonomy."""
+    coverage = odoo_deep_scan._taxonomy_coverage(
+        [
+            {
+                "source": "controller-responses",
+                "rule_id": "odoo-controller-jsonp-callback-response",
+                "title": "Controller returns request-controlled JSONP callback",
+                "message": "Controller builds a JavaScript/JSONP response from a request-controlled callback; remove JSONP or strictly validate callback names and response data",
+            }
+        ]
+    )
+
+    assert coverage["unmapped_rule_ids"] == []
+    assert coverage["mapped_entries"][0]["shape"] == "controller_jsonp_callback_response"
+    assert "CWE-79" in coverage["mapped_entries"][0]["cwe"]
+
+
 def test_taxonomy_coverage_classifies_controller_tainted_cookie() -> None:
     """Request-controlled cookies should map to cookie/state taxonomy."""
     coverage = odoo_deep_scan._taxonomy_coverage(
@@ -7958,6 +7976,11 @@ class TestController(http.Controller):
         response.set_cookie('session_token', kwargs.get('token'))
         return response
 
+    @http.route('/public/jsonp', auth='public')
+    def public_jsonp(self, **kwargs):
+        callback = kwargs.get('callback')
+        return request.make_response(f"{callback}({{'ok': true}})", headers={'Content-Type': 'application/javascript'})
+
     @http.route('/web/reset_password/<string:reset_code>', auth='public')
     def reset_password_path_code(self, reset_code):
         return request.make_response({'value': reset_code})
@@ -8961,6 +8984,7 @@ msgstr "<a href=\\"javascript:alert(1)\\">Ouvrir %(name)s</a>"
     assert "odoo-controller-weak-hsts-header" in rule_ids
     assert "odoo-controller-weak-cross-origin-policy" in rule_ids
     assert "odoo-controller-weak-permissions-policy" in rule_ids
+    assert "odoo-controller-jsonp-callback-response" in rule_ids
     assert "odoo-controller-tainted-file-read" in rule_ids
     assert sum(1 for finding in findings if finding["rule_id"] == "odoo-controller-tainted-file-read") >= 2
     assert "odoo-controller-tainted-file-offload-header" in rule_ids

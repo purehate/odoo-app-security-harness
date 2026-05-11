@@ -3863,6 +3863,16 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "controller_jsonp_callback_response",
+        (
+            "odoo-controller-jsonp-callback-response",
+            "controller returns request-controlled jsonp callback",
+            "javascript/jsonp response from a request-controlled callback",
+            "strictly validate callback names",
+            "remove jsonp",
+        ),
+    ),
+    (
         "controller_tainted_cookie",
         (
             "controller-tainted-cookie-name",

@@ -2294,6 +2294,12 @@
       "capec": ["CAPEC-63"],
       "owasp": "A03:2021 Injection"
     },
+    "controller_jsonp_callback_response": {
+      "label": "Controller returns request-controlled JSONP callback responses",
+      "cwe": ["CWE-79", "CWE-20", "CWE-200"],
+      "capec": ["CAPEC-63", "CAPEC-118"],
+      "owasp": "A03:2021 Injection"
+    },
     "controller_tainted_cookie": {
       "label": "Controller sets cookie names or values from request-controlled data",
       "cwe": ["CWE-20", "CWE-565", "CWE-384"],

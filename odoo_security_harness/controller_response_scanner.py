@@ -319,6 +319,18 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Controller returns request-derived data as text/html; sanitize or render through trusted QWeb templates before sending HTML",
                     sink,
                 )
+            if self._expr_is_tainted(body) and _response_factory_is_javascript(
+                node, self._effective_constants()
+            ) and _looks_jsonp_callback_body(body):
+                route = self._current_route()
+                self._add(
+                    "odoo-controller-jsonp-callback-response",
+                    "Controller returns request-controlled JSONP callback",
+                    "high" if route.auth in {"public", "none"} else "medium",
+                    node.lineno,
+                    "Controller builds a JavaScript/JSONP response from a request-controlled callback; remove JSONP or strictly validate callback names and response data",
+                    sink,
+                )
         for keyword in node.keywords:
             if keyword.arg in {"headers", "header"} and self._expr_is_tainted(keyword.value):
                 self._add(
@@ -1042,6 +1054,18 @@ def _response_factory_is_html(node: ast.Call, constants: dict[str, ast.AST] | No
     return False
 
 
+def _response_factory_is_javascript(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for keyword in node.keywords:
+        if keyword.arg in {"mimetype", "content_type"} and _is_javascript_content_type(keyword.value, constants):
+            return True
+        if keyword.arg in {"headers", "header"} and _headers_include_javascript_content_type(keyword.value, constants):
+            return True
+    if len(node.args) >= 2 and _headers_include_javascript_content_type(node.args[1], constants):
+        return True
+    return False
+
+
 def _headers_include_html_content_type(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
     for header_name, value in _literal_header_pairs(node, constants):
         if header_name.lower() in {"content-type", "content_type"} and _is_html_content_type(value, constants):
@@ -1049,8 +1073,25 @@ def _headers_include_html_content_type(node: ast.AST, constants: dict[str, ast.A
     return False
 
 
+def _headers_include_javascript_content_type(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    for header_name, value in _literal_header_pairs(node, constants):
+        if header_name.lower() in {"content-type", "content_type"} and _is_javascript_content_type(value, constants):
+            return True
+    return False
+
+
 def _is_html_content_type(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
     return "text/html" in _constant_string(node, constants).lower()
+
+
+def _is_javascript_content_type(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+    content_type = _constant_string(node, constants).lower()
+    return "javascript" in content_type or "ecmascript" in content_type
+
+
+def _looks_jsonp_callback_body(node: ast.AST) -> bool:
+    body = _safe_unparse(node).lower()
+    return "callback" in body and re.search(r"\bcallback\b.*\(", body) is not None
 
 
 def _truthy_header_value(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
