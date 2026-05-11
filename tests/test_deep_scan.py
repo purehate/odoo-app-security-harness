@@ -2448,6 +2448,12 @@ def test_taxonomy_coverage_classifies_owl_insecure_asset_url() -> None:
                 "message": "Manifest frontend assets reference cleartext http:// URLs",
             },
             {
+                "rule_id": "odoo-manifest-protocol-relative-remote-asset",
+                "source": "manifest",
+                "title": "Manifest declares protocol-relative frontend asset",
+                "message": "Manifest frontend assets reference protocol-relative URLs",
+            },
+            {
                 "rule_id": "odoo-web-insecure-asset-url",
                 "source": "web-asset",
                 "title": "DOM-created asset loads insecure HTTP URL",

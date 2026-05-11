@@ -186,6 +186,34 @@ def test_insecure_remote_assets_are_reported(tmp_path: Path) -> None:
     )
 
 
+def test_protocol_relative_remote_assets_are_reported(tmp_path: Path) -> None:
+    """Scheme-relative manifest assets should be a distinct transport posture lead."""
+    module = tmp_path / "protocol_relative_assets"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Protocol Relative Assets',
+    'license': 'LGPL-3',
+    'assets': {
+        'web.assets_backend': [
+            '//cdn.example.com/widget.js',
+            'https://cdn.example.com/theme.css',
+        ],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-protocol-relative-remote-asset"
+        and f.severity == "medium"
+        and "//cdn.example.com/widget.js" in f.message
+        and "https://cdn.example.com/theme.css" not in f.message
+        for f in findings
+    )
+
+
 def test_risky_python_dependencies_are_reported_with_common_spellings(tmp_path: Path) -> None:
     """Security-sensitive Python dependency declarations should survive package spelling variants."""
     module = tmp_path / "risky_deps"

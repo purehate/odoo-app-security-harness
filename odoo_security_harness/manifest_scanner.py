@@ -246,6 +246,14 @@ class ManifestScanner:
                 "medium",
                 f"Manifest frontend assets reference cleartext http:// URLs: {', '.join(insecure_remote_assets)}; use HTTPS or packaged same-origin assets to avoid mixed-content downgrade and interception risk",
             )
+        protocol_relative_assets = [asset for asset in remote_assets if _is_protocol_relative_url(asset)]
+        if protocol_relative_assets:
+            self._add(
+                "odoo-manifest-protocol-relative-remote-asset",
+                "Manifest declares protocol-relative frontend asset",
+                "medium",
+                f"Manifest frontend assets reference protocol-relative URLs: {', '.join(protocol_relative_assets)}; use explicit https:// or packaged same-origin assets to avoid scheme downgrade and CSP ambiguity",
+            )
 
         external_dependencies = data.get("external_dependencies")
         if isinstance(external_dependencies, dict):
@@ -385,6 +393,11 @@ def _is_remote_url(value: str) -> bool:
 def _is_insecure_http_url(value: str) -> bool:
     """Return whether a manifest string is an insecure cleartext URL."""
     return value.lower().startswith("http://")
+
+
+def _is_protocol_relative_url(value: str) -> bool:
+    """Return whether a manifest string inherits the current document scheme."""
+    return value.startswith("//")
 
 
 def _loads_security_data(data_files: list[str]) -> bool:
