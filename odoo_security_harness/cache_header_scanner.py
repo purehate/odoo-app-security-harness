@@ -294,7 +294,7 @@ class CacheHeaderScanner(ast.NodeVisitor):
                 sink,
             )
 
-        if isinstance(node.func, ast.Attribute) and node.func.attr in {"update", "setdefault"}:
+        if isinstance(node.func, ast.Attribute) and node.func.attr in {"add", "set", "setdefault", "update"}:
             self._scan_header_mutation(node, sink)
 
         if route.is_public and _sets_sensitive_cookie(node, self._effective_constants()):
@@ -336,6 +336,15 @@ class CacheHeaderScanner(ast.NodeVisitor):
     def _scan_header_mutation(self, node: ast.Call, sink: str) -> None:
         if not _is_headers_call(node.func):
             return
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"add", "set", "setdefault"}
+            and len(node.args) >= 2
+            and _is_cache_header_key(node.args[0], self._effective_constants())
+        ):
+            self._scan_cache_header_value(node.args[1], node.lineno, sink)
+            if _is_no_store_value(node.args[1], self._effective_constants()):
+                self._mark_no_store_header_response(node.func)
         for arg in node.args:
             if isinstance(arg, ast.Dict):
                 for key, value in zip(arg.keys, arg.values):
