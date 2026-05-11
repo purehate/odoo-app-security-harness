@@ -642,7 +642,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
         )
 
     def _scan_set_cookie(self, node: ast.Call, sink: str) -> None:
-        cookie_name_node = _cookie_name_node(node)
+        constants = self._effective_constants()
+        cookie_name_node = _cookie_name_node(node, constants)
         if cookie_name_node is not None and self._expr_is_tainted(cookie_name_node):
             self._add(
                 "odoo-controller-tainted-cookie-name",
@@ -652,7 +653,7 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller sets a cookie whose name is request-derived; restrict cookie keys to fixed allowlisted names to avoid arbitrary client-side state changes",
                 sink,
             )
-        cookie_value = node.args[1] if len(node.args) >= 2 else _keyword_value(node, "value")
+        cookie_value = node.args[1] if len(node.args) >= 2 else _keyword_value(node, "value", constants)
         if cookie_value is not None and self._expr_is_tainted(cookie_value):
             self._add(
                 "odoo-controller-tainted-cookie-value",
@@ -662,12 +663,8 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "Controller sets a cookie value directly from request input; verify it cannot create session fixation, tracking, or response splitting risk",
                 sink,
             )
-        cookie_name = (
-            _constant_string(cookie_name_node, self._effective_constants()) if cookie_name_node is not None else ""
-        )
-        if _is_sensitive_cookie_name(cookie_name) and not _has_cookie_security_flags(
-            node, self._effective_constants()
-        ):
+        cookie_name = _constant_string(cookie_name_node, constants) if cookie_name_node is not None else ""
+        if _is_sensitive_cookie_name(cookie_name) and not _has_cookie_security_flags(node, constants):
             self._add(
                 "odoo-controller-cookie-missing-security-flags",
                 "Sensitive cookie misses security flags",
@@ -1242,7 +1239,7 @@ def _is_sensitive_response_name(name: str) -> bool:
 
 def _has_cookie_security_flags(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
     constants = constants or {}
-    flags = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
+    flags = dict(_expanded_keywords(node, constants))
     return (
         _keyword_constant_is(flags, "httponly", True, constants)
         and _keyword_constant_is(flags, "secure", True, constants)
@@ -1250,10 +1247,10 @@ def _has_cookie_security_flags(node: ast.Call, constants: dict[str, ast.AST] | N
     )
 
 
-def _keyword_value(node: ast.Call, name: str) -> ast.AST | None:
-    for keyword in node.keywords:
-        if keyword.arg == name:
-            return keyword.value
+def _keyword_value(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> ast.AST | None:
+    for key, keyword_value in _expanded_keywords(node, constants or {}):
+        if key == name:
+            return keyword_value
     return None
 
 
@@ -1426,10 +1423,10 @@ def _weak_content_type_options_value(header_name: str, value: ast.AST, constants
     return options
 
 
-def _cookie_name_node(node: ast.Call) -> ast.AST | None:
+def _cookie_name_node(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> ast.AST | None:
     if node.args:
         return node.args[0]
-    return _keyword_value(node, "key") or _keyword_value(node, "name")
+    return _keyword_value(node, "key", constants) or _keyword_value(node, "name", constants)
 
 
 def _keyword_constant_is(

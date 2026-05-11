@@ -1019,6 +1019,36 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-controller-tainted-cookie-value" for f in findings)
 
 
+def test_flags_unpack_keyword_tainted_cookie_name_and_value(tmp_path: Path) -> None:
+    """Static **kwargs passed to set_cookie should not hide tainted cookie fields."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/preferences', auth='public')
+    def preferences(self, **kwargs):
+        response = request.make_response('ok')
+        options = {
+            'key': kwargs.get('cookie'),
+            'value': kwargs.get('token'),
+        }
+        response.set_cookie(**options)
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-controller-tainted-cookie-name" in rule_ids
+    assert "odoo-controller-tainted-cookie-value" in rule_ids
+
+
 def test_flags_tainted_cookie_name(tmp_path: Path) -> None:
     """Cookie names should not be controlled by request input."""
     controllers = tmp_path / "module" / "controllers"
@@ -1057,6 +1087,31 @@ class Controller(http.Controller):
     def marker(self):
         response = request.make_response('ok')
         response.set_cookie(key='session_marker', value='1')
+        return response
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert any(f.rule_id == "odoo-controller-cookie-missing-security-flags" for f in findings)
+
+
+def test_flags_unpack_keyword_cookie_name_missing_security_flags(tmp_path: Path) -> None:
+    """Unpacked sensitive cookie names should still require explicit browser flags."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/session-marker', auth='user')
+    def marker(self):
+        response = request.make_response('ok')
+        options = {'key': 'session_marker', 'value': '1'}
+        response.set_cookie(**options)
         return response
 """,
         encoding="utf-8",
