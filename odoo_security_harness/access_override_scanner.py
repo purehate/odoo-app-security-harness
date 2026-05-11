@@ -394,7 +394,7 @@ def _call_chain_has_superuser_with_user(
                         keyword.arg in {"user", "uid"}
                         and keyword.value is not None
                         and _is_superuser_arg(keyword.value, constants, superuser_names)
-                        for keyword in current.keywords
+                        for keyword in _expanded_keywords(current, constants)
                     )
                 )
             ):
@@ -492,7 +492,77 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
         return isinstance(node.value, str | bool | int | float | type(None))
+    if isinstance(node, ast.Dict):
+        return all(key is None or _is_static_literal(key) for key in node.keys)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_literal(node.left) and _is_static_literal(node.right)
     return isinstance(node, ast.Name)
+
+
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> ast.Dict | None:
+    constants = constants or {}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _resolve_static_dict(resolved, constants)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants)
+        right = _resolve_static_dict(node.right, constants)
+        if left is not None and right is not None:
+            return _merge_static_dicts(left, right)
+    return None
+
+
+def _merge_static_dicts(left: ast.Dict, right: ast.Dict) -> ast.Dict:
+    merged = left
+    for key, value in zip(right.keys, right.values, strict=False):
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            merged = _dict_with_field(merged, key.value, value)
+        else:
+            merged = ast.Dict(keys=[*merged.keys, key], values=[*merged.values, value])
+    return merged
+
+
+def _dict_with_field(values: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values.keys)
+    values_list = list(values.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values_list[index] = value
+            return ast.Dict(keys=keys, values=values_list)
+    keys.append(ast.Constant(value=key))
+    values_list.append(value)
+    return ast.Dict(keys=keys, values=values_list)
+
+
+def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> list[ast.keyword]:
+    expanded: list[ast.keyword] = []
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            expanded.append(keyword)
+            continue
+        expanded.extend(_expanded_dict_keywords(keyword.value, constants))
+    return expanded
+
+
+def _expanded_dict_keywords(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> list[ast.keyword]:
+    resolved = _resolve_static_dict(node, constants)
+    if resolved is None:
+        return []
+    keywords: list[ast.keyword] = []
+    for key, value in zip(resolved.keys, resolved.values, strict=False):
+        literal_key = _literal_string(key, constants) if key is not None else ""
+        if literal_key:
+            keywords.append(ast.keyword(arg=literal_key, value=value))
+    return keywords
+
+
+def _literal_string(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:
+    value = _resolve_constant(node, constants or {})
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        return value.value
+    return ""
 
 
 def _should_skip(path: Path) -> bool:

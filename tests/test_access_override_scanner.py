@@ -376,6 +376,29 @@ class Product(models.Model):
     assert any(f.rule_id == "odoo-access-override-sudo-search" for f in findings)
 
 
+def test_flags_dict_union_keyword_with_user_superuser_search_override(tmp_path: Path) -> None:
+    """Dict-union with_user **kwargs should not hide elevated search overrides."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "product.py").write_text(
+        """
+from odoo import SUPERUSER_ID, models
+
+class Product(models.Model):
+    _inherit = 'product.template'
+
+    def name_search(self, name='', args=None, operator='ilike', limit=100):
+        user_options = {'user': False} | {'user': SUPERUSER_ID}
+        return self.env['product.template'].with_user(**user_options).search([]).name_get()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_access_overrides(tmp_path)
+
+    assert any(f.rule_id == "odoo-access-override-sudo-search" for f in findings)
+
+
 def test_flags_aliased_with_user_one_search_override(tmp_path: Path) -> None:
     """Search overrides should not hide with_user(1) reads behind aliases."""
     models = tmp_path / "module" / "models"
