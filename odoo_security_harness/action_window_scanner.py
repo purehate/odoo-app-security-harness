@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
-from odoo_security_harness.base_scanner import _should_skip
+from odoo_security_harness.base_scanner import _record_fields, _should_skip
 
 
 @dataclass
@@ -1009,15 +1009,6 @@ def _subscript_constant_key(node: ast.Subscript, constants: dict[str, ast.AST] |
         return value.value
     return ""
 
-
-def _record_fields(record: ElementTree.Element) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for field in record.iter("field"):
-        name = field.get("name")
-        if not name:
-            continue
-        values[name] = field.get("ref") or field.get("eval") or "".join(field.itertext()).strip()
-    return values
 
 
 def _csv_model_name(path: Path) -> str:

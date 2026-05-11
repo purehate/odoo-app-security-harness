@@ -341,14 +341,19 @@ def _returns_true(node: ast.Return, constants: dict[str, ast.AST] | None = None)
 # ---------------------------------------------------------------------------
 
 def _record_fields(record: ElementTree.Element) -> dict[str, str]:
-    """Extract field names and text values from an Odoo XML <record> element."""
-    fields: dict[str, str] = {}
-    for child in record:
-        if child.tag == "field":
-            name = child.get("name", "")
-            if name:
-                fields[name] = (child.text or "").strip()
-    return fields
+    """Extract field names and values from an Odoo XML <record> element.
+
+    Handles ``ref`` and ``eval`` attributes and collects nested text via
+    :pyfunc:`itertext` so that CDATA-wrapped or multi-line values are
+    preserved.
+    """
+    values: dict[str, str] = {}
+    for field_node in record.iter("field"):
+        name = field_node.get("name")
+        if not name:
+            continue
+        values[name] = field_node.get("ref") or field_node.get("eval") or "".join(field_node.itertext()).strip()
+    return values
 
 
 # ---------------------------------------------------------------------------
@@ -513,7 +518,3 @@ class XmlScanner(BaseScanner):
     def scan_xml(self) -> None:
         """Subclasses implement their XML scanning logic here."""
         ...
-
-    def _record_fields(self, record: ElementTree.Element) -> dict[str, str]:
-        """Convenience wrapper around the module-level helper."""
-        return _record_fields(record)
