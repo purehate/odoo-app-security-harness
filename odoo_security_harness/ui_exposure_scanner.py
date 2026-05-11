@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -72,12 +74,16 @@ KNOWN_MODEL_EXTERNAL_IDS = {
 
 
 def scan_ui_exposure(repo_path: Path) -> list[UIExposureFinding]:
-    """Scan XML UI definitions for broad buttons, menus, and actions."""
+    """Scan UI definitions for broad buttons, menus, and actions."""
     findings: list[UIExposureFinding] = []
-    for path in repo_path.rglob("*.xml"):
-        if _should_skip(path):
+    for path in repo_path.rglob("*"):
+        if not path.is_file() or _should_skip(path):
             continue
-        findings.extend(UIExposureScanner(path).scan_file())
+        scanner = UIExposureScanner(path)
+        if path.suffix == ".xml":
+            findings.extend(scanner.scan_file())
+        elif path.suffix == ".csv":
+            findings.extend(scanner.scan_csv_file())
     return findings
 
 
@@ -104,6 +110,36 @@ class UIExposureScanner:
         self._scan_buttons(root)
         self._scan_sensitive_actions()
         self._scan_menuitems(root)
+        return self.findings
+
+    def scan_csv_file(self) -> list[UIExposureFinding]:
+        """Scan CSV action records for broad sensitive UI exposure."""
+        model = _csv_model_name(self.path)
+        if model not in {"ir.actions.act_window", "ir.actions.report", "ir.actions.server"}:
+            return []
+        try:
+            self.content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+        for fields, line in _csv_dict_rows(self.content):
+            record_id = fields.get("id", "")
+            groups = fields.get("groups_id", "") or fields.get("groups", "")
+            target_model = _model_value(
+                fields.get("res_model", "")
+                or fields.get("model", "")
+                or fields.get("binding_model_id", "")
+                or fields.get("model_id", "")
+            )
+            if record_id:
+                self.actions[record_id] = {
+                    "record_model": model,
+                    "target_model": target_model,
+                    "groups": groups,
+                    "line": str(line),
+                }
+
+        self._scan_sensitive_actions()
         return self.findings
 
     def _collect_actions(self, root: ElementTree.Element) -> None:
@@ -260,6 +296,45 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("ref") or field.get("eval") or (field.text or "").strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    aliases = {
+        "ir_actions_act_window": "ir.actions.act_window",
+        "ir.actions.act_window": "ir.actions.act_window",
+        "ir_actions_report": "ir.actions.report",
+        "ir.actions.report": "ir.actions.report",
+        "ir_actions_server": "ir.actions.server",
+        "ir.actions.server": "ir.actions.server",
+    }
+    return aliases.get(stem, stem.replace("_", "."))
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _includes_public_group(groups: str) -> bool:

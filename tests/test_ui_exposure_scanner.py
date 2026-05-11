@@ -70,6 +70,55 @@ def test_sensitive_action_and_menu_without_groups_are_reported(tmp_path: Path) -
     assert "odoo-ui-sensitive-menu-no-groups" in rule_ids
 
 
+def test_sensitive_action_without_groups_in_csv_is_reported(tmp_path: Path) -> None:
+    """CSV action declarations should be scanned alongside XML records."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_act_window.csv").write_text(
+        "id,name,res_model\n"
+        "action_users,Users,res.users\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_ui_exposure(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-ui-sensitive-action-no-groups"
+        and finding.target == "action_users"
+        for finding in findings
+    )
+
+
+def test_sensitive_server_action_without_groups_in_csv_is_reported(tmp_path: Path) -> None:
+    """CSV relation columns should normalize model external IDs."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_actions_server.csv").write_text(
+        "id,name,model_id/id,state\n"
+        "action_disable_users,Disable Users,base.model_res_users,code\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_ui_exposure(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-ui-sensitive-server-action-no-groups" in rule_ids
+    assert "odoo-ui-sensitive-action-no-groups" in rule_ids
+
+
+def test_sensitive_csv_action_with_groups_is_ignored(tmp_path: Path) -> None:
+    """Grouped CSV actions should not produce broad-exposure findings."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_window.csv").write_text(
+        "id,name,res_model,groups_id/id\n"
+        "action_users,Users,res.users,base.group_system\n",
+        encoding="utf-8",
+    )
+
+    assert scan_ui_exposure(tmp_path) == []
+
+
 def test_xml_entities_are_not_expanded_into_ui_exposure_findings(tmp_path: Path) -> None:
     """XML entities must not synthesize sensitive UI action targets."""
     xml = tmp_path / "menus.xml"
