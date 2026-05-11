@@ -98,6 +98,54 @@ class Controller(http.Controller):
     assert "odoo-oauth-tainted-validation-url" in rule_ids
 
 
+def test_aliased_requests_oauth_validation_url_is_reported(tmp_path: Path) -> None:
+    """Aliased requests imports in OAuth callbacks should still be HTTP sinks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import requests as rq
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        return rq.get(kwargs.get('userinfo_url'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-oauth-http-no-timeout" in rule_ids
+    assert "odoo-oauth-tainted-validation-url" in rule_ids
+
+
+def test_from_requests_alias_oauth_validation_url_is_reported(tmp_path: Path) -> None:
+    """Aliased requests function imports should still be OAuth validation HTTP sinks."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+from requests import get as http_get
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        return http_get(kwargs.get('userinfo_url'))
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-oauth-http-no-timeout" in rule_ids
+    assert "odoo-oauth-tainted-validation-url" in rule_ids
+
+
 def test_aiohttp_oauth_validation_url_is_reported(tmp_path: Path) -> None:
     """aiohttp validation calls in OAuth callbacks should receive timeout and SSRF review."""
     controllers = tmp_path / "module" / "controllers"

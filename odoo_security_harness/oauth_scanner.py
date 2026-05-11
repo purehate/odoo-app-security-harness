@@ -23,6 +23,7 @@ class OAuthFinding:
 
 
 HTTP_METHODS = {"get", "post", "head", "request", "urlopen"}
+HTTP_CLIENT_MODULES = {"aiohttp", "requests", "httpx", "urllib.request"}
 TAINTED_ARG_NAMES = {
     "access_token",
     "code",
@@ -77,6 +78,8 @@ class OAuthScanner(ast.NodeVisitor):
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
         self.http_module_names: set[str] = {"http"}
+        self.http_client_module_names: dict[str, str] = {}
+        self.http_client_function_names: dict[str, str] = {}
         self.route_decorator_names: set[str] = set()
 
     def scan_file(self) -> list[OAuthFinding]:
@@ -93,11 +96,26 @@ class OAuthScanner(ast.NodeVisitor):
         self.visit(tree)
         return self.findings
 
+    def visit_Import(self, node: ast.Import) -> Any:
+        for alias in node.names:
+            local_name = alias.asname or alias.name.split(".", 1)[0]
+            if alias.name in HTTP_CLIENT_MODULES:
+                self.http_client_module_names[local_name] = alias.name
+        self.generic_visit(node)
+
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         if node.module == "odoo":
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+        elif node.module in HTTP_CLIENT_MODULES:
+            for alias in node.names:
+                if alias.name in HTTP_METHODS:
+                    self.http_client_function_names[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+        elif node.module == "urllib":
+            for alias in node.names:
+                if alias.name == "request":
+                    self.http_client_module_names[alias.asname or alias.name] = "urllib.request"
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -197,12 +215,13 @@ class OAuthScanner(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
+        canonical_sink = self._canonical_http_sink(sink)
         route = self._current_route()
         constants = self._effective_constants()
 
-        if _is_oauth_http_call(node) or (
+        if _is_oauth_http_call(node, canonical_sink) or (
             _is_oauth_route(route, "")
-            and _is_http_client_call(node)
+            and _is_http_client_sink(canonical_sink)
             and _call_has_tainted_url(node, self._expr_is_tainted)
         ):
             if not _has_keyword(node, "timeout"):
@@ -235,7 +254,7 @@ class OAuthScanner(ast.NodeVisitor):
                     route.display_path(),
                     sink,
                 )
-            if _is_authorization_code_token_exchange(node, constants) and not _call_has_code_verifier(
+            if _is_authorization_code_token_exchange(node, constants, canonical_sink) and not _call_has_code_verifier(
                 node,
                 constants,
             ):
@@ -303,6 +322,14 @@ class OAuthScanner(ast.NodeVisitor):
             )
 
         self.generic_visit(node)
+
+    def _canonical_http_sink(self, sink: str) -> str:
+        if sink in self.http_client_function_names:
+            return self.http_client_function_names[sink]
+        parts = sink.split(".")
+        if parts and parts[0] in self.http_client_module_names:
+            return ".".join([self.http_client_module_names[parts[0]], *parts[1:]])
+        return sink
 
     def _expr_is_tainted(self, node: ast.AST) -> bool:
         if self._is_request_derived(node):
@@ -727,18 +754,23 @@ def _expr_mentions_state_or_nonce(node: ast.AST) -> bool:
     return False
 
 
-def _is_oauth_http_call(node: ast.Call) -> bool:
-    if not _is_http_client_call(node):
+def _is_oauth_http_call(node: ast.Call, sink: str | None = None) -> bool:
+    if not _is_http_client_sink(sink or _call_name(node.func)):
         return False
     text = _safe_unparse(node).lower()
     return any(marker in text for marker in TOKEN_MARKERS + ("userinfo", "validation_endpoint", "token_endpoint"))
 
 
-def _is_authorization_code_token_exchange(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_authorization_code_token_exchange(
+    node: ast.Call,
+    constants: dict[str, ast.AST] | None = None,
+    sink: str | None = None,
+) -> bool:
     constants = constants or {}
-    if not _is_http_client_call(node):
+    sink = sink or _call_name(node.func)
+    if not _is_http_client_sink(sink):
         return False
-    method = _call_name(node.func).rsplit(".", 1)[-1]
+    method = sink.rsplit(".", 1)[-1]
     if method not in {"post", "request"}:
         return False
     text = _safe_unparse(node).lower()
@@ -780,7 +812,10 @@ def _expr_contains_key(node: ast.AST, key_name: str, constants: dict[str, ast.AS
 
 
 def _is_http_client_call(node: ast.Call) -> bool:
-    sink = _call_name(node.func)
+    return _is_http_client_sink(_call_name(node.func))
+
+
+def _is_http_client_sink(sink: str) -> bool:
     method = sink.rsplit(".", 1)[-1]
     return method in HTTP_METHODS and (
         sink.startswith(("aiohttp.", "requests.", "httpx."))
