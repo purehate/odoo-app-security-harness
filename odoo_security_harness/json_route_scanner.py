@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -123,7 +124,8 @@ class JsonRouteScanner(ast.NodeVisitor):
                 "Public JSON route exposed",
                 "high" if route.auth == "public" else "critical",
                 node.lineno,
-                f"JSON route {route.display_path()} uses auth='{route.auth}'; verify authentication, rate limiting, and CSRF/session assumptions",
+                f"JSON route {route.display_path()} uses auth='{route.auth}'; verify authentication, rate "
+                "limiting, and CSRF/session assumptions",
                 route,
                 "route",
             )
@@ -133,7 +135,8 @@ class JsonRouteScanner(ast.NodeVisitor):
                 "JSON route explicitly disables CSRF",
                 "medium",
                 node.lineno,
-                f"JSON route {route.display_path()} sets csrf=False; verify it cannot be called cross-site with ambient session credentials",
+                f"JSON route {route.display_path()} sets csrf=False; verify it cannot be called cross-site "
+                "with ambient session credentials",
                 route,
                 "route",
             )
@@ -207,7 +210,8 @@ class JsonRouteScanner(ast.NodeVisitor):
                 "JSON route mutates records through an elevated environment",
                 severity,
                 node.lineno,
-                "JSON route performs create/write/unlink through sudo()/with_user(SUPERUSER_ID); verify caller authorization, ownership checks, and company isolation",
+                "JSON route performs create/write/unlink through sudo()/with_user(SUPERUSER_ID); verify "
+                "caller authorization, ownership checks, and company isolation",
                 route,
                 sink,
             )
@@ -218,7 +222,8 @@ class JsonRouteScanner(ast.NodeVisitor):
                 "JSON request controls record selection for mutation",
                 severity,
                 node.lineno,
-                "JSON route selects records from request-controlled IDs/domains before create/write/unlink; verify ownership, access rules, and company isolation before mutating records",
+                "JSON route selects records from request-controlled IDs/domains before create/write/unlink; "
+                "verify ownership, access rules, and company isolation before mutating records",
                 route,
                 sink,
             )
@@ -229,7 +234,8 @@ class JsonRouteScanner(ast.NodeVisitor):
                 "JSON request data flows into ORM mutation",
                 severity,
                 node.lineno,
-                "JSON route passes request-derived data into create/write/unlink; whitelist fields and reject privilege, workflow, ownership, and company fields",
+                "JSON route passes request-derived data into create/write/unlink; whitelist fields and reject "
+                "privilege, workflow, ownership, and company fields",
                 route,
                 sink,
             )
@@ -244,7 +250,8 @@ class JsonRouteScanner(ast.NodeVisitor):
                 "Public JSON route reads through an elevated environment",
                 "critical",
                 node.lineno,
-                "Public JSON route reads/searches through sudo()/with_user(SUPERUSER_ID); verify it cannot expose records outside the caller's ownership or company",
+                "Public JSON route reads/searches through sudo()/with_user(SUPERUSER_ID); verify it cannot "
+                "expose records outside the caller's ownership or company",
                 route,
                 sink,
             )
@@ -255,7 +262,8 @@ class JsonRouteScanner(ast.NodeVisitor):
                 "JSON request controls record selection for read",
                 severity,
                 node.lineno,
-                "JSON route reads records selected by request-controlled IDs/domains; verify ownership, record rules, and company isolation before returning data",
+                "JSON route reads records selected by request-controlled IDs/domains; verify ownership, "
+                "record rules, and company isolation before returning data",
                 route,
                 sink,
             )
@@ -270,7 +278,8 @@ class JsonRouteScanner(ast.NodeVisitor):
                 "JSON request controls ORM search domain",
                 "high",
                 node.lineno,
-                "JSON request controls search domain; validate allowed fields/operators and prevent cross-record or cross-company discovery",
+                "JSON request controls search domain; validate allowed fields/operators and prevent "
+                "cross-record or cross-company discovery",
                 route,
                 sink,
             )
@@ -597,6 +606,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -677,6 +688,59 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(values_node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(values_node.keys, values_node.values, strict=False):
+        key = _resolve_constant(key, constants) if key is not None else None
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            items.append((key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:
