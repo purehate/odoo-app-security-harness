@@ -269,6 +269,59 @@ extraEnvVars:
     assert "odoo-deploy-db-sslmode-opportunistic" not in rule_ids
 
 
+def test_scan_deployment_config_flags_ansible_odoo_env_keys(tmp_path: Path) -> None:
+    """Ansible-style YAML env and vars blocks should feed deployment posture checks."""
+    config = tmp_path / "playbook.yml"
+    config.write_text(
+        """- hosts: odoo
+  vars:
+    ODOO_LIST_DB: true
+  tasks:
+    - name: run odoo
+      community.docker.docker_container:
+        name: odoo
+        env:
+          ODOO_PROXY_MODE: "false"
+          ODOO_WEB_BASE_URL: http://localhost:8069
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_deployment_config(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deploy-list-db-enabled" in rule_ids
+    assert "odoo-deploy-proxy-mode-disabled" in rule_ids
+    assert "odoo-deploy-insecure-base-url" in rule_ids
+
+
+def test_scan_deployment_config_flags_terraform_odoo_env_keys(tmp_path: Path) -> None:
+    """Terraform env maps and name/value blocks should feed deployment posture checks."""
+    config = tmp_path / "main.tf"
+    config.write_text(
+        """resource "kubernetes_deployment" "odoo" {
+  env {
+    name  = "ODOO_LIST_DB"
+    value = "true"
+  }
+
+  environment = {
+    ODOO_PROXY_MODE = "false"
+    ODOO_WEB_BASE_URL = "http://localhost:8069"
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_deployment_config(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deploy-list-db-enabled" in rule_ids
+    assert "odoo-deploy-proxy-mode-disabled" in rule_ids
+    assert "odoo-deploy-insecure-base-url" in rule_ids
+
+
 def test_scan_deployment_config_flags_signup_and_base_url_xml(tmp_path: Path) -> None:
     """XML config parameters should flag open signup and mutable base URL settings."""
     data_dir = tmp_path / "module" / "data"

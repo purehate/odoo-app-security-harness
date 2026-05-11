@@ -83,6 +83,7 @@ Lane outputs are leads only. Nothing ships until Claude's 6-gate validation conf
 
 - Inventories Odoo modules and manifests.
 - Maps Odoo attack surface: routes, ACLs, record rules, sharp-edge APIs.
+- Reviews deployment posture across Odoo config, XML/CSV parameters, Docker, Compose, Kubernetes, Helm, Ansible-style YAML, and Terraform env declarations.
 - Scores per-module risk (`module-risk.md` + `inventory/module-risk.json`) so hunters hit highest-risk modules first.
 - Emits a risk-prioritized Phase 1.7 breadth plan for Claude Agent subagents, capped by `--breadth-budget` / `--breadth-max-chunks`.
 - Seeds hunters with `inventory/cwe-map.json` (23 Odoo bug-shape → CWE/CAPEC/OWASP mappings).

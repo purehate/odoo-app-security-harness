@@ -29,7 +29,7 @@ class DeploymentFinding:
     value: str = ""
 
 
-CONFIG_EXTENSIONS = {".conf", ".cfg", ".ini", ".env"}
+CONFIG_EXTENSIONS = {".conf", ".cfg", ".ini", ".env", ".tf", ".tfvars"}
 COMPOSE_FILENAMES = {"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
 DOCKERFILE_NAMES = {"containerfile", "dockerfile"}
 TRUTHY = {"1", "true", "yes", "y", "on"}
@@ -78,7 +78,9 @@ class DeploymentScanner:
         elif _is_helm_values_file(self.path):
             self._scan_helm_values_environment()
         elif suffix in {".yaml", ".yml"}:
-            self._scan_kubernetes_environment()
+            self._scan_yaml_environment()
+        elif suffix in {".tf", ".tfvars"}:
+            self._scan_terraform_environment()
         elif _is_dockerfile(self.path):
             self._scan_dockerfile_config_lines()
         else:
@@ -126,16 +128,22 @@ class DeploymentScanner:
         for key, value in _helm_values_environment_items(document):
             self._scan_config_value(key, value, _line_for(self.content, str(key)))
 
-    def _scan_kubernetes_environment(self) -> None:
+    def _scan_yaml_environment(self) -> None:
         try:
             documents = list(yaml.safe_load_all(self.content))
         except yaml.YAMLError:
             return
         for document in documents:
-            if not _looks_kubernetes_manifest(document):
-                continue
-            for key, value in _kubernetes_environment_items(document):
+            if _looks_kubernetes_manifest(document):
+                items = _kubernetes_environment_items(document)
+            else:
+                items = _yaml_environment_items(document)
+            for key, value in items:
                 self._scan_config_value(key, value, _line_for(self.content, str(key)))
+
+    def _scan_terraform_environment(self) -> None:
+        for key, value, line in _terraform_environment_items(self.content):
+            self._scan_config_value(key, value, line)
 
     def _scan_config_parameter_xml(self) -> None:
         try:
@@ -507,19 +515,23 @@ def _looks_kubernetes_manifest(document: object) -> bool:
 
 
 def _helm_values_environment_items(document: object) -> list[tuple[str, str]]:
+    return _yaml_environment_items(document)
+
+
+def _yaml_environment_items(document: object) -> list[tuple[str, str]]:
     items: list[tuple[str, str]] = []
     if isinstance(document, dict):
         for key, value in document.items():
             key_text = str(key)
             if _looks_odoo_env_key(key_text) and _is_scalar_config_value(value):
                 items.append((key_text, str(value)))
-            if key_text.lower() in {"env", "environment", "extraenv", "extraenvvars"}:
+            if key_text.lower() in {"env", "environment", "extraenv", "extraenvvars", "vars"}:
                 items.extend(_compose_environment_items(value))
                 items.extend(_name_value_environment_items(value))
-            items.extend(_helm_values_environment_items(value))
+            items.extend(_yaml_environment_items(value))
     elif isinstance(document, list):
         for value in document:
-            items.extend(_helm_values_environment_items(value))
+            items.extend(_yaml_environment_items(value))
     return items
 
 
@@ -566,6 +578,50 @@ def _kubernetes_containers(node: object) -> list[dict[str, object]]:
         for value in node:
             containers.extend(_kubernetes_containers(value))
     return containers
+
+
+def _terraform_environment_items(content: str) -> list[tuple[str, str, int]]:
+    items: list[tuple[str, str, int]] = []
+    lines = content.splitlines()
+    for index, line in enumerate(lines):
+        parsed = _parse_terraform_assignment(line)
+        if parsed:
+            key, value = parsed
+            if _looks_odoo_env_key(key):
+                items.append((key, value, index + 1))
+        name = _terraform_string_assignment_value(line, "name")
+        if not name or not _looks_odoo_env_key(name):
+            continue
+        for offset, followup in enumerate(lines[index + 1 : index + 8], start=1):
+            value = _terraform_string_assignment_value(followup, "value")
+            if value is not None:
+                items.append((name, value, index + offset + 1))
+                break
+    return items
+
+
+def _parse_terraform_assignment(line: str) -> tuple[str, str] | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith(("#", "//")):
+        return None
+    key, sep, value = stripped.partition("=")
+    if not sep:
+        return None
+    key = key.strip().strip('"')
+    value = value.split("#", 1)[0].strip().rstrip(",")
+    if not key or not value:
+        return None
+    return key, value.strip().strip('"')
+
+
+def _terraform_string_assignment_value(line: str, field: str) -> str | None:
+    parsed = _parse_terraform_assignment(line)
+    if not parsed:
+        return None
+    key, value = parsed
+    if key == field:
+        return value
+    return None
 
 
 def _looks_odoo_env_key(key: str) -> bool:
