@@ -27,9 +27,10 @@ DANGEROUS_HTML_RE = re.compile(
     re.IGNORECASE,
 )
 INSECURE_HTTP_URL_RE = re.compile(r"\bhttp://", re.IGNORECASE)
-QWEB_RAW_RE = re.compile(r"\bt-raw\s*=|\bt-out\s*=", re.IGNORECASE)
+QWEB_RAW_RE = re.compile(r"\bt-raw\s*=|\bt-out-mode\s*=\s*['\"]raw['\"]", re.IGNORECASE)
 TEMPLATE_EXPR_RE = re.compile(
-    r"\$\{[^}]+\}|\{\{[^}]+\}\}|<\s*t\b[^>]*\bt-(?:call|foreach|if|set|att|attf)-?", re.IGNORECASE
+    r"\$\{[^}]+\}|\{\{[^}]+\}\}|<\s*[A-Za-z][\w:.-]*\b[^>]*\bt-(?:call|foreach|if|set|att|attf|out|esc|field|raw)-?",
+    re.IGNORECASE,
 )
 PRINTF_NAMED_RE = re.compile(r"%\(([^)]+)\)[#0 +\-]*\d*(?:\.\d+)?[bcdeEfFgGnosxXr]")
 PRINTF_POSITIONAL_RE = re.compile(r"(?<!%)%(?!%)[#0 +\-]*\d*(?:\.\d+)?[bcdeEfFgGnosxXr]")

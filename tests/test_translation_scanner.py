@@ -124,6 +124,40 @@ msgstr "<span t-raw=\\"object.name\\"></span>"
     assert "odoo-i18n-qweb-raw-output" in {finding.rule_id for finding in findings}
 
 
+def test_flags_qweb_raw_output_mode_in_translation(tmp_path: Path) -> None:
+    """Translations should not be able to switch QWeb output to raw mode."""
+    write_po(
+        tmp_path / "module" / "i18n" / "de.po",
+        """
+msgid "Name"
+msgstr "<span t-out=\\"object.name\\" t-out-mode=\\"raw\\"></span>"
+""",
+    )
+
+    findings = scan_translations(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-i18n-qweb-raw-output" in rule_ids
+    assert "odoo-i18n-template-expression-injection" in rule_ids
+
+
+def test_t_out_translation_is_template_injection_not_raw_output(tmp_path: Path) -> None:
+    """t-out is escaped QWeb output, but translators still should not introduce expressions."""
+    write_po(
+        tmp_path / "module" / "i18n" / "de.po",
+        """
+msgid "Name"
+msgstr "<span t-out=\\"object.name\\"></span>"
+""",
+    )
+
+    findings = scan_translations(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-i18n-template-expression-injection" in rule_ids
+    assert "odoo-i18n-qweb-raw-output" not in rule_ids
+
+
 def test_flags_printf_placeholder_mismatch(tmp_path: Path) -> None:
     """Named printf placeholders should remain stable between source and translation."""
     write_po(
