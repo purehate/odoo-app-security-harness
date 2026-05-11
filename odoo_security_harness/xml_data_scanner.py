@@ -5,7 +5,9 @@ from __future__ import annotations
 import ast
 import re
 import textwrap
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -70,12 +72,16 @@ class XmlDataFinding:
 
 
 def scan_xml_data(repo_path: Path) -> list[XmlDataFinding]:
-    """Scan Odoo XML data files for executable/security-sensitive records."""
+    """Scan Odoo data files for executable/security-sensitive records."""
     findings: list[XmlDataFinding] = []
-    for path in repo_path.rglob("*.xml"):
-        if _should_skip(path):
+    for path in repo_path.rglob("*"):
+        if not path.is_file() or _should_skip(path):
             continue
-        findings.extend(XmlDataScanner(path).scan_file())
+        scanner = XmlDataScanner(path)
+        if path.suffix == ".xml":
+            findings.extend(scanner.scan_file())
+        elif path.suffix == ".csv":
+            findings.extend(scanner.scan_csv_file())
     return findings
 
 
@@ -112,6 +118,26 @@ class XmlDataScanner:
         for function in root.iter("function"):
             self._scan_function(function)
 
+        return self.findings
+
+    def scan_csv_file(self) -> list[XmlDataFinding]:
+        """Scan CSV data records for security-sensitive declarations."""
+        try:
+            self.content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+        model = _csv_model_name(self.path)
+        for fields, line in _csv_dict_rows(self.content):
+            record_id = fields.get("id", "")
+            if model == "ir.cron":
+                self._scan_cron_fields(fields, line, record_id)
+            elif model in {"mail.channel", "discuss.channel"}:
+                self._scan_mail_channel_fields(model, fields, line, record_id)
+            elif model == "res.users":
+                self._scan_user_fields(fields, line, record_id)
+            elif model == "res.groups":
+                self._scan_group_fields(fields, line, record_id)
         return self.findings
 
     def _scan_server_action(self, record: ElementTree.Element) -> None:
@@ -206,13 +232,15 @@ class XmlDataScanner:
 
     def _scan_cron(self, record: ElementTree.Element) -> None:
         fields = self._fields(record)
+        self._scan_cron_fields(fields, self._line_for_record(record), record.get("id", ""))
+
+    def _scan_cron_fields(self, fields: dict[str, str], line: int, record_id: str) -> None:
         state = fields.get("state", "")
         code = fields.get("code", "")
         callable_text = " ".join(
             fields.get(name, "") for name in ("code", "function", "method_direct_trigger", "args", "model_id", "name")
         )
         user_ref = fields.get("user_id", "")
-        record_id = record.get("id", "")
         code_risks = _server_action_code_risks(code) if state == "code" else _ServerActionCodeRisks()
 
         if "base.user_root" in user_ref or "base.user_admin" in user_ref:
@@ -220,7 +248,7 @@ class XmlDataScanner:
                 "odoo-xml-cron-admin-user",
                 "Cron executes as admin/root user",
                 "high",
-                self._line_for_record(record),
+                line,
                 "ir.cron runs under admin/root user; verify the scheduled job cannot process attacker-controlled records or external input with elevated privileges",
                 "ir.cron",
                 record_id,
@@ -230,7 +258,7 @@ class XmlDataScanner:
                     "odoo-xml-cron-root-code",
                     "Cron executes Python as admin/root",
                     "high",
-                    self._line_for_record(record),
+                    line,
                     "ir.cron uses state='code' under admin/root user; verify it cannot process attacker-controlled records or external input",
                     "ir.cron",
                     record_id,
@@ -241,7 +269,7 @@ class XmlDataScanner:
                 "odoo-xml-cron-http-no-timeout",
                 "Cron performs HTTP request without visible timeout",
                 "medium",
-                self._line_for_record(record),
+                line,
                 "Cron code performs outbound HTTP without timeout; review SSRF and worker exhaustion risk",
                 "ir.cron",
                 record_id,
@@ -252,7 +280,7 @@ class XmlDataScanner:
                 "odoo-xml-cron-tls-verify-disabled",
                 "Cron disables TLS verification",
                 "high",
-                self._line_for_record(record),
+                line,
                 "ir.cron code passes verify=False to outbound HTTP; scheduled integrations should not permit man-in-the-middle attacks",
                 "ir.cron",
                 record_id,
@@ -263,7 +291,7 @@ class XmlDataScanner:
                 "odoo-xml-cron-doall-enabled",
                 "Cron catches up missed executions",
                 "medium",
-                self._line_for_record(record),
+                line,
                 "ir.cron has doall=True; after downtime it may replay missed jobs in bulk, causing duplicate side effects or load spikes",
                 "ir.cron",
                 record_id,
@@ -276,7 +304,7 @@ class XmlDataScanner:
                 "odoo-xml-cron-short-interval",
                 "Cron runs at a very short interval",
                 "low",
-                self._line_for_record(record),
+                line,
                 "ir.cron runs every five minutes or less; review idempotency, locking, and external side effects",
                 "ir.cron",
                 record_id,
@@ -288,7 +316,7 @@ class XmlDataScanner:
                     "odoo-xml-cron-external-sync-review",
                     "Cron appears to perform external sync without visible guardrails",
                     "low",
-                    self._line_for_record(record),
+                    line,
                     "ir.cron name/function/model suggests external import or sync; verify timeouts, batching, locking, and retry safety",
                     "ir.cron",
                     record_id,
@@ -296,33 +324,42 @@ class XmlDataScanner:
 
     def _scan_mail_channel(self, record: ElementTree.Element) -> None:
         fields = self._fields(record)
+        self._scan_mail_channel_fields(record.get("model", ""), fields, self._line_for_record(record), record.get("id", ""))
+
+    def _scan_mail_channel_fields(self, model: str, fields: dict[str, str], line: int, record_id: str) -> None:
         if fields.get("allow_public_users") in {"1", "True", "true"}:
             self._add(
                 "odoo-xml-public-mail-channel",
                 "Mail/discuss channel allows public users",
                 "medium",
-                self._line_for_record(record),
+                line,
                 "Channel allows public users; verify this is intentional and cannot expose internal messages or metadata",
-                record.get("model", ""),
-                record.get("id", ""),
+                model,
+                record_id,
             )
 
     def _scan_user_record(self, record: ElementTree.Element) -> None:
         fields = self._fields(record)
+        self._scan_user_fields(fields, self._line_for_record(record), record.get("id", ""))
+
+    def _scan_user_fields(self, fields: dict[str, str], line: int, record_id: str) -> None:
         groups = fields.get("groups_id", "") + " " + fields.get("groups", "")
         if ADMIN_GROUP_RE.search(groups):
             self._add(
                 "odoo-xml-user-admin-group-assignment",
                 "XML data assigns user to administrator group",
                 "critical",
-                self._line_for_record(record),
+                line,
                 "res.users XML data assigns groups_id/groups to base.group_system or base.group_erp_manager; verify module install/update cannot grant unintended administrator access",
                 "res.users",
-                record.get("id", ""),
+                record_id,
             )
 
     def _scan_group_record(self, record: ElementTree.Element) -> None:
         fields = self._fields(record)
+        self._scan_group_fields(fields, self._line_for_record(record), record.get("id", ""))
+
+    def _scan_group_fields(self, fields: dict[str, str], line: int, record_id: str) -> None:
         implied_groups = fields.get("implied_ids", "")
         if not implied_groups or not _mentions_privileged_group(implied_groups):
             return
@@ -331,10 +368,10 @@ class XmlDataScanner:
             "odoo-xml-group-implies-privilege",
             "XML data changes implied group privileges",
             "critical" if ADMIN_GROUP_RE.search(implied_groups) else "high",
-            self._line_for_record(record),
+            line,
             "res.groups XML data writes implied_ids toward internal/administrator groups; verify no public, portal, or signup-assigned group inherits unintended privileges",
             "res.groups",
-            record.get("id", ""),
+            record_id,
         )
 
     def _scan_function(self, function: ElementTree.Element) -> None:
@@ -439,6 +476,36 @@ def _line_for(content: str, needle: str) -> int:
 
 def _is_truthy(value: str) -> bool:
     return value.strip().strip("'\"").lower() in {"1", "true", "yes"}
+
+
+def _csv_model_name(path: Path) -> str:
+    return path.stem.strip().lower().replace("_", ".")
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _int_value(value: str) -> int:

@@ -330,6 +330,25 @@ def test_root_cron_code_and_http_without_timeout(tmp_path: Path) -> None:
     assert "odoo-xml-cron-http-no-timeout" in rule_ids
 
 
+def test_cron_csv_admin_doall_and_short_interval_are_reported(tmp_path: Path) -> None:
+    """CSV ir.cron records should get the same direct field checks as XML."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_cron.csv").write_text(
+        "id,name,state,user_id/id,doall,interval_number,interval_type\n"
+        "cron_root_fetch,Fetch Orders,code,base.user_root,1,5,minutes\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_xml_data(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-xml-cron-admin-user" in rule_ids
+    assert "odoo-xml-cron-root-code" in rule_ids
+    assert "odoo-xml-cron-doall-enabled" in rule_ids
+    assert "odoo-xml-cron-short-interval" in rule_ids
+
+
 def test_cron_urllib_without_timeout(tmp_path: Path) -> None:
     """Cron inline Python should catch urllib URL fetches without timeouts."""
     xml = tmp_path / "cron.xml"
@@ -474,6 +493,21 @@ def test_public_mail_channel(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-xml-public-mail-channel" for f in findings)
 
 
+def test_public_mail_channel_csv(tmp_path: Path) -> None:
+    """CSV mail/discuss channel declarations can also allow public users."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "mail_channel.csv").write_text(
+        "id,name,allow_public_users\n"
+        "channel_public,Public Channel,True\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_xml_data(tmp_path)
+
+    assert any(f.rule_id == "odoo-xml-public-mail-channel" for f in findings)
+
+
 def test_user_admin_group_assignment(tmp_path: Path) -> None:
     """XML data should not silently grant administrator groups to users."""
     xml = tmp_path / "users.xml"
@@ -488,6 +522,21 @@ def test_user_admin_group_assignment(tmp_path: Path) -> None:
     )
 
     findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-user-admin-group-assignment" for f in findings)
+
+
+def test_user_admin_group_assignment_csv(tmp_path: Path) -> None:
+    """CSV res.users group assignments should not hide administrator grants."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "res_users.csv").write_text(
+        "id,login,groups_id/id\n"
+        "demo_promoted_user,demo-admin,base.group_system\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_xml_data(tmp_path)
 
     assert any(f.rule_id == "odoo-xml-user-admin-group-assignment" for f in findings)
 
@@ -525,6 +574,21 @@ def test_group_record_implies_admin_privilege_is_critical(tmp_path: Path) -> Non
     )
 
     findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-group-implies-privilege" and f.severity == "critical" for f in findings)
+
+
+def test_group_record_implies_admin_privilege_csv(tmp_path: Path) -> None:
+    """CSV res.groups implied_ids should surface privilege inheritance."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "res_groups.csv").write_text(
+        "id,name,implied_ids/id\n"
+        "group_support,Support,base.group_system\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_xml_data(tmp_path)
 
     assert any(f.rule_id == "odoo-xml-group-implies-privilege" and f.severity == "critical" for f in findings)
 
