@@ -185,6 +185,34 @@ def test_risky_python_dependencies_are_reported_with_common_spellings(tmp_path: 
     )
 
 
+def test_modern_integration_python_dependencies_are_reported(tmp_path: Path) -> None:
+    """HTTP, cloud storage, and messaging dependencies should be review-visible."""
+    module = tmp_path / "modern_integration_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Modern Integration Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'python': ['httpx[http2]', 'urllib3', 'google-cloud-storage', 'azure_storage_blob', 'stripe', 'safe-package'],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-risky-python-dependency"
+        and "httpx[http2]" in f.message
+        and "urllib3" in f.message
+        and "google-cloud-storage" in f.message
+        and "azure_storage_blob" in f.message
+        and "stripe" in f.message
+        and "safe-package" not in f.message
+        for f in findings
+    )
+
+
 def test_risky_binary_dependencies_are_reported(tmp_path: Path) -> None:
     """Security-sensitive binary dependency declarations should be visible in manifest review."""
     module = tmp_path / "risky_bin_deps"
@@ -205,6 +233,33 @@ def test_risky_binary_dependencies_are_reported(tmp_path: Path) -> None:
         f.rule_id == "odoo-manifest-risky-bin-dependency"
         and "/usr/bin/wkhtmltopdf" in f.message
         and "curl" in f.message
+        and "safe-tool" not in f.message
+        for f in findings
+    )
+
+
+def test_cloud_and_container_binary_dependencies_are_reported(tmp_path: Path) -> None:
+    """Cloud and container CLIs in manifests should be review-visible."""
+    module = tmp_path / "cloud_bin_deps"
+    _write_manifest(
+        module,
+        """{
+    'name': 'Cloud Bin Deps',
+    'license': 'LGPL-3',
+    'external_dependencies': {
+        'bin': ['/usr/local/bin/aws', 'gcloud', 'kubectl', 'docker', 'safe-tool'],
+    },
+}""",
+    )
+
+    findings = scan_manifests(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-manifest-risky-bin-dependency"
+        and "/usr/local/bin/aws" in f.message
+        and "gcloud" in f.message
+        and "kubectl" in f.message
+        and "docker" in f.message
         and "safe-tool" not in f.message
         for f in findings
     )
