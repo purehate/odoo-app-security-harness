@@ -1903,6 +1903,18 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "model_method_tls_verification_disabled",
+        (
+            "model-method-onchange-tls-verify-disabled",
+            "model-method-compute-tls-verify-disabled",
+            "model-method-constraint-tls-verify-disabled",
+            "model-method-inverse-tls-verify-disabled",
+            "odoo model method disables tls verification",
+            "model method passes verify=false to outbound http",
+            "man-in-the-middle attacks",
+        ),
+    ),
+    (
         "constraint_sudo_visibility_gap",
         (
             "constraint-sudo-search",

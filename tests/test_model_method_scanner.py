@@ -543,6 +543,32 @@ class Feed(models.Model):
     assert len([f for f in findings if f.rule_id == "odoo-model-method-compute-http-no-timeout"]) == 1
 
 
+def test_flags_tls_verification_disabled(tmp_path: Path) -> None:
+    """Model methods should surface disabled TLS verification on outbound HTTP."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "constraint.py").write_text(
+        """
+from odoo import api, models
+import requests
+
+TLS_VERIFY = False
+
+class Feed(models.Model):
+    _name = 'x.feed'
+
+    @api.constrains('url')
+    def _check_url(self):
+        return requests.get(self.url, timeout=10, verify=TLS_VERIFY)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-constraint-tls-verify-disabled" for f in findings)
+
+
 def test_flags_named_expression_http_client_without_timeout(tmp_path: Path) -> None:
     """Walrus-bound HTTP client aliases should still be treated as blocking calls."""
     models = tmp_path / "module" / "models"

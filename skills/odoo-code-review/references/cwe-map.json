@@ -898,6 +898,12 @@
       "cwe": ["CWE-400", "CWE-770", "CWE-703"],
       "owasp": "A05:2021 Security Misconfiguration"
     },
+    "model_method_tls_verification_disabled": {
+      "label": "Odoo lifecycle model method disables TLS verification for outbound HTTP",
+      "cwe": ["CWE-295", "CWE-319", "CWE-326"],
+      "capec": ["CAPEC-94"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "constraint_sudo_visibility_gap": {
       "label": "Odoo constraint validates through sudo and may hide record-rule or company visibility issues",
       "cwe": ["CWE-284", "CWE-863", "CWE-178"],

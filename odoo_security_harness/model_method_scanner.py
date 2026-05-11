@@ -58,6 +58,12 @@ HTTP_NO_TIMEOUT_RULES = {
     "constraint": "odoo-model-method-constraint-http-no-timeout",
     "inverse": "odoo-model-method-inverse-http-no-timeout",
 }
+TLS_VERIFY_DISABLED_RULES = {
+    "onchange": "odoo-model-method-onchange-tls-verify-disabled",
+    "compute": "odoo-model-method-compute-tls-verify-disabled",
+    "constraint": "odoo-model-method-constraint-tls-verify-disabled",
+    "inverse": "odoo-model-method-inverse-tls-verify-disabled",
+}
 
 
 def scan_model_methods(repo_path: Path) -> list[ModelMethodFinding]:
@@ -271,15 +277,26 @@ class ModelMethodScanner(ast.NodeVisitor):
         elif (
             _is_http_call(sink, self.http_modules, self.http_functions)
             or _is_http_client_call(node.func, context.http_client_vars)
-        ) and not _has_keyword(node, "timeout"):
-            self._add(
-                HTTP_NO_TIMEOUT_RULES[context.kind],
-                "Odoo model method performs HTTP without timeout",
-                "medium",
-                node.lineno,
-                f"{context.kind} model method performs outbound HTTP without timeout; form/render/background flows can block Odoo workers",
-                context.name,
-            )
+        ):
+            constants = self._effective_constants()
+            if not _has_keyword(node, "timeout"):
+                self._add(
+                    HTTP_NO_TIMEOUT_RULES[context.kind],
+                    "Odoo model method performs HTTP without timeout",
+                    "medium",
+                    node.lineno,
+                    f"{context.kind} model method performs outbound HTTP without timeout; form/render/background flows can block Odoo workers",
+                    context.name,
+                )
+            if _keyword_is_false(node, "verify", constants):
+                self._add(
+                    TLS_VERIFY_DISABLED_RULES[context.kind],
+                    "Odoo model method disables TLS verification",
+                    "high",
+                    node.lineno,
+                    f"{context.kind} model method passes verify=False to outbound HTTP; user-triggered integrations should not permit man-in-the-middle attacks",
+                    context.name,
+                )
 
         self.generic_visit(node)
 
@@ -548,6 +565,17 @@ def _target_names(node: ast.AST) -> set[str]:
 
 def _has_keyword(node: ast.Call, name: str) -> bool:
     return any(keyword.arg == name for keyword in node.keywords)
+
+
+def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST] | None = None) -> bool:
+    constants = constants or {}
+    for keyword in node.keywords:
+        if keyword.arg != name:
+            continue
+        value = _resolve_constant(keyword.value, constants)
+        if isinstance(value, ast.Constant) and value.value is False:
+            return True
+    return False
 
 
 def _unpack_target_value_pairs(
