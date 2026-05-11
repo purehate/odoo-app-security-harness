@@ -76,6 +76,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.unsafe_sql_vars: set[str] = set()
         self.request_names: set[str] = {"request"}
         self.http_module_names: set[str] = {"http"}
+        self.odoo_module_names: set[str] = {"odoo"}
         self.route_decorator_names: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
@@ -89,6 +90,15 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         except SyntaxError as exc:
             logger.warning(f"Syntax error in {self.file_path}: {exc}")
         return self.findings
+
+    def visit_Import(self, node: ast.Import) -> None:
+        """Track aliases for imported Odoo modules."""
+        for alias in node.names:
+            if alias.name == "odoo":
+                self.odoo_module_names.add(alias.asname or alias.name)
+            elif alias.name == "odoo.http" and alias.asname:
+                self.http_module_names.add(alias.asname)
+        self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         """Track aliases for Odoo HTTP helpers."""
@@ -322,11 +332,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         """Check if decorator is @http.route."""
         if isinstance(decorator, ast.Call):
             if isinstance(decorator.func, ast.Attribute):
-                return (
-                    isinstance(decorator.func.value, ast.Name)
-                    and decorator.func.value.id in self.http_module_names
-                    and decorator.func.attr == "route"
-                )
+                return self._is_http_module_expr(decorator.func.value) and decorator.func.attr == "route"
             elif isinstance(decorator.func, ast.Name):
                 return decorator.func.id in self.route_decorator_names
         return False
@@ -498,7 +504,23 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         return node.attr == "env" and self._is_request_name(node.value)
 
     def _is_request_name(self, node: ast.AST) -> bool:
-        return isinstance(node, ast.Name) and node.id in self.request_names
+        if isinstance(node, ast.Name):
+            return node.id in self.request_names
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "request"
+            and self._is_http_module_expr(node.value)
+        )
+
+    def _is_http_module_expr(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.http_module_names
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "http"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in self.odoo_module_names
+        )
 
     def _is_request_httprequest_attr(self, node: ast.AST) -> bool:
         return (

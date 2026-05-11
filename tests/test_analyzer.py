@@ -256,6 +256,43 @@ class TestController(http.Controller):
         assert "odoo-deep-mass-assignment" in rule_ids
         assert "odoo-deep-request-sudo-write" in rule_ids
 
+    def test_imported_odoo_http_alias_keeps_route_and_request_taint(self) -> None:
+        """import odoo.http as aliases should preserve route and request detection."""
+        source = """
+import odoo.http as odoo_http
+
+class TestController(odoo_http.Controller):
+    @odoo_http.route('/test/public', auth='public', csrf=False)
+    def test_public(self):
+        payload = odoo_http.request.get_http_params()
+        odoo_http.request.env['res.partner'].sudo().write(payload)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-public-sudo" in rule_ids
+        assert "odoo-deep-mass-assignment" in rule_ids
+        assert "odoo-deep-request-sudo-write" in rule_ids
+
+    def test_imported_odoo_alias_keeps_route_and_request_taint(self) -> None:
+        """import odoo as aliases should preserve od.http route and request detection."""
+        source = """
+import odoo as od
+
+class TestController(od.http.Controller):
+    @od.http.route('/test/public', auth='public')
+    def test_public(self):
+        payload = od.http.request.params
+        return od.http.request.env['res.partner'].create(payload)
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-mass-assignment" in rule_ids
+        assert "odoo-deep-public-write-route" in rule_ids
+
     def test_request_params_to_superuser_write(self) -> None:
         """Request payloads reaching admin-root with_user writes are privileged mutations."""
         source = """
