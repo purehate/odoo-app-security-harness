@@ -993,6 +993,58 @@ def test_flags_sensitive_model_xml_default(tmp_path: Path) -> None:
     assert len(sensitive_model_defaults) == 2
 
 
+def test_flags_global_sensitive_csv_default(tmp_path: Path) -> None:
+    """Global ir.default CSV records can seed sensitive values broadly."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.default.csv").write_text(
+        """id,model,field_id/id,json_value
+default_user_group,res.users,base.field_res_users__groups_id,[1]
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-default-global-scope" in rule_ids
+    assert "odoo-default-sensitive-value" in rule_ids
+
+
+def test_flags_sensitive_model_csv_default(tmp_path: Path) -> None:
+    """CSV defaults on sensitive models should not depend only on field names."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir_default.csv").write_text(
+        '''id,model,field_name,json_value
+default_config_value,ir.config_parameter,value,"""https://example.test"""
+default_payment_provider_state,payment.provider,state,"""enabled"""
+''',
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+    sensitive_model_defaults = [
+        finding for finding in findings if finding.rule_id == "odoo-default-sensitive-model-value"
+    ]
+
+    assert len(sensitive_model_defaults) == 2
+
+
+def test_company_scoped_non_sensitive_csv_default_is_ignored(tmp_path: Path) -> None:
+    """Scoped benign CSV defaults should not create noise."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.default.csv").write_text(
+        '''id,model,field_name,company_id/id,json_value
+default_note,project.task,description,base.main_company,"""todo"""
+''',
+        encoding="utf-8",
+    )
+
+    assert scan_default_values(tmp_path) == []
+
+
 def test_xml_entities_are_not_expanded_into_default_findings(tmp_path: Path) -> None:
     """XML entities must not synthesize sensitive default fields."""
     data = tmp_path / "module" / "data"

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import ast
 import re
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -71,7 +73,7 @@ SENSITIVE_FIELD_MARKERS = (
 
 
 def scan_default_values(repo_path: Path) -> list[DefaultValueFinding]:
-    """Scan Python and XML files for risky ir.default usage."""
+    """Scan Python, XML, and CSV files for risky ir.default usage."""
     findings: list[DefaultValueFinding] = []
     for path in repo_path.rglob("*"):
         if not path.is_file() or _should_skip(path):
@@ -80,6 +82,8 @@ def scan_default_values(repo_path: Path) -> list[DefaultValueFinding]:
             findings.extend(DefaultValueScanner(path).scan_python_file())
         elif path.suffix == ".xml":
             findings.extend(DefaultValueScanner(path).scan_xml_file())
+        elif path.suffix == ".csv":
+            findings.extend(DefaultValueScanner(path).scan_csv_file())
     return findings
 
 
@@ -127,6 +131,19 @@ class DefaultValueScanner(ast.NodeVisitor):
         for record in root.iter("record"):
             if record.get("model") == "ir.default":
                 self._scan_default_record(record)
+        return self.findings
+
+    def scan_csv_file(self) -> list[DefaultValueFinding]:
+        """Scan CSV ir.default data records."""
+        if _csv_model_name(self.path) != "ir.default":
+            return []
+        try:
+            self.content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+        for fields, line in _csv_dict_rows(self.content):
+            self._scan_default_fields(fields, fields.get("id", ""), line)
         return self.findings
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
@@ -302,6 +319,9 @@ class DefaultValueScanner(ast.NodeVisitor):
         line = (
             _line_for(self.content, f'id="{record_id}"') if record_id else _line_for(self.content, 'model="ir.default"')
         )
+        self._scan_default_fields(fields, record_id, line)
+
+    def _scan_default_fields(self, fields: dict[str, str], record_id: str, line: int) -> None:
         model = fields.get("model", "")
         field = fields.get("field_id", "") or fields.get("field_name", "")
 
@@ -683,6 +703,40 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("ref") or field.get("eval") or "".join(field.itertext()).strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    aliases = {"ir_default": "ir.default", "ir.default": "ir.default"}
+    return aliases.get(stem, stem.replace("_", "."))
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+                if ":" in name:
+                    normalized.setdefault(name.split(":", 1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _is_sensitive_field(field: str) -> bool:
