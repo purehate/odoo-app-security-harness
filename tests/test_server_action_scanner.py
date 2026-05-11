@@ -177,6 +177,24 @@ value = run_eval(record.domain)
     assert any(f.rule_id == "odoo-loose-python-safe-eval" for f in findings)
 
 
+def test_server_action_safe_eval_exec_mode_is_critical(tmp_path: Path) -> None:
+    """safe_eval mode='exec' is code-execution posture and should be prioritized."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+from odoo.tools.safe_eval import safe_eval
+
+MODE = 'exec'
+safe_eval(record.expression, mode=MODE, nocopy=True)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+
+    assert any(f.rule_id == "odoo-loose-python-safe-eval" and f.severity == "critical" for f in findings)
+
+
 def test_server_action_detects_sudo_write_and_manual_commit(tmp_path: Path) -> None:
     """Privileged mutation and manual transactions are review leads."""
     script = tmp_path / "action.py"

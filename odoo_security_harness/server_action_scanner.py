@@ -181,12 +181,17 @@ class LoosePythonScanner(ast.NodeVisitor):
             )
 
         if self._is_safe_eval(node):
+            exec_mode = self._safe_eval_exec_mode(node)
             self._add_finding(
                 rule_id="odoo-loose-python-safe-eval",
                 title="safe_eval in loose script",
-                severity="high",
+                severity="critical" if exec_mode else "high",
                 line=node.lineno,
-                message="safe_eval() in server actions/scripts needs strict input provenance review and sandbox assumptions",
+                message=(
+                    "safe_eval() runs in exec mode in a server action/script; treat the expression as code execution and verify strict input provenance, globals, and locals"
+                    if exec_mode
+                    else "safe_eval() in server actions/scripts needs strict input provenance review and sandbox assumptions"
+                ),
             )
 
         if self._is_sudo_write(node):
@@ -303,6 +308,13 @@ class LoosePythonScanner(ast.NodeVisitor):
     def _is_safe_eval(self, node: ast.Call) -> bool:
         sink = self._canonical_call_name(node.func)
         return sink in {"safe_eval", "odoo.tools.safe_eval.safe_eval"} or sink.endswith(".safe_eval")
+
+    def _safe_eval_exec_mode(self, node: ast.Call) -> bool:
+        for value in _keyword_values(node, "mode", self._effective_constants()):
+            resolved = _resolve_constant(value, self._effective_constants())
+            if isinstance(resolved, ast.Constant) and str(resolved.value).lower() == "exec":
+                return True
+        return False
 
     def _is_sudo_write(self, node: ast.Call) -> bool:
         if not (isinstance(node.func, ast.Attribute) and node.func.attr in {"write", "create", "unlink"}):
