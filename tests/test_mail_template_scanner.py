@@ -41,6 +41,58 @@ def test_sensitive_access_tokens_are_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-mail-template-sensitive-token" for f in findings)
 
 
+def test_sensitive_access_tokens_in_csv_are_reported(tmp_path: Path) -> None:
+    """CSV mail.template rows should be scanned like XML records."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "mail_template.csv").write_text(
+        "id,name,body_html\n"
+        "template_token,Token,Open ${object.access_url}\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_templates(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-mail-template-sensitive-token" in rule_ids
+    assert "odoo-mail-template-token-not-auto-deleted" in rule_ids
+
+
+def test_csv_token_template_with_auto_delete_is_ignored(tmp_path: Path) -> None:
+    """CSV auto_delete=True should suppress token-retention findings."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "mail.template.csv").write_text(
+        "id,name,body_html,auto_delete\n"
+        "template_token,Token,Open ${object.access_url},True\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_templates(tmp_path)
+
+    assert any(f.rule_id == "odoo-mail-template-sensitive-token" for f in findings)
+    assert not any(f.rule_id == "odoo-mail-template-token-not-auto-deleted" for f in findings)
+
+
+def test_sensitive_csv_template_model_external_id_is_normalized(tmp_path: Path) -> None:
+    """CSV model relation columns should normalize sensitive model external IDs."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "mail_template.csv").write_text(
+        "id,name,model_id/id,email_to,body_html\n"
+        "template_invoice,Invoice,account.model_account_move,${object.partner_id.email},Invoice ready\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_mail_templates(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-mail-template-dynamic-sensitive-recipient"
+        and finding.template == "template_invoice"
+        for finding in findings
+    )
+
+
 def test_sensitive_signup_url_helpers_are_reported(tmp_path: Path) -> None:
     """Odoo signup URL helper fields carry tokenized account-access links."""
     xml = tmp_path / "mail.xml"

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -89,12 +91,16 @@ SUPERUSER_WITH_USER_RE = re.compile(
 
 
 def scan_mail_templates(repo_path: Path) -> list[MailTemplateFinding]:
-    """Scan XML data files for risky mail.template records."""
+    """Scan data files for risky mail.template records."""
     findings: list[MailTemplateFinding] = []
-    for path in repo_path.rglob("*.xml"):
-        if _should_skip(path):
+    for path in repo_path.rglob("*"):
+        if not path.is_file() or _should_skip(path):
             continue
-        findings.extend(MailTemplateScanner(path).scan_file())
+        scanner = MailTemplateScanner(path)
+        if path.suffix == ".xml":
+            findings.extend(scanner.scan_file())
+        elif path.suffix == ".csv":
+            findings.extend(scanner.scan_csv_file())
     return findings
 
 
@@ -121,10 +127,26 @@ class MailTemplateScanner:
                 self._scan_template(record)
         return self.findings
 
+    def scan_csv_file(self) -> list[MailTemplateFinding]:
+        """Scan CSV mail.template records."""
+        if _csv_model_name(self.path) != "mail.template":
+            return []
+        try:
+            self.content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+        for fields, line in _csv_dict_rows(self.content):
+            self._scan_template_values(fields.get("id", ""), fields, line)
+        return self.findings
+
     def _scan_template(self, record: ElementTree.Element) -> None:
         fields = _record_fields(record)
         template_id = record.get("id", "")
         line = self._line_for_record(record)
+        self._scan_template_values(template_id, fields, line)
+
+    def _scan_template_values(self, template_id: str, fields: dict[str, str], line: int) -> None:
         model = _normalize_model_ref(fields.get("model_id", "") or fields.get("model", ""))
         body = fields.get("body_html", "")
         subject = fields.get("subject", "")
@@ -269,6 +291,41 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("ref") or field.get("eval") or "".join(field.itertext()).strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    aliases = {
+        "mail_template": "mail.template",
+        "mail.template": "mail.template",
+    }
+    return aliases.get(stem, stem.replace("_", "."))
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _contains_raw_html_rendering(value: str) -> bool:
