@@ -137,13 +137,18 @@ class MetadataScanner:
         """Scan CSV data files for ACL-like records."""
         try:
             with self.path.open("r", encoding="utf-8", newline="") as handle:
-                rows = list(csv.DictReader(handle))
+                rows = [_normalize_csv_row(row) for row in csv.DictReader(handle)]
         except Exception:
             return []
 
+        model = _csv_model_name(self.path)
         for index, row in enumerate(rows, start=2):
             if _looks_acl_row(row):
                 self._scan_acl_values(row, index, row.get("id", ""))
+            if model == "ir.model.fields":
+                self._scan_model_field_values(row, index, row.get("id", ""))
+            if model == "res.groups":
+                self._scan_group_values(row, index, row.get("id", ""))
             if _looks_user_group_row(row, self.path):
                 self._scan_user_group_values(row, index, row.get("id", ""))
         return self.findings
@@ -196,7 +201,10 @@ class MetadataScanner:
 
     def _scan_group_record(self, record: ElementTree.Element) -> None:
         fields = _record_fields(record)
-        implied = fields.get("implied_ids", "")
+        self._scan_group_values(fields, self._line_for_record(record), record.get("id", ""))
+
+    def _scan_group_values(self, values: dict[str, str], line: int, record_id: str) -> None:
+        implied = values.get("implied_ids", "")
         if not implied:
             return
         if _contains_admin_group(implied):
@@ -204,20 +212,20 @@ class MetadataScanner:
                 "odoo-metadata-group-implies-admin",
                 "Group implies administrator-level privileges",
                 "high",
-                self._line_for_record(record),
+                line,
                 "res.groups record implies administrator/manager-level groups; verify this is intentional and not assigned by portal/signup flows",
                 "res.groups",
-                record.get("id", ""),
+                record_id,
             )
         if _contains_internal_group(implied):
             self._add(
                 "odoo-metadata-group-implies-internal-user",
                 "Group implies internal user privileges",
                 "medium",
-                self._line_for_record(record),
+                line,
                 "res.groups record implies base.group_user; verify portal/public/signup flows cannot assign this group and become internal users",
                 "res.groups",
-                record.get("id", ""),
+                record_id,
             )
 
     def _scan_user_record(self, record: ElementTree.Element) -> None:
@@ -257,13 +265,14 @@ class MetadataScanner:
 
     def _scan_model_field_record(self, record: ElementTree.Element) -> None:
         fields = _record_fields(record)
-        line = self._line_for_record(record)
-        record_id = record.get("id", "")
-        field_name = fields.get("name", "")
-        model_name = _normalize_model_ref(fields.get("model_id", ""))
-        groups = fields.get("groups", "") or fields.get("groups_id", "")
-        readonly = fields.get("readonly", "")
-        compute = fields.get("compute", "")
+        self._scan_model_field_values(fields, self._line_for_record(record), record.get("id", ""))
+
+    def _scan_model_field_values(self, values: dict[str, str], line: int, record_id: str) -> None:
+        field_name = values.get("name", "")
+        model_name = _normalize_model_ref(values.get("model_id", ""))
+        groups = values.get("groups", "") or values.get("groups_id", "")
+        readonly = values.get("readonly", "")
+        compute = values.get("compute", "")
         is_sensitive = _is_sensitive_field(field_name)
 
         if is_sensitive and _contains_public_group(groups):
@@ -348,6 +357,36 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("ref") or field.get("eval") or (field.text or "").strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    stem = path.stem.strip().lower()
+    aliases = {
+        "ir_model_fields": "ir.model.fields",
+        "ir.model.fields": "ir.model.fields",
+        "res_groups": "res.groups",
+        "res.groups": "res.groups",
+        "res_users": "res.users",
+        "res.users": "res.users",
+        "ir_model_access": "ir.model.access",
+        "ir.model.access": "ir.model.access",
+    }
+    return aliases.get(stem, stem.replace("_", "."))
+
+
+def _normalize_csv_row(row: dict[str, str]) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    for key, value in row.items():
+        if key is None:
+            continue
+        name = str(key).strip().lower()
+        text = str(value or "").strip()
+        normalized[name] = text
+        if "/" in name:
+            normalized.setdefault(name.split("/", 1)[0], text)
+        if ":" in name:
+            normalized.setdefault(name.split(":", 1)[0], text)
+    return normalized
 
 
 def _looks_acl_row(row: dict[str, str]) -> bool:

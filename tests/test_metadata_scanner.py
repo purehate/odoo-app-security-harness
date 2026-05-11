@@ -140,6 +140,24 @@ def test_group_that_implies_internal_user_is_reported(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-metadata-group-implies-internal-user" for f in findings)
 
 
+def test_group_inheritance_csv_is_reported(tmp_path: Path) -> None:
+    """CSV res.groups rows should surface risky implied group inheritance."""
+    csv_file = tmp_path / "res.groups.csv"
+    csv_file.write_text(
+        """id,name,implied_ids/id
+group_partner_manager,Partner Manager,base.group_system
+group_portal_plus,Portal Plus,base.group_user
+""",
+        encoding="utf-8",
+    )
+
+    findings = MetadataScanner(csv_file).scan_csv_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-metadata-group-implies-admin" in rule_ids
+    assert "odoo-metadata-group-implies-internal-user" in rule_ids
+
+
 def test_user_group_assignment_metadata_is_reported(tmp_path: Path) -> None:
     """XML user records can seed privilege-bearing groups."""
     xml = tmp_path / "users.xml"
@@ -222,6 +240,26 @@ def test_sensitive_model_field_without_groups_is_reported(tmp_path: Path) -> Non
     findings = MetadataScanner(xml).scan_xml_file()
 
     assert any(f.rule_id == "odoo-metadata-sensitive-field-no-groups" for f in findings)
+
+
+def test_sensitive_model_field_csv_is_reported(tmp_path: Path) -> None:
+    """CSV ir.model.fields rows should use the same sensitive field checks as XML."""
+    csv_file = tmp_path / "ir.model.fields.csv"
+    csv_file.write_text(
+        """id,model_id/id,name,groups/id,readonly,compute
+field_api_key,base.model_res_users,api_key,base.group_portal,0,safe_eval(record.expression)
+field_access_token,sale.model_sale_order,access_token,,1,
+""",
+        encoding="utf-8",
+    )
+
+    findings = MetadataScanner(csv_file).scan_csv_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-metadata-sensitive-field-public-groups" in rule_ids
+    assert "odoo-metadata-sensitive-field-readonly-disabled" in rule_ids
+    assert "odoo-metadata-field-dynamic-compute" in rule_ids
+    assert "odoo-metadata-sensitive-field-no-groups" in rule_ids
 
 
 def test_nonstandard_acl_csv_is_scanned(tmp_path: Path) -> None:
