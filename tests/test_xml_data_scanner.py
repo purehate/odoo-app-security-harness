@@ -86,8 +86,8 @@ requests.post(record.callback_url)
     assert "odoo-xml-server-action-http-no-timeout" in rule_ids
 
 
-def test_server_action_urllib_and_httpx_without_timeout(tmp_path: Path) -> None:
-    """Executable server actions should catch urllib/httpx calls without timeouts."""
+def test_server_action_urllib_httpx_and_aiohttp_without_timeout(tmp_path: Path) -> None:
+    """Executable server actions should catch urllib/httpx/aiohttp calls without timeouts."""
     xml = tmp_path / "actions.xml"
     xml.write_text(
         """<odoo>
@@ -97,6 +97,7 @@ def test_server_action_urllib_and_httpx_without_timeout(tmp_path: Path) -> None:
 from urllib.request import urlopen
 urlopen(record.callback_url)
 httpx.post(record.audit_url, timeout=10)
+aiohttp.request("GET", record.status_url)
     ]]></field>
   </record>
 </odoo>""",
@@ -314,6 +315,24 @@ def test_cron_urllib_without_timeout(tmp_path: Path) -> None:
   <record id="cron_url_fetch" model="ir.cron">
     <field name="state">code</field>
     <field name="code">urllib.request.urlopen(record.url)</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
+
+
+def test_cron_aiohttp_without_timeout(tmp_path: Path) -> None:
+    """Cron inline Python should catch aiohttp URL fetches without timeouts."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_aiohttp_fetch" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code">aiohttp.get(record.url)</field>
   </record>
 </odoo>""",
         encoding="utf-8",
