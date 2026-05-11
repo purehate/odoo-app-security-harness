@@ -422,6 +422,35 @@ class Controller(http.Controller):
     assert any(finding.rule_id == "odoo-module-tainted-selection" for finding in findings)
 
 
+def test_local_constant_module_model_lifecycle_is_reported(tmp_path: Path) -> None:
+    """Function-local module model constants should not hide lifecycle calls."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "modules.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/public/install', auth='public', csrf=False)
+    def install(self, **kwargs):
+        module_model = 'ir.module.module'
+        target_model = module_model
+        module = request.env[target_model].sudo().search([('name', '=', kwargs.get('module'))])
+        return module.button_immediate_install()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_module_lifecycle(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-module-public-route-lifecycle" in rule_ids
+    assert "odoo-module-sudo-lifecycle" in rule_ids
+    assert "odoo-module-immediate-lifecycle" in rule_ids
+    assert "odoo-module-tainted-selection" in rule_ids
+
+
 def test_class_constant_static_unpack_public_route_lifecycle_is_reported(tmp_path: Path) -> None:
     """Class-scoped static **route options should preserve lifecycle route metadata."""
     controllers = tmp_path / "module" / "controllers"
@@ -639,6 +668,30 @@ class ModuleHelper:
 
     def upgrade_sale(self):
         return self.env[TARGET_MODEL].with_user(user=ADMIN_USER).search([('name', '=', 'sale')]).button_upgrade()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_module_lifecycle(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-module-sudo-lifecycle" in rule_ids
+    assert "odoo-module-public-route-lifecycle" not in rule_ids
+
+
+def test_local_constant_superuser_upgrade_on_module_model_is_reported(tmp_path: Path) -> None:
+    """Function-local superuser and module-model aliases should count as elevated lifecycle."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "modules.py").write_text(
+        """
+class ModuleHelper:
+    def upgrade_sale(self):
+        root_user = 1
+        admin_user = root_user
+        module_model = 'ir.module.module'
+        target_model = module_model
+        return self.env[target_model].with_user(user=admin_user).search([('name', '=', 'sale')]).button_upgrade()
 """,
         encoding="utf-8",
     )
