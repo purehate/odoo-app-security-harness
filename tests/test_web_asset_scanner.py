@@ -1352,6 +1352,44 @@ def test_owl_inline_template_dangerous_tag_does_not_hide_raw_output(tmp_path: Pa
     assert "odoo-web-owl-qweb-t-raw" in rule_ids
 
 
+def test_owl_inline_template_post_form_missing_csrf_detected(tmp_path: Path) -> None:
+    """OWL inline POST forms should show a visible CSRF token."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<form action=\"/portal/pay\" method=\"post\"><input name=\"amount\"/></form>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-post-form-missing-csrf"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_post_form_with_csrf_ignored(tmp_path: Path) -> None:
+    """Visible csrf_token fields suppress OWL POST form CSRF leads."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "export const template = xml`<form method=\"post\"><input type=\"hidden\" name=\"csrf_token\" t-att-value=\"request.csrf_token()\"/></form>`;\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-post-form-missing-csrf" for f in findings)
+
+
+def test_owl_inline_template_get_form_missing_csrf_ignored(tmp_path: Path) -> None:
+    """OWL GET/search forms do not need CSRF tokens."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<form action=\"/shop\" method=\"get\"><input name=\"search\"/></form>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-post-form-missing-csrf" for f in findings)
+
+
 def test_owl_inline_template_escaped_output_ignored(tmp_path: Path) -> None:
     """Escaped OWL inline template output should not create raw-output leads."""
     path = tmp_path / "widget.js"

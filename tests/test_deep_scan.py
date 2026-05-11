@@ -1314,13 +1314,19 @@ def test_taxonomy_coverage_classifies_qweb_post_form_csrf_missing() -> None:
                 "source": "qweb",
                 "title": "QWeb POST form lacks visible CSRF token",
                 "message": "QWeb template contains a POST form without a visible csrf_token field",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-post-form-missing-csrf",
+                "source": "web-asset",
+                "title": "OWL inline template POST form lacks visible CSRF token",
+                "message": "OWL xml template contains a POST form without a visible csrf_token field",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_csrf_token_missing"
-    assert "CWE-352" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_csrf_token_missing"}
+    assert all("CWE-352" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_frontend_sensitive_url_exposure() -> None:

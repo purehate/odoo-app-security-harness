@@ -315,6 +315,7 @@ OWL_XML_TEMPLATE_RE = re.compile(r"\bxml\s*`(?P<body>(?:\\`|[^`])*)`", re.IGNORE
 OWL_TEMPLATE_T_RAW_RE = re.compile(r"\bt-raw\s*=", re.IGNORECASE)
 OWL_TEMPLATE_RAW_OUTPUT_MODE_RE = re.compile(r"\bt-out-mode\s*=\s*['\"]raw['\"]", re.IGNORECASE)
 OWL_TEMPLATE_DANGEROUS_TAG_RE = re.compile(r"<\s*(?:script|iframe|object|embed|form)\b", re.IGNORECASE)
+OWL_TEMPLATE_POST_FORM_RE = re.compile(r"<form\b(?P<attrs>[^>]*)>(?P<body>.*?)</form>", re.IGNORECASE | re.DOTALL)
 OWL_TEMPLATE_DYNAMIC_EVENT_RE = re.compile(r"\b(?:on\w+|t-attf?-on\w+)\s*=", re.IGNORECASE)
 OWL_TEMPLATE_SRCDOC_RE = re.compile(
     r"\bt-attf?-srcdoc\s*=|\bt-att\s*=\s*['\"][^>]*['\"]srcdoc['\"]\s*:",
@@ -1147,6 +1148,15 @@ class WebAssetScanner:
                     "OWL xml template contains a script, iframe, object, embed, or form tag; verify content, embedded origins, and submission behavior are trusted",
                     "owl-template",
                 )
+            if _owl_template_has_post_form_without_csrf(body):
+                self._add(
+                    "odoo-web-owl-qweb-post-form-missing-csrf",
+                    "OWL inline template POST form lacks visible CSRF token",
+                    "medium",
+                    line,
+                    "OWL xml template contains a POST form without a visible csrf_token field or request.csrf_token() expression; verify Odoo CSRF protection covers the target endpoint",
+                    "owl-template",
+                )
             if OWL_TEMPLATE_DYNAMIC_EVENT_RE.search(body):
                 self._add(
                     "odoo-web-owl-qweb-dynamic-event-handler",
@@ -1350,6 +1360,17 @@ def _looks_risky_dynamic_import_target(target: str) -> bool:
 
 def _looks_risky_import_scripts(args: str) -> bool:
     return any(_looks_risky_dynamic_import_target(arg) for arg in _split_js_args(args))
+
+
+def _owl_template_has_post_form_without_csrf(body: str) -> bool:
+    for match in OWL_TEMPLATE_POST_FORM_RE.finditer(body):
+        attrs_and_body = match.group("attrs") + match.group("body")
+        if not re.search(r"\bmethod\s*=\s*['\"]post['\"]", match.group("attrs"), re.IGNORECASE):
+            continue
+        if re.search(r"csrf_token", attrs_and_body, re.IGNORECASE):
+            continue
+        return True
+    return False
 
 
 def _looks_risky_css_text(css_text: str) -> bool:

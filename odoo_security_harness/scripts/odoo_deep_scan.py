@@ -3173,8 +3173,10 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "frontend_csrf_token_missing",
         (
+            "web-owl-qweb-post-form-missing-csrf",
             "qweb-post-form-missing-csrf",
             "web-unsafe-request-without-csrf",
+            "owl inline template post form lacks visible csrf token",
             "qweb post form lacks visible csrf token",
             "frontend unsafe http request lacks visible csrf token",
             "post form without a visible csrf_token",
