@@ -123,6 +123,7 @@ class DefaultValueScanner(ast.NodeVisitor):
         self.constants: dict[str, ast.AST] = {}
         self.route_stack: list[RouteContext] = []
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_python_file(self) -> list[DefaultValueFinding]:
         """Scan Python code for ir.default writes."""
@@ -216,6 +217,8 @@ class DefaultValueScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -290,7 +293,7 @@ class DefaultValueScanner(ast.NodeVisitor):
                 sink,
             )
 
-        if _is_elevated_expr(node.func, constants) or _uses_elevated_default_var(
+        if _is_elevated_expr(node.func, constants, self.superuser_names) or _uses_elevated_default_var(
             node.func, self.elevated_default_vars
         ):
             self._add(
@@ -475,7 +478,8 @@ class DefaultValueScanner(ast.NodeVisitor):
         constants = self._effective_constants()
         is_default = _is_ir_default_expr(value, default_vars, constants)
         is_elevated_default = is_default and (
-            _is_elevated_expr(value, constants) or _uses_elevated_default_var(value, elevated_default_vars)
+            _is_elevated_expr(value, constants, self.superuser_names)
+            or _uses_elevated_default_var(value, elevated_default_vars)
         )
         for name in _target_names(target):
             if is_default:
@@ -695,43 +699,58 @@ def _is_ir_default_expr(
     return False
 
 
-def _is_elevated_expr(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_elevated_expr(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
     return (
         _call_chain_has_attr(node, "sudo")
-        or _call_chain_has_superuser_with_user(node, constants)
-        or "SUPERUSER_ID" in _safe_unparse(_resolve_constant(node, constants))
+        or _call_chain_has_superuser_with_user(node, constants, superuser_names)
+        or any(
+            name in _safe_unparse(_resolve_constant(node, constants)) for name in (superuser_names or {"SUPERUSER_ID"})
+        )
     )
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST],
+    superuser_names: set[str] | None = None,
+) -> bool:
     for child in ast.walk(node):
         if not isinstance(child, ast.Call):
             continue
         if not (isinstance(child.func, ast.Attribute) and child.func.attr == "with_user"):
             continue
-        if any(_is_admin_user_arg(arg, constants) for arg in child.args):
+        if any(_is_admin_user_arg(arg, constants, superuser_names) for arg in child.args):
             return True
         if any(
             keyword.arg in {"user", "uid"}
             and keyword.value is not None
-            and _is_admin_user_arg(keyword.value, constants)
+            and _is_admin_user_arg(keyword.value, constants, superuser_names)
             for keyword in child.keywords
         ):
             return True
     return False
 
 
-def _is_admin_user_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_admin_user_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
     node = _resolve_constant(node, constants or {})
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_admin_user_arg(arg) for arg in node.args)
+        return any(_is_admin_user_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 

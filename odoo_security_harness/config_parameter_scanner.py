@@ -90,6 +90,7 @@ class ConfigParameterScanner(ast.NodeVisitor):
         self.route_decorator_names: set[str] = set()
         self.tainted_names: set[str] = set()
         self.route_stack: list[RouteContext] = []
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_file(self) -> list[ConfigParameterFinding]:
         """Scan the file."""
@@ -118,6 +119,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -255,6 +258,7 @@ class ConfigParameterScanner(ast.NodeVisitor):
             node.func,
             self.sudo_config_parameter_names,
             constants,
+            self.superuser_names,
         ) and _is_sensitive_key(key):
             self._add(
                 "odoo-config-param-sudo-sensitive-read",
@@ -335,7 +339,9 @@ class ConfigParameterScanner(ast.NodeVisitor):
                     sink,
                 )
 
-        if _is_elevated_config_parameter_expr(node.func, self.sudo_config_parameter_names, constants):
+        if _is_elevated_config_parameter_expr(
+            node.func, self.sudo_config_parameter_names, constants, self.superuser_names
+        ):
             self._add(
                 "odoo-config-param-sudo-write",
                 "Config parameter is written with elevated environment",
@@ -471,7 +477,7 @@ class ConfigParameterScanner(ast.NodeVisitor):
         constants = self._effective_constants()
         is_config_parameter = _is_config_parameter_expr(value, config_parameter_names, constants)
         is_sudo_config_parameter = is_config_parameter and _is_elevated_config_parameter_expr(
-            value, sudo_config_parameter_names, constants
+            value, sudo_config_parameter_names, constants, self.superuser_names
         )
         if isinstance(target, ast.Name):
             if is_config_parameter:
@@ -810,7 +816,9 @@ def _is_config_parameter_expr(
         return _is_config_parameter_expr(node.func, config_parameter_names, constants)
     if isinstance(node, ast.Subscript):
         model = _literal_string(_resolve_constant(node.slice, constants))
-        return model == "ir.config_parameter" or _is_config_parameter_expr(node.value, config_parameter_names, constants)
+        return model == "ir.config_parameter" or _is_config_parameter_expr(
+            node.value, config_parameter_names, constants
+        )
     return False
 
 
@@ -883,11 +891,12 @@ def _is_elevated_config_parameter_expr(
     node: ast.AST,
     sudo_config_parameter_names: set[str],
     constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
     constants = constants or {}
     return (
         _expr_has_sudo(node)
-        or _expr_has_superuser_with_user(node, constants)
+        or _expr_has_superuser_with_user(node, constants, superuser_names)
         or _call_root_name(node) in sudo_config_parameter_names
     )
 
@@ -896,11 +905,19 @@ def _expr_has_sudo(node: ast.AST) -> bool:
     return any(_call_chain_has_attr(child, "sudo") for child in ast.walk(node))
 
 
-def _expr_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
-    return any(_call_chain_has_superuser_with_user(child, constants) for child in ast.walk(node))
+def _expr_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST],
+    superuser_names: set[str] | None = None,
+) -> bool:
+    return any(_call_chain_has_superuser_with_user(child, constants, superuser_names) for child in ast.walk(node))
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST],
+    superuser_names: set[str] | None = None,
+) -> bool:
     current: ast.AST | None = node
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
         if isinstance(current, ast.Call):
@@ -908,11 +925,11 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
                 isinstance(current.func, ast.Attribute)
                 and current.func.attr == "with_user"
                 and (
-                    any(_is_superuser_arg(arg, constants) for arg in current.args)
+                    any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args)
                     or any(
                         keyword.arg in {"user", "uid"}
                         and keyword.value is not None
-                        and _is_superuser_arg(keyword.value, constants)
+                        and _is_superuser_arg(keyword.value, constants, superuser_names)
                         for keyword in current.keywords
                     )
                 )
@@ -926,17 +943,22 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
     return False
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
     node = _resolve_constant(node, constants)
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 

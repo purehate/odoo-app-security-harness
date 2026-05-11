@@ -311,7 +311,7 @@ def test_flags_global_ir_property_csv_record(tmp_path: Path) -> None:
     data.mkdir(parents=True)
     (data / "ir.property.csv").write_text(
         "id,fields_id/id,value_reference\n"
-        "property_receivable_global,account.field_res_partner__property_account_receivable_id,\"account.account,1\"\n",
+        'property_receivable_global,account.field_res_partner__property_account_receivable_id,"account.account,1"\n',
         encoding="utf-8",
     )
 
@@ -329,7 +329,7 @@ def test_safe_company_scoped_property_csv_is_ignored(tmp_path: Path) -> None:
     data.mkdir(parents=True)
     (data / "ir_property.csv").write_text(
         "id,fields_id/id,company_id/id,res_id,value_text\n"
-        "property_label_company,x_module.field_x_model__property_label,base.main_company,\"x.model,1\",Label\n",
+        'property_label_company,x_module.field_x_model__property_label,base.main_company,"x.model,1",Label\n',
         encoding="utf-8",
     )
 
@@ -864,6 +864,31 @@ class Properties(models.Model):
 
     def set_property(self):
         return self.env['ir.property'].with_user(user=SUPERUSER_ID).create({
+            'fields_id': 'account.field_res_partner__property_account_receivable_id',
+            'value_reference': 'account.account,1',
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_property_fields(tmp_path)
+
+    assert any(finding.rule_id == "odoo-property-sudo-mutation" for finding in findings)
+
+
+def test_import_aliased_superuser_with_user_property_mutation_is_elevated(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should be treated like sudo for ir.property mutation."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "properties.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+
+class Properties(models.Model):
+    _name = 'x.properties'
+
+    def set_property(self):
+        return self.env['ir.property'].with_user(user=ROOT_UID).create({
             'fields_id': 'account.field_res_partner__property_account_receivable_id',
             'value_reference': 'account.account,1',
         })

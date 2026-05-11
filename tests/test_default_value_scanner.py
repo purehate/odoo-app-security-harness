@@ -483,6 +483,28 @@ class Defaults(models.Model):
     assert any(finding.rule_id == "odoo-default-sudo-set" for finding in findings)
 
 
+def test_import_aliased_superuser_with_user_default_set_is_elevated(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should be treated like sudo for persisted defaults."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "defaults.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+
+class Defaults(models.Model):
+    _name = 'x.defaults'
+
+    def set_company_default(self):
+        return self.env['ir.default'].with_user(user=ROOT_UID).set('sale.order', 'company_id', self.env.company.id)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+
+    assert any(finding.rule_id == "odoo-default-sudo-set" for finding in findings)
+
+
 def test_regular_with_user_default_set_is_not_elevated(tmp_path: Path) -> None:
     """Regular user context switches should not be reported as sudo/default elevation."""
     models = tmp_path / "module" / "models"
@@ -678,9 +700,7 @@ class Defaults(models.Model):
     findings = scan_default_values(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-default-sensitive-field-set"
-        and f.model == "res.users"
-        and f.field == "groups_id"
+        f.rule_id == "odoo-default-sensitive-field-set" and f.model == "res.users" and f.field == "groups_id"
         for f in findings
     )
 
@@ -712,9 +732,7 @@ class Defaults(models.Model):
     findings = scan_default_values(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-default-sensitive-field-set"
-        and f.model == "res.users"
-        and f.field == "groups_id"
+        f.rule_id == "odoo-default-sensitive-field-set" and f.model == "res.users" and f.field == "groups_id"
         for f in findings
     )
     assert any(f.rule_id == "odoo-default-sensitive-model-set" and f.model == "res.users" for f in findings)

@@ -46,7 +46,11 @@ class ResConfigSettings(models.TransientModel):
     )
 
     findings = scan_settings(tmp_path)
-    fields = {finding.field for finding in findings if finding.rule_id == "odoo-settings-sensitive-config-field-no-admin-groups"}
+    fields = {
+        finding.field
+        for finding in findings
+        if finding.rule_id == "odoo-settings-sensitive-config-field-no-admin-groups"
+    }
 
     assert {"access_key", "license_key"} <= fields
 
@@ -286,8 +290,7 @@ class ResConfigSettings(models.TransientModel):
     assert "odoo-settings-security-toggle-no-admin-groups" in rule_ids
     assert "odoo-settings-security-toggle-unsafe-default" in rule_ids
     assert any(
-        f.rule_id == "odoo-settings-sudo-set-param" and f.field == "auth_signup.allow_uninvited"
-        for f in findings
+        f.rule_id == "odoo-settings-sudo-set-param" and f.field == "auth_signup.allow_uninvited" for f in findings
     )
 
 
@@ -477,6 +480,28 @@ class ResConfigSettings(models.TransientModel):
     assert any(f.rule_id == "odoo-settings-sudo-set-param" for f in findings)
 
 
+def test_flags_import_aliased_superuser_set_param_in_settings_method(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases in settings methods should be elevated."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, models
+
+class ResConfigSettings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    def set_values(self):
+        self.env['ir.config_parameter'].with_user(ROOT_UID).set_param('auth.signup.allow_uninvited', 'True')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_settings(tmp_path)
+
+    assert any(f.rule_id == "odoo-settings-sudo-set-param" for f in findings)
+
+
 def test_flags_keyword_with_user_superuser_set_param_in_settings_method(tmp_path: Path) -> None:
     """Keyword with_user(user=SUPERUSER_ID) config writes are elevated."""
     models = tmp_path / "module" / "models"
@@ -545,10 +570,7 @@ class ResConfigSettings(models.TransientModel):
 
     findings = scan_settings(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-settings-sudo-set-param" and f.field == "auth_oauth.allow_signup"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-settings-sudo-set-param" and f.field == "auth_oauth.allow_signup" for f in findings)
 
 
 def test_flags_class_constant_backed_with_user_root_set_param_in_settings_method(tmp_path: Path) -> None:
@@ -574,10 +596,7 @@ class ResConfigSettings(models.TransientModel):
 
     findings = scan_settings(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-settings-sudo-set-param" and f.field == "auth_oauth.allow_signup"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-settings-sudo-set-param" and f.field == "auth_oauth.allow_signup" for f in findings)
 
 
 def test_flags_env_ref_root_set_param_in_settings_method(tmp_path: Path) -> None:

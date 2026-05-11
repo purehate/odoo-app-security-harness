@@ -640,6 +640,29 @@ def set_values(self):
     assert "odoo-config-param-sudo-write" in rule_ids
 
 
+def test_flags_import_aliased_superuser_config_parameter_read_write(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should keep config access elevated."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "settings.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID
+
+def set_values(self):
+    Config = self.env['ir.config_parameter'].with_user(ROOT_UID)
+    Config.get_param('payment.provider.secret')
+    Config.set_param('web.base.url', 'https://example.com')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_config_parameters(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-config-param-sudo-sensitive-read" in rule_ids
+    assert "odoo-config-param-sudo-write" in rule_ids
+
+
 def test_flags_constant_alias_config_model_superuser_key_and_default(tmp_path: Path) -> None:
     """Aliased config model names, superuser IDs, keys, and defaults should resolve."""
     models = tmp_path / "module" / "models"
