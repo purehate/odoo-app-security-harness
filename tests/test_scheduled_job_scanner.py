@@ -571,6 +571,29 @@ class Sync(models.Model):
     assert sum(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings) == 1
 
 
+def test_flags_urllib_request_import_alias_without_timeout(tmp_path: Path) -> None:
+    """from urllib import request aliases should count as outbound HTTP."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+from urllib import request as urlreq
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        return urlreq.urlopen(self.feed_url)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert any(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings)
+
+
 def test_flags_http_module_alias_and_client_without_timeout(tmp_path: Path) -> None:
     """HTTP module aliases and session/client objects should be recognized."""
     models = tmp_path / "module" / "models"
