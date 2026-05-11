@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -165,7 +166,8 @@ class ApiKeyScanner(ast.NodeVisitor):
                     "API key record is declared in XML data",
                     "critical",
                     self._line_for_record(record),
-                    "Module data declares a res.users.apikeys record; verify credentials are not seeded, exported, or recreated across databases",
+                    "Module data declares a res.users.apikeys record; verify credentials are not "
+                    "seeded, exported, or recreated across databases",
                     record_id=record.get("id", ""),
                 )
         return self.findings
@@ -189,7 +191,8 @@ class ApiKeyScanner(ast.NodeVisitor):
                 "API key record is declared in CSV data",
                 "critical",
                 line_number,
-                "CSV data declares a res.users.apikeys record; verify credentials are not seeded, exported, or recreated across databases",
+                "CSV data declares a res.users.apikeys record; verify credentials are not seeded, "
+                "exported, or recreated across databases",
                 record_id=row.get("id", ""),
             )
         return self.findings
@@ -283,7 +286,8 @@ class ApiKeyScanner(ast.NodeVisitor):
                     "Public route mutates API keys",
                     "critical",
                     node.lineno,
-                    f"Public/unauthenticated route mutates {model}; verify only the authenticated owner or administrators can create, revoke, or rename API keys",
+                    f"Public/unauthenticated route mutates {model}; verify only the authenticated "
+                    "owner or administrators can create, revoke, or rename API keys",
                     route=route.display_path(),
                     sink=sink,
                 )
@@ -293,7 +297,8 @@ class ApiKeyScanner(ast.NodeVisitor):
                     "API key mutation runs with elevated environment",
                     "high",
                     node.lineno,
-                    f"{model}.{method} runs through sudo()/with_user(SUPERUSER_ID); verify caller identity, owner scoping, revocation semantics, and audit logging",
+                    f"{model}.{method} runs through sudo()/with_user(SUPERUSER_ID); verify caller "
+                    "identity, owner scoping, revocation semantics, and audit logging",
                     route=route.display_path(),
                     sink=sink,
                 )
@@ -303,7 +308,8 @@ class ApiKeyScanner(ast.NodeVisitor):
                     "Request-derived data reaches API key mutation",
                     "critical" if route.auth in {"public", "none"} else "high",
                     node.lineno,
-                    f"Request-derived data reaches {model}.{method}; whitelist fields and prevent callers from choosing another user_id or scope",
+                    f"Request-derived data reaches {model}.{method}; whitelist fields and prevent "
+                    "callers from choosing another user_id or scope",
                     route=route.display_path(),
                     sink=sink,
                 )
@@ -314,7 +320,8 @@ class ApiKeyScanner(ast.NodeVisitor):
                 "Request-derived API key lookup",
                 "high",
                 node.lineno,
-                "Request-derived data is used to query API-key records; verify constant-time credential validation, hashing, and user scoping rather than raw key lookup",
+                "Request-derived data is used to query API-key records; verify constant-time "
+                "credential validation, hashing, and user scoping rather than raw key lookup",
                 route=route.display_path(),
                 sink=sink,
             )
@@ -333,7 +340,9 @@ class ApiKeyScanner(ast.NodeVisitor):
                 "Request-derived API key is stored in configuration",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "Request-derived API key/token material is persisted with ir.config_parameter.set_param(); verify only trusted administrators can update integration credentials and that secrets are encrypted, rotated, and audited",
+                "Request-derived API key/token material is persisted with "
+                "ir.config_parameter.set_param(); verify only trusted administrators can update "
+                "integration credentials and that secrets are encrypted, rotated, and audited",
                 route=route.display_path(),
                 sink=sink,
             )
@@ -348,7 +357,9 @@ class ApiKeyScanner(ast.NodeVisitor):
                 "Route response appears to return API key material",
                 "critical" if route.auth in {"public", "none"} else "high",
                 node.lineno,
-                "Controller response references API-key/token material; verify newly generated credentials are shown only once to the authenticated owner and never exposed cross-user",
+                "Controller response references API-key/token material; verify newly generated "
+                "credentials are shown only once to the authenticated owner and never exposed "
+                "cross-user",
                 route=route.display_path(),
                 sink="return",
             )
@@ -765,6 +776,8 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
             and _is_static_literal(statement.value)
         ):
             constants[statement.target.id] = statement.value
+        elif isinstance(statement, ast.Expr):
+            _mark_static_dict_update(statement.value, constants)
     return constants
 
 
@@ -801,6 +814,59 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
             return None
         return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
     return None
+
+
+def _mark_static_dict_update(node: ast.AST, constants: dict[str, ast.AST]) -> None:
+    if not isinstance(node, ast.Call):
+        return
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "update":
+        return
+    if not isinstance(node.func.value, ast.Name):
+        return
+    name = node.func.value.id
+    values_node = _resolve_static_dict(ast.Name(id=name, ctx=ast.Load()), constants)
+    if values_node is None:
+        return
+    for arg in node.args:
+        arg_values = _resolve_static_dict(arg, constants)
+        if arg_values is not None:
+            for key, value in _dict_items(arg_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            values_node = _dict_with_field(values_node, keyword.arg, keyword.value)
+            continue
+        keyword_values = _resolve_static_dict(keyword.value, constants)
+        if keyword_values is not None:
+            for key, value in _dict_items(keyword_values, constants):
+                values_node = _dict_with_field(values_node, key, value)
+    constants[name] = values_node
+
+
+def _dict_items(node: ast.Dict, constants: dict[str, ast.AST]) -> list[tuple[str, ast.AST]]:
+    items: list[tuple[str, ast.AST]] = []
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                items.extend(_dict_items(nested, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            items.append((resolved_key.value, value))
+    return items
+
+
+def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dict:
+    keys = list(values_node.keys)
+    values = list(values_node.values)
+    for index, existing_key in enumerate(keys):
+        if isinstance(existing_key, ast.Constant) and existing_key.value == key:
+            values[index] = value
+            return ast.Dict(keys=keys, values=values)
+    keys.append(ast.Constant(value=key))
+    values.append(value)
+    return ast.Dict(keys=keys, values=values)
 
 
 def _is_static_literal(node: ast.AST) -> bool:

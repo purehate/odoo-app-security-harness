@@ -381,6 +381,49 @@ class Controller(http.Controller):
     assert any(f.route == "/public/apikey,/public/apikey/v2" for f in findings)
 
 
+def test_updated_static_unpack_route_options_api_key_create_is_reported(tmp_path: Path) -> None:
+    """Updated static ** route options should not hide public API-key mutations."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "apikey.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+API_KEY_OPTIONS = {
+    'routes': ['/public/apikey'],
+    'auth': 'user',
+}
+API_KEY_OPTIONS.update({
+    'auth': 'none',
+    'csrf': False,
+})
+
+class Controller(http.Controller):
+    @http.route(**API_KEY_OPTIONS)
+    def create_key(self, **kwargs):
+        return request.env['res.users.apikeys'].sudo().create({
+            'name': kwargs.get('name'),
+            'user_id': kwargs.get('user_id'),
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_api_keys(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-api-key-public-route-mutation" in rule_ids
+    assert "odoo-api-key-sudo-mutation" in rule_ids
+    assert "odoo-api-key-request-derived-mutation" in rule_ids
+    assert any(
+        f.rule_id == "odoo-api-key-request-derived-mutation"
+        and f.severity == "critical"
+        and f.route == "/public/apikey"
+        for f in findings
+    )
+
+
 def test_recursive_static_unpack_route_options_api_key_secret_config_is_critical(tmp_path: Path) -> None:
     """Recursive constant aliases inside ** route options should preserve public severity."""
     controllers = tmp_path / "module" / "controllers"
