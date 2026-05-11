@@ -6212,6 +6212,12 @@ def test_taxonomy_coverage_classifies_xml_cron_configuration_risks() -> None:
             },
             {
                 "source": "xml-data",
+                "rule_id": "odoo-xml-cron-tls-verify-disabled",
+                "title": "Cron disables TLS verification",
+                "message": "ir.cron code passes verify=False to outbound HTTP; scheduled integrations should not permit man-in-the-middle attacks",
+            },
+            {
+                "source": "xml-data",
                 "rule_id": "odoo-xml-cron-doall-enabled",
                 "title": "Cron catches up missed executions",
                 "message": "ir.cron has doall=True; after downtime it may replay missed jobs in bulk, causing duplicate side effects or load spikes",
@@ -6231,18 +6237,20 @@ def test_taxonomy_coverage_classifies_xml_cron_configuration_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 6
+    assert coverage["mapped_rules"] == 7
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-xml-cron-admin-user": "xml_cron_admin_user",
         "odoo-xml-cron-root-code": "xml_cron_root_code",
         "odoo-xml-cron-http-no-timeout": "xml_cron_http_without_timeout",
+        "odoo-xml-cron-tls-verify-disabled": "xml_cron_tls_verification_disabled",
         "odoo-xml-cron-doall-enabled": "xml_cron_doall_enabled",
         "odoo-xml-cron-short-interval": "xml_cron_short_interval",
         "odoo-xml-cron-external-sync-review": "xml_cron_external_sync_review",
     }
     assert any("CWE-269" in entry["cwe"] for entry in coverage["mapped_entries"])
     assert any("CWE-400" in entry["cwe"] for entry in coverage["mapped_entries"])
+    assert any("CWE-295" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_queue_job_enqueue_risks() -> None:

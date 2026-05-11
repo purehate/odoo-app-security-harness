@@ -384,6 +384,29 @@ def test_cron_head_without_timeout(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
 
 
+def test_cron_tls_verification_disabled(tmp_path: Path) -> None:
+    """Cron inline Python should surface disabled HTTP TLS verification."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_http_tls" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code"><![CDATA[
+TLS_VERIFY = False
+requests.post(record.callback_url, timeout=10, verify=TLS_VERIFY)
+requests.get(record.health_url, timeout=10, verify=True)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+    tls_findings = [f for f in findings if f.rule_id == "odoo-xml-cron-tls-verify-disabled"]
+
+    assert len(tls_findings) == 1
+
+
 def test_admin_method_cron_without_state_code_is_reported(tmp_path: Path) -> None:
     """Admin/root cron posture matters even when the cron calls a model method."""
     xml = tmp_path / "cron.xml"

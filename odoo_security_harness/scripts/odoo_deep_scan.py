@@ -1300,6 +1300,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "xml_cron_tls_verification_disabled",
+        (
+            "odoo-xml-cron-tls-verify-disabled",
+            "cron disables tls verification",
+            "ir.cron code passes verify=false to outbound http",
+            "scheduled integrations should not permit man-in-the-middle attacks",
+        ),
+    ),
+    (
         "xml_cron_doall_enabled",
         (
             "odoo-xml-cron-doall-enabled",

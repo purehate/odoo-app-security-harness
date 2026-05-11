@@ -213,6 +213,7 @@ class XmlDataScanner:
         )
         user_ref = fields.get("user_id", "")
         record_id = record.get("id", "")
+        code_risks = _server_action_code_risks(code) if state == "code" else _ServerActionCodeRisks()
 
         if "base.user_root" in user_ref or "base.user_admin" in user_ref:
             self._add(
@@ -242,6 +243,17 @@ class XmlDataScanner:
                 "medium",
                 self._line_for_record(record),
                 "Cron code performs outbound HTTP without timeout; review SSRF and worker exhaustion risk",
+                "ir.cron",
+                record_id,
+            )
+
+        if code_risks.tls_verify_disabled:
+            self._add(
+                "odoo-xml-cron-tls-verify-disabled",
+                "Cron disables TLS verification",
+                "high",
+                self._line_for_record(record),
+                "ir.cron code passes verify=False to outbound HTTP; scheduled integrations should not permit man-in-the-middle attacks",
                 "ir.cron",
                 record_id,
             )
