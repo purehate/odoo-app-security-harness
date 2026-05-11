@@ -256,6 +256,10 @@ def test_integration_credential_field_metadata_is_reported(tmp_path: Path) -> No
     <field name="name">license_key</field>
     <field name="groups" eval="[(4, ref('base.group_public'))]"/>
   </record>
+  <record id="field_reset_password_url" model="ir.model.fields">
+    <field name="model_id" ref="base.model_res_partner"/>
+    <field name="name">reset_password_url</field>
+  </record>
 </odoo>""",
         encoding="utf-8",
     )
@@ -265,6 +269,11 @@ def test_integration_credential_field_metadata_is_reported(tmp_path: Path) -> No
 
     assert "odoo-metadata-sensitive-field-no-groups" in rule_ids
     assert "odoo-metadata-sensitive-field-public-groups" in rule_ids
+    assert any(
+        finding.rule_id == "odoo-metadata-sensitive-field-no-groups"
+        and finding.record_id == "field_reset_password_url"
+        for finding in findings
+    )
 
 
 def test_sensitive_model_field_csv_is_reported(tmp_path: Path) -> None:
