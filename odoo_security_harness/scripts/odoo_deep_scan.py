@@ -158,8 +158,7 @@ _TAXONOMY_SHAPE_HINTS = (
         (
             "odoo-loose-python-sudo-method-call",
             "privileged business method call in loose script",
-            "sudo()/with_user(superuser_id) is used to call a business/action method",
-            "workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
+            "loose-python privileged business method call",
         ),
     ),
     (
@@ -1188,6 +1187,15 @@ _TAXONOMY_SHAPE_HINTS = (
             "automated action performs elevated mutation",
             "base.automation code chains sudo()/with_user(superuser_id)",
             "record rules and company isolation are not bypassed",
+        ),
+    ),
+    (
+        "automation_sudo_method_call",
+        (
+            "odoo-automation-sudo-method-call",
+            "automated action calls elevated business method",
+            "base.automation code uses sudo()/with_user(superuser_id) to call a business/action method",
+            "workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
         ),
     ),
     (

@@ -6122,6 +6122,12 @@ def test_taxonomy_coverage_classifies_automation_risks() -> None:
             },
             {
                 "source": "automations",
+                "rule_id": "odoo-automation-sudo-method-call",
+                "title": "Automated action calls elevated business method",
+                "message": "base.automation code uses sudo()/with_user(SUPERUSER_ID) to call a business/action method; verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
+            },
+            {
+                "source": "automations",
                 "rule_id": "odoo-automation-sensitive-model-mutation",
                 "title": "Automated action mutates sensitive model",
                 "message": "base.automation code mutates a sensitive model; verify trigger scope, actor, idempotency, and audit trail",
@@ -6140,6 +6146,7 @@ def test_taxonomy_coverage_classifies_automation_risks() -> None:
     assert shapes["odoo-automation-broad-sensitive-trigger"] == "automation_broad_sensitive_trigger"
     assert shapes["odoo-automation-dynamic-eval"] == "automation_dynamic_eval"
     assert shapes["odoo-automation-sudo-mutation"] == "automation_sudo_mutation"
+    assert shapes["odoo-automation-sudo-method-call"] == "automation_sudo_method_call"
     assert shapes["odoo-automation-sensitive-model-mutation"] == "automation_sensitive_model_mutation"
     assert shapes["odoo-automation-http-no-timeout"] == "automation_http_without_timeout"
     assert any("CWE-94" in entry["cwe"] for entry in coverage["mapped_entries"])

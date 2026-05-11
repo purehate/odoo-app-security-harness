@@ -54,6 +54,7 @@ HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "request", "url
 HTTP_CLIENT_FACTORIES = {"AsyncClient", "Client", "ClientSession", "Session"}
 MUTATION_METHODS = {"write", "create", "unlink"}
 SENSITIVE_MODEL_MUTATION_METHODS = {*MUTATION_METHODS, "set", "set_param"}
+ELEVATED_BUSINESS_METHOD_PREFIXES = ("_action_", "_button_", "action_", "button_", "do_", "post_", "run_", "send_")
 
 
 def scan_automations(repo_path: Path) -> list[AutomationFinding]:
@@ -147,6 +148,17 @@ class AutomationScanner:
                 "high",
                 line,
                 "base.automation code chains sudo()/with_user(SUPERUSER_ID) into write/create/unlink; verify record rules and company isolation are not bypassed",
+                model,
+                record_id,
+            )
+
+        if "sudo_method_call" in code_risks:
+            self._add(
+                "odoo-automation-sudo-method-call",
+                "Automated action calls elevated business method",
+                "high",
+                line,
+                "base.automation code uses sudo()/with_user(SUPERUSER_ID) to call a business/action method; verify workflow side effects cannot bypass record rules, approvals, audit, or company isolation",
                 model,
                 record_id,
             )
@@ -357,6 +369,8 @@ class _AutomationCodeScanner(ast.NodeVisitor):
             self.risks.add("dynamic_eval")
         if _is_sudo_mutation(node.func, self.sudo_vars, constants, self.superuser_names):
             self.risks.add("sudo_mutation")
+        if _is_sudo_business_method_call(node.func, self.sudo_vars, constants, self.superuser_names):
+            self.risks.add("sudo_method_call")
         if sink.rsplit(".", 1)[-1] in SENSITIVE_MODEL_MUTATION_METHODS and _call_receiver_sensitive_model(
             node, constants
         ):
@@ -418,6 +432,12 @@ class _AutomationCodeScanner(ast.NodeVisitor):
         )
         if re.search(rf"\.(?:sudo\(\)|{superuser_with_user}).*?\.(write|create|unlink)\s*\(", code, re.DOTALL):
             risks.add("sudo_mutation")
+        if re.search(
+            rf"\.(?:sudo\(\)|{superuser_with_user}).*?\.((?:_?action|_?button|do|post|run|send)_[A-Za-z0-9_]*)\s*\(",
+            code,
+            re.DOTALL,
+        ):
+            risks.add("sudo_method_call")
         if _regex_sensitive_model_mutation(code):
             risks.add("sensitive_model_mutation")
         if (
@@ -451,6 +471,18 @@ def _is_sudo_mutation(
 ) -> bool:
     sink = _call_name(node)
     if sink.rsplit(".", 1)[-1] not in MUTATION_METHODS:
+        return False
+    return _is_sudo_expr(node, sudo_vars, constants, superuser_names)
+
+
+def _is_sudo_business_method_call(
+    node: ast.AST,
+    sudo_vars: set[str],
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
+    sink = _call_name(node)
+    if not sink.rsplit(".", 1)[-1].startswith(ELEVATED_BUSINESS_METHOD_PREFIXES):
         return False
     return _is_sudo_expr(node, sudo_vars, constants, superuser_names)
 

@@ -339,6 +339,65 @@ def test_regex_fallback_keyword_with_user_mutation_in_automation_is_reported(tmp
     assert any(f.rule_id == "odoo-automation-sudo-mutation" for f in findings)
 
 
+def test_sudo_business_method_call_in_automation_is_reported(tmp_path: Path) -> None:
+    """Workflow methods called through sudo in automations deserve review."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_sudo_action" model="base.automation">
+    <field name="code"><![CDATA[
+record.sudo().action_confirm()
+record.sudo().mapped('name')
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+    method_findings = [f for f in findings if f.rule_id == "odoo-automation-sudo-method-call"]
+
+    assert len(method_findings) == 1
+
+
+def test_with_user_business_method_call_in_automation_is_reported(tmp_path: Path) -> None:
+    """Superuser aliases should flag elevated workflow methods in automation code."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_with_user_action" model="base.automation">
+    <field name="code"><![CDATA[
+from odoo import SUPERUSER_ID
+pickings = record.with_user(SUPERUSER_ID)
+pickings.button_validate()
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-sudo-method-call" for f in findings)
+
+
+def test_regex_fallback_sudo_business_method_call_in_automation_is_reported(tmp_path: Path) -> None:
+    """Malformed automation code should catch obvious sudo workflow calls."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_sudo_action_fallback" model="base.automation">
+    <field name="code">if broken record.sudo().action_confirm()</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-automation-sudo-method-call" for f in findings)
+
+
 def test_starred_rest_sudo_alias_mutation_in_automation_is_reported(tmp_path: Path) -> None:
     """sudo aliases inside starred-rest collections should be recognized."""
     xml = tmp_path / "automation.xml"

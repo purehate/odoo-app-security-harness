@@ -1322,6 +1322,12 @@
       "capec": ["CAPEC-122"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "automation_sudo_method_call": {
+      "label": "Odoo automated action calls workflow methods through sudo or superuser context",
+      "cwe": ["CWE-269", "CWE-863", "CWE-639"],
+      "capec": ["CAPEC-122", "CAPEC-21"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "automation_sensitive_model_mutation": {
       "label": "Odoo automated action mutates security, identity, payment, attachment, or configuration models",
       "cwe": ["CWE-284", "CWE-862", "CWE-863"],
