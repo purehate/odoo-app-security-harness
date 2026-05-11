@@ -745,7 +745,7 @@ def _is_website_form_allowed_field(
         return False
     return any(
         keyword.arg == "website_form_blacklisted" and _is_false_constant(keyword.value, constants)
-        for keyword in node.keywords
+        for keyword in _expanded_keywords(node, constants or {})
     )
 
 
@@ -808,7 +808,7 @@ def _http_route_path(
             return ""
         if node.args:
             return _route_path_from_arg(node.args[0], constants)
-        for keyword in node.keywords:
+        for keyword in _expanded_keywords(node, constants or {}):
             if keyword.arg == "route":
                 return _route_path_from_arg(keyword.value, constants)
         return ""
@@ -831,12 +831,12 @@ def _route_csrf_disabled(node: ast.AST, constants: dict[str, ast.AST] | None = N
         return False
     return any(
         keyword.arg == "csrf" and _is_false_constant(keyword.value, constants)
-        for keyword in node.keywords
+        for keyword in _expanded_keywords(node, constants or {})
     )
 
 
 def _call_disables_sanitize_form(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
-    for keyword in node.keywords:
+    for keyword in _expanded_keywords(node, constants or {}):
         if keyword.arg == "sanitize_form" and _is_false_constant(keyword.value, constants):
             return True
     return False
@@ -910,17 +910,76 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
 
 
 def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
+    return _resolve_constant_seen(node, constants, set())
+
+
+def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: set[str]) -> ast.AST:
     if isinstance(node, ast.Name):
-        return constants.get(node.id, node)
+        if node.id in seen:
+            return node
+        value = constants.get(node.id)
+        if value is not None:
+            return _resolve_constant_seen(value, constants, seen | {node.id})
     return node
 
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
         return isinstance(node.value, str | bool | int | float | type(None))
+    if isinstance(node, ast.Name):
+        return True
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
         return all(_is_static_literal(element) for element in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(
+            (key is None or _is_static_literal(key)) and _is_static_literal(value)
+            for key, value in zip(node.keys, node.values, strict=False)
+        )
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_static_literal(node.left) and _is_static_literal(node.right)
     return False
+
+
+def _resolve_static_dict(
+    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
+) -> ast.Dict | None:
+    seen = seen or set()
+    node = _resolve_constant_seen(node, constants, seen)
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_static_dict(node.left, constants, set(seen))
+        right = _resolve_static_dict(node.right, constants, set(seen))
+        if left is None or right is None:
+            return None
+        return ast.Dict(keys=[*left.keys, *right.keys], values=[*left.values, *right.values])
+    return None
+
+
+def _expanded_keywords(node: ast.Call, constants: dict[str, ast.AST]) -> list[ast.keyword]:
+    keywords: list[ast.keyword] = []
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            keywords.append(keyword)
+            continue
+        value = _resolve_static_dict(keyword.value, constants)
+        if value is not None:
+            keywords.extend(_expanded_dict_keywords(value, constants))
+    return keywords
+
+
+def _expanded_dict_keywords(node: ast.Dict, constants: dict[str, ast.AST]) -> list[ast.keyword]:
+    keywords: list[ast.keyword] = []
+    for key, value in zip(node.keys, node.values, strict=False):
+        if key is None:
+            nested = _resolve_static_dict(value, constants)
+            if nested is not None:
+                keywords.extend(_expanded_dict_keywords(nested, constants))
+            continue
+        resolved_key = _resolve_constant(key, constants)
+        if isinstance(resolved_key, ast.Constant) and isinstance(resolved_key.value, str):
+            keywords.append(ast.keyword(arg=resolved_key.value, value=value))
+    return keywords
 
 
 def _is_false_constant(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:

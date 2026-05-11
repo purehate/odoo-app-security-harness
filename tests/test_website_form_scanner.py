@@ -275,6 +275,30 @@ class Form(http.Controller):
     assert any(f.rule_id == "odoo-website-form-sanitize-disabled" and f.field == "sanitize_form" for f in findings)
 
 
+def test_flags_website_form_sanitize_form_disabled_dict_union_call(tmp_path: Path) -> None:
+    """Dict-union call kwargs should not hide disabled website_form sanitization."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+
+BASE_OPTIONS = {'sanitize_form': True}
+EXTRACT_OPTIONS = BASE_OPTIONS | {'sanitize_form': False}
+
+class Form(http.Controller):
+    @http.route('/x/form', auth='public', type='http')
+    def form(self, **post):
+        return self.extract_data('crm.lead', post, **EXTRACT_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-sanitize-disabled" and f.field == "sanitize_form" for f in findings)
+
+
 def test_flags_data_model_alias_and_qweb_sensitive_field(tmp_path: Path) -> None:
     """Common model/field attribute variants should not hide website form risk."""
     views = tmp_path / "module" / "views"
@@ -724,6 +748,35 @@ class Lead(models.Model):
     )
 
 
+def test_flags_dict_union_sensitive_field_allowlisted_for_website_form(tmp_path: Path) -> None:
+    """Dict-union field kwargs should not hide sensitive website form allowlists."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "lead.py").write_text(
+        """
+from odoo import fields, models
+
+BASE_OPTIONS = {'website_form_blacklisted': True}
+FIELD_OPTIONS = BASE_OPTIONS | {'website_form_blacklisted': False}
+
+class Lead(models.Model):
+    _inherit = 'crm.lead'
+
+    partner_id = fields.Many2one('res.partner', **FIELD_OPTIONS)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-website-form-field-allowlisted-sensitive"
+        and f.model == "crm.lead"
+        and f.field == "partner_id"
+        for f in findings
+    )
+
+
 def test_flags_class_constant_backed_sensitive_field_allowlisted_for_website_form(tmp_path: Path) -> None:
     """Class-body website_form_blacklisted constants should not hide sensitive field allowlists."""
     models = tmp_path / "module" / "models"
@@ -945,6 +998,33 @@ CSRF_ENABLED = False
 
 class WebsiteForm(http.Controller):
     @http.route(FORM_ROUTES, auth='public', csrf=CSRF_ENABLED)
+    def submit(self, **post):
+        return 'ok'
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(f.rule_id == "odoo-website-form-route-csrf-disabled" for f in findings)
+
+
+def test_flags_dict_union_website_form_route_with_csrf_disabled(tmp_path: Path) -> None:
+    """Dict-union route kwargs should not hide website_form CSRF disablement."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "main.py").write_text(
+        """
+from odoo import http
+
+BASE_OPTIONS = {
+    'route': ['/contactus', '/website/form/helpdesk.ticket'],
+    'csrf': True,
+}
+ROUTE_OPTIONS = BASE_OPTIONS | {'auth': 'public', 'csrf': False}
+
+class WebsiteForm(http.Controller):
+    @http.route(**ROUTE_OPTIONS)
     def submit(self, **post):
         return 'ok'
 """,
