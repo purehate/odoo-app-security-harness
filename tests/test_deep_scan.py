@@ -2315,13 +2315,19 @@ def test_taxonomy_coverage_classifies_qweb_external_script_missing_sri() -> None
                 "source": "qweb",
                 "title": "QWeb external script lacks Subresource Integrity",
                 "message": "QWeb template loads an external script without an integrity attribute",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-external-script-missing-sri",
+                "source": "web-asset",
+                "title": "OWL inline template external script lacks Subresource Integrity",
+                "message": "OWL xml template loads an external script without an integrity attribute",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_external_script_missing_sri"
-    assert "CWE-829" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_external_script_missing_sri"}
+    assert any("CWE-829" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_web_external_script_missing_sri() -> None:
@@ -2351,13 +2357,19 @@ def test_taxonomy_coverage_classifies_qweb_external_stylesheet_missing_sri() -> 
                 "source": "qweb",
                 "title": "QWeb external stylesheet lacks Subresource Integrity",
                 "message": "QWeb template loads an external stylesheet without an integrity attribute",
+            },
+            {
+                "rule_id": "odoo-web-owl-qweb-external-stylesheet-missing-sri",
+                "source": "web-asset",
+                "title": "OWL inline template external stylesheet lacks Subresource Integrity",
+                "message": "OWL xml template loads an external stylesheet without an integrity attribute",
             }
         ]
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert coverage["mapped_entries"][0]["shape"] == "frontend_external_stylesheet_missing_sri"
-    assert "CWE-829" in coverage["mapped_entries"][0]["cwe"]
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"frontend_external_stylesheet_missing_sri"}
+    assert any("CWE-829" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
 def test_taxonomy_coverage_classifies_web_external_stylesheet_missing_sri() -> None:

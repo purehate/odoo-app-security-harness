@@ -3353,8 +3353,10 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "frontend_external_script_missing_sri",
         (
+            "web-owl-qweb-external-script-missing-sri",
             "qweb-external-script-missing-sri",
             "web-external-script-missing-sri",
+            "owl inline template external script lacks subresource integrity",
             "external script lacks subresource integrity",
             "dom-created external script lacks subresource integrity",
             "external script without an integrity attribute",
@@ -3366,8 +3368,10 @@ _TAXONOMY_SHAPE_HINTS = (
     (
         "frontend_external_stylesheet_missing_sri",
         (
+            "web-owl-qweb-external-stylesheet-missing-sri",
             "qweb-external-stylesheet-missing-sri",
             "web-external-stylesheet-missing-sri",
+            "owl inline template external stylesheet lacks subresource integrity",
             "external stylesheet lacks subresource integrity",
             "dom-created external stylesheet lacks subresource integrity",
             "external stylesheet without an integrity attribute",

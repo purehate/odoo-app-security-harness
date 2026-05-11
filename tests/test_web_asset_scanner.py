@@ -1468,6 +1468,62 @@ def test_owl_inline_template_iframe_safe_sandbox_tokens_ignored(tmp_path: Path) 
     assert not any(f.rule_id == "odoo-web-owl-qweb-iframe-sandbox-escape" for f in findings)
 
 
+def test_owl_inline_template_external_script_missing_sri_detected(tmp_path: Path) -> None:
+    """OWL inline third-party scripts should be pinned with SRI."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<script src=\"https://cdn.example.com/widget.js\"></script>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-external-script-missing-sri"
+        and f.sink == "owl-template"
+        and f.severity == "medium"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_external_script_with_sri_ignored(tmp_path: Path) -> None:
+    """External OWL scripts with integrity are already pinned for review."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "export const template = xml`<script src=\"https://cdn.example.com/widget.js\" integrity=\"sha384-test\"></script>`;\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-external-script-missing-sri" for f in findings)
+
+
+def test_owl_inline_template_external_stylesheet_missing_sri_detected(tmp_path: Path) -> None:
+    """OWL inline third-party stylesheets should be pinned with SRI."""
+    path = tmp_path / "widget.js"
+    path.write_text("export const template = xml`<link rel=\"stylesheet\" href=\"https://cdn.example.com/theme.css\"/>`;\n", encoding="utf-8")
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-web-owl-qweb-external-stylesheet-missing-sri"
+        and f.sink == "owl-template"
+        and f.severity == "low"
+        for f in findings
+    )
+
+
+def test_owl_inline_template_external_stylesheet_with_sri_ignored(tmp_path: Path) -> None:
+    """External OWL stylesheets with integrity are already pinned for review."""
+    path = tmp_path / "widget.js"
+    path.write_text(
+        "export const template = xml`<link rel=\"stylesheet\" href=\"https://cdn.example.com/theme.css\" integrity=\"sha384-test\"/>`;\n",
+        encoding="utf-8",
+    )
+
+    findings = WebAssetScanner(path).scan_file()
+
+    assert not any(f.rule_id == "odoo-web-owl-qweb-external-stylesheet-missing-sri" for f in findings)
+
+
 def test_owl_inline_template_escaped_output_ignored(tmp_path: Path) -> None:
     """Escaped OWL inline template output should not create raw-output leads."""
     path = tmp_path / "widget.js"

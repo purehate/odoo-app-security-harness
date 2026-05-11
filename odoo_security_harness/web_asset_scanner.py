@@ -318,6 +318,8 @@ OWL_TEMPLATE_DANGEROUS_TAG_RE = re.compile(r"<\s*(?:script|iframe|object|embed|f
 OWL_TEMPLATE_POST_FORM_RE = re.compile(r"<form\b(?P<attrs>[^>]*)>(?P<body>.*?)</form>", re.IGNORECASE | re.DOTALL)
 OWL_TEMPLATE_IFRAME_RE = re.compile(r"<iframe\b(?P<attrs>[^>]*)>", re.IGNORECASE | re.DOTALL)
 OWL_TEMPLATE_LINK_RE = re.compile(r"<a\b(?P<attrs>[^>]*)>", re.IGNORECASE | re.DOTALL)
+OWL_TEMPLATE_SCRIPT_RE = re.compile(r"<script\b(?P<attrs>[^>]*)>", re.IGNORECASE | re.DOTALL)
+OWL_TEMPLATE_STYLESHEET_LINK_RE = re.compile(r"<link\b(?P<attrs>[^>]*)>", re.IGNORECASE | re.DOTALL)
 OWL_TEMPLATE_DYNAMIC_EVENT_RE = re.compile(r"\b(?:on\w+|t-attf?-on\w+)\s*=", re.IGNORECASE)
 OWL_TEMPLATE_SRCDOC_RE = re.compile(
     r"\bt-attf?-srcdoc\s*=|\bt-att\s*=\s*['\"][^>]*['\"]srcdoc['\"]\s*:",
@@ -1186,6 +1188,24 @@ class WebAssetScanner:
                     "OWL xml template iframe sandbox combines allow-scripts with allow-same-origin; same-origin content can remove the sandbox or access parent-origin data",
                     "owl-template",
                 )
+            if _owl_template_has_external_script_without_sri(body):
+                self._add(
+                    "odoo-web-owl-qweb-external-script-missing-sri",
+                    "OWL inline template external script lacks Subresource Integrity",
+                    "medium",
+                    line,
+                    "OWL xml template loads an external script without an integrity attribute; pin third-party assets with SRI or serve reviewed code from trusted bundles",
+                    "owl-template",
+                )
+            if _owl_template_has_external_stylesheet_without_sri(body):
+                self._add(
+                    "odoo-web-owl-qweb-external-stylesheet-missing-sri",
+                    "OWL inline template external stylesheet lacks Subresource Integrity",
+                    "low",
+                    line,
+                    "OWL xml template loads an external stylesheet without an integrity attribute; pin third-party CSS with SRI or serve reviewed styles from trusted bundles",
+                    "owl-template",
+                )
             if OWL_TEMPLATE_DYNAMIC_EVENT_RE.search(body):
                 self._add(
                     "odoo-web-owl-qweb-dynamic-event-handler",
@@ -1432,6 +1452,25 @@ def _owl_template_has_iframe_sandbox_escape(body: str) -> bool:
 def _html_attr_value(attrs: str, name: str) -> str | None:
     attr_match = re.search(rf"\b{re.escape(name)}\s*=\s*['\"](?P<value>[^'\"]*)['\"]", attrs, re.IGNORECASE)
     return attr_match.group("value") if attr_match else None
+
+
+def _owl_template_has_external_script_without_sri(body: str) -> bool:
+    for match in OWL_TEMPLATE_SCRIPT_RE.finditer(body):
+        attrs = match.group("attrs")
+        src = _html_attr_value(attrs, "src")
+        if src and _is_external_url(src) and not _html_attr_value(attrs, "integrity"):
+            return True
+    return False
+
+
+def _owl_template_has_external_stylesheet_without_sri(body: str) -> bool:
+    for match in OWL_TEMPLATE_STYLESHEET_LINK_RE.finditer(body):
+        attrs = match.group("attrs")
+        rel = _html_attr_value(attrs, "rel") or ""
+        href = _html_attr_value(attrs, "href")
+        if "stylesheet" in rel.lower().split() and href and _is_external_url(href) and not _html_attr_value(attrs, "integrity"):
+            return True
+    return False
 
 
 def _looks_risky_css_text(css_text: str) -> bool:
