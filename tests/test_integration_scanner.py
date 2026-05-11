@@ -262,6 +262,47 @@ def sync():
     assert any(f.rule_id == "odoo-integration-internal-url-ssrf" for f in findings)
 
 
+def test_requests_request_positional_url_is_reported(tmp_path: Path) -> None:
+    """requests.request uses its second positional argument as the outbound URL."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import requests
+
+def webhook(**kwargs):
+    callback_url = kwargs.get('callback_url')
+    requests.request('POST', callback_url, timeout=5)
+    requests.request('GET', 'http://127.0.0.1:8069/web/database/list', timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+    rule_ids = {f.rule_id for f in findings}
+
+    assert "odoo-integration-tainted-url-ssrf" in rule_ids
+    assert "odoo-integration-internal-url-ssrf" in rule_ids
+
+
+def test_http_client_request_positional_url_is_reported(tmp_path: Path) -> None:
+    """Session/client request methods also put the outbound URL in position two."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+import requests
+
+def webhook(**kwargs):
+    session = requests.Session()
+    return session.request('GET', kwargs.get('callback_url'), timeout=5)
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-integration-tainted-url-ssrf" and f.sink == "session.request" for f in findings)
+
+
 def test_public_literal_url_is_not_internal_ssrf(tmp_path: Path) -> None:
     """Normal public integration endpoints should not be treated as internal URLs."""
     py = tmp_path / "integration.py"

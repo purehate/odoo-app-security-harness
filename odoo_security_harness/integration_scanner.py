@@ -239,12 +239,12 @@ class IntegrationScanner(ast.NodeVisitor):
         sink = _call_name(node.func)
         canonical_sink = self._canonical_sink(sink)
         if self._is_http_call(canonical_sink):
-            self._scan_http_call(node, sink)
+            self._scan_http_call(node, sink, canonical_sink)
         elif _is_command_call(canonical_sink):
             self._scan_command_call(node, sink, canonical_sink)
         self.generic_visit(node)
 
-    def _scan_http_call(self, node: ast.Call, sink: str) -> None:
+    def _scan_http_call(self, node: ast.Call, sink: str, canonical_sink: str) -> None:
         if not _has_effective_timeout(node, self._effective_constants()):
             self._add(
                 "odoo-integration-http-no-timeout",
@@ -266,24 +266,25 @@ class IntegrationScanner(ast.NodeVisitor):
                 "Outbound HTTP call passes verify=False; this permits man-in-the-middle attacks against integration traffic",
                 sink,
             )
-        if node.args and self._expr_is_tainted(node.args[0]):
-            self._add(
-                "odoo-integration-tainted-url-ssrf",
-                "Outbound HTTP URL is request-controlled",
-                "high",
-                node.lineno,
-                "Outbound HTTP URL is derived from request/controller input; validate scheme, host, and private-network reachability to prevent SSRF",
-                sink,
-            )
-        if node.args and _is_internal_literal_url(node.args[0], self._effective_constants()):
-            self._add(
-                "odoo-integration-internal-url-ssrf",
-                "Outbound HTTP targets internal URL",
-                "high",
-                node.lineno,
-                "Outbound HTTP call targets a literal loopback, private, link-local, or metadata URL; verify the integration cannot expose cloud metadata or internal Odoo/admin services",
-                sink,
-            )
+        for url_arg in _positional_http_url_args(node, canonical_sink):
+            if self._expr_is_tainted(url_arg):
+                self._add(
+                    "odoo-integration-tainted-url-ssrf",
+                    "Outbound HTTP URL is request-controlled",
+                    "high",
+                    node.lineno,
+                    "Outbound HTTP URL is derived from request/controller input; validate scheme, host, and private-network reachability to prevent SSRF",
+                    sink,
+                )
+            if _is_internal_literal_url(url_arg, self._effective_constants()):
+                self._add(
+                    "odoo-integration-internal-url-ssrf",
+                    "Outbound HTTP targets internal URL",
+                    "high",
+                    node.lineno,
+                    "Outbound HTTP call targets a literal loopback, private, link-local, or metadata URL; verify the integration cannot expose cloud metadata or internal Odoo/admin services",
+                    sink,
+                )
         url_keyword = _keyword(node, "url")
         if url_keyword and self._expr_is_tainted(url_keyword.value):
             self._add(
@@ -714,6 +715,15 @@ def _is_request_derived(
         )
     text = _safe_unparse(node)
     return any(marker in text for marker in REQUEST_TEXT_MARKERS)
+
+
+def _positional_http_url_args(node: ast.Call, canonical_sink: str) -> list[ast.AST]:
+    """Return positional URL expressions for common HTTP client call signatures."""
+    if not node.args:
+        return []
+    if canonical_sink.endswith(".request") and len(node.args) >= 2:
+        return [node.args[1]]
+    return [node.args[0]]
 
 
 def _is_request_source_expr(
