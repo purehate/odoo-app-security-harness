@@ -177,10 +177,18 @@ def _parse_po_entries(lines: list[str]) -> list[PoEntry]:
             current = "msgid"
             msgid_line = line_number
             msgid_parts.append(_po_string_value(line[6:]))
+        elif line.startswith("msgid_plural "):
+            current = "msgid"
+            msgid_parts.append(_po_string_value(line.split(" ", 1)[1]))
         elif line.startswith("msgstr "):
             current = "msgstr"
             msgstr_line = line_number
             msgstr_parts.append(_po_string_value(line[7:]))
+        elif re.match(r"msgstr\[\d+\]\s+", line):
+            current = "msgstr"
+            if not msgstr_line:
+                msgstr_line = line_number
+            msgstr_parts.append(_po_string_value(line.split(" ", 1)[1]))
         elif line.startswith('"') and current == "msgid":
             msgid_parts.append(_po_string_value(line))
         elif line.startswith('"') and current == "msgstr":

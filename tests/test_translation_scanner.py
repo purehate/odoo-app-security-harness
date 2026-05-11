@@ -134,6 +134,40 @@ msgstr "<t t-call=\\"web.login_layout\\">Continue</t>"
     assert "odoo-i18n-template-expression-injection" in {finding.rule_id for finding in findings}
 
 
+def test_flags_dangerous_plural_translation(tmp_path: Path) -> None:
+    """Plural msgstr entries should be scanned like normal translated strings."""
+    write_po(
+        tmp_path / "module" / "i18n" / "fr.po",
+        """
+msgid "%(count)s record"
+msgid_plural "%(count)s records"
+msgstr[0] "%(count)s enregistrement"
+msgstr[1] "<a href=\\"javascript:alert(1)\\">%(count)s enregistrements</a>"
+""",
+    )
+
+    findings = scan_translations(tmp_path)
+
+    assert "odoo-i18n-dangerous-html" in {finding.rule_id for finding in findings}
+
+
+def test_plural_placeholder_sets_are_compared(tmp_path: Path) -> None:
+    """Plural source placeholders should be considered when checking msgstr drift."""
+    write_po(
+        tmp_path / "module" / "i18n" / "es.po",
+        """
+msgid "%(count)s order"
+msgid_plural "%(count)s orders for %(partner)s"
+msgstr[0] "%(count)s pedido"
+msgstr[1] "%(count)s pedidos"
+""",
+    )
+
+    findings = scan_translations(tmp_path)
+
+    assert "odoo-i18n-placeholder-mismatch" in {finding.rule_id for finding in findings}
+
+
 def test_accepts_multiline_safe_translation(tmp_path: Path) -> None:
     """Multiline entries with matching placeholders should not be reported."""
     write_po(
