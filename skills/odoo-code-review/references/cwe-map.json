@@ -1890,6 +1890,12 @@
       "capec": ["CAPEC-117", "CAPEC-94"],
       "owasp": "A02:2021 Cryptographic Failures"
     },
+    "oauth_url_embedded_credentials": {
+      "label": "OAuth/OIDC token or userinfo URL embeds username, password, or token material",
+      "cwe": ["CWE-598", "CWE-522", "CWE-798"],
+      "capec": ["CAPEC-191"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "oauth_tainted_validation_url": {
       "label": "Request-derived data controls OAuth/OIDC token or userinfo validation URL",
       "cwe": ["CWE-918", "CWE-200", "CWE-601"],

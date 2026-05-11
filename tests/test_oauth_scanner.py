@@ -346,6 +346,33 @@ class OAuthController(http.Controller):
     assert any(f.rule_id == "odoo-oauth-cleartext-http-url" for f in findings)
 
 
+def test_oauth_url_embedded_credentials_are_reported(tmp_path: Path) -> None:
+    """OAuth provider validation URLs should not embed credential material."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "oauth.py").write_text(
+        """
+from odoo import http
+import requests
+
+USERINFO_URL = 'https://client:sk_live_1234567890abcdef@provider.example.test/oauth/userinfo'
+TOKEN_OPTIONS = {'url': 'https://token_1234567890abcdef@provider.example.test/oauth/token', 'timeout': 10}
+
+class Controller(http.Controller):
+    @http.route('/auth/oauth/callback', auth='public', csrf=False)
+    def callback(self, **kwargs):
+        profile = requests.get(USERINFO_URL, timeout=10)
+        token = requests.request('POST', **TOKEN_OPTIONS)
+        return profile, token
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert sum(f.rule_id == "odoo-oauth-url-embedded-credentials" for f in findings) == 2
+
+
 def test_urllib_oauth_validation_url_is_reported(tmp_path: Path) -> None:
     """urllib URL fetches in OAuth callbacks should receive timeout and SSRF review."""
     controllers = tmp_path / "module" / "controllers"

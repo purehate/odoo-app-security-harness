@@ -1959,6 +1959,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "oauth_url_embedded_credentials",
+        (
+            "odoo-oauth-url-embedded-credentials",
+            "oauth token/userinfo url embeds credentials",
+            "oauth/oidc token or userinfo validation embeds username, password, or token material",
+            "move provider credentials to trusted server-side configuration",
+        ),
+    ),
+    (
         "oauth_tainted_validation_url",
         (
             "odoo-oauth-tainted-validation-url",

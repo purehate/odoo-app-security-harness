@@ -6,6 +6,8 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -271,6 +273,16 @@ class OAuthScanner(ast.NodeVisitor):
                         "high",
                         node.lineno,
                         "OAuth/OIDC token or userinfo validation targets a literal http:// URL; use HTTPS so tokens and identities cannot be intercepted or downgraded",
+                        route.display_path(),
+                        sink,
+                    )
+                if _literal_url_has_embedded_credentials(url_value, constants):
+                    self._add(
+                        "odoo-oauth-url-embedded-credentials",
+                        "OAuth token/userinfo URL embeds credentials",
+                        "high",
+                        node.lineno,
+                        "OAuth/OIDC token or userinfo validation embeds username, password, or token material in the URL authority; move provider credentials to trusted server-side configuration",
                         route.display_path(),
                         sink,
                     )
@@ -1291,6 +1303,16 @@ def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST] | Non
         isinstance(value, ast.Constant)
         and isinstance(value.value, str)
         and value.value.strip().lower().startswith("http://")
+    )
+
+
+def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+    value = _resolve_constant(node, constants or {})
+    if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+        return False
+    parsed = urlparse(value.value.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
+        parsed.username is not None or parsed.password is not None
     )
 
 

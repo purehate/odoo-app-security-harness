@@ -3790,6 +3790,12 @@ def test_taxonomy_coverage_classifies_oauth_flow_specific_risks() -> None:
             },
             {
                 "source": "oauth-flows",
+                "rule_id": "odoo-oauth-url-embedded-credentials",
+                "title": "OAuth token/userinfo URL embeds credentials",
+                "message": "OAuth/OIDC token or userinfo validation embeds username, password, or token material",
+            },
+            {
+                "source": "oauth-flows",
                 "rule_id": "odoo-oauth-tainted-validation-url",
                 "title": "Request-derived OAuth validation URL",
                 "message": "Request-derived data controls OAuth/OIDC token or userinfo URL",
@@ -3833,13 +3839,14 @@ def test_taxonomy_coverage_classifies_oauth_flow_specific_risks() -> None:
         ]
     )
 
-    assert coverage["mapped_rules"] == 11
+    assert coverage["mapped_rules"] == 12
     assert coverage["unmapped_rule_ids"] == []
     assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-oauth-public-callback-route": "oauth_public_callback_route",
         "odoo-oauth-http-no-timeout": "oauth_http_without_timeout",
         "odoo-oauth-http-verify-disabled": "oauth_tls_verification_disabled",
         "odoo-oauth-cleartext-http-url": "oauth_cleartext_http_url",
+        "odoo-oauth-url-embedded-credentials": "oauth_url_embedded_credentials",
         "odoo-oauth-tainted-validation-url": "oauth_tainted_validation_url",
         "odoo-oauth-jwt-verification-disabled": "oauth_jwt_verification_disabled",
         "odoo-oauth-jwt-missing-algorithms": "oauth_jwt_missing_algorithms",
