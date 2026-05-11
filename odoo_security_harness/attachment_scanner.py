@@ -177,7 +177,8 @@ class AttachmentScanner(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> Any:
         sink = _call_name(node.func)
         method = sink.rsplit(".", 1)[-1]
-        if not _attachment_model_in_expr(node.func, self.attachment_vars):
+        constants = self._effective_constants()
+        if not _attachment_model_in_expr(node.func, self.attachment_vars, constants):
             self.generic_visit(node)
             return
 
@@ -193,7 +194,7 @@ class AttachmentScanner(ast.NodeVisitor):
                     route.display_path(),
                     sink,
                 )
-            if _is_elevated_attachment_expr(node.func, self.sudo_attachment_vars, self.constants):
+            if _is_elevated_attachment_expr(node.func, self.sudo_attachment_vars, constants):
                 self._add(
                     "odoo-attachment-sudo-mutation",
                     "Attachment mutation runs with elevated environment",
@@ -228,6 +229,7 @@ class AttachmentScanner(ast.NodeVisitor):
         res_model = values.get("res_model")
         res_id = values.get("res_id")
         public = values.get("public")
+        constants = self._effective_constants()
 
         if res_model is not None and self._expr_is_tainted(res_model):
             self._add(
@@ -249,7 +251,7 @@ class AttachmentScanner(ast.NodeVisitor):
                 route.display_path(),
                 sink,
             )
-        if public is not None and _truthy_constant(public, self.constants) and (res_model is None or res_id is None):
+        if public is not None and _truthy_constant(public, constants) and (res_model is None or res_id is None):
             self._add(
                 "odoo-attachment-public-orphan",
                 "Public attachment lacks record binding",
@@ -259,8 +261,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 route.display_path(),
                 sink,
             )
-        literal_res_model = _literal_string(res_model, self.constants)
-        if literal_res_model in SENSITIVE_RES_MODELS and _truthy_constant(public, self.constants):
+        literal_res_model = _literal_string(res_model, constants)
+        if literal_res_model in SENSITIVE_RES_MODELS and _truthy_constant(public, constants):
             self._add(
                 "odoo-attachment-public-sensitive-binding",
                 "Public attachment is bound to sensitive model",
@@ -279,8 +281,9 @@ class AttachmentScanner(ast.NodeVisitor):
         res_id = values.get("res_id")
         public = values.get("public")
         access_token = values.get("access_token")
+        constants = self._effective_constants()
 
-        if public is not None and _truthy_constant(public, self.constants):
+        if public is not None and _truthy_constant(public, constants):
             self._add(
                 "odoo-attachment-public-write",
                 "Attachment write makes file public",
@@ -382,8 +385,9 @@ class AttachmentScanner(ast.NodeVisitor):
         return False
 
     def _mark_attachment_target(self, target: ast.AST, value: ast.AST) -> None:
-        is_attachment = _attachment_model_in_expr(value, self.attachment_vars)
-        is_sudo = _is_elevated_attachment_expr(value, self.sudo_attachment_vars, self.constants)
+        constants = self._effective_constants()
+        is_attachment = _attachment_model_in_expr(value, self.attachment_vars, constants)
+        is_sudo = _is_elevated_attachment_expr(value, self.sudo_attachment_vars, constants)
         if isinstance(target, ast.Name):
             if is_attachment:
                 self.attachment_vars.add(target.id)
@@ -645,18 +649,25 @@ def _is_static_literal(node: ast.AST) -> bool:
     return False
 
 
-def _attachment_model_in_expr(node: ast.AST, attachment_vars: set[str]) -> bool:
+def _attachment_model_in_expr(
+    node: ast.AST,
+    attachment_vars: set[str],
+    constants: dict[str, ast.AST] | None = None,
+) -> bool:
+    constants = constants or {}
+    node = _resolve_constant(node, constants)
     text = _safe_unparse(node)
     if ATTACHMENT_MODEL in text:
         return True
     if isinstance(node, ast.Name):
         return node.id in attachment_vars
     if isinstance(node, ast.Attribute):
-        return _attachment_model_in_expr(node.value, attachment_vars)
+        return _attachment_model_in_expr(node.value, attachment_vars, constants)
     if isinstance(node, ast.Call):
-        return _attachment_model_in_expr(node.func, attachment_vars)
+        return _attachment_model_in_expr(node.func, attachment_vars, constants)
     if isinstance(node, ast.Subscript):
-        return _attachment_model_in_expr(node.value, attachment_vars)
+        model = _literal_string(node.slice, constants)
+        return model == ATTACHMENT_MODEL or _attachment_model_in_expr(node.value, attachment_vars, constants)
     return False
 
 

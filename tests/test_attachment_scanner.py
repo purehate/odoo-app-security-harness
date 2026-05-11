@@ -490,6 +490,40 @@ class AttachmentHelper:
     assert "odoo-attachment-public-sensitive-binding" in rule_ids
 
 
+def test_class_constant_public_sensitive_attachment_is_reported(tmp_path: Path) -> None:
+    """Class-scoped attachment constants should not hide risky public bindings."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "attachments.py").write_text(
+        """
+from odoo import SUPERUSER_ID
+
+class AttachmentHelper:
+    ATTACHMENT_MODEL = 'ir.attachment'
+    ROOT = SUPERUSER_ID
+    PUBLIC_ATTACHMENT = True
+    ATTACH_MODEL = 'account.move'
+
+    def create_public_invoice(self):
+        attachments = self.env[ATTACHMENT_MODEL].with_user(ROOT)
+        attachments.create({
+            'name': 'invoice.pdf',
+            'datas': self.payload,
+            'res_model': ATTACH_MODEL,
+            'public': PUBLIC_ATTACHMENT,
+        })
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_attachments(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-attachment-sudo-mutation" in rule_ids
+    assert "odoo-attachment-public-orphan" in rule_ids
+    assert "odoo-attachment-public-sensitive-binding" in rule_ids
+
+
 def test_public_security_model_attachment_bindings_are_reported(tmp_path: Path) -> None:
     """Public attachments bound to security/payment records should be critical."""
     models = tmp_path / "module" / "models"
