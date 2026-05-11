@@ -413,8 +413,7 @@ class Portal(http.Controller):
     findings = scan_portal_routes(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-portal-sudo-route-id-read" and f.route == "/my/orders/<int:order_id>"
-        for f in findings
+        f.rule_id == "odoo-portal-sudo-route-id-read" and f.route == "/my/orders/<int:order_id>" for f in findings
     )
 
 
@@ -640,6 +639,29 @@ class Portal(http.Controller):
     @http.route('/my/orders/<int:order_id>', auth='user', website=True)
     def portal_order(self, order_id):
         order = request.env['sale.order'].with_user(SUPERUSER_ID).browse(order_id)
+        return request.render('sale.portal_order_page', {'order': order})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_portal_routes(tmp_path)
+
+    assert any(f.rule_id == "odoo-portal-sudo-route-id-read" for f in findings)
+
+
+def test_flags_import_aliased_superuser_route_id_read(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should be treated like sudo route-selected reads."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "portal.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, http
+from odoo.http import request
+
+class Portal(http.Controller):
+    @http.route('/my/orders/<int:order_id>', auth='user', website=True)
+    def portal_order(self, order_id):
+        order = request.env['sale.order'].with_user(ROOT_UID).browse(order_id)
         return request.render('sale.portal_order_page', {'order': order})
 """,
         encoding="utf-8",

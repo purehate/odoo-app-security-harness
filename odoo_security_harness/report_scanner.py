@@ -273,6 +273,7 @@ class ReportPythonScanner(ast.NodeVisitor):
         self.tainted_names: set[str] = set()
         self.tainted_context_names: set[str] = set()
         self.sudo_names: set[str] = set()
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.request_names: set[str] = {"request"}
         self.http_module_names: set[str] = {"http"}
         self.odoo_module_names: set[str] = {"odoo"}
@@ -344,6 +345,8 @@ class ReportPythonScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -587,7 +590,10 @@ class ReportPythonScanner(ast.NodeVisitor):
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute) and (
                 node.func.attr == "sudo"
-                or (node.func.attr == "with_user" and _call_has_superuser_arg(node, self._effective_constants()))
+                or (
+                    node.func.attr == "with_user"
+                    and _call_has_superuser_arg(node, self._effective_constants(), self.superuser_names)
+                )
             ):
                 return True
             return (
@@ -745,9 +751,7 @@ def _is_static_literal(node: ast.AST) -> bool:
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         keys = [key for key in node.keys if key is not None]
-        return all(_is_static_literal(key) for key in keys) and all(
-            _is_static_literal(value) for value in node.values
-        )
+        return all(_is_static_literal(key) for key in keys) and all(_is_static_literal(value) for value in node.values)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
         return _is_static_literal(node.operand)
     return False
@@ -828,13 +832,15 @@ def _is_request_derived(
     if isinstance(node, ast.Starred):
         return _is_request_derived(node.value, request_names, http_module_names, odoo_module_names)
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return any(_is_request_derived(element, request_names, http_module_names, odoo_module_names) for element in node.elts)
+        return any(
+            _is_request_derived(element, request_names, http_module_names, odoo_module_names) for element in node.elts
+        )
     if isinstance(node, ast.Attribute):
         return _is_request_derived(node.value, request_names, http_module_names, odoo_module_names)
     if isinstance(node, ast.Subscript):
-        return _is_request_derived(node.value, request_names, http_module_names, odoo_module_names) or _is_request_derived(
-            node.slice, request_names, http_module_names, odoo_module_names
-        )
+        return _is_request_derived(
+            node.value, request_names, http_module_names, odoo_module_names
+        ) or _is_request_derived(node.slice, request_names, http_module_names, odoo_module_names)
     if isinstance(node, ast.Call):
         return (
             _is_request_derived(node.func, request_names, http_module_names, odoo_module_names)
@@ -882,24 +888,37 @@ def _is_request_expr(
     )
 
 
-def _call_has_superuser_arg(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> bool:
+def _call_has_superuser_arg(
+    node: ast.Call,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
-    return any(_is_superuser_arg(arg, constants) for arg in node.args) or any(
-        keyword.value is not None and _is_superuser_arg(keyword.value, constants) for keyword in node.keywords
+    return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args) or any(
+        keyword.value is not None and _is_superuser_arg(keyword.value, constants, superuser_names)
+        for keyword in node.keywords
     )
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
-    node = _resolve_constant(node, constants)
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
+    resolved = _resolve_constant(node, constants)
+    if resolved is not node:
+        return _is_superuser_arg(resolved, constants, superuser_names)
+    node = resolved
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 

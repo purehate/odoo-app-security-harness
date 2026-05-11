@@ -77,10 +77,7 @@ class Download(http.Controller):
 
     findings = scan_binary_downloads(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings)
 
 
 def test_aliased_http_module_public_attachment_datas_response(tmp_path: Path) -> None:
@@ -103,10 +100,7 @@ class Download(odoo_http.Controller):
 
     findings = scan_binary_downloads(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings)
 
 
 def test_imported_odoo_http_module_public_attachment_datas_response(tmp_path: Path) -> None:
@@ -128,10 +122,7 @@ class Download(odoo_http.Controller):
 
     findings = scan_binary_downloads(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings)
 
 
 def test_imported_odoo_module_public_attachment_datas_response(tmp_path: Path) -> None:
@@ -153,10 +144,7 @@ class Download(od.http.Controller):
 
     findings = scan_binary_downloads(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings)
 
 
 def test_non_odoo_route_decorator_attachment_datas_response_is_not_public(tmp_path: Path) -> None:
@@ -186,14 +174,8 @@ class Download:
 
     findings = scan_binary_downloads(tmp_path)
 
-    assert not any(
-        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high"
-        for f in findings
-    )
-    assert any(
-        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "medium"
-        for f in findings
-    )
+    assert not any(f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings)
+    assert any(f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "medium" for f in findings)
 
 
 def test_constant_backed_public_attachment_datas_response(tmp_path: Path) -> None:
@@ -221,9 +203,7 @@ class Download(http.Controller):
 
     findings = scan_binary_downloads(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings
-    )
+    assert any(f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings)
 
 
 def test_static_unpack_public_attachment_datas_response(tmp_path: Path) -> None:
@@ -248,9 +228,7 @@ class Download(http.Controller):
 
     findings = scan_binary_downloads(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings
-    )
+    assert any(f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings)
 
 
 def test_nested_static_unpack_public_attachment_datas_response(tmp_path: Path) -> None:
@@ -276,9 +254,7 @@ class Download(http.Controller):
 
     findings = scan_binary_downloads(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings
-    )
+    assert any(f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" for f in findings)
 
 
 def test_keyword_constant_backed_none_binary_content_args(tmp_path: Path) -> None:
@@ -307,9 +283,7 @@ class Download(http.Controller):
 
     findings = scan_binary_downloads(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-binary-tainted-binary-content-args" and f.severity == "high" for f in findings
-    )
+    assert any(f.rule_id == "odoo-binary-tainted-binary-content-args" and f.severity == "high" for f in findings)
 
 
 def test_constant_alias_public_auth_and_attachment_model_response(tmp_path: Path) -> None:
@@ -802,9 +776,7 @@ class Download(http.Controller):
     findings = scan_binary_downloads(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-binary-attachment-data-response"
-        and f.severity == "high"
-        and f.sink == "odoo_response"
+        f.rule_id == "odoo-binary-attachment-data-response" and f.severity == "high" and f.sink == "odoo_response"
         for f in findings
     )
 
@@ -907,6 +879,34 @@ class Binary(http.Controller):
     @http.route('/public/binary', auth='public')
     def binary(self, **kwargs):
         return request.env['ir.http'].with_user(SUPERUSER_ID).binary_content(
+            model=kwargs.get('model'),
+            id=kwargs.get('id'),
+            field='datas',
+        )
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-binary-ir-http-binary-content-sudo" in rule_ids
+    assert "odoo-binary-tainted-binary-content-args" in rule_ids
+
+
+def test_flags_import_aliased_superuser_binary_content_with_tainted_arguments(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should keep binary_content elevated."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "binary.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, http
+from odoo.http import request
+
+class Binary(http.Controller):
+    @http.route('/public/binary', auth='public')
+    def binary(self, **kwargs):
+        return request.env['ir.http'].with_user(ROOT_UID).binary_content(
             model=kwargs.get('model'),
             id=kwargs.get('id'),
             field='datas',
@@ -1542,10 +1542,7 @@ class Headers(http.Controller):
 
     findings = scan_binary_downloads(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-binary-tainted-content-disposition" and f.sink == "download_name"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-binary-tainted-content-disposition" and f.sink == "download_name" for f in findings)
 
 
 def test_flags_comprehension_filter_content_disposition_filename(tmp_path: Path) -> None:

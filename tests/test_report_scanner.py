@@ -47,16 +47,14 @@ def test_sensitive_report_without_groups_in_csv_is_reported(tmp_path: Path) -> N
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir_actions_report.csv").write_text(
-        "id,name,model\n"
-        "action_users_report,Users,res.users\n",
+        "id,name,model\naction_users_report,Users,res.users\n",
         encoding="utf-8",
     )
 
     findings = scan_reports(tmp_path)
 
     assert any(
-        finding.rule_id == "odoo-report-sensitive-no-groups"
-        and finding.report == "action_users_report"
+        finding.rule_id == "odoo-report-sensitive-no-groups" and finding.report == "action_users_report"
         for finding in findings
     )
 
@@ -66,8 +64,7 @@ def test_sensitive_csv_report_with_groups_is_ignored(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.actions.report.csv").write_text(
-        "id,name,model,groups_id/id\n"
-        "action_users_report,Users,res.users,base.group_system\n",
+        "id,name,model,groups_id/id\naction_users_report,Users,res.users,base.group_system\n",
         encoding="utf-8",
     )
 
@@ -768,6 +765,29 @@ class Controller(http.Controller):
     def invoice(self, order_id):
         order = request.env['sale.order'].with_user(SUPERUSER_ID).browse(order_id)
         return request.env.ref('sale.action_report_saleorder').with_user(SUPERUSER_ID).report_action(order)
+""",
+        encoding="utf-8",
+    )
+
+    findings = ReportPythonScanner(controller).scan_file()
+
+    assert any(f.rule_id == "odoo-report-sudo-render-call" for f in findings)
+
+
+def test_import_aliased_superuser_report_action_is_reported(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should still flag elevated report rendering."""
+    controller = tmp_path / "module" / "controllers" / "report.py"
+    controller.parent.mkdir(parents=True)
+    controller.write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, http
+from odoo.http import request
+
+class Controller(http.Controller):
+    @http.route('/invoice/<int:order_id>', auth='user')
+    def invoice(self, order_id):
+        order = request.env['sale.order'].with_user(ROOT_UID).browse(order_id)
+        return request.env.ref('sale.action_report_saleorder').with_user(ROOT_UID).report_action(order)
 """,
         encoding="utf-8",
     )

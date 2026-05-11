@@ -523,6 +523,31 @@ class Api(http.Controller):
     assert "odoo-json-route-mass-assignment" in rule_ids
 
 
+def test_flags_import_aliased_json_with_user_superuser_mutation(tmp_path: Path) -> None:
+    """Imported SUPERUSER_ID aliases should still mark JSON ORM mutations as elevated."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "api.py").write_text(
+        """
+from odoo import SUPERUSER_ID as ROOT_UID, http
+from odoo.http import request
+
+class Api(http.Controller):
+    @http.route('/api/order', auth='public', type='json')
+    def order(self):
+        payload = request.jsonrequest
+        return request.env['sale.order'].with_user(ROOT_UID).create(payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_json_routes(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-json-route-sudo-mutation" in rule_ids
+    assert "odoo-json-route-mass-assignment" in rule_ids
+
+
 def test_flags_constant_alias_json_with_user_superuser_mutation(tmp_path: Path) -> None:
     """Recursive SUPERUSER_ID aliases should still mark JSON ORM mutations as elevated."""
     controllers = tmp_path / "module" / "controllers"

@@ -66,6 +66,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         self.route_stack: list[RouteContext] = []
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
+        self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_file(self) -> list[BinaryDownloadFinding]:
         """Scan the file."""
@@ -94,6 +95,8 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "http":
                     self.http_module_names.add(alias.asname or alias.name)
+                elif alias.name == "SUPERUSER_ID":
+                    self.superuser_names.add(alias.asname or alias.name)
         elif node.module == "odoo.http":
             for alias in node.names:
                 if alias.name == "request":
@@ -253,7 +256,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _scan_binary_content(self, node: ast.Call, sink: str) -> None:
-        if _is_sudo_expr(node.func, self.sudo_names, self._effective_constants()):
+        if _is_sudo_expr(node.func, self.sudo_names, self._effective_constants(), self.superuser_names):
             self._add(
                 "odoo-binary-ir-http-binary-content-sudo",
                 "ir.http binary_content is called with an elevated environment",
@@ -431,7 +434,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
 
         constants = self._effective_constants()
         model_name = _model_name_in_expr(value, model_names, constants)
-        if _is_sudo_expr(value, sudo_names, constants):
+        if _is_sudo_expr(value, sudo_names, constants, self.superuser_names):
             self.sudo_names.add(target.id)
         else:
             self.sudo_names.discard(target.id)
@@ -925,7 +928,11 @@ def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     return False
 
 
-def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _call_chain_has_superuser_with_user(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
     current: ast.AST | None = node
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
@@ -934,9 +941,9 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
                 isinstance(current.func, ast.Attribute)
                 and current.func.attr == "with_user"
                 and (
-                    any(_is_superuser_arg(arg, constants) for arg in current.args)
+                    any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args)
                     or any(
-                        keyword.value is not None and _is_superuser_arg(keyword.value, constants)
+                        keyword.value is not None and _is_superuser_arg(keyword.value, constants, superuser_names)
                         for keyword in current.keywords
                     )
                 )
@@ -950,19 +957,24 @@ def _call_chain_has_superuser_with_user(node: ast.AST, constants: dict[str, ast.
     return False
 
 
-def _is_superuser_arg(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _is_superuser_arg(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
+    superuser_names = superuser_names or {"SUPERUSER_ID"}
     resolved = _resolve_constant(node, constants)
     if resolved is not node:
-        return _is_superuser_arg(resolved, constants)
+        return _is_superuser_arg(resolved, constants, superuser_names)
     if isinstance(node, ast.Constant):
         return node.value == 1 or node.value in {"base.user_admin", "base.user_root"}
     if isinstance(node, ast.Name):
-        return node.id == "SUPERUSER_ID"
+        return node.id in superuser_names
     if isinstance(node, ast.Attribute):
         return node.attr == "SUPERUSER_ID"
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "ref":
-        return any(_is_superuser_arg(arg, constants) for arg in node.args)
+        return any(_is_superuser_arg(arg, constants, superuser_names) for arg in node.args)
     return False
 
 
@@ -970,15 +982,16 @@ def _is_sudo_expr(
     node: ast.AST,
     sudo_names: set[str],
     constants: dict[str, ast.AST] | None = None,
+    superuser_names: set[str] | None = None,
 ) -> bool:
     constants = constants or {}
     if isinstance(node, ast.Starred):
-        return _is_sudo_expr(node.value, sudo_names, constants)
+        return _is_sudo_expr(node.value, sudo_names, constants, superuser_names)
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return any(_is_sudo_expr(element, sudo_names, constants) for element in node.elts)
+        return any(_is_sudo_expr(element, sudo_names, constants, superuser_names) for element in node.elts)
     return (
         _call_chain_has_attr(node, "sudo")
-        or _call_chain_has_superuser_with_user(node, constants)
+        or _call_chain_has_superuser_with_user(node, constants, superuser_names)
         or _call_root_name(node) in sudo_names
     )
 
