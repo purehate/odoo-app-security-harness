@@ -91,6 +91,79 @@ def test_sensitive_action_and_menu_without_groups_are_reported(tmp_path: Path) -
     assert "odoo-ui-sensitive-menu-no-groups" in rule_ids
 
 
+def test_portal_sensitive_action_and_menu_are_high_severity(tmp_path: Path) -> None:
+    """Portal/public groups on sensitive UI actions are external exposure, not a safe restriction."""
+    xml = tmp_path / "menus.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_users" model="ir.actions.act_window">
+    <field name="name">Users</field>
+    <field name="res_model">res.users</field>
+    <field name="groups_id" eval="[(4, ref('base.group_portal'))]"/>
+  </record>
+  <menuitem id="menu_users" name="Users" action="action_users" groups="base.group_portal"/>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = UIExposureScanner(xml).scan_file()
+    severities = {finding.rule_id: finding.severity for finding in findings}
+
+    assert severities["odoo-ui-sensitive-action-external-groups"] == "high"
+    assert severities["odoo-ui-sensitive-menu-external-groups"] == "high"
+
+
+def test_public_sensitive_action_button_is_high_severity(tmp_path: Path) -> None:
+    """Buttons opening sensitive actions for external groups should be escalated."""
+    xml = tmp_path / "views.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_users" model="ir.actions.act_window">
+    <field name="name">Users</field>
+    <field name="res_model">res.users</field>
+  </record>
+  <record id="view_form" model="ir.ui.view">
+    <field name="arch" type="xml">
+      <form>
+        <button name="%(action_users)d" type="action" groups="base.group_public"/>
+      </form>
+    </field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = UIExposureScanner(xml).scan_file()
+
+    assert any(
+        f.rule_id == "odoo-ui-sensitive-action-button-external-groups" and f.severity == "high"
+        for f in findings
+    )
+
+
+def test_portal_sensitive_server_action_is_high_severity(tmp_path: Path) -> None:
+    """Externally grouped server actions on sensitive models should be explicit high-risk leads."""
+    xml = tmp_path / "server_actions.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="action_disable_users" model="ir.actions.server">
+    <field name="name">Disable Users</field>
+    <field name="model_id" ref="base.model_res_users"/>
+    <field name="groups_id" eval="[(4, ref('base.group_portal'))]"/>
+    <field name="state">code</field>
+    <field name="code">records.write({'active': False})</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = UIExposureScanner(xml).scan_file()
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-ui-sensitive-server-action-external-groups" in rule_ids
+    assert "odoo-ui-sensitive-action-external-groups" in rule_ids
+
+
 def test_sensitive_action_without_groups_in_csv_is_reported(tmp_path: Path) -> None:
     """CSV action declarations should be scanned alongside XML records."""
     data = tmp_path / "module" / "data"
@@ -159,6 +232,31 @@ def test_csv_menu_exposing_csv_sensitive_action_is_reported(tmp_path: Path) -> N
 
     assert any(
         finding.rule_id == "odoo-ui-sensitive-menu-no-groups" and finding.target == "menu_users"
+        for finding in findings
+    )
+
+
+def test_csv_menu_exposing_portal_csv_sensitive_action_is_reported(tmp_path: Path) -> None:
+    """CSV menu/action correlation should treat portal groups as external exposure."""
+    data = tmp_path / "module" / "data"
+    data.mkdir(parents=True)
+    (data / "ir.actions.act_window.csv").write_text(
+        "id,name,res_model,groups_id/id\n"
+        "action_users,Users,res.users,base.group_portal\n",
+        encoding="utf-8",
+    )
+    (data / "ir.ui.menu.csv").write_text(
+        "id,name,action,groups_id/id\n"
+        "menu_users,Users,\"ir.actions.act_window,action_users\",base.group_portal\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_ui_exposure(tmp_path)
+
+    assert any(
+        finding.rule_id == "odoo-ui-sensitive-menu-external-groups"
+        and finding.severity == "high"
+        and finding.target == "menu_users"
         for finding in findings
     )
 

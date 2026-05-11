@@ -2979,6 +2979,19 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "ui_sensitive_action_external_groups",
+        (
+            "odoo-ui-sensitive-action-button-external-groups",
+            "odoo-ui-sensitive-action-external-groups",
+            "odoo-ui-sensitive-server-action-external-groups",
+            "odoo-ui-sensitive-menu-external-groups",
+            "sensitive action exposed to public or portal users",
+            "sensitive server action exposed to public or portal users",
+            "sensitive menu exposed to public or portal users",
+            "sensitive ui entry point is visible to public or portal users",
+        ),
+    ),
+    (
         "field_sensitive_access_control",
         (
             "field-sensitive-no-groups",

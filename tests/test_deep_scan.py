@@ -7596,6 +7596,30 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
                 "message": "Sensitive menu is visible without groups",
             },
             {
+                "source": "ui-exposure",
+                "rule_id": "odoo-ui-sensitive-action-button-external-groups",
+                "title": "Action button opens sensitive model exposed to public or portal users",
+                "message": "Sensitive UI entry point is visible to public or portal users",
+            },
+            {
+                "source": "ui-exposure",
+                "rule_id": "odoo-ui-sensitive-action-external-groups",
+                "title": "Sensitive model action exposed to public or portal users",
+                "message": "Sensitive action exposed to public or portal users",
+            },
+            {
+                "source": "ui-exposure",
+                "rule_id": "odoo-ui-sensitive-server-action-external-groups",
+                "title": "Sensitive server action exposed to public or portal users",
+                "message": "Sensitive server action exposed to public or portal users",
+            },
+            {
+                "source": "ui-exposure",
+                "rule_id": "odoo-ui-sensitive-menu-external-groups",
+                "title": "Sensitive menu exposed to public or portal users",
+                "message": "Sensitive menu exposed to public or portal users",
+            },
+            {
                 "source": "xml-data",
                 "rule_id": "odoo-xml-group-implies-privilege",
                 "title": "XML group implies privileged group",
@@ -7648,6 +7672,10 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
     assert shapes["odoo-ui-sensitive-action-button-no-groups"] == "ui_sensitive_action_without_groups"
     assert shapes["odoo-ui-sensitive-action-no-groups"] == "ui_sensitive_action_without_groups"
     assert shapes["odoo-ui-sensitive-menu-no-groups"] == "ui_sensitive_action_without_groups"
+    assert shapes["odoo-ui-sensitive-action-button-external-groups"] == "ui_sensitive_action_external_groups"
+    assert shapes["odoo-ui-sensitive-action-external-groups"] == "ui_sensitive_action_external_groups"
+    assert shapes["odoo-ui-sensitive-server-action-external-groups"] == "ui_sensitive_action_external_groups"
+    assert shapes["odoo-ui-sensitive-menu-external-groups"] == "ui_sensitive_action_external_groups"
     assert shapes["odoo-xml-group-implies-privilege"] == "xml_data_group_privilege_implication"
     assert shapes["odoo-xml-function-group-implies-privilege"] == "xml_data_group_privilege_implication"
     assert shapes["odoo-xml-user-admin-group-assignment"] == "xml_data_user_admin_group_assignment"

@@ -206,6 +206,16 @@ class UIExposureScanner:
                         "button",
                         name,
                     )
+                elif action and target_model in SENSITIVE_MODELS and _includes_public_group(action.get("groups", "")):
+                    self._add(
+                        "odoo-ui-sensitive-action-button-external-groups",
+                        "Action button opens sensitive model exposed to public or portal users",
+                        "high",
+                        _line_for_button(self.content, name),
+                        f"View exposes an action button for sensitive model '{target_model}' whose target action is assigned to public or portal users; verify ACLs, record rules, and server-side access checks are intentional",
+                        "button",
+                        name,
+                    )
                 self._add(
                     "odoo-ui-action-button-no-groups",
                     "Action button has no groups restriction",
@@ -215,13 +225,49 @@ class UIExposureScanner:
                     "button",
                     name,
                 )
+            elif button_type == "action" and _includes_public_group(groups):
+                action_ref = _normalize_action_ref(name)
+                action = self.actions.get(action_ref)
+                target_model = action.get("target_model", "") if action else ""
+                if action and target_model in SENSITIVE_MODELS and not _has_internal_groups(action.get("groups", "")):
+                    self._add(
+                        "odoo-ui-sensitive-action-button-external-groups",
+                        "Action button opens sensitive model exposed to public or portal users",
+                        "high",
+                        _line_for_button(self.content, name),
+                        f"View exposes an action button for sensitive model '{target_model}' to public or portal users; verify ACLs, record rules, and server-side access checks are intentional",
+                        "button",
+                        name,
+                    )
 
     def _scan_sensitive_actions(self) -> None:
         for action_id, action in self.actions.items():
             target_model = action.get("target_model", "")
             if target_model not in SENSITIVE_MODELS:
                 continue
-            if action.get("groups"):
+            groups = action.get("groups", "")
+            if groups and not _includes_public_group(groups):
+                continue
+            if _includes_public_group(groups):
+                if action.get("record_model") == "ir.actions.server":
+                    self._add(
+                        "odoo-ui-sensitive-server-action-external-groups",
+                        "Sensitive server action exposed to public or portal users",
+                        "high",
+                        int(action.get("line", "1")),
+                        f"Server action bound to sensitive model '{target_model}' is assigned to public or portal users; verify only intended users can execute record code or mutations",
+                        action.get("record_model", ""),
+                        action_id,
+                    )
+                self._add(
+                    "odoo-ui-sensitive-action-external-groups",
+                    "Sensitive model action exposed to public or portal users",
+                    "high",
+                    int(action.get("line", "1")),
+                    f"Action for sensitive model '{target_model}' is assigned to public or portal users; verify ACLs, record rules, menus, and bindings are intentionally reachable",
+                    action.get("record_model", ""),
+                    action_id,
+                )
                 continue
             if action.get("record_model") == "ir.actions.server":
                 self._add(
@@ -247,15 +293,28 @@ class UIExposureScanner:
         for menu in root.iter("menuitem"):
             groups = menu.get("groups", "")
             action_ref = _normalize_action_ref(menu.get("action", ""))
-            if groups or not action_ref:
+            if not action_ref:
                 continue
             action = self.actions.get(action_ref)
             if not action:
                 continue
             target_model = action.get("target_model", "")
-            if target_model not in SENSITIVE_MODELS or action.get("groups"):
+            if target_model not in SENSITIVE_MODELS:
                 continue
             menu_id = menu.get("id", action_ref)
+            if _includes_public_group(groups) and not _has_internal_groups(action.get("groups", "")):
+                self._add(
+                    "odoo-ui-sensitive-menu-external-groups",
+                    "Sensitive menu exposed to public or portal users",
+                    "high",
+                    _line_for(self.content, f'id="{menu_id}"'),
+                    f"Menu exposes action for sensitive model '{target_model}' to public or portal users; confirm ACLs and record rules make this intentional",
+                    "menuitem",
+                    menu_id,
+                )
+                continue
+            if groups or action.get("groups"):
+                continue
             self._add(
                 "odoo-ui-sensitive-menu-no-groups",
                 "Sensitive menu has no groups restriction",
@@ -343,6 +402,10 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
 
 def _includes_public_group(groups: str) -> bool:
     return "base.group_public" in groups or "base.group_portal" in groups
+
+
+def _has_internal_groups(groups: str) -> bool:
+    return bool(groups.strip()) and not _includes_public_group(groups)
 
 
 def _normalize_action_ref(action: str) -> str:
@@ -529,13 +592,26 @@ def _menu_finding(
     action_ref: str,
     actions: dict[str, dict[str, str]],
 ) -> UIExposureFinding | None:
-    if groups or not action_ref:
+    if not action_ref:
         return None
     action = actions.get(action_ref)
     if not action:
         return None
     target_model = action.get("target_model", "")
-    if target_model not in SENSITIVE_MODELS or action.get("groups"):
+    if target_model not in SENSITIVE_MODELS:
+        return None
+    if _includes_public_group(groups) and not _has_internal_groups(action.get("groups", "")):
+        return UIExposureFinding(
+            rule_id="odoo-ui-sensitive-menu-external-groups",
+            title="Sensitive menu exposed to public or portal users",
+            severity="high",
+            file=str(path),
+            line=line,
+            message=f"Menu exposes action for sensitive model '{target_model}' to public or portal users; confirm ACLs and record rules make this intentional",
+            element="menuitem",
+            target=menu_id,
+        )
+    if groups or action.get("groups"):
         return None
     return UIExposureFinding(
         rule_id="odoo-ui-sensitive-menu-no-groups",

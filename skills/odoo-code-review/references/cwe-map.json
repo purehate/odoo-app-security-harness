@@ -1190,6 +1190,12 @@
       "capec": ["CAPEC-122"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "ui_sensitive_action_external_groups": {
+      "label": "Odoo sensitive action, button, or menu is exposed to public or portal users",
+      "cwe": ["CWE-284", "CWE-862", "CWE-863"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "metadata_public_write_acl": {
       "label": "Odoo metadata grants public or portal groups write, create, or delete ACL permissions",
       "cwe": ["CWE-862", "CWE-863", "CWE-732"],
