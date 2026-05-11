@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from csv import DictReader
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -84,12 +86,16 @@ OWNER_SCOPE_MARKERS = (
 
 
 def scan_record_rules(repo_path: Path) -> list[RecordRuleFinding]:
-    """Scan XML record rules for risky domain and permission patterns."""
+    """Scan record rules for risky domain and permission patterns."""
     findings: list[RecordRuleFinding] = []
-    for path in repo_path.rglob("*.xml"):
-        if _should_skip(path):
+    for path in repo_path.rglob("*"):
+        if not path.is_file() or _should_skip(path):
             continue
-        findings.extend(RecordRuleScanner(path).scan_file())
+        scanner = RecordRuleScanner(path)
+        if path.suffix == ".xml":
+            findings.extend(scanner.scan_file())
+        elif path.suffix == ".csv":
+            findings.extend(scanner.scan_csv_file())
     return findings
 
 
@@ -116,10 +122,26 @@ class RecordRuleScanner:
                 self._scan_rule(record)
         return self.findings
 
+    def scan_csv_file(self) -> list[RecordRuleFinding]:
+        """Scan CSV ir.rule declarations."""
+        if _csv_model_name(self.path) != "ir.rule":
+            return []
+        try:
+            self.content = self.path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+        for fields, line in _csv_dict_rows(self.content):
+            self._scan_rule_fields(fields, fields.get("id", ""), line)
+        return self.findings
+
     def _scan_rule(self, record: ElementTree.Element) -> None:
         fields = _record_fields(record)
         record_id = record.get("id", "")
         line = self._line_for_record(record)
+        self._scan_rule_fields(fields, record_id, line)
+
+    def _scan_rule_fields(self, fields: dict[str, str], record_id: str, line: int) -> None:
         model = _normalize_model_ref(fields.get("model_id", ""))
         domain = fields.get("domain_force", "")
         groups = _extract_groups(fields.get("groups", "") or fields.get("groups_id", ""))
@@ -276,6 +298,36 @@ def _record_fields(record: ElementTree.Element) -> dict[str, str]:
             continue
         values[name] = field.get("ref") or field.get("eval") or "".join(field.itertext()).strip()
     return values
+
+
+def _csv_model_name(path: Path) -> str:
+    return path.stem.strip().lower().replace("_", ".")
+
+
+def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
+    try:
+        reader = DictReader(StringIO(content))
+    except Exception:
+        return []
+    if not reader.fieldnames:
+        return []
+
+    rows: list[tuple[dict[str, str], int]] = []
+    try:
+        for index, row in enumerate(reader, start=2):
+            normalized: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                name = str(key).strip().lower()
+                text = str(value or "").strip()
+                normalized[name] = text
+                if "/" in name:
+                    normalized.setdefault(name.split("/", 1)[0], text)
+            rows.append((normalized, index))
+    except Exception:
+        return []
+    return rows
 
 
 def _extract_groups(value: str) -> list[str]:
