@@ -8872,14 +8872,77 @@ def _controller_files(python_files: list[Path]) -> list[Path]:
 def _route_inventory(repo: Path, python_files: list[Path]) -> list[dict[str, str | int]]:
     routes: list[dict[str, str | int]] = []
     for path in python_files:
+        text = _read_text(path)
         try:
-            tree = ast.parse(_read_text(path))
+            tree = ast.parse(text)
         except SyntaxError:
+            routes.extend(_regex_route_inventory(repo, path, text))
             continue
         visitor = _RouteInventoryVisitor(repo, path, _module_constants(tree))
         visitor.visit(tree)
         routes.extend(visitor.routes)
     return routes
+
+
+ROUTE_DECORATOR_RE = re.compile(
+    r"@(?:(?:[A-Za-z_][A-Za-z0-9_]*\.)?http|[A-Za-z_][A-Za-z0-9_]*_http)\.route\((?P<args>.*?)\)",
+    re.DOTALL,
+)
+
+
+def _regex_route_inventory(repo: Path, path: Path, text: str) -> list[dict[str, str | int]]:
+    routes: list[dict[str, str | int]] = []
+    for match in ROUTE_DECORATOR_RE.finditer(text):
+        line = text.count("\n", 0, match.start()) + 1
+        tail = text[match.end() : match.end() + 500]
+        def_match = re.search(r"(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", tail)
+        route = _regex_route_from_args(match.group("args"))
+        routes.append(
+            {
+                "file": str(path.relative_to(repo)),
+                "line": line,
+                "end_line": line,
+                "function": def_match.group(1) if def_match else "<unknown>",
+                "route": route["route"],
+                "auth": route["auth"],
+                "csrf": route["csrf"],
+                "type": route["type"],
+                "methods": route["methods"],
+            }
+        )
+    return routes
+
+
+def _regex_route_from_args(args_text: str) -> dict[str, str]:
+    try:
+        node = ast.parse(f"_route({args_text})", mode="eval")
+    except SyntaxError:
+        return {"route": "<dynamic>", "auth": "user", "csrf": "True", "type": "http", "methods": ""}
+    if not isinstance(node.body, ast.Call):
+        return {"route": "<dynamic>", "auth": "user", "csrf": "True", "type": "http", "methods": ""}
+    route = _route_text(node.body.args[0]) if node.body.args else "<dynamic>"
+    auth = "user"
+    csrf = "True"
+    route_type = "http"
+    methods = ""
+    for keyword in node.body.keywords:
+        if keyword.arg == "auth":
+            value = keyword.value
+            if isinstance(value, ast.Constant):
+                auth = str(value.value)
+        elif keyword.arg == "csrf":
+            value = keyword.value
+            if isinstance(value, ast.Constant):
+                csrf = str(value.value)
+        elif keyword.arg == "type":
+            value = keyword.value
+            if isinstance(value, ast.Constant):
+                route_type = str(value.value)
+        elif keyword.arg == "methods":
+            methods = _route_text(keyword.value)
+        elif keyword.arg in {"route", "routes"}:
+            route = _route_text(keyword.value)
+    return {"route": route, "auth": auth, "csrf": csrf, "type": route_type, "methods": methods}
 
 
 class _RouteInventoryVisitor(ast.NodeVisitor):

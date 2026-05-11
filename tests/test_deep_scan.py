@@ -7929,6 +7929,42 @@ class TestController(od.http.Controller):
     ]
 
 
+def test_route_inventory_fallback_resolves_imported_odoo_module_route_metadata(tmp_path: Path) -> None:
+    """Route inventory should preserve literal route metadata in syntax-error files."""
+    controllers = tmp_path / "test_module" / "controllers"
+    controllers.mkdir(parents=True)
+    controller = controllers / "main.py"
+    controller.write_text(
+        """
+import odoo as od
+
+class TestController:
+    @od.http.route('/public/fallback', auth='public', csrf=False, methods=['GET'])
+    async def fallback(self):
+        return {}
+
+    =
+""",
+        encoding="utf-8",
+    )
+
+    routes = odoo_deep_scan._route_inventory(tmp_path, [controller])
+
+    assert routes == [
+        {
+            "file": "test_module/controllers/main.py",
+            "line": 5,
+            "end_line": 5,
+            "function": "fallback",
+            "route": "/public/fallback",
+            "auth": "public",
+            "csrf": "False",
+            "type": "http",
+            "methods": "GET",
+        }
+    ]
+
+
 def test_route_inventory_ignores_non_odoo_route_decorators(tmp_path: Path) -> None:
     """Route inventory should not count arbitrary non-Odoo route decorators."""
     controllers = tmp_path / "test_module" / "controllers"
