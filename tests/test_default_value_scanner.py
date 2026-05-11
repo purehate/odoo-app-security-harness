@@ -738,6 +738,36 @@ class Defaults(models.Model):
     assert any(f.rule_id == "odoo-default-sensitive-model-set" and f.model == "res.users" for f in findings)
 
 
+def test_local_constant_model_field_and_default_model_are_labeled(tmp_path: Path) -> None:
+    """Function-local model, field, and ir.default aliases should preserve labels."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "defaults.py").write_text(
+        """
+from odoo import models
+
+class Defaults(models.Model):
+    _name = 'x.defaults'
+
+    def set_group_default(self):
+        ir_default_model = 'ir.default'
+        default_model = 'res.users'
+        default_field = 'groups_id'
+        defaults = self.env[ir_default_model].sudo()
+        return defaults.set(default_model, default_field, [self.env.ref('base.group_user').id])
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-default-sensitive-field-set" and f.model == "res.users" and f.field == "groups_id"
+        for f in findings
+    )
+    assert any(f.rule_id == "odoo-default-sensitive-model-set" and f.model == "res.users" for f in findings)
+
+
 def test_class_constant_superuser_with_user_default_set_is_elevated(tmp_path: Path) -> None:
     """Class-scoped superuser aliases should still mark elevated default writes."""
     models = tmp_path / "module" / "models"
@@ -753,6 +783,29 @@ class Defaults(models.Model):
 
     def set_company_default(self):
         return self.env['ir.default'].with_user(user=ADMIN_UID).set('sale.order', 'company_id', self.env.company.id)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_default_values(tmp_path)
+
+    assert any(finding.rule_id == "odoo-default-sudo-set" for finding in findings)
+
+
+def test_local_constant_superuser_with_user_default_set_is_elevated(tmp_path: Path) -> None:
+    """Function-local superuser aliases should still mark elevated default writes."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "defaults.py").write_text(
+        """
+from odoo import models
+
+class Defaults(models.Model):
+    _name = 'x.defaults'
+
+    def set_company_default(self):
+        root_uid = 1
+        return self.env['ir.default'].with_user(user=root_uid).set('sale.order', 'company_id', self.env.company.id)
 """,
         encoding="utf-8",
     )

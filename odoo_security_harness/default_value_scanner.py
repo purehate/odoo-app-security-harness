@@ -131,6 +131,7 @@ class DefaultValueScanner(ast.NodeVisitor):
         self.constants: dict[str, ast.AST] = {}
         self.route_stack: list[RouteContext] = []
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
         self.superuser_names: set[str] = {"SUPERUSER_ID"}
 
     def scan_python_file(self) -> list[DefaultValueFinding]:
@@ -179,6 +180,8 @@ class DefaultValueScanner(ast.NodeVisitor):
         previous_tainted = set(self.tainted_names)
         previous_default_vars = set(self.default_vars)
         previous_elevated_default_vars = set(self.elevated_default_vars)
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         route = _route_info(
             node,
             self._effective_constants(),
@@ -203,6 +206,7 @@ class DefaultValueScanner(ast.NodeVisitor):
         self.tainted_names = previous_tainted
         self.default_vars = previous_default_vars
         self.elevated_default_vars = previous_elevated_default_vars
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -240,12 +244,14 @@ class DefaultValueScanner(ast.NodeVisitor):
         previous_elevated_default_vars = set(self.elevated_default_vars)
         is_tainted = self._expr_is_tainted(node.value)
         for target in node.targets:
+            self._mark_local_constant_target(target, node.value)
             self._mark_default_target(target, node.value, previous_default_vars, previous_elevated_default_vars)
             self._mark_tainted_target(target, node.value, is_tainted)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if node.value is not None:
+            self._mark_local_constant_target(node.target, node.value)
             self._mark_default_target(
                 node.target,
                 node.value,
@@ -263,6 +269,7 @@ class DefaultValueScanner(ast.NodeVisitor):
         self.visit_For(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+        self._mark_local_constant_target(node.target, node.value)
         self._mark_default_target(
             node.target,
             node.value,
@@ -512,15 +519,33 @@ class DefaultValueScanner(ast.NodeVisitor):
             else:
                 self.tainted_names.discard(name)
 
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for target_element, value_element in _unpack_target_value_pairs(target, value):
+                self._mark_local_constant_target(target_element, value_element)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        for name in _target_names(target):
+            self.local_constants.pop(name, None)
+
     def _current_route(self) -> RouteContext:
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
     def _add(
