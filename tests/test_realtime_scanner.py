@@ -304,6 +304,35 @@ class BusController(http.Controller):
     assert "odoo-realtime-sensitive-payload" in rule_ids
 
 
+def test_dict_union_static_unpack_public_bus_send_with_sensitive_payload(tmp_path: Path) -> None:
+    """Dict-union **route options should not hide public bus sends."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "bus.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+BASE_OPTIONS = {'auth': 'public'}
+BUS_OPTIONS = BASE_OPTIONS | {'route': '/public/bus'}
+
+class BusController(http.Controller):
+    @http.route(**BUS_OPTIONS)
+    def bus(self, **kwargs):
+        payload = {'email': kwargs.get('email'), 'access_token': kwargs.get('token')}
+        request.env['bus.bus']._sendone('public_notifications', payload)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_realtime(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-realtime-public-route-bus-send" in rule_ids
+    assert "odoo-realtime-broad-or-tainted-channel" in rule_ids
+    assert "odoo-realtime-sensitive-payload" in rule_ids
+
+
 def test_class_constant_backed_public_bus_send_with_sensitive_payload(tmp_path: Path) -> None:
     """Class-scoped public route constants should still expose bus sends."""
     controllers = tmp_path / "module" / "controllers"
