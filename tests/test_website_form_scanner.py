@@ -194,6 +194,32 @@ def test_flags_external_success_redirect(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-website-form-external-success-redirect" for f in findings)
 
 
+def test_flags_success_redirect_embedded_credentials(tmp_path: Path) -> None:
+    """Website form success redirects should not expose credentials in browser URLs."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "forms.xml").write_text(
+        """<odoo>
+  <template id="contact">
+    <form action="/website/form/crm.lead" method="post" data-success-page="https://user:token@partner.example/thanks">
+      <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+      <input name="name"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+
+    assert any(
+        f.rule_id == "odoo-website-form-success-redirect-embedded-credentials"
+        and f.severity == "high"
+        and f.field == "success_page"
+        for f in findings
+    )
+
+
 def test_flags_dangerous_success_redirect_scheme(tmp_path: Path) -> None:
     """Website form success pages should not use executable URL schemes."""
     views = tmp_path / "module" / "views"

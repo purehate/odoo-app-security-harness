@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from defusedxml import ElementTree
 from odoo_security_harness.base_scanner import _line_for, _should_skip
@@ -252,6 +253,16 @@ class WebsiteFormScanner:
                 "high",
                 line,
                 f"Website form success page uses dangerous URL '{success_page}'; restrict success redirects to local routes or reviewed HTTPS destinations",
+                model,
+                "success_page",
+            )
+        elif _url_has_embedded_credentials(success_page):
+            self._add(
+                "odoo-website-form-success-redirect-embedded-credentials",
+                "Website form success redirect embeds credentials",
+                "high",
+                line,
+                f"Website form success page embeds username, password, or token material in URL '{success_page}'; keep credentials out of browser-visible redirects, history, referrers, and logs",
                 model,
                 "success_page",
             )
@@ -714,6 +725,14 @@ def _line_for_form_action(content: str, action: str) -> int:
 def _is_external_url(value: str) -> bool:
     lowered = value.strip().lower()
     return lowered.startswith(("http://", "https://", "//"))
+
+
+def _url_has_embedded_credentials(value: str) -> bool:
+    for match in re.finditer(r"https?://[^\s'\"<>)]+", value, re.IGNORECASE):
+        parsed = urlparse(match.group(0).rstrip(".,;"))
+        if parsed.hostname and (parsed.username is not None or parsed.password is not None):
+            return True
+    return False
 
 
 def _is_dangerous_url_scheme(value: str) -> bool:

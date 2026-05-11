@@ -3011,6 +3011,12 @@
       "capec": ["CAPEC-118"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "website_form_success_redirect_embedded_credentials": {
+      "label": "Website form success redirect embeds username, password, or token material in browser-visible URLs",
+      "cwe": ["CWE-598", "CWE-522", "CWE-798"],
+      "capec": ["CAPEC-191", "CAPEC-118"],
+      "owasp": "A02:2021 Cryptographic Failures"
+    },
     "website_form_dynamic_success_redirect": {
       "label": "Website form builds successful submission redirect targets from request data",
       "cwe": ["CWE-601", "CWE-20", "CWE-346"],

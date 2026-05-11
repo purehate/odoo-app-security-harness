@@ -4778,6 +4778,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "website_form_success_redirect_embedded_credentials",
+        (
+            "odoo-website-form-success-redirect-embedded-credentials",
+            "website form success redirect embeds credentials",
+            "website form success page embeds username, password, or token material",
+            "browser-visible redirects, history, referrers, and logs",
+        ),
+    ),
+    (
         "binary_tainted_web_content_redirect",
         (
             "odoo-binary-tainted-web-content-redirect",
