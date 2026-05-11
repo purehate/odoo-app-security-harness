@@ -679,6 +679,19 @@ def test_detects_sensitive_t_att_url_token(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-qweb-sensitive-url-token" and f.attribute == "t-att-href" for f in findings)
 
 
+def test_detects_broad_sensitive_t_att_url_markers(tmp_path: Path) -> None:
+    """Dynamic URL checks should catch reset/signup/key-shaped parameters."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        """<odoo><template id="x"><a t-att-href="'/reset?private_key=%s' % record.private_key">Reset</a></template></odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-sensitive-url-token" and f.attribute == "t-att-href" for f in findings)
+
+
 def test_static_sensitive_url_example_ignored(tmp_path: Path) -> None:
     """Literal examples without QWeb interpolation should not create URL-token noise."""
     template = tmp_path / "template.xml"
@@ -1064,7 +1077,7 @@ def test_detects_sensitive_field_rendering(tmp_path: Path) -> None:
     """Templates should not directly render credential-like fields."""
     template = tmp_path / "template.xml"
     template.write_text(
-        """<odoo><template id="x"><span t-field="record.access_token"/></template></odoo>""",
+        """<odoo><template id="x"><span t-field="record.private_key"/></template></odoo>""",
         encoding="utf-8",
     )
 

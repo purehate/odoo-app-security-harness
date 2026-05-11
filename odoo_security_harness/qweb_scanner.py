@@ -57,10 +57,40 @@ class QWebScanner:
 
     # Dangerous HTML tags
     DANGEROUS_TAGS = {"script", "iframe", "object", "embed", "form"}
-    SENSITIVE_FIELD_MARKERS = ("access_token", "api_key", "apikey", "client_secret", "password", "secret", "token")
+    SENSITIVE_FIELD_MARKERS = (
+        "access_key",
+        "access_link",
+        "access_token",
+        "access_url",
+        "api_key",
+        "apikey",
+        "auth_token",
+        "bearer_token",
+        "client_secret",
+        "csrf_token",
+        "hmac_secret",
+        "jwt_secret",
+        "license_key",
+        "oauth_token",
+        "partner_signup_url",
+        "password",
+        "private_key",
+        "reset_password_token",
+        "reset_password_url",
+        "secret",
+        "secret_key",
+        "session_token",
+        "signature_secret",
+        "signup_token",
+        "signup_url",
+        "signing_key",
+        "token",
+        "totp_secret",
+        "webhook_secret",
+    )
     SENSITIVE_URL_PARAM_RE = re.compile(
         r"(?:[?#&]|%3[fF]|%26)[^'\"`\s={}]*"
-        r"(?:access[_-]?token|auth[_-]?token|api[_-]?key|secret|password|session|csrf|jwt|bearer)"
+        r"(?:access[_-]?(?:key|link|token|url)|api[_-]?key|apikey|auth[_-]?token|bearer[_-]?token|client[_-]?secret|csrf[_-]?token|hmac[_-]?secret|jwt[_-]?secret|license[_-]?key|oauth[_-]?token|partner[_-]?signup[_-]?url|password|private[_-]?key|reset[_-]?password[_-]?(?:token|url)|secret(?:[_-]?key)?|session[_-]?token|signature[_-]?secret|signup[_-]?(?:token|url)|signing[_-]?key|token|totp[_-]?secret|webhook[_-]?secret)"
         r"[^'\"`\s={}]*=",
         re.IGNORECASE,
     )
