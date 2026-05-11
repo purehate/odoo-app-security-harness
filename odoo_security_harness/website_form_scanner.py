@@ -710,7 +710,15 @@ def _form_action(form: ElementTree.Element) -> str:
         value = form.get(attr, "").strip()
         if value:
             return value.strip("'\"")
+    mapped_value = _mapped_attribute_value(form.get("t-att", ""), "action")
+    if mapped_value:
+        return mapped_value.strip("'\"")
     return ""
+
+
+def _mapped_attribute_value(mapping: str, key: str) -> str:
+    match = re.search(rf"['\"]{re.escape(key)}['\"]\s*:\s*(?P<value>[^}}]+)", mapping, re.IGNORECASE)
+    return match.group("value").strip() if match else ""
 
 
 def _line_for_form_action(content: str, action: str) -> int:

@@ -638,6 +638,30 @@ def test_flags_qweb_dynamic_website_form_action(tmp_path: Path) -> None:
     assert {finding.model for finding in findings} == {"crm.lead"}
 
 
+def test_flags_qweb_mapped_website_form_action(tmp_path: Path) -> None:
+    """Generic QWeb t-att mappings can still point forms at website_form endpoints."""
+    views = tmp_path / "module" / "views"
+    views.mkdir(parents=True)
+    (views / "forms.xml").write_text(
+        """<odoo>
+  <template id="contact">
+    <form t-att="{'action': '/website/form/crm.lead'}" method="post">
+      <input name="partner_id"/>
+    </form>
+  </template>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_website_forms(tmp_path)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-website-form-public-model-create" in rule_ids
+    assert "odoo-website-form-sensitive-field" in rule_ids
+    assert "odoo-website-form-missing-csrf-token" in rule_ids
+    assert {finding.model for finding in findings} == {"crm.lead"}
+
+
 def test_flags_sensitive_model_field_allowlisted_for_website_form(tmp_path: Path) -> None:
     """Python field declarations can expose sensitive fields to website forms."""
     models = tmp_path / "module" / "models"
