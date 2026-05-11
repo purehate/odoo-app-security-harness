@@ -377,6 +377,25 @@ def migrate(cr, version):
     assert len([finding for finding in findings if finding.rule_id == "odoo-migration-http-no-timeout"]) == 1
 
 
+def test_head_without_timeout_is_reported_in_migration(tmp_path: Path) -> None:
+    """HEAD requests in migrations should still require explicit timeouts."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+import httpx
+
+def migrate(cr, version):
+    httpx.head("https://example.test/health")
+    httpx.head("https://example.test/ready", timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert len([finding for finding in findings if finding.rule_id == "odoo-migration-http-no-timeout"]) == 1
+
+
 def test_manifest_declared_lifecycle_hook_is_scanned(tmp_path: Path) -> None:
     """Manifest hook names should locate and scan hook functions."""
     module = tmp_path / "module"

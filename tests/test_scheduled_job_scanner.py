@@ -585,6 +585,30 @@ class Sync(models.Model):
     assert any(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings)
 
 
+def test_flags_head_without_timeout(tmp_path: Path) -> None:
+    """Cron jobs should treat HEAD calls as outbound HTTP."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sync.py").write_text(
+        """
+from odoo import models
+import httpx
+
+class Sync(models.Model):
+    _name = 'x.sync'
+
+    def _cron_sync_feed(self):
+        httpx.head(self.feed_url)
+        return httpx.head(self.status_url, timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_scheduled_jobs(tmp_path)
+
+    assert sum(f.rule_id == "odoo-scheduled-job-http-no-timeout" for f in findings) == 1
+
+
 def test_flags_tuple_unpacked_sudo_cron_mutation(tmp_path: Path) -> None:
     """Tuple-unpacked sudo aliases should still be recognized in cron methods."""
     models = tmp_path / "module" / "models"

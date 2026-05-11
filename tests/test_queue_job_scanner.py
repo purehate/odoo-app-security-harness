@@ -335,6 +335,30 @@ class SaleJob(models.Model):
     assert sum(f.rule_id == "odoo-queue-job-http-no-timeout" for f in findings) == 1
 
 
+def test_flags_queue_job_head_without_timeout(tmp_path: Path) -> None:
+    """Queue jobs should treat HEAD calls as outbound HTTP."""
+    module = tmp_path / "module" / "models"
+    module.mkdir(parents=True)
+    (module / "jobs.py").write_text(
+        """
+from odoo import models
+from odoo.addons.queue_job.job import job
+import httpx
+
+class SaleJob(models.Model):
+    @job
+    def sync_queue(self, record):
+        httpx.head(record.callback_url)
+        httpx.head(record.status_url, timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_queue_jobs(tmp_path)
+
+    assert sum(f.rule_id == "odoo-queue-job-http-no-timeout" for f in findings) == 1
+
+
 def test_flags_sensitive_model_queue_mutation_without_sudo(tmp_path: Path) -> None:
     """Queue jobs mutating sensitive models deserve review even without inline sudo."""
     module = tmp_path / "module" / "models"

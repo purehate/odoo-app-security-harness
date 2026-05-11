@@ -608,6 +608,26 @@ async def sync():
     assert http_findings[0].line == 5
 
 
+def test_server_action_detects_head_without_timeout(tmp_path: Path) -> None:
+    """Loose Python should treat HEAD calls as outbound HTTP."""
+    script = tmp_path / "action.py"
+    script.write_text(
+        """
+import requests
+
+requests.head(record.callback_url)
+requests.head(record.health_url, timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = LoosePythonScanner(str(script), "server_action").scan_file()
+    http_findings = [f for f in findings if f.rule_id == "odoo-loose-python-http-no-timeout"]
+
+    assert len(http_findings) == 1
+    assert http_findings[0].line == 4
+
+
 def test_server_action_tracks_starred_rest_http_client_alias(tmp_path: Path) -> None:
     """Starred-rest HTTP client aliases should still require timeouts."""
     script = tmp_path / "action.py"

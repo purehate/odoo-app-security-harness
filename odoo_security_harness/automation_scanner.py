@@ -48,7 +48,7 @@ SENSITIVE_MODELS = {
     "stock.picking",
 }
 WRITE_TRIGGERS = {"on_create", "on_write", "on_create_or_write", "on_unlink"}
-HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request", "urlopen"}
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "request", "urlopen"}
 HTTP_CLIENT_FACTORIES = {"AsyncClient", "Client", "ClientSession", "Session"}
 MUTATION_METHODS = {"write", "create", "unlink"}
 SENSITIVE_MODEL_MUTATION_METHODS = {*MUTATION_METHODS, "set", "set_param"}
@@ -346,8 +346,8 @@ class _AutomationCodeScanner(ast.NodeVisitor):
         if _regex_sensitive_model_mutation(code):
             risks.add("sensitive_model_mutation")
         if (
-            re.search(r"requests\.(get|post|put|patch|delete)\s*\(", code)
-            or re.search(r"aiohttp\.(get|post|put|patch|delete|request)\s*\(", code)
+            re.search(r"requests\.(get|post|put|patch|delete|head)\s*\(", code)
+            or re.search(r"aiohttp\.(get|post|put|patch|delete|head|request)\s*\(", code)
             or re.search(r"(?:urllib\.request\.)?urlopen\s*\(", code)
         ) and "timeout" not in code:
             risks.add("http_no_timeout")

@@ -518,6 +518,31 @@ class Feed(models.Model):
     assert any(f.rule_id == "odoo-model-method-compute-http-no-timeout" for f in findings)
 
 
+def test_flags_head_without_timeout(tmp_path: Path) -> None:
+    """Model methods should treat HEAD calls as outbound HTTP."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "compute.py").write_text(
+        """
+from odoo import api, models
+import httpx
+
+class Feed(models.Model):
+    _name = 'x.feed'
+
+    @api.depends('url')
+    def _compute_payload(self):
+        httpx.head(self.url)
+        httpx.head(self.callback_url, timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert len([f for f in findings if f.rule_id == "odoo-model-method-compute-http-no-timeout"]) == 1
+
+
 def test_flags_named_expression_http_client_without_timeout(tmp_path: Path) -> None:
     """Walrus-bound HTTP client aliases should still be treated as blocking calls."""
     models = tmp_path / "module" / "models"

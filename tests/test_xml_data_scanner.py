@@ -343,6 +343,24 @@ def test_cron_aiohttp_without_timeout(tmp_path: Path) -> None:
     assert any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
 
 
+def test_cron_head_without_timeout(tmp_path: Path) -> None:
+    """Cron inline Python should catch HEAD URL fetches without timeouts."""
+    xml = tmp_path / "cron.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="cron_head_fetch" model="ir.cron">
+    <field name="state">code</field>
+    <field name="code">httpx.head(record.url)</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = XmlDataScanner(xml).scan_file()
+
+    assert any(f.rule_id == "odoo-xml-cron-http-no-timeout" for f in findings)
+
+
 def test_admin_method_cron_without_state_code_is_reported(tmp_path: Path) -> None:
     """Admin/root cron posture matters even when the cron calls a model method."""
     xml = tmp_path / "cron.xml"

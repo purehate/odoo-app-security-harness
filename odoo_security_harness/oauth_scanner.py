@@ -22,7 +22,7 @@ class OAuthFinding:
     sink: str = ""
 
 
-HTTP_METHODS = {"get", "post", "request", "urlopen"}
+HTTP_METHODS = {"get", "post", "head", "request", "urlopen"}
 TAINTED_ARG_NAMES = {"access_token", "code", "id_token", "jwt", "oauth_uid", "state", "token", "kwargs", "kw", "post"}
 REQUEST_MARKERS = (
     "kwargs.get",

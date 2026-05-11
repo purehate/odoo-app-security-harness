@@ -26,7 +26,7 @@ class ScheduledJobFinding:
     sink: str = ""
 
 
-HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request", "urlopen"}
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "request", "urlopen"}
 HTTP_CLIENT_FACTORIES = {"AsyncClient", "Client", "ClientSession", "Session"}
 MUTATION_METHODS = {"create", "write", "unlink"}
 SENSITIVE_MODEL_MUTATION_METHODS = {*MUTATION_METHODS, "set", "set_param"}

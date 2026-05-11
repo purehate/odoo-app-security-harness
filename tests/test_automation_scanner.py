@@ -573,6 +573,27 @@ def test_regex_fallback_urllib_urlopen_without_timeout_in_automation_is_reported
     assert any(f.rule_id == "odoo-automation-http-no-timeout" for f in findings)
 
 
+def test_head_without_timeout_in_automation_is_reported(tmp_path: Path) -> None:
+    """Automated action code should treat HEAD calls as outbound HTTP."""
+    xml = tmp_path / "automation.xml"
+    xml.write_text(
+        """<odoo>
+  <record id="auto_http_head" model="base.automation">
+    <field name="code"><![CDATA[
+import httpx
+httpx.head(record.callback_url)
+httpx.head(record.status_url, timeout=10)
+    ]]></field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = AutomationScanner(xml).scan_file()
+
+    assert len([f for f in findings if f.rule_id == "odoo-automation-http-no-timeout"]) == 1
+
+
 def test_http_client_with_timeout_in_automation_is_ignored(tmp_path: Path) -> None:
     """HTTP client aliases with visible timeout should not trigger timeout findings."""
     xml = tmp_path / "automation.xml"

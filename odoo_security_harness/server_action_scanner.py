@@ -36,17 +36,19 @@ class LoosePythonScanner(ast.NodeVisitor):
     HTTP_METHODS = {
         "aiohttp.delete",
         "aiohttp.get",
+        "aiohttp.head",
         "aiohttp.patch",
         "aiohttp.post",
         "aiohttp.put",
         "aiohttp.request",
         "requests.delete",
         "requests.get",
+        "requests.head",
         "requests.patch",
         "requests.post",
         "requests.put",
     }
-    HTTP_CLIENT_METHODS = {"delete", "get", "patch", "post", "put", "request"}
+    HTTP_CLIENT_METHODS = {"delete", "get", "head", "patch", "post", "put", "request"}
     HTTP_CLIENT_CONSTRUCTORS = {"aiohttp.ClientSession", "httpx.AsyncClient", "httpx.Client", "requests.Session"}
     SENSITIVE_MUTATION_METHODS = {"create", "set", "set_param", "unlink", "write"}
     SENSITIVE_MUTATION_MODELS = {

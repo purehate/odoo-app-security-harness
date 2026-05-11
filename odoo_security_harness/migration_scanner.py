@@ -25,7 +25,7 @@ class MigrationFinding:
 
 HOOK_KEYS = {"pre_init_hook", "post_init_hook", "uninstall_hook", "post_load"}
 DESTRUCTIVE_SQL = re.compile(r"\b(drop|truncate|delete\s+from|alter\s+table)\b", re.IGNORECASE)
-HTTP_METHODS = {"get", "post", "put", "patch", "delete", "request", "urlopen"}
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "request", "urlopen"}
 PROCESS_METHODS = {"run", "call", "check_call", "check_output", "Popen"}
 
 
