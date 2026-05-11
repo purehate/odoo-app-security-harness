@@ -89,6 +89,7 @@ class ModelMethodScanner(ast.NodeVisitor):
         self.http_functions: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
+        self.local_constants: dict[str, ast.AST] = {}
         self.api_module_names: set[str] = {"api"}
         self.odoo_module_names: set[str] = {"odoo"}
         self.api_decorator_names: dict[str, str] = {}
@@ -163,6 +164,8 @@ class ModelMethodScanner(ast.NodeVisitor):
         if not self.model_stack:
             self.generic_visit(node)
             return
+        previous_local_constants = self.local_constants
+        self.local_constants = {}
         context = MethodContext(
             name=node.name,
             kind=_method_kind(
@@ -175,6 +178,7 @@ class ModelMethodScanner(ast.NodeVisitor):
         self.method_stack.append(context)
         self.generic_visit(node)
         self.method_stack.pop()
+        self.local_constants = previous_local_constants
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         self.visit_FunctionDef(node)
@@ -183,6 +187,7 @@ class ModelMethodScanner(ast.NodeVisitor):
         if self.method_stack:
             context = self.method_stack[-1]
             for target in node.targets:
+                self._mark_local_constant_target(target, node.value)
                 self._track_alias(
                     target,
                     node.value,
@@ -202,6 +207,7 @@ class ModelMethodScanner(ast.NodeVisitor):
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
         if self.method_stack and node.value is not None:
             context = self.method_stack[-1]
+            self._mark_local_constant_target(node.target, node.value)
             self._track_alias(
                 node.target,
                 node.value,
@@ -221,6 +227,7 @@ class ModelMethodScanner(ast.NodeVisitor):
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
         if self.method_stack:
             context = self.method_stack[-1]
+            self._mark_local_constant_target(node.target, node.value)
             self._track_alias(
                 node.target,
                 node.value,
@@ -277,6 +284,24 @@ class ModelMethodScanner(ast.NodeVisitor):
             aliases.add(target.id)
         else:
             aliases.discard(target.id)
+
+    def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+            for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
+                self._mark_local_constant_target(child_target, child_value)
+            return
+        if isinstance(target, ast.Starred):
+            self._mark_local_constant_target(target.value, value)
+            return
+        if isinstance(target, ast.Name):
+            if _is_static_literal(value):
+                self.local_constants[target.id] = value
+            else:
+                self.local_constants.pop(target.id, None)
+            return
+        if isinstance(target, ast.Tuple | ast.List):
+            for name in _target_names(target):
+                self.local_constants.pop(name, None)
 
     def visit_Call(self, node: ast.Call) -> Any:
         if not self.method_stack:
@@ -357,11 +382,12 @@ class ModelMethodScanner(ast.NodeVisitor):
         )
 
     def _effective_constants(self) -> dict[str, ast.AST]:
-        if not self.class_constants_stack:
+        if not self.class_constants_stack and not self.local_constants:
             return self.constants
         constants = dict(self.constants)
         for class_constants in self.class_constants_stack:
             constants.update(class_constants)
+        constants.update(self.local_constants)
         return constants
 
 

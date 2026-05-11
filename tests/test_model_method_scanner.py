@@ -353,6 +353,31 @@ class Sale(models.Model):
     assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" and f.model == "x.sale" for f in findings)
 
 
+def test_flags_local_constant_with_user_onchange_mutation(tmp_path: Path) -> None:
+    """Function-local superuser IDs should not hide lifecycle sudo mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "sale.py").write_text(
+        """
+from odoo import api, models
+
+class Sale(models.Model):
+    _name = 'x.sale'
+
+    @api.onchange('partner_id')
+    def _onchange_partner_id(self):
+        root_uid = 1
+        orders = self.env['sale.order'].with_user(root_uid)
+        orders.write({'note': 'x'})
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-onchange-sudo-mutation" for f in findings)
+
+
 def test_flags_env_ref_admin_onchange_mutation(tmp_path: Path) -> None:
     """with_user(base.user_admin) mutations inside onchange methods are elevated."""
     models = tmp_path / "module" / "models"
@@ -806,6 +831,32 @@ class Feed(models.Model):
     assert any(f.rule_id == "odoo-model-method-constraint-tls-verify-disabled" for f in findings)
 
 
+def test_flags_local_constant_tls_verification_disabled(tmp_path: Path) -> None:
+    """Function-local verify=False kwargs should still flag lifecycle HTTP integrations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "constraint.py").write_text(
+        """
+from odoo import api, models
+import requests
+
+class Feed(models.Model):
+    _name = 'x.feed'
+
+    @api.constrains('url')
+    def _check_url(self):
+        verify_tls = False
+        http_options = {'timeout': 10, 'verify': verify_tls}
+        return requests.get(self.url, **http_options)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+
+    assert any(f.rule_id == "odoo-model-method-constraint-tls-verify-disabled" for f in findings)
+
+
 def test_flags_named_expression_http_client_without_timeout(tmp_path: Path) -> None:
     """Walrus-bound HTTP client aliases should still be treated as blocking calls."""
     models = tmp_path / "module" / "models"
@@ -1034,6 +1085,35 @@ class SideEffects(models.Model):
         f.rule_id == "odoo-model-method-onchange-sensitive-model-mutation" and f.model == "x.side.effects"
         for f in findings
     )
+
+
+def test_flags_local_constant_lifecycle_sensitive_model_mutation(tmp_path: Path) -> None:
+    """Function-local env model aliases should still flag lifecycle mutations."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "side_effects.py").write_text(
+        """
+from odoo import api, models
+
+class SideEffects(models.Model):
+    _name = 'x.side.effects'
+
+    @api.onchange('partner_id')
+    def _onchange_partner_id(self):
+        users_model = 'res.users'
+        config_model = 'ir.config_parameter'
+        self.env[users_model].write({'active': False})
+        self.env[config_model].set_param('auth_signup.invitation_scope', 'b2c')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_model_methods(tmp_path)
+    sensitive_mutations = [
+        finding for finding in findings if finding.rule_id == "odoo-model-method-onchange-sensitive-model-mutation"
+    ]
+
+    assert len(sensitive_mutations) == 2
 
 
 def test_flags_constraint_sudo_mutation_by_name(tmp_path: Path) -> None:
