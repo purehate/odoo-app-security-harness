@@ -57,7 +57,7 @@ class MigrationScanner(ast.NodeVisitor):
         self.findings: list[MigrationFinding] = []
         self.sql_vars: dict[str, ast.expr] = {}
         self.sudo_vars: set[str] = set()
-        self.http_module_aliases: set[str] = {"requests", "httpx", "urllib"}
+        self.http_module_aliases: set[str] = {"aiohttp", "requests", "httpx", "urllib"}
         self.http_function_aliases: set[str] = set()
         self.process_module_aliases: set[str] = {"subprocess"}
         self.process_function_aliases: set[str] = set()
@@ -86,7 +86,7 @@ class MigrationScanner(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> Any:
         for alias in node.names:
-            if alias.name in {"requests", "httpx"}:
+            if alias.name in {"aiohttp", "requests", "httpx"}:
                 self.http_module_aliases.add(alias.asname or alias.name)
             elif alias.name == "urllib.request":
                 self.http_module_aliases.add(alias.asname or "urllib")
@@ -95,7 +95,7 @@ class MigrationScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        if node.module in {"requests", "httpx", "urllib.request"}:
+        if node.module in {"aiohttp", "requests", "httpx", "urllib.request"}:
             for alias in node.names:
                 if alias.name in HTTP_METHODS:
                     self.http_function_aliases.add(alias.asname or alias.name)

@@ -357,6 +357,26 @@ def migrate(cr, version):
     assert len([finding for finding in findings if finding.rule_id == "odoo-migration-http-no-timeout"]) == 1
 
 
+def test_aiohttp_request_without_timeout_is_reported(tmp_path: Path) -> None:
+    """aiohttp module calls in migrations should require a timeout."""
+    py = tmp_path / "post-migrate.py"
+    py.write_text(
+        """
+import aiohttp as ah
+from aiohttp import request as http_request
+
+def migrate(cr, version):
+    ah.request("POST", "https://example.test/upgrade")
+    http_request("GET", "https://example.test/status", timeout=10)
+""",
+        encoding="utf-8",
+    )
+
+    findings = MigrationScanner(py, "migration").scan_file()
+
+    assert len([finding for finding in findings if finding.rule_id == "odoo-migration-http-no-timeout"]) == 1
+
+
 def test_manifest_declared_lifecycle_hook_is_scanned(tmp_path: Path) -> None:
     """Manifest hook names should locate and scan hook functions."""
     module = tmp_path / "module"
