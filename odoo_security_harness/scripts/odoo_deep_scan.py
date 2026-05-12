@@ -9915,11 +9915,7 @@ def _is_static_literal(node: ast.AST) -> bool:
         return all(
             (
                 key is None
-                or (
-                    isinstance(key, ast.Constant)
-                    and isinstance(key.value, str)
-                    and _is_static_literal(value)
-                )
+                or (isinstance(key, ast.Constant) and isinstance(key.value, str) and _is_static_literal(value))
             )
             for key, value in zip(node.keys, node.values, strict=True)
         )
@@ -9993,7 +9989,6 @@ def _read_text(path: Path) -> str:
         return path.read_text(encoding="utf-8", errors="replace")
     except Exception:
         return ""
-
 
 
 def _is_relative_to(path: Path, parent: Path) -> bool:

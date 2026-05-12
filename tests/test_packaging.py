@@ -11,7 +11,11 @@ import zipfile
 from email.parser import Parser
 from pathlib import Path
 
-import tomllib
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib  # type: ignore
+
 import yaml
 
 

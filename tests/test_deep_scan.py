@@ -936,16 +936,66 @@ def test_taxonomy_coverage_classifies_core_analyzer_and_multicompany_rules() -> 
     """Legacy core analyzer and multi-company rule IDs should not fall through generic buckets."""
     coverage = odoo_deep_scan._taxonomy_coverage(
         [
-            {"source": "python", "rule_id": "odoo-deep-with-user-admin", "title": "Admin user context", "message": "with_user(superuser_id)"},
-            {"source": "python", "rule_id": "odoo-deep-markup-user-input", "title": "Markup user input", "message": "Markup() wraps request or user-controlled data"},
-            {"source": "python", "rule_id": "odoo-deep-html-sanitize-false", "title": "HTML sanitization disabled", "message": "fields.Html sanitize=False"},
-            {"source": "multi-company", "rule_id": "odoo-mc-missing-check-company", "title": "Missing check_company", "message": "Many2one field lacks check_company"},
-            {"source": "multi-company", "rule_id": "odoo-mc-check-company-disabled", "title": "check_company disabled", "message": "check_company=False"},
-            {"source": "multi-company", "rule_id": "odoo-mc-search-no-company", "title": "Search lacks company scope", "message": "ORM search lacks company domain"},
-            {"source": "multi-company", "rule_id": "odoo-mc-sudo-search-no-company", "title": "Sudo search lacks company scope", "message": "sudo().search without company scope"},
-            {"source": "multi-company", "rule_id": "odoo-mc-with-company-user-input", "title": "Tainted with_company", "message": "User input controls with_company"},
-            {"source": "multi-company", "rule_id": "odoo-mc-company-context-user-input", "title": "Tainted company context", "message": "allowed_company_ids from request data"},
-            {"source": "multi-company", "rule_id": "odoo-mc-rule-missing-company", "title": "Record rule lacks company scope", "message": "ir.rule domain does not restrict company"},
+            {
+                "source": "python",
+                "rule_id": "odoo-deep-with-user-admin",
+                "title": "Admin user context",
+                "message": "with_user(superuser_id)",
+            },
+            {
+                "source": "python",
+                "rule_id": "odoo-deep-markup-user-input",
+                "title": "Markup user input",
+                "message": "Markup() wraps request or user-controlled data",
+            },
+            {
+                "source": "python",
+                "rule_id": "odoo-deep-html-sanitize-false",
+                "title": "HTML sanitization disabled",
+                "message": "fields.Html sanitize=False",
+            },
+            {
+                "source": "multi-company",
+                "rule_id": "odoo-mc-missing-check-company",
+                "title": "Missing check_company",
+                "message": "Many2one field lacks check_company",
+            },
+            {
+                "source": "multi-company",
+                "rule_id": "odoo-mc-check-company-disabled",
+                "title": "check_company disabled",
+                "message": "check_company=False",
+            },
+            {
+                "source": "multi-company",
+                "rule_id": "odoo-mc-search-no-company",
+                "title": "Search lacks company scope",
+                "message": "ORM search lacks company domain",
+            },
+            {
+                "source": "multi-company",
+                "rule_id": "odoo-mc-sudo-search-no-company",
+                "title": "Sudo search lacks company scope",
+                "message": "sudo().search without company scope",
+            },
+            {
+                "source": "multi-company",
+                "rule_id": "odoo-mc-with-company-user-input",
+                "title": "Tainted with_company",
+                "message": "User input controls with_company",
+            },
+            {
+                "source": "multi-company",
+                "rule_id": "odoo-mc-company-context-user-input",
+                "title": "Tainted company context",
+                "message": "allowed_company_ids from request data",
+            },
+            {
+                "source": "multi-company",
+                "rule_id": "odoo-mc-rule-missing-company",
+                "title": "Record rule lacks company scope",
+                "message": "ir.rule domain does not restrict company",
+            },
         ]
     )
 
@@ -1037,7 +1087,7 @@ def test_taxonomy_coverage_classifies_qweb_event_handler_injection() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template builds JavaScript event handler",
                 "message": "OWL xml template contains a dynamic or inline JavaScript event handler",
-            }
+            },
         ]
     )
 
@@ -1090,9 +1140,7 @@ def test_taxonomy_coverage_classifies_qweb_inline_script_execution() -> None:
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert {
-        entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]
-    } == {
+    assert {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]} == {
         "odoo-qweb-t-js-inline-script": "qweb_inline_script_execution",
         "odoo-qweb-script-expression-context": "qweb_inline_script_execution",
         "odoo-web-owl-qweb-t-js-inline-script": "qweb_inline_script_execution",
@@ -1115,7 +1163,7 @@ def test_taxonomy_coverage_classifies_qweb_raw_output_mode() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template disables QWeb escaping",
                 "message": "OWL xml template uses t-out-mode='raw' and disables normal escaping",
-            }
+            },
         ]
     )
 
@@ -1145,7 +1193,7 @@ def test_taxonomy_coverage_classifies_frontend_message_origin_validation() -> No
                 "source": "web-assets",
                 "title": "Sensitive frontend value sent with postMessage",
                 "message": "Frontend code sends token/session/secret-like values through postMessage across frame or window boundaries",
-            }
+            },
         ]
     )
 
@@ -1169,7 +1217,7 @@ def test_taxonomy_coverage_classifies_frontend_dom_xss() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template writes iframe srcdoc HTML",
                 "message": "OWL xml template writes dynamic HTML into iframe srcdoc",
-            }
+            },
         ]
     )
 
@@ -1337,7 +1385,7 @@ def test_taxonomy_coverage_classifies_qweb_post_form_csrf_missing() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template POST form lacks visible CSRF token",
                 "message": "OWL xml template contains a POST form without a visible csrf_token field",
-            }
+            },
         ]
     )
 
@@ -1575,9 +1623,7 @@ def test_taxonomy_coverage_classifies_outbound_message_url_embedded_credentials(
     )
 
     assert coverage["unmapped_rule_ids"] == []
-    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {
-        "outbound_message_url_embedded_credentials"
-    }
+    assert {entry["shape"] for entry in coverage["mapped_entries"]} == {"outbound_message_url_embedded_credentials"}
     assert all("CWE-798" in entry["cwe"] for entry in coverage["mapped_entries"])
 
 
@@ -2304,7 +2350,7 @@ def test_taxonomy_coverage_classifies_qweb_reverse_tabnabbing() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template link opens new tab without opener isolation",
                 "message": "OWL xml template link uses target='_blank' without rel='noopener'",
-            }
+            },
         ]
     )
 
@@ -2364,7 +2410,7 @@ def test_taxonomy_coverage_classifies_qweb_iframe_sandbox_missing() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template iframe lacks sandbox restrictions",
                 "message": "OWL xml template embeds an iframe without a sandbox attribute",
-            }
+            },
         ]
     )
 
@@ -2406,7 +2452,7 @@ def test_taxonomy_coverage_classifies_qweb_iframe_sandbox_escape() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template iframe sandbox allows script same-origin escape",
                 "message": "OWL xml template iframe sandbox combines allow-scripts with allow-same-origin",
-            }
+            },
         ]
     )
 
@@ -2490,7 +2536,7 @@ def test_taxonomy_coverage_classifies_qweb_external_script_missing_sri() -> None
                 "source": "web-asset",
                 "title": "OWL inline template external script lacks Subresource Integrity",
                 "message": "OWL xml template loads an external script without an integrity attribute",
-            }
+            },
         ]
     )
 
@@ -2532,7 +2578,7 @@ def test_taxonomy_coverage_classifies_qweb_external_stylesheet_missing_sri() -> 
                 "source": "web-asset",
                 "title": "OWL inline template external stylesheet lacks Subresource Integrity",
                 "message": "OWL xml template loads an external stylesheet without an integrity attribute",
-            }
+            },
         ]
     )
 
@@ -2658,7 +2704,7 @@ def test_taxonomy_coverage_classifies_qweb_dynamic_script_src() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template script source uses dynamic target",
                 "message": "OWL xml template imports JavaScript at runtime from an external or dynamic target",
-            }
+            },
         ]
     )
 
@@ -2778,7 +2824,7 @@ def test_taxonomy_coverage_classifies_qweb_dynamic_style_attribute() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template binds dynamic class attribute",
                 "message": "OWL xml template binds dynamic CSS classes",
-            }
+            },
         ]
     )
 
@@ -2802,7 +2848,7 @@ def test_taxonomy_coverage_classifies_qweb_dynamic_stylesheet_href() -> None:
                 "source": "web-asset",
                 "title": "OWL inline template stylesheet href uses dynamic target",
                 "message": "OWL xml template loads CSS from an external or dynamic target",
-            }
+            },
         ]
     )
 
@@ -5911,9 +5957,7 @@ def test_taxonomy_coverage_classifies_record_rule_sensitive_exposure() -> None:
     shapes = {entry["rule_id"]: entry["shape"] for entry in coverage["mapped_entries"]}
     assert shapes["odoo-record-rule-universal-domain"] == "record_rule_universal_sensitive_domain"
     assert shapes["odoo-record-rule-public-sensitive-no-owner-scope"] == ("record_rule_public_sensitive_no_owner_scope")
-    assert shapes["odoo-record-rule-public-sensitive-company-only-scope"] == (
-        "record_rule_public_company_only_scope"
-    )
+    assert shapes["odoo-record-rule-public-sensitive-company-only-scope"] == ("record_rule_public_company_only_scope")
     assert shapes["odoo-record-rule-portal-write-sensitive"] == "record_rule_portal_sensitive_mutation"
     assert shapes["odoo-record-rule-global-sensitive-mutation"] == "record_rule_global_sensitive_mutation"
 
@@ -6255,10 +6299,7 @@ def test_taxonomy_coverage_classifies_orm_context_read_and_framework_flags() -> 
     assert shapes["odoo-orm-context-sudo-active-test-read"] == "orm_context_sudo_active_test_read"
     assert shapes["odoo-orm-context-bin-size-disabled"] == "orm_context_bin_size_disabled"
     assert shapes["odoo-orm-context-sudo-bin-size-read"] == "orm_context_sudo_bin_size_read"
-    assert (
-        shapes["odoo-orm-context-accounting-validation-disabled"]
-        == "orm_context_accounting_validation_disabled"
-    )
+    assert shapes["odoo-orm-context-accounting-validation-disabled"] == "orm_context_accounting_validation_disabled"
     assert shapes["odoo-orm-context-privileged-mode"] == "orm_context_privileged_mode"
     assert shapes["odoo-orm-context-privileged-default"] == "orm_context_privileged_default"
 
@@ -8423,10 +8464,7 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
     assert shapes["odoo-xml-function-security-model-mutation"] == "xml_data_function_security_model_mutation"
     assert shapes["odoo-xml-public-mail-channel"] == "xml_data_public_mail_channel"
     assert shapes["odoo-xml-mail-server-no-tls"] == "xml_data_mail_server_no_tls"
-    assert (
-        shapes["odoo-xml-mail-server-hardcoded-credential"]
-        == "xml_data_mail_server_hardcoded_credential"
-    )
+    assert shapes["odoo-xml-mail-server-hardcoded-credential"] == "xml_data_mail_server_hardcoded_credential"
     assert shapes["odoo-xml-config-param-security-toggle-enabled"] == "config_parameter_security_toggle_write"
     assert shapes["odoo-xml-config-param-insecure-base-url"] == "config_parameter_base_url_write"
     assert (
@@ -8436,8 +8474,7 @@ def test_taxonomy_coverage_classifies_ui_and_xml_privilege_rule_gaps() -> None:
     assert shapes["odoo-xml-server-action-tls-verify-disabled"] == "xml_data_server_action_tls_verification_disabled"
     assert shapes["odoo-xml-server-action-cleartext-http-url"] == "xml_data_server_action_cleartext_http_url"
     assert (
-        shapes["odoo-xml-server-action-url-embedded-credentials"]
-        == "xml_data_server_action_url_embedded_credentials"
+        shapes["odoo-xml-server-action-url-embedded-credentials"] == "xml_data_server_action_url_embedded_credentials"
     )
     assert all(entry["cwe"] for entry in coverage["mapped_entries"])
 
