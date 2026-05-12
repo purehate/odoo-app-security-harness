@@ -237,7 +237,7 @@ rules:
             ...
             $MODEL.write($KW)
             ...
-    message: **kwargs passed directly to ORM write/create; mass assignment possible. Use allowlist.
+    message: "**kwargs passed directly to ORM write/create; mass assignment possible. Use allowlist."
     severity: WARNING
     languages: [python]
     metadata:
@@ -312,7 +312,7 @@ rules:
   - id: odoo-t-att-javascript
     patterns:
       - pattern-regex: "t-att-[a-z-]+=\"[^\"]*javascript:"
-    message: QWeb t-att with javascript: URI; XSS sink.
+    message: "QWeb t-att with javascript: URI; XSS sink."
     severity: ERROR
     languages: [generic]
     paths:
@@ -451,8 +451,8 @@ rules:
 
   - id: odoo-hardcoded-secret
     pattern-either:
-      - pattern-regex: "(password|secret|token|api_key)\s*=\s*['\"][^'\"]{8,}['\"]"
-      - pattern-regex: "admin_passwd\s*=\s*['\"][^'\"]+['\"]"
+      - pattern-regex: '"(password|secret|token|api_key)\s*=\s*[''"][^''"]{8,}[''"]"'
+      - pattern-regex: 'admin_passwd\s*=\s*[''"][^''"]+[''"]'
     message: Potential hardcoded secret; verify this is not a production credential.
     severity: WARNING
     languages: [python]
@@ -527,7 +527,7 @@ rules:
       hunter: data-exposure
 
   - id: odoo-access-token-weak
-    pattern-regex: "access_token\s*=\s*(uuid\.uuid4\(\)|str\(random\.|secrets\.token_urlsafe)"
+    pattern-regex: 'access_token\s*=\s*(uuid\.uuid4\(\)|str\(random\.|secrets\.token_urlsafe)'
     message: Weak access token generation; verify sufficient entropy (use secrets.token_urlsafe with 32+ bytes).
     severity: INFO
     languages: [python]
