@@ -198,10 +198,9 @@ rules:
 
   - id: odoo-unsafe-order-by
     patterns:
-      - pattern: |
-          $CR.execute(... $ORDER_BY ..., ...)
+      - pattern: $CR.execute($QUERY, ...)
       - metavariable-regex:
-          metavariable: $ORDER_BY
+          metavariable: $QUERY
           regex: .*\b(order|sort)\b.*
     message: ORDER BY clause may be user-controlled; cannot be parameterized. Verify allowlist.
     severity: WARNING
