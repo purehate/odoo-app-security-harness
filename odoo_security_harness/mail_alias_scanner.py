@@ -11,7 +11,7 @@ from typing import Any
 
 from defusedxml import ElementTree
 
-from odoo_security_harness.base_scanner import _record_fields, XmlScanner, _should_skip
+from odoo_security_harness.base_scanner import XmlScanner, _record_fields, _should_skip
 
 
 @dataclass
@@ -142,9 +142,7 @@ class MailAliasScanner(XmlScanner):
         line = self._line_for_record(record)
         self._scan_alias_fields(fields, alias_id, line)
 
-    def _scan_alias_fields(
-        self, fields: dict[str, str], alias_id: str, line: int, *, owner_model: str = ""
-    ) -> None:
+    def _scan_alias_fields(self, fields: dict[str, str], alias_id: str, line: int, *, owner_model: str = "") -> None:
         target_model = _model_value(fields.get("alias_model_id", "") or fields.get("alias_model", ""))
         if not target_model and owner_model != "mail.alias":
             target_model = owner_model

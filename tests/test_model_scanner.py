@@ -371,10 +371,7 @@ class SalesReport(models.Model):
 
     findings = ModelStructureScanner(str(model)).scan_file()
 
-    assert any(
-        f.rule_id == "odoo-model-auto-false-manual-sql" and f.model == "x.sales.report"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-model-auto-false-manual-sql" and f.model == "x.sales.report" for f in findings)
 
 
 def test_constant_backed_log_access_disabled_is_reported(tmp_path: Path) -> None:
@@ -548,10 +545,7 @@ class ApiCredential(models.Model):
 
     findings = ModelStructureScanner(str(model)).scan_file()
 
-    assert any(
-        f.rule_id == "odoo-model-rec-name-sensitive" and f.model == "x.api.credential"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-model-rec-name-sensitive" and f.model == "x.api.credential" for f in findings)
     assert not any(f.rule_id == "odoo-model-secret-copyable" for f in findings)
 
 

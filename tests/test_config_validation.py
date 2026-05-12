@@ -540,7 +540,15 @@ breadth_budget = "deep"
         monkeypatch.setattr(
             sys,
             "argv",
-            ["odoo-review-run", "--model-pack", "cheap-recall", "--codex-budget", "low", "--odoomap-target", "https://cli.example.com"],
+            [
+                "odoo-review-run",
+                "--model-pack",
+                "cheap-recall",
+                "--codex-budget",
+                "low",
+                "--odoomap-target",
+                "https://cli.example.com",
+            ],
         )
 
         namespace["apply_project_config"](args, tmp_path)
@@ -1006,20 +1014,22 @@ class TestValidateAcceptedRisks:
 
     def test_valid_json(self) -> None:
         """Test valid JSON accepted-risks."""
-        risks = json.dumps({
-            "version": 1,
-            "risks": [
-                {
-                    "id": "AR-001",
-                    "title": "Test Risk",
-                    "file": "test.py",
-                    "reason": "Accepted by customer",
-                    "owner": "security@example.com",
-                    "accepted": "2024-01-01",
-                    "expires": "2025-01-01",
-                }
-            ]
-        })
+        risks = json.dumps(
+            {
+                "version": 1,
+                "risks": [
+                    {
+                        "id": "AR-001",
+                        "title": "Test Risk",
+                        "file": "test.py",
+                        "reason": "Accepted by customer",
+                        "owner": "security@example.com",
+                        "accepted": "2024-01-01",
+                        "expires": "2025-01-01",
+                    }
+                ],
+            }
+        )
         valid, errors = validate_accepted_risks(risks)
         assert valid is True
         assert len(errors) == 0
@@ -1036,7 +1046,10 @@ class TestValidateAcceptedRisks:
         risks = "not valid json"
         valid, errors = validate_accepted_risks(risks)
         assert valid is False
-        assert any("parse" in e.lower() or "json" in e.lower() or "missing" in e.lower() or "invalid" in e.lower() for e in errors)
+        assert any(
+            "parse" in e.lower() or "json" in e.lower() or "missing" in e.lower() or "invalid" in e.lower()
+            for e in errors
+        )
 
     def test_yaml_format(self) -> None:
         """Test YAML format validation."""

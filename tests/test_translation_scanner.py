@@ -87,9 +87,7 @@ msgstr "<a href=\\"http://portal.example.com/pay\\">Payer</a>"
     findings = scan_translations(tmp_path)
 
     assert any(
-        finding.rule_id == "odoo-i18n-insecure-url"
-        and finding.severity == "medium"
-        and finding.locale == "fr"
+        finding.rule_id == "odoo-i18n-insecure-url" and finding.severity == "medium" and finding.locale == "fr"
         for finding in findings
     )
 

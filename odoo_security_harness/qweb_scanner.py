@@ -696,7 +696,10 @@ class QWebScanner:
             return False
         if re.fullmatch(r"""['"][^'"]*['"]""", stripped):
             return False
-        return bool(self.URL_DYNAMIC_MARKER_RE.search(stripped) or re.search(r"\b(?:get|get_param|getlist|getattr)\s*\(", stripped))
+        return bool(
+            self.URL_DYNAMIC_MARKER_RE.search(stripped)
+            or re.search(r"\b(?:get|get_param|getlist|getattr)\s*\(", stripped)
+        )
 
     def _check_srcdoc_html_sink(self, tag: str, attr: str, value: str) -> None:
         """Check iframe srcdoc attributes that receive dynamic HTML."""
@@ -1178,7 +1181,9 @@ class QWebScanner:
         # Find external scripts without SRI.
         for match in re.finditer(r"<script\b(?P<attrs>[^>]*)>", content, re.IGNORECASE):
             attrs = match.group("attrs")
-            dynamic_src_match = re.search(r"\b(?P<attr>t-attf?-src)\s*=\s*([\"'])(?P<src>.*?)\2", attrs, re.IGNORECASE | re.DOTALL)
+            dynamic_src_match = re.search(
+                r"\b(?P<attr>t-attf?-src)\s*=\s*([\"'])(?P<src>.*?)\2", attrs, re.IGNORECASE | re.DOTALL
+            )
             if dynamic_src_match and self._looks_dynamic_asset_target(dynamic_src_match.group("src")):
                 line = content[: match.start()].count("\n") + 1
                 findings.append(
@@ -1216,7 +1221,9 @@ class QWebScanner:
         for match in re.finditer(r"<link\b(?P<attrs>[^>]*)>", content, re.IGNORECASE):
             attrs = match.group("attrs")
             rel_match = re.search(r"\brel\s*=\s*([\"'])(?P<rel>.*?)\1", attrs, re.IGNORECASE | re.DOTALL)
-            dynamic_href_match = re.search(r"\b(?P<attr>t-attf?-href)\s*=\s*([\"'])(?P<href>.*?)\2", attrs, re.IGNORECASE | re.DOTALL)
+            dynamic_href_match = re.search(
+                r"\b(?P<attr>t-attf?-href)\s*=\s*([\"'])(?P<href>.*?)\2", attrs, re.IGNORECASE | re.DOTALL
+            )
             if rel_match and "stylesheet" in rel_match.group("rel").lower().split():
                 if dynamic_href_match and self._looks_dynamic_asset_target(dynamic_href_match.group("href")):
                     line = content[: match.start()].count("\n") + 1

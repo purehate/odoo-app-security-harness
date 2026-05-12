@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from odoo_security_harness.finding_schema import normalize_finding, normalize_findings, validation_report, validate_findings
+from odoo_security_harness.finding_schema import (
+    normalize_finding,
+    normalize_findings,
+    validate_findings,
+    validation_report,
+)
 
 
 def test_normalize_finding_adds_export_contract_fields() -> None:

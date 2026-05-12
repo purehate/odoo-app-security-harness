@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -214,7 +215,9 @@ class ExportScanner(ast.NodeVisitor):
                 "XLSX export writes request/record-derived data without visible formula escaping; force strings or neutralize formula prefixes",
                 attr,
             )
-        elif attr in FORMULA_SINKS and _call_has_tainted_input(node, self._expr_is_tainted, self._effective_constants()):
+        elif attr in FORMULA_SINKS and _call_has_tainted_input(
+            node, self._expr_is_tainted, self._effective_constants()
+        ):
             self._add(
                 "odoo-export-tainted-formula",
                 "XLSX formula uses request/record data",
@@ -751,7 +754,6 @@ def _unpack_target_value_pairs(
     if tail_count:
         pairs.extend(zip(targets[-tail_count:], values[-tail_count:], strict=False))
     return pairs
-
 
 
 def findings_to_json(findings: list[ExportFinding]) -> list[dict[str, Any]]:

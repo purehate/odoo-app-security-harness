@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -648,7 +649,6 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
         return isinstance(node.value, str | bool | int | float | type(None))
     return isinstance(node, ast.Name)
-
 
 
 def findings_to_json(findings: list[ConstraintFinding]) -> list[dict[str, Any]]:

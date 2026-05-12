@@ -809,8 +809,10 @@ def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, as
     if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
         return False
     parsed = urlparse(value.value.strip())
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
-        parsed.username is not None or parsed.password is not None
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.hostname)
+        and (parsed.username is not None or parsed.password is not None)
     )
 
 

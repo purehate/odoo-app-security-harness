@@ -292,10 +292,7 @@ class Token(models.Model):
 
     findings = scan_field_security(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-field-sensitive-public-groups" and f.model == "x.token"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-field-sensitive-public-groups" and f.model == "x.token" for f in findings)
 
 
 def test_flags_nested_static_unpack_sensitive_field_with_public_groups(tmp_path: Path) -> None:
@@ -700,10 +697,7 @@ class Page(models.Model):
 
     findings = scan_field_security(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-field-html-sanitizer-disabled" and f.model == "x.page"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-field-html-sanitizer-disabled" and f.model == "x.page" for f in findings)
 
 
 def test_flags_html_sanitize_override_without_admin_groups(tmp_path: Path) -> None:

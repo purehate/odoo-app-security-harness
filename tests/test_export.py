@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from pathlib import Path
-
-import pytest
 
 
 def normalize_line(text: str) -> str:
@@ -30,7 +27,7 @@ def to_sarif(findings_doc: dict, scope_data: dict, suppress: bool) -> dict:
     repo_uri = target.get("repo") or ""
     rules: dict[str, dict] = {}
     results: list[dict] = []
-    
+
     for f in findings_doc.get("findings", []):
         rule_id = f.get("rule_id") or re.sub(r"[^a-zA-Z0-9]+", "-", (f.get("title", "finding")).lower()).strip("-")[:60]
         if rule_id not in rules:
@@ -40,22 +37,24 @@ def to_sarif(findings_doc: dict, scope_data: dict, suppress: bool) -> dict:
                 "shortDescription": {"text": f.get("title", rule_id)},
                 "fullDescription": {"text": (f.get("description") or f.get("title") or rule_id)[:1000]},
             }
-        
+
         result = {
             "ruleId": rule_id,
             "level": {"critical": "error", "high": "error", "medium": "warning", "low": "note", "info": "note"}.get(
                 (f.get("severity") or "medium").lower(), "warning"
             ),
             "message": {"text": f.get("description") or f.get("title", "")},
-            "locations": [{
-                "physicalLocation": {
-                    "artifactLocation": {"uri": f.get("file", "")},
-                    "region": {"startLine": int(f.get("line") or 1)},
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": f.get("file", "")},
+                        "region": {"startLine": int(f.get("line") or 1)},
+                    }
                 }
-            }],
+            ],
             "fingerprints": {"odoo-harness/v1": f.get("fingerprint") or compute_fingerprint(f)},
         }
-        
+
         if suppress:
             risks = scope_data.get("accepted_risks") or []
             for risk in risks:
@@ -65,19 +64,23 @@ def to_sarif(findings_doc: dict, scope_data: dict, suppress: bool) -> dict:
                     continue
                 if "file" in risk and risk["file"] and risk["file"] != f.get("file"):
                     continue
-                result["suppressions"] = [{"kind": "external", "justification": f"Accepted risk {risk.get('id', 'AR-?')}"}]
+                result["suppressions"] = [
+                    {"kind": "external", "justification": f"Accepted risk {risk.get('id', 'AR-?')}"}
+                ]
                 break
-        
+
         results.append(result)
-    
+
     return {
         "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
         "version": "2.1.0",
-        "runs": [{
-            "tool": {"driver": {"name": "odoo-app-security-harness", "rules": list(rules.values())}},
-            "originalUriBaseIds": {"REPO": {"uri": f"file://{repo_uri}/" if repo_uri else ""}},
-            "results": results,
-        }],
+        "runs": [
+            {
+                "tool": {"driver": {"name": "odoo-app-security-harness", "rules": list(rules.values())}},
+                "originalUriBaseIds": {"REPO": {"uri": f"file://{repo_uri}/" if repo_uri else ""}},
+                "results": results,
+            }
+        ],
     }
 
 
@@ -114,12 +117,12 @@ class TestToSarif:
     def test_sarif_structure(self, sample_findings: dict) -> None:
         """Test SARIF output has correct structure."""
         sarif = to_sarif(sample_findings, {}, False)
-        
+
         assert sarif["$schema"] is not None
         assert sarif["version"] == "2.1.0"
         assert "runs" in sarif
         assert len(sarif["runs"]) == 1
-        
+
         run = sarif["runs"][0]
         assert "tool" in run
         assert "results" in run
@@ -129,7 +132,7 @@ class TestToSarif:
         """Test severity to level mapping."""
         sarif = to_sarif(sample_findings, {}, False)
         results = sarif["runs"][0]["results"]
-        
+
         assert results[0]["level"] == "error"  # critical
         assert results[1]["level"] == "error"  # high
         assert results[2]["level"] == "error"  # high
@@ -147,7 +150,7 @@ class TestToSarif:
         }
         sarif = to_sarif(sample_findings, scope_data, True)
         results = sarif["runs"][0]["results"]
-        
+
         # All findings should have suppression since they match the scope
         for result in results:
             assert "suppressions" in result
@@ -155,14 +158,10 @@ class TestToSarif:
 
     def test_sarif_no_suppress(self, sample_findings: dict) -> None:
         """Test suppressions are not added when suppress=False."""
-        scope_data = {
-            "accepted_risks": [
-                {"id": "AR-001", "module": "test_module"}
-            ]
-        }
+        scope_data = {"accepted_risks": [{"id": "AR-001", "module": "test_module"}]}
         sarif = to_sarif(sample_findings, scope_data, False)
         results = sarif["runs"][0]["results"]
-        
+
         for result in results:
             assert "suppressions" not in result
 
@@ -170,7 +169,7 @@ class TestToSarif:
         """Test SARIF with no findings."""
         doc = {"findings": [], "target": {}}
         sarif = to_sarif(doc, {}, False)
-        
+
         assert len(sarif["runs"][0]["results"]) == 0
         assert len(sarif["runs"][0]["tool"]["driver"]["rules"]) == 0
 
@@ -178,7 +177,7 @@ class TestToSarif:
         """Test location information in SARIF."""
         sarif = to_sarif(sample_findings, {}, False)
         result = sarif["runs"][0]["results"][0]
-        
+
         assert "locations" in result
         location = result["locations"][0]
         assert "physicalLocation" in location
@@ -208,10 +207,10 @@ class TestBountyDrafts:
             "capec": ["CAPEC-66"],
             "references": ["https://owasp.org/www-community/attacks/SQL_Injection"],
         }
-        
+
         bounty_dir = tmp_path / "bounty"
         bounty_dir.mkdir()
-        
+
         path = bounty_dir / f"{finding['id']}.md"
         lines = [
             f"# {finding['title']}",
@@ -243,7 +242,7 @@ class TestBountyDrafts:
             finding.get("fix", ""),
         ]
         path.write_text("\n".join(lines), encoding="utf-8")
-        
+
         content = path.read_text(encoding="utf-8")
         assert "# SQL Injection" in content
         assert "**Severity:** critical" in content
@@ -261,16 +260,16 @@ class TestBountyDrafts:
             {"id": "F-002", "triage": "REJECT", "title": "False Positive"},
             {"id": "F-003", "triage": "DOWNGRADE", "title": "Low Priority"},
         ]
-        
+
         bounty_dir = tmp_path / "bounty"
         bounty_dir.mkdir()
-        
+
         accept_count = 0
         for f in findings:
             if f["triage"] == "ACCEPT":
                 accept_count += 1
                 (bounty_dir / f"{f['id']}.md").write_text(f"# {f['title']}", encoding="utf-8")
-        
+
         assert accept_count == 1
         assert len(list(bounty_dir.glob("*.md"))) == 1
 
@@ -283,18 +282,20 @@ class TestFingerprintsExport:
         entries = []
         for f in sample_findings.get("findings", []):
             fp = f.get("fingerprint") or compute_fingerprint(f)
-            entries.append({
-                "id": f.get("id"),
-                "fingerprint": fp,
-                "title": f.get("title"),
-                "severity": f.get("severity"),
-            })
-        
+            entries.append(
+                {
+                    "id": f.get("id"),
+                    "fingerprint": fp,
+                    "title": f.get("title"),
+                    "severity": f.get("severity"),
+                }
+            )
+
         doc = {
             "schema_version": "1.0",
             "fingerprints": entries,
         }
-        
+
         assert len(doc["fingerprints"]) == 3
         for entry in doc["fingerprints"]:
             assert "fingerprint" in entry

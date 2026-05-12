@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
-from pathlib import Path
-
-import pytest
 
 
 def normalize_line(text: str) -> str:
@@ -44,12 +40,14 @@ def classify(baseline_idx: dict, current_idx: dict) -> dict:
         sev_changed = (base.get("severity") or "") != (cur.get("severity") or "")
         triage_changed = (base.get("triage") or "") != (cur.get("triage") or "")
         if sev_changed or triage_changed:
-            changed.append({
-                "current": cur,
-                "baseline": base,
-                "severity_changed": sev_changed,
-                "triage_changed": triage_changed,
-            })
+            changed.append(
+                {
+                    "current": cur,
+                    "baseline": base,
+                    "severity_changed": sev_changed,
+                    "triage_changed": triage_changed,
+                }
+            )
         else:
             unchanged.append(cur)
 
@@ -118,7 +116,7 @@ class TestClassify:
             "fp2": {"id": "F-2", "severity": "critical"},
         }
         result = classify(baseline, current)
-        
+
         assert len(result["new"]) == 1
         assert result["new"][0]["id"] == "F-2"
         assert len(result["fixed"]) == 0
@@ -132,7 +130,7 @@ class TestClassify:
         }
         current = {"fp1": {"id": "F-1", "severity": "high"}}
         result = classify(baseline, current)
-        
+
         assert len(result["fixed"]) == 1
         assert result["fixed"][0]["id"] == "F-2"
         assert len(result["new"]) == 0
@@ -143,7 +141,7 @@ class TestClassify:
         baseline = {"fp1": {"id": "F-1", "severity": "high", "triage": "ACCEPT"}}
         current = {"fp1": {"id": "F-1", "severity": "high", "triage": "ACCEPT"}}
         result = classify(baseline, current)
-        
+
         assert len(result["unchanged"]) == 1
         assert len(result["changed"]) == 0
         assert len(result["new"]) == 0
@@ -154,7 +152,7 @@ class TestClassify:
         baseline = {"fp1": {"id": "F-1", "severity": "medium"}}
         current = {"fp1": {"id": "F-1", "severity": "high"}}
         result = classify(baseline, current)
-        
+
         assert len(result["changed"]) == 1
         assert result["changed"][0]["severity_changed"] is True
         assert result["changed"][0]["triage_changed"] is False
@@ -165,7 +163,7 @@ class TestClassify:
         baseline = {"fp1": {"id": "F-1", "severity": "high", "triage": "ACCEPT"}}
         current = {"fp1": {"id": "F-1", "severity": "high", "triage": "DOWNGRADE"}}
         result = classify(baseline, current)
-        
+
         assert len(result["changed"]) == 1
         assert result["changed"][0]["severity_changed"] is False
         assert result["changed"][0]["triage_changed"] is True
@@ -175,7 +173,7 @@ class TestClassify:
         baseline = {"fp1": {"id": "F-1", "severity": "medium", "triage": "ACCEPT"}}
         current = {"fp1": {"id": "F-1", "severity": "high", "triage": "DOWNGRADE"}}
         result = classify(baseline, current)
-        
+
         assert len(result["changed"]) == 1
         assert result["changed"][0]["severity_changed"] is True
         assert result["changed"][0]["triage_changed"] is True
@@ -185,7 +183,7 @@ class TestClassify:
         baseline: dict = {}
         current = {"fp1": {"id": "F-1"}}
         result = classify(baseline, current)
-        
+
         assert len(result["new"]) == 1
         assert len(result["fixed"]) == 0
         assert len(result["unchanged"]) == 0
@@ -195,7 +193,7 @@ class TestClassify:
         baseline = {"fp1": {"id": "F-1"}}
         current: dict = {}
         result = classify(baseline, current)
-        
+
         assert len(result["new"]) == 0
         assert len(result["fixed"]) == 1
         assert len(result["unchanged"]) == 0
@@ -203,9 +201,9 @@ class TestClassify:
     def test_multiple_changes(self) -> None:
         """Test complex scenario with multiple types of changes."""
         baseline = {
-            "fp1": {"id": "F-1", "severity": "low"},   # unchanged
+            "fp1": {"id": "F-1", "severity": "low"},  # unchanged
             "fp2": {"id": "F-2", "severity": "medium"},  # fixed
-            "fp3": {"id": "F-3", "severity": "high"},   # changed severity
+            "fp3": {"id": "F-3", "severity": "high"},  # changed severity
         }
         current = {
             "fp1": {"id": "F-1", "severity": "low"},
@@ -213,7 +211,7 @@ class TestClassify:
             "fp4": {"id": "F-4", "severity": "medium"},  # new
         }
         result = classify(baseline, current)
-        
+
         assert len(result["new"]) == 1
         assert result["new"][0]["id"] == "F-4"
         assert len(result["fixed"]) == 1
@@ -235,7 +233,7 @@ class TestRenderMarkdown:
             "changed": [],
             "unchanged": [{"id": "F-3"}],
         }
-        
+
         lines = [
             "# Findings Delta",
             "",
@@ -246,7 +244,7 @@ class TestRenderMarkdown:
             f"- Changed:   **{len(delta['changed'])}**",
             f"- Unchanged: **{len(delta['unchanged'])}**",
         ]
-        
+
         content = "\n".join(lines)
         assert "New:       **1**" in content
         assert "Fixed:     **1**" in content
@@ -257,20 +255,27 @@ class TestRenderMarkdown:
         """Test new findings table rendering."""
         delta = {
             "new": [
-                {"id": "F-1", "severity": "critical", "triage": "ACCEPT", "file": "test.py", "line": 10, "title": "SQL Injection"},
+                {
+                    "id": "F-1",
+                    "severity": "critical",
+                    "triage": "ACCEPT",
+                    "file": "test.py",
+                    "line": 10,
+                    "title": "SQL Injection",
+                },
             ],
             "fixed": [],
             "changed": [],
             "unchanged": [],
         }
-        
+
         assert len(delta["new"]) > 0
         assert delta["new"][0]["severity"] == "critical"
 
     def test_no_changes_message(self) -> None:
         """Test message when no changes detected."""
         delta = {"new": [], "fixed": [], "changed": [], "unchanged": []}
-        
+
         assert not any(delta.values())
         assert len(delta["new"]) == 0
         assert len(delta["fixed"]) == 0

@@ -57,9 +57,7 @@ def test_detects_t_set_markup_escape_bypass(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-markup-escape-bypass"
-        and f.attribute == "t-out"
-        and "t-set variable" in f.message
+        f.rule_id == "odoo-qweb-markup-escape-bypass" and f.attribute == "t-out" and "t-set variable" in f.message
         for f in findings
     )
 
@@ -88,9 +86,7 @@ def test_regex_fallback_detects_t_set_markup_escape_bypass(tmp_path: Path) -> No
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-markup-escape-bypass"
-        and f.attribute == "t-out"
-        and "t-set variable" in f.message
+        f.rule_id == "odoo-qweb-markup-escape-bypass" and f.attribute == "t-out" and "t-set variable" in f.message
         for f in findings
     )
 
@@ -216,9 +212,7 @@ def test_dynamic_target_blank_without_noopener_detected(tmp_path: Path) -> None:
 
     findings = QWebScanner(str(template)).scan_file()
 
-    assert any(
-        f.rule_id == "odoo-qweb-target-blank-no-noopener" and f.attribute == "t-att-target" for f in findings
-    )
+    assert any(f.rule_id == "odoo-qweb-target-blank-no-noopener" and f.attribute == "t-att-target" for f in findings)
 
 
 def test_dynamic_target_blank_mapping_with_noopener_ignored(tmp_path: Path) -> None:
@@ -363,9 +357,7 @@ def test_dynamic_script_src_detected(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-dynamic-script-src"
-        and f.attribute == "t-att-src"
-        and f.severity == "high"
+        f.rule_id == "odoo-qweb-dynamic-script-src" and f.attribute == "t-att-src" and f.severity == "high"
         for f in findings
     )
 
@@ -394,9 +386,7 @@ def test_dynamic_script_src_mapping_detected(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-dynamic-script-src"
-        and f.attribute == "t-att"
-        and f.severity == "high"
+        f.rule_id == "odoo-qweb-dynamic-script-src" and f.attribute == "t-att" and f.severity == "high"
         for f in findings
     )
 
@@ -425,9 +415,7 @@ def test_detects_qweb_expression_inside_script_context(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-script-expression-context"
-        and f.attribute == "t-out"
-        and f.severity == "high"
+        f.rule_id == "odoo-qweb-script-expression-context" and f.attribute == "t-out" and f.severity == "high"
         for f in findings
     )
 
@@ -443,9 +431,7 @@ def test_regex_fallback_detects_qweb_expression_inside_script_context(tmp_path: 
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-script-expression-context"
-        and f.attribute == "t-esc"
-        and f.severity == "high"
+        f.rule_id == "odoo-qweb-script-expression-context" and f.attribute == "t-esc" and f.severity == "high"
         for f in findings
     )
 
@@ -500,9 +486,7 @@ def test_dynamic_stylesheet_href_detected(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-dynamic-stylesheet-href"
-        and f.attribute == "t-attf-href"
-        and f.severity == "medium"
+        f.rule_id == "odoo-qweb-dynamic-stylesheet-href" and f.attribute == "t-attf-href" and f.severity == "medium"
         for f in findings
     )
 
@@ -531,9 +515,7 @@ def test_dynamic_stylesheet_href_mapping_detected(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-dynamic-stylesheet-href"
-        and f.attribute == "t-att"
-        and f.severity == "medium"
+        f.rule_id == "odoo-qweb-dynamic-stylesheet-href" and f.attribute == "t-att" and f.severity == "medium"
         for f in findings
     )
 
@@ -789,9 +771,7 @@ def test_detects_dynamic_style_attribute(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-dynamic-style-attribute"
-        and f.attribute == "t-att-style"
-        and f.severity == "medium"
+        f.rule_id == "odoo-qweb-dynamic-style-attribute" and f.attribute == "t-att-style" and f.severity == "medium"
         for f in findings
     )
 
@@ -833,9 +813,7 @@ def test_detects_dynamic_class_attribute(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-dynamic-class-attribute"
-        and f.attribute == "t-att-class"
-        and f.severity == "low"
+        f.rule_id == "odoo-qweb-dynamic-class-attribute" and f.attribute == "t-att-class" and f.severity == "low"
         for f in findings
     )
 
@@ -968,9 +946,7 @@ def test_detects_dynamic_attribute_mapping_style(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-dynamic-style-attribute"
-        and f.attribute == "t-att"
-        and f.severity == "medium"
+        f.rule_id == "odoo-qweb-dynamic-style-attribute" and f.attribute == "t-att" and f.severity == "medium"
         for f in findings
     )
 
@@ -986,9 +962,7 @@ def test_detects_dynamic_attribute_mapping_class(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-dynamic-class-attribute"
-        and f.attribute == "t-att"
-        and f.severity == "low"
+        f.rule_id == "odoo-qweb-dynamic-class-attribute" and f.attribute == "t-att" and f.severity == "low"
         for f in findings
     )
 
@@ -1004,9 +978,7 @@ def test_detects_sensitive_attribute_mapping_values(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-sensitive-field-render"
-        and f.attribute == "t-att"
-        and f.severity == "high"
+        f.rule_id == "odoo-qweb-sensitive-field-render" and f.attribute == "t-att" and f.severity == "high"
         for f in findings
     )
 
@@ -1022,9 +994,7 @@ def test_regex_fallback_detects_sensitive_attribute_mapping_values(tmp_path: Pat
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-sensitive-field-render"
-        and f.attribute == "t-att"
-        and f.severity == "high"
+        f.rule_id == "odoo-qweb-sensitive-field-render" and f.attribute == "t-att" and f.severity == "high"
         for f in findings
     )
 
@@ -1160,9 +1130,7 @@ def test_detects_sensitive_dynamic_attribute_rendering(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     sensitive_attrs = {
-        finding.attribute
-        for finding in findings
-        if finding.rule_id == "odoo-qweb-sensitive-field-render"
+        finding.attribute for finding in findings if finding.rule_id == "odoo-qweb-sensitive-field-render"
     }
     assert {"t-att-value", "t-att-data-api-key"}.issubset(sensitive_attrs)
 
@@ -1267,9 +1235,7 @@ def test_detects_insecure_http_url_attribute(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-insecure-asset-url"
-        and f.attribute == "src"
-        and f.severity == "medium"
+        f.rule_id == "odoo-qweb-insecure-asset-url" and f.attribute == "src" and f.severity == "medium"
         for f in findings
     )
 
@@ -1285,9 +1251,7 @@ def test_detects_url_attribute_embedded_credentials(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert any(
-        f.rule_id == "odoo-qweb-url-embedded-credentials"
-        and f.attribute == "href"
-        and f.severity == "high"
+        f.rule_id == "odoo-qweb-url-embedded-credentials" and f.attribute == "href" and f.severity == "high"
         for f in findings
     )
 

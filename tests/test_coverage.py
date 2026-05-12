@@ -3,10 +3,6 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
-
-import pytest
-
 
 REVIEWED_RE = re.compile(r"^reviewed:\s*$", re.IGNORECASE | re.MULTILINE)
 
@@ -146,13 +142,13 @@ class TestCoverageMatrix:
         hunter_blocks = {
             "hunter1": {"mod1": "done", "mod2": "done", "mod3": "done"},
         }
-        
+
         gaps = {}
         for hunter_id, block in hunter_blocks.items():
             missing = [m for m in expected_modules if m not in block]
             if missing:
                 gaps[hunter_id] = missing
-        
+
         assert len(gaps) == 0
 
     def test_partial_coverage(self) -> None:
@@ -161,13 +157,13 @@ class TestCoverageMatrix:
         hunter_blocks = {
             "hunter1": {"mod1": "done", "mod3": "done"},
         }
-        
+
         gaps = {}
         for hunter_id, block in hunter_blocks.items():
             missing = [m for m in expected_modules if m not in block]
             if missing:
                 gaps[hunter_id] = missing
-        
+
         assert len(gaps) == 1
         assert "hunter1" in gaps
         assert gaps["hunter1"] == ["mod2"]
@@ -180,13 +176,13 @@ class TestCoverageMatrix:
             "hunter2": {"mod1": "done", "mod2": "done"},
             "hunter3": {},
         }
-        
+
         gaps = {}
         for hunter_id, block in hunter_blocks.items():
             missing = [m for m in expected_modules if m not in block]
             if missing:
                 gaps[hunter_id] = missing
-        
+
         assert len(gaps) == 2
         assert "hunter2" in gaps
         assert gaps["hunter2"] == ["mod3"]
@@ -199,13 +195,13 @@ class TestCoverageMatrix:
         hunter_blocks = {
             "hunter1": {"mod1": "done"},
         }
-        
+
         gaps = {}
         for hunter_id, block in hunter_blocks.items():
             missing = [m for m in expected_modules if m not in block]
             if missing:
                 gaps[hunter_id] = missing
-        
+
         assert len(gaps) == 0
 
     def test_threshold(self) -> None:
@@ -215,7 +211,7 @@ class TestCoverageMatrix:
             "hunter1": {"mod1": "done", "mod2": "done", "mod3": "done"},
         }
         threshold = 2
-        
+
         gaps = {}
         over_threshold = {}
         for hunter_id, block in hunter_blocks.items():
@@ -224,7 +220,7 @@ class TestCoverageMatrix:
                 gaps[hunter_id] = missing
                 if len(missing) > threshold:
                     over_threshold[hunter_id] = missing
-        
+
         assert len(gaps) == 1
         assert len(gaps["hunter1"]) == 2  # mod4, mod5
         assert len(over_threshold) == 0  # 2 missing <= threshold of 2
@@ -236,7 +232,7 @@ class TestCoverageMatrix:
             "hunter1": {"mod1": "done"},
         }
         threshold = 1
-        
+
         gaps = {}
         over_threshold = {}
         for hunter_id, block in hunter_blocks.items():
@@ -245,7 +241,7 @@ class TestCoverageMatrix:
                 gaps[hunter_id] = missing
                 if len(missing) > threshold:
                     over_threshold[hunter_id] = missing
-        
+
         assert len(over_threshold) == 1
         assert len(over_threshold["hunter1"]) == 4
 
@@ -260,13 +256,13 @@ class TestCoverageReport:
             "hunter1": {"mod1": "done", "mod2": "done", "mod3": "done"},
             "hunter2": {"mod1": "done"},
         }
-        
+
         lines = ["| Hunter | Modules reviewed | Modules missing |"]
         for hunter_id in sorted(matrix.keys()):
             reviewed = len(matrix[hunter_id])
             missing = len(expected) - reviewed
             lines.append(f"| `{hunter_id}` | {reviewed}/{len(expected)} | {missing} |")
-        
+
         assert len(lines) == 3
         assert "hunter1" in lines[1]
         assert "3/3" in lines[1]
@@ -279,7 +275,7 @@ class TestCoverageReport:
         gaps = {
             "hunter1": ["mod2", "mod3"],
         }
-        
+
         gap_md = ["# Coverage Gaps", ""]
         if not gaps:
             gap_md.append("No gaps detected.")
@@ -290,7 +286,7 @@ class TestCoverageReport:
                 for module in gaps[hunter_id]:
                     gap_md.append(f"- `{module}`")
                 gap_md.append("")
-        
+
         content = "\n".join(gap_md)
         assert "hunter1" in content
         assert "mod2" in content

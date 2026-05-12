@@ -207,9 +207,7 @@ class Window(http.Controller):
 
     findings = scan_action_windows(tmp_path)
 
-    assert not any(
-        f.rule_id == "odoo-act-window-tainted-domain" and f.severity == "critical" for f in findings
-    )
+    assert not any(f.rule_id == "odoo-act-window-tainted-domain" and f.severity == "critical" for f in findings)
     assert any(f.rule_id == "odoo-act-window-tainted-domain" and f.severity == "high" for f in findings)
 
 
@@ -384,9 +382,7 @@ class Window(http.Controller):
     findings = scan_action_windows(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-act-window-tainted-domain"
-        and f.severity == "critical"
-        and f.route == "/window/orders"
+        f.rule_id == "odoo-act-window-tainted-domain" and f.severity == "critical" and f.route == "/window/orders"
         for f in findings
     )
 
@@ -417,9 +413,7 @@ class Window(http.Controller):
     findings = scan_action_windows(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-act-window-tainted-domain"
-        and f.severity == "critical"
-        and f.route == "/window/orders"
+        f.rule_id == "odoo-act-window-tainted-domain" and f.severity == "critical" and f.route == "/window/orders"
         for f in findings
     )
 
@@ -450,9 +444,7 @@ class Window(http.Controller):
     findings = scan_action_windows(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-act-window-tainted-domain"
-        and f.severity == "critical"
-        and f.route == "/window/orders"
+        f.rule_id == "odoo-act-window-tainted-domain" and f.severity == "critical" and f.route == "/window/orders"
         for f in findings
     )
 
@@ -489,9 +481,7 @@ class Window(http.Controller):
     findings = scan_action_windows(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-act-window-tainted-domain"
-        and f.severity == "critical"
-        and f.route == "/window/orders"
+        f.rule_id == "odoo-act-window-tainted-domain" and f.severity == "critical" and f.route == "/window/orders"
         for f in findings
     )
 
@@ -689,8 +679,7 @@ class Window(http.Controller):
     findings = scan_action_windows(tmp_path)
 
     assert any(
-        finding.rule_id == "odoo-act-window-tainted-domain"
-        and finding.sink == "python-dict-mutation"
+        finding.rule_id == "odoo-act-window-tainted-domain" and finding.sink == "python-dict-mutation"
         for finding in findings
     )
 
@@ -717,8 +706,7 @@ class Window(http.Controller):
     findings = scan_action_windows(tmp_path)
 
     assert any(
-        finding.rule_id == "odoo-act-window-tainted-context"
-        and finding.sink == "python-dict-update"
+        finding.rule_id == "odoo-act-window-tainted-context" and finding.sink == "python-dict-update"
         for finding in findings
     )
 
@@ -746,8 +734,7 @@ class Window(http.Controller):
     findings = scan_action_windows(tmp_path)
 
     assert not any(
-        finding.rule_id == "odoo-act-window-tainted-domain"
-        and finding.sink == "python-dict-mutation"
+        finding.rule_id == "odoo-act-window-tainted-domain" and finding.sink == "python-dict-mutation"
         for finding in findings
     )
 
@@ -942,10 +929,7 @@ class Window(http.Controller):
     rule_ids = {finding.rule_id for finding in findings}
 
     assert "odoo-act-window-sensitive-broad-domain" in rule_ids
-    assert any(
-        f.rule_id == "odoo-act-window-public-sensitive-model" and f.severity == "critical"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-act-window-public-sensitive-model" and f.severity == "critical" for f in findings)
 
 
 def test_recursive_constant_backed_public_broad_sensitive_action_window_is_reported(tmp_path: Path) -> None:
@@ -1170,8 +1154,7 @@ def test_csv_colon_groups_id_suppresses_grouped_sensitive_broad_action_window(tm
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.actions.act_window.csv").write_text(
-        "id,res_model,domain,groups_id:id\n"
-        "action_users,res.users,[],base.group_system\n",
+        "id,res_model,domain,groups_id:id\n" "action_users,res.users,[],base.group_system\n",
         encoding="utf-8",
     )
 

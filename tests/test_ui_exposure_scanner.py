@@ -136,8 +136,7 @@ def test_public_sensitive_action_button_is_high_severity(tmp_path: Path) -> None
     findings = UIExposureScanner(xml).scan_file()
 
     assert any(
-        f.rule_id == "odoo-ui-sensitive-action-button-external-groups" and f.severity == "high"
-        for f in findings
+        f.rule_id == "odoo-ui-sensitive-action-button-external-groups" and f.severity == "high" for f in findings
     )
 
 
@@ -169,16 +168,14 @@ def test_sensitive_action_without_groups_in_csv_is_reported(tmp_path: Path) -> N
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir_actions_act_window.csv").write_text(
-        "id,name,res_model\n"
-        "action_users,Users,res.users\n",
+        "id,name,res_model\n" "action_users,Users,res.users\n",
         encoding="utf-8",
     )
 
     findings = scan_ui_exposure(tmp_path)
 
     assert any(
-        finding.rule_id == "odoo-ui-sensitive-action-no-groups"
-        and finding.target == "action_users"
+        finding.rule_id == "odoo-ui-sensitive-action-no-groups" and finding.target == "action_users"
         for finding in findings
     )
 
@@ -188,8 +185,7 @@ def test_sensitive_server_action_without_groups_in_csv_is_reported(tmp_path: Pat
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir_actions_server.csv").write_text(
-        "id,name,model_id/id,state\n"
-        "action_disable_users,Disable Users,base.model_res_users,code\n",
+        "id,name,model_id/id,state\n" "action_disable_users,Disable Users,base.model_res_users,code\n",
         encoding="utf-8",
     )
 
@@ -205,8 +201,7 @@ def test_sensitive_server_action_with_colon_csv_refs_is_reported(tmp_path: Path)
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir_actions_server.csv").write_text(
-        "id,name,model_id:id,state\n"
-        "action_disable_users,Disable Users,base.model_res_users,code\n",
+        "id,name,model_id:id,state\n" "action_disable_users,Disable Users,base.model_res_users,code\n",
         encoding="utf-8",
     )
 
@@ -222,8 +217,7 @@ def test_sensitive_csv_action_with_groups_is_ignored(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.actions.act_window.csv").write_text(
-        "id,name,res_model,groups_id/id\n"
-        "action_users,Users,res.users,base.group_system\n",
+        "id,name,res_model,groups_id/id\n" "action_users,Users,res.users,base.group_system\n",
         encoding="utf-8",
     )
 
@@ -235,21 +229,18 @@ def test_csv_menu_exposing_csv_sensitive_action_is_reported(tmp_path: Path) -> N
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.actions.act_window.csv").write_text(
-        "id,name,res_model\n"
-        "action_users,Users,res.users\n",
+        "id,name,res_model\n" "action_users,Users,res.users\n",
         encoding="utf-8",
     )
     (data / "ir.ui.menu.csv").write_text(
-        "id,name,action\n"
-        "menu_users,Users,\"ir.actions.act_window,action_users\"\n",
+        "id,name,action\n" 'menu_users,Users,"ir.actions.act_window,action_users"\n',
         encoding="utf-8",
     )
 
     findings = scan_ui_exposure(tmp_path)
 
     assert any(
-        finding.rule_id == "odoo-ui-sensitive-menu-no-groups" and finding.target == "menu_users"
-        for finding in findings
+        finding.rule_id == "odoo-ui-sensitive-menu-no-groups" and finding.target == "menu_users" for finding in findings
     )
 
 
@@ -258,13 +249,11 @@ def test_csv_menu_exposing_portal_csv_sensitive_action_is_reported(tmp_path: Pat
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.actions.act_window.csv").write_text(
-        "id,name,res_model,groups_id/id\n"
-        "action_users,Users,res.users,base.group_portal\n",
+        "id,name,res_model,groups_id/id\n" "action_users,Users,res.users,base.group_portal\n",
         encoding="utf-8",
     )
     (data / "ir.ui.menu.csv").write_text(
-        "id,name,action,groups_id/id\n"
-        "menu_users,Users,\"ir.actions.act_window,action_users\",base.group_portal\n",
+        "id,name,action,groups_id/id\n" 'menu_users,Users,"ir.actions.act_window,action_users",base.group_portal\n',
         encoding="utf-8",
     )
 
@@ -283,8 +272,7 @@ def test_xml_menu_exposing_cross_file_csv_action_is_reported(tmp_path: Path) -> 
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.actions.act_window.csv").write_text(
-        "id,name,res_model\n"
-        "action_params,Parameters,ir.config_parameter\n",
+        "id,name,res_model\n" "action_params,Parameters,ir.config_parameter\n",
         encoding="utf-8",
     )
     (data / "menus.xml").write_text(
@@ -307,13 +295,11 @@ def test_csv_menu_for_grouped_csv_action_is_ignored(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.actions.act_window.csv").write_text(
-        "id,name,res_model,groups_id/id\n"
-        "action_users,Users,res.users,base.group_system\n",
+        "id,name,res_model,groups_id/id\n" "action_users,Users,res.users,base.group_system\n",
         encoding="utf-8",
     )
     (data / "ir.ui.menu.csv").write_text(
-        "id,name,action\n"
-        "menu_users,Users,\"ir.actions.act_window,action_users\"\n",
+        "id,name,action\n" 'menu_users,Users,"ir.actions.act_window,action_users"\n',
         encoding="utf-8",
     )
 

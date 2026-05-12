@@ -73,9 +73,7 @@ def test_insecure_http_url_is_reported(tmp_path: Path) -> None:
     findings = MailTemplateScanner(xml).scan_file()
 
     assert any(
-        f.rule_id == "odoo-mail-template-insecure-url"
-        and f.field == "body_html"
-        and f.severity == "medium"
+        f.rule_id == "odoo-mail-template-insecure-url" and f.field == "body_html" and f.severity == "medium"
         for f in findings
     )
 
@@ -95,9 +93,7 @@ def test_url_embedded_credentials_are_reported(tmp_path: Path) -> None:
     findings = MailTemplateScanner(xml).scan_file()
 
     assert any(
-        f.rule_id == "odoo-mail-template-url-embedded-credentials"
-        and f.field == "body_html"
-        and f.severity == "high"
+        f.rule_id == "odoo-mail-template-url-embedded-credentials" and f.field == "body_html" and f.severity == "high"
         for f in findings
     )
 

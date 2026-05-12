@@ -1002,7 +1002,6 @@ def _unpack_target_value_pairs(
     return [*before, (target.elts[starred_index], rest), *after]
 
 
-
 def findings_to_json(findings: list[RealtimeFinding]) -> list[dict[str, Any]]:
     """Convert findings to JSON-serializable dictionaries."""
     return [

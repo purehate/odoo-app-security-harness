@@ -166,11 +166,15 @@ class OrmContextScanner(ast.NodeVisitor):
         if flags:
             if method in MUTATION_METHODS:
                 self._scan_mutation_with_context(node, sink, flags)
-            elif method in READ_METHODS and _flag_is_false(flags, "bin_size") and _is_sudo_expr(
-                node.func,
-                scope.sudo_vars if scope else set(),
-                self._effective_constants(),
-                self.superuser_names,
+            elif (
+                method in READ_METHODS
+                and _flag_is_false(flags, "bin_size")
+                and _is_sudo_expr(
+                    node.func,
+                    scope.sudo_vars if scope else set(),
+                    self._effective_constants(),
+                    self.superuser_names,
+                )
             ):
                 self._add(
                     "odoo-orm-context-sudo-bin-size-read",
@@ -403,9 +407,9 @@ class OrmContextScanner(ast.NodeVisitor):
                     node.lineno,
                     f"ORM mutation runs with {flag}=True; verify install/uninstall-only behavior cannot bypass "
                     "normal validation or workflow controls",
-                sink,
-                flag,
-            )
+                    sink,
+                    flag,
+                )
 
         for flag in sorted(ACCOUNTING_VALIDATION_FLAGS & flags.keys()):
             if _flag_is_false(flags, flag):
@@ -886,7 +890,6 @@ def _call_name(node: ast.AST) -> str:
     if isinstance(node, ast.Subscript):
         return _call_name(node.value)
     return ""
-
 
 
 def findings_to_json(findings: list[OrmContextFinding]) -> list[dict[str, Any]]:

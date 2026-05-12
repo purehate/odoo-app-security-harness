@@ -729,9 +729,7 @@ def _is_static_literal(node: ast.AST) -> bool:
     return False
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -1136,7 +1134,6 @@ def _unpack_target_value_pairs(
     rest_value = ast.List(elts=value.elts[starred_index:after_values_start], ctx=ast.Load())
     after = list(zip(target.elts[starred_index + 1 :], value.elts[after_values_start:], strict=False))
     return [*before, (target.elts[starred_index], rest_value), *after]
-
 
 
 def findings_to_json(findings: list[MailChatterFinding]) -> list[dict[str, Any]]:

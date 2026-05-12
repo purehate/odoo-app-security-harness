@@ -1225,8 +1225,7 @@ def set_values(self):
     findings = scan_config_parameters(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-config-param-security-toggle-enabled"
-        and f.key == "auth_signup.invitation_scope"
+        f.rule_id == "odoo-config-param-security-toggle-enabled" and f.key == "auth_signup.invitation_scope"
         for f in findings
     )
 
@@ -1473,8 +1472,7 @@ class Settings(models.TransientModel):
     )
 
     assert any(
-        finding.rule_id == "odoo-config-param-security-toggle-enabled"
-        for finding in scan_config_parameters(tmp_path)
+        finding.rule_id == "odoo-config-param-security-toggle-enabled" for finding in scan_config_parameters(tmp_path)
     )
 
 

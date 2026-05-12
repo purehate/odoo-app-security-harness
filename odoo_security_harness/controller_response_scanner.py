@@ -348,8 +348,7 @@ class ControllerResponseScanner(ast.NodeVisitor):
     def _redirect_target_embeds_credentials(self, node: ast.Call) -> bool:
         constants = self._effective_constants()
         return any(
-            _expr_has_url_embedded_credentials(target, constants)
-            for target in _redirect_target_nodes(node, constants)
+            _expr_has_url_embedded_credentials(target, constants) for target in _redirect_target_nodes(node, constants)
         )
 
     def _file_response_target_is_tainted(self, node: ast.Call) -> bool:
@@ -494,7 +493,7 @@ class ControllerResponseScanner(ast.NodeVisitor):
                     "Controller response headers include request-derived data; validate against "
                     "CRLF/header injection and unsafe filenames",
                     sink,
-            )
+                )
             for arg in node.args:
                 self._scan_static_headers(arg, node.lineno, sink)
             for header_name, value in header_keywords:
@@ -592,9 +591,7 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "use a long max-age such as 31536000 and includeSubDomains where appropriate",
                 sink,
             )
-        weak_cross_origin_policy = _weak_cross_origin_policy_value(
-            lowered_header, value, self._effective_constants()
-        )
+        weak_cross_origin_policy = _weak_cross_origin_policy_value(lowered_header, value, self._effective_constants())
         if weak_cross_origin_policy:
             route = self._current_route()
             self._add(
@@ -606,9 +603,7 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "same-origin or require-corp style policies where cross-origin isolation is needed",
                 sink,
             )
-        weak_permissions_policy = _weak_permissions_policy_reason(
-            lowered_header, value, self._effective_constants()
-        )
+        weak_permissions_policy = _weak_permissions_policy_reason(lowered_header, value, self._effective_constants())
         if weak_permissions_policy:
             route = self._current_route()
             self._add(
@@ -621,9 +616,7 @@ class ControllerResponseScanner(ast.NodeVisitor):
                 "and clipboard access to trusted origins only",
                 sink,
             )
-        weak_content_type_options = _weak_content_type_options_value(
-            lowered_header, value, self._effective_constants()
-        )
+        weak_content_type_options = _weak_content_type_options_value(lowered_header, value, self._effective_constants())
         if weak_content_type_options:
             route = self._current_route()
             self._add(
@@ -1270,9 +1263,7 @@ def _open_mode(node: ast.Call, constants: dict[str, ast.AST] | None = None) -> s
     return "r"
 
 
-def _literal_header_pairs(
-    node: ast.AST, constants: dict[str, ast.AST] | None = None
-) -> list[tuple[str, ast.AST]]:
+def _literal_header_pairs(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> list[tuple[str, ast.AST]]:
     constants = constants or {}
     node = _resolve_constant(node, constants)
     if isinstance(node, ast.Dict):
@@ -1422,11 +1413,7 @@ def _weak_csp_reason(header_name: str, value: ast.AST, constants: dict[str, ast.
     csp = _constant_string(value, constants).lower()
     if not csp:
         return ""
-    weaknesses = [
-        token
-        for token in ("'unsafe-inline'", "'unsafe-eval'")
-        if token in csp
-    ]
+    weaknesses = [token for token in ("'unsafe-inline'", "'unsafe-eval'") if token in csp]
     for directive in ("default-src", "script-src", "object-src"):
         if re.search(rf"(?:^|;)\s*{directive}\s+[^;]*\*", csp):
             weaknesses.append(f"{directive} *")
@@ -1572,7 +1559,6 @@ def _unpack_target_value_pairs(
     if tail_count:
         pairs.extend(zip(targets[-tail_count:], values[-tail_count:], strict=False))
     return pairs
-
 
 
 def findings_to_json(findings: list[ControllerResponseFinding]) -> list[dict[str, Any]]:

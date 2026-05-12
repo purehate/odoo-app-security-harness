@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
 from odoo_security_harness.base_scanner import _should_skip
 
 KNOWN_ODOO_LICENSES = {

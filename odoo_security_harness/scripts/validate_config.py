@@ -165,7 +165,9 @@ def validate_toml_config(path: Path) -> tuple[bool, list[str]]:
         modules = review.get("modules")
         if modules is not None:
             valid_modules_string = isinstance(modules, str) and bool(modules.strip())
-            valid_modules_list = isinstance(modules, list) and all(isinstance(item, str) and item.strip() for item in modules)
+            valid_modules_list = isinstance(modules, list) and all(
+                isinstance(item, str) and item.strip() for item in modules
+            )
             if not valid_modules_string and not valid_modules_list:
                 errors.append("review.modules must be a non-empty string or list of non-empty strings")
         if "scope" in review and (not isinstance(review["scope"], str) or not review["scope"].strip()):
@@ -250,7 +252,9 @@ def validate_scope_yaml(path: Path) -> tuple[bool, list[str]]:
                     valid_line_range = (
                         isinstance(line_range, list)
                         and len(line_range) == 2
-                        and all(isinstance(item, int) and not isinstance(item, bool) and item > 0 for item in line_range)
+                        and all(
+                            isinstance(item, int) and not isinstance(item, bool) and item > 0 for item in line_range
+                        )
                         and line_range[0] <= line_range[1]
                     )
                     if not valid_line_range:
@@ -313,7 +317,12 @@ def validate_accepted_risks(path: Path) -> tuple[bool, list[str]]:
         for field in ("accepted", "expires"):
             if risk.get(field) and not is_iso_date(risk[field]):
                 errors.append(f"risks[{idx}]: {field} must be YYYY-MM-DD")
-        if risk.get("accepted") and risk.get("expires") and is_iso_date(risk["accepted"]) and is_iso_date(risk["expires"]):
+        if (
+            risk.get("accepted")
+            and risk.get("expires")
+            and is_iso_date(risk["accepted"])
+            and is_iso_date(risk["expires"])
+        ):
             accepted = date.fromisoformat(str(risk["accepted"]))
             expires = date.fromisoformat(str(risk["expires"]))
             if accepted > expires:
@@ -477,8 +486,7 @@ def main() -> int:
         default="auto",
         help="Config file type (default: auto-detect)",
     )
-    parser.add_argument("--check-all", action="store_true",
-                       help="Check all config files in repository")
+    parser.add_argument("--check-all", action="store_true", help="Check all config files in repository")
     args = parser.parse_args()
 
     if args.check_all:

@@ -750,9 +750,7 @@ class PublicHome(Home):
 
     assert "odoo-route-inherited-security-relaxed" in rule_ids
     assert any(
-        f.rule_id == "odoo-route-inherited-security-relaxed"
-        and f.route == "<unknown>"
-        and f.attribute == "inheritance"
+        f.rule_id == "odoo-route-inherited-security-relaxed" and f.route == "<unknown>" and f.attribute == "inheritance"
         for f in findings
     )
 

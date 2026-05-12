@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
-
 SHARP_EDGE_PATTERNS = {
     "sudo": r"\.sudo\(",
     "with_user": r"\.with_user\(",
@@ -46,7 +41,7 @@ def compute_module_risk(
         auth = (r.get("auth") or "").lower()
         if "public" in auth or "none" in auth:
             public_by_module[r["module"]] = public_by_module.get(r["module"], 0) + 1
-    
+
     acl_by_module: dict[str, int] = {}
     acl_global_by_module: dict[str, int] = {}
     for row in acl_rows:
@@ -56,9 +51,9 @@ def compute_module_risk(
         acl_by_module[mod] = acl_by_module.get(mod, 0) + 1
         if not (row.get("group_id:id") or row.get("group_id") or "").strip():
             acl_global_by_module[mod] = acl_global_by_module.get(mod, 0) + 1
-    
+
     per_module = pattern_summary.get("per_module", {})
-    
+
     rows: list[dict] = []
     for item in manifests:
         module = item["module"]
@@ -67,10 +62,7 @@ def compute_module_risk(
         acl_count = acl_by_module.get(module, 0)
         acl_global = acl_global_by_module.get(module, 0)
         sharp = per_module.get(module, {})
-        sharp_score = sum(
-            sharp.get(k, 0) * SHARP_EDGE_WEIGHTS.get(k, 1)
-            for k in SHARP_EDGE_PATTERNS
-        )
+        sharp_score = sum(sharp.get(k, 0) * SHARP_EDGE_WEIGHTS.get(k, 1) for k in SHARP_EDGE_PATTERNS)
         score = route_count * 1 + public_count * 5 + acl_global * 3 + sharp_score
         band = "low"
         if score >= 50:
@@ -79,19 +71,21 @@ def compute_module_risk(
             band = "high"
         elif score >= 10:
             band = "medium"
-        
-        rows.append({
-            "module": module,
-            "score": score,
-            "band": band,
-            "routes": route_count,
-            "public_routes": public_count,
-            "acl_rows": acl_count,
-            "acl_global_rows": acl_global,
-            "sharp_edge_score": sharp_score,
-            "sharp_edges": sharp,
-        })
-    
+
+        rows.append(
+            {
+                "module": module,
+                "score": score,
+                "band": band,
+                "routes": route_count,
+                "public_routes": public_count,
+                "acl_rows": acl_count,
+                "acl_global_rows": acl_global,
+                "sharp_edge_score": sharp_score,
+                "sharp_edges": sharp,
+            }
+        )
+
     rows.sort(key=lambda r: (-r["score"], r["module"]))
     return rows
 
@@ -105,9 +99,9 @@ class TestComputeModuleRisk:
         routes = []
         acl_rows = []
         pattern_summary = {"per_module": {"safe_module": {}}}
-        
+
         result = compute_module_risk(manifests, routes, acl_rows, pattern_summary)
-        
+
         assert len(result) == 1
         assert result[0]["module"] == "safe_module"
         assert result[0]["score"] == 0
@@ -122,9 +116,9 @@ class TestComputeModuleRisk:
         ]
         acl_rows = []
         pattern_summary = {"per_module": {"portal_module": {}}}
-        
+
         result = compute_module_risk(manifests, routes, acl_rows, pattern_summary)
-        
+
         # 2 public routes * 5 + 2 regular routes * 1 = 12
         assert result[0]["score"] == 12
         assert result[0]["band"] == "medium"
@@ -150,9 +144,9 @@ class TestComputeModuleRisk:
                 }
             }
         }
-        
+
         result = compute_module_risk(manifests, routes, acl_rows, pattern_summary)
-        
+
         # 2 public routes * 5 = 10
         # 2 regular routes * 1 = 2
         # 2 global ACL rows * 3 = 6
@@ -179,9 +173,9 @@ class TestComputeModuleRisk:
         ]
         acl_rows = []
         pattern_summary = {"per_module": {}}
-        
+
         result = compute_module_risk(manifests, routes, acl_rows, pattern_summary)
-        
+
         assert len(result) == 3
         assert result[0]["module"] == "high_risk"
         assert result[0]["score"] == 30  # 5 public * 5 + 5 regular * 1
@@ -200,9 +194,9 @@ class TestComputeModuleRisk:
             {"_module": "acl_module", "group_id:id": "base.group_user"},
         ]
         pattern_summary = {"per_module": {"acl_module": {}}}
-        
+
         result = compute_module_risk(manifests, routes, acl_rows, pattern_summary)
-        
+
         assert result[0]["acl_rows"] == 3
         assert result[0]["acl_global_rows"] == 2
         assert result[0]["score"] == 6  # 2 global * 3
@@ -215,17 +209,17 @@ class TestComputeModuleRisk:
         pattern_summary = {
             "per_module": {
                 "sharp_module": {
-                    "sudo": 1,          # weight 3
-                    "raw_sql": 1,       # weight 4
-                    "safe_eval": 1,     # weight 5
-                    "t_raw": 1,         # weight 4
-                    "request_params": 1, # weight 2
+                    "sudo": 1,  # weight 3
+                    "raw_sql": 1,  # weight 4
+                    "safe_eval": 1,  # weight 5
+                    "t_raw": 1,  # weight 4
+                    "request_params": 1,  # weight 2
                 }
             }
         }
-        
+
         result = compute_module_risk(manifests, routes, acl_rows, pattern_summary)
-        
+
         expected_score = 3 + 4 + 5 + 4 + 2  # 18
         assert result[0]["sharp_edge_score"] == expected_score
         assert result[0]["score"] == expected_score
@@ -242,8 +236,8 @@ class TestComputeModuleRisk:
         routes = []
         acl_rows = []
         pattern_summary = {"per_module": {}}  # Missing module entry
-        
+
         result = compute_module_risk(manifests, routes, acl_rows, pattern_summary)
-        
+
         assert result[0]["score"] == 0
         assert result[0]["sharp_edge_score"] == 0

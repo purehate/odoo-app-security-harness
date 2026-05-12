@@ -1447,9 +1447,7 @@ class Preview(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-tainted-html-response"
-        and f.severity == "high"
-        and f.sink == "Response"
+        f.rule_id == "odoo-controller-tainted-html-response" and f.severity == "high" and f.sink == "Response"
         for f in findings
     )
 
@@ -1474,9 +1472,7 @@ class Preview(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-tainted-html-response"
-        and f.severity == "high"
-        and f.sink == "Response"
+        f.rule_id == "odoo-controller-tainted-html-response" and f.severity == "high" and f.sink == "Response"
         for f in findings
     )
 
@@ -1501,9 +1497,7 @@ class Preview(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-tainted-html-response"
-        and f.severity == "high"
-        and f.sink == "Response"
+        f.rule_id == "odoo-controller-tainted-html-response" and f.severity == "high" and f.sink == "Response"
         for f in findings
     )
 
@@ -1528,9 +1522,7 @@ class Preview(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-tainted-html-response"
-        and f.severity == "high"
-        and f.sink == "Response"
+        f.rule_id == "odoo-controller-tainted-html-response" and f.severity == "high" and f.sink == "Response"
         for f in findings
     )
 
@@ -1553,11 +1545,7 @@ class Preview(od.http.Controller):
 
     findings = scan_controller_responses(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-controller-tainted-html-response"
-        and f.severity == "high"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-controller-tainted-html-response" and f.severity == "high" for f in findings)
 
 
 def test_static_html_make_response_ignored(tmp_path: Path) -> None:
@@ -2288,9 +2276,7 @@ class Controller(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-weak-csp-header"
-        and f.severity == "medium"
-        and "'unsafe-inline'" in f.message
+        f.rule_id == "odoo-controller-weak-csp-header" and f.severity == "medium" and "'unsafe-inline'" in f.message
         for f in findings
     )
 
@@ -2317,9 +2303,7 @@ class Controller(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-weak-csp-header"
-        and f.severity == "medium"
-        and "frame-ancestors *" in f.message
+        f.rule_id == "odoo-controller-weak-csp-header" and f.severity == "medium" and "frame-ancestors *" in f.message
         for f in findings
     )
 
@@ -2377,9 +2361,7 @@ class Controller(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-weak-csp-header"
-        and f.severity == "medium"
-        and "script-src *" in f.message
+        f.rule_id == "odoo-controller-weak-csp-header" and f.severity == "medium" and "script-src *" in f.message
         for f in findings
     )
 
@@ -2427,9 +2409,7 @@ class Controller(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-jsonp-callback-response"
-        and f.severity == "high"
-        and "JSONP" in f.message
+        f.rule_id == "odoo-controller-jsonp-callback-response" and f.severity == "high" and "JSONP" in f.message
         for f in findings
     )
 
@@ -2477,9 +2457,7 @@ class Controller(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-weak-frame-options"
-        and f.severity == "medium"
-        and "ALLOW-FROM" in f.message
+        f.rule_id == "odoo-controller-weak-frame-options" and f.severity == "medium" and "ALLOW-FROM" in f.message
         for f in findings
     )
 
@@ -2526,9 +2504,7 @@ class Controller(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-weak-referrer-policy"
-        and f.severity == "medium"
-        and "unsafe-url" in f.message
+        f.rule_id == "odoo-controller-weak-referrer-policy" and f.severity == "medium" and "unsafe-url" in f.message
         for f in findings
     )
 
@@ -2575,9 +2551,7 @@ class Controller(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-weak-hsts-header"
-        and f.severity == "medium"
-        and "max-age=0" in f.message
+        f.rule_id == "odoo-controller-weak-hsts-header" and f.severity == "medium" and "max-age=0" in f.message
         for f in findings
     )
 
@@ -2604,9 +2578,7 @@ class Controller(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-weak-hsts-header"
-        and f.severity == "low"
-        and "max-age=3600" in f.message
+        f.rule_id == "odoo-controller-weak-hsts-header" and f.severity == "low" and "max-age=3600" in f.message
         for f in findings
     )
 
@@ -2682,9 +2654,7 @@ class Controller(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-weak-cross-origin-policy"
-        and f.severity == "low"
-        and "cross-origin" in f.message
+        f.rule_id == "odoo-controller-weak-cross-origin-policy" and f.severity == "low" and "cross-origin" in f.message
         for f in findings
     )
 
@@ -2733,9 +2703,7 @@ class Controller(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-weak-permissions-policy"
-        and f.severity == "medium"
-        and "geolocation" in f.message
+        f.rule_id == "odoo-controller-weak-permissions-policy" and f.severity == "medium" and "geolocation" in f.message
         for f in findings
     )
 
@@ -2762,9 +2730,7 @@ class Controller(http.Controller):
     findings = scan_controller_responses(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-controller-weak-permissions-policy"
-        and f.severity == "low"
-        and "microphone" in f.message
+        f.rule_id == "odoo-controller-weak-permissions-policy" and f.severity == "low" and "microphone" in f.message
         for f in findings
     )
 

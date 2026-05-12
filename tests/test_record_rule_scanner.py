@@ -143,7 +143,7 @@ def test_flags_portal_scope_inside_multi_group_csv_rule(tmp_path: Path) -> None:
     security.mkdir(parents=True)
     (security / "ir_rule.csv").write_text(
         "id,model_id/id,groups/id,domain_force,perm_write\n"
-        "mixed_portal_invoice,account.model_account_move,\"base.group_user,base.group_portal\","
+        'mixed_portal_invoice,account.model_account_move,"base.group_user,base.group_portal",'
         "\"[('partner_id', '=', user.partner_id.id)]\",1\n",
         encoding="utf-8",
     )

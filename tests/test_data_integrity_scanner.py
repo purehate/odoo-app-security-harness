@@ -91,8 +91,7 @@ def test_flags_core_xmlid_override_in_csv(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "res.groups.csv").write_text(
-        "id,name\n"
-        "base.group_system,System Override\n",
+        "id,name\n" "base.group_system,System Override\n",
         encoding="utf-8",
     )
 
@@ -106,8 +105,7 @@ def test_flags_core_xmlid_override_in_csv_colon_id_header(tmp_path: Path) -> Non
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "res.groups.csv").write_text(
-        "id:id,name\n"
-        "base.group_system,System Override\n",
+        "id:id,name\n" "base.group_system,System Override\n",
         encoding="utf-8",
     )
 
@@ -121,8 +119,7 @@ def test_flags_manual_ir_model_data_csv(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir_model_data.csv").write_text(
-        "id,module,name,model,res_id\n"
-        "manual_xmlid,base,group_system,res.groups,1\n",
+        "id,module,name,model,res_id\n" "manual_xmlid,base,group_system,res.groups,1\n",
         encoding="utf-8",
     )
 

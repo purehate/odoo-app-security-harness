@@ -270,8 +270,7 @@ def test_integration_credential_field_metadata_is_reported(tmp_path: Path) -> No
     assert "odoo-metadata-sensitive-field-no-groups" in rule_ids
     assert "odoo-metadata-sensitive-field-public-groups" in rule_ids
     assert any(
-        finding.rule_id == "odoo-metadata-sensitive-field-no-groups"
-        and finding.record_id == "field_reset_password_url"
+        finding.rule_id == "odoo-metadata-sensitive-field-no-groups" and finding.record_id == "field_reset_password_url"
         for finding in findings
     )
 

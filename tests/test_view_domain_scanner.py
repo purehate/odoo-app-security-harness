@@ -168,8 +168,7 @@ def test_flags_sensitive_csv_action_broad_domain_without_groups(tmp_path: Path) 
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir_actions_act_window.csv").write_text(
-        "id,res_model,domain,context\n"
-        "action_partners,res.partner,[],\"{'active_test': False}\"\n",
+        "id,res_model,domain,context\n" "action_partners,res.partner,[],\"{'active_test': False}\"\n",
         encoding="utf-8",
     )
 
@@ -185,8 +184,7 @@ def test_grouped_sensitive_csv_action_broad_domain_is_ignored(tmp_path: Path) ->
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.actions.act_window.csv").write_text(
-        "id,res_model,domain,groups_id/id\n"
-        "action_partners,res.partner,[],base.group_user\n",
+        "id,res_model,domain,groups_id/id\n" "action_partners,res.partner,[],base.group_user\n",
         encoding="utf-8",
     )
 
@@ -198,8 +196,7 @@ def test_grouped_sensitive_csv_action_with_colon_groups_is_ignored(tmp_path: Pat
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.actions.act_window.csv").write_text(
-        "id,res_model,domain,groups_id:id\n"
-        "action_partners,res.partner,[],base.group_user\n",
+        "id,res_model,domain,groups_id:id\n" "action_partners,res.partner,[],base.group_user\n",
         encoding="utf-8",
     )
 
@@ -302,8 +299,7 @@ def test_flags_global_sensitive_saved_filter_with_colon_model_ref(tmp_path: Path
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir_filters.csv").write_text(
-        "id,name,model_id:id,domain,is_default,user_id\n"
-        "filter_all_partners,All partners,res.partner,[],True,\n",
+        "id,name,model_id:id,domain,is_default,user_id\n" "filter_all_partners,All partners,res.partner,[],True,\n",
         encoding="utf-8",
     )
 

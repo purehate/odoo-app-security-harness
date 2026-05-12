@@ -143,9 +143,7 @@ def test_github_action_templates_are_parseable_workflows() -> None:
 
 def test_runtime_ci_template_validates_review_config_before_scanning() -> None:
     """Runtime CI template should fail fast on malformed shared review config."""
-    workflow = yaml.safe_load(
-        Path("skills/odoo-code-review/templates/github-action.yml").read_text(encoding="utf-8")
-    )
+    workflow = yaml.safe_load(Path("skills/odoo-code-review/templates/github-action.yml").read_text(encoding="utf-8"))
     steps = workflow["jobs"]["review"]["steps"]
     step_names = [step["name"] for step in steps]
     validate_index = step_names.index("Validate review config")

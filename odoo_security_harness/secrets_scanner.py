@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 
@@ -71,8 +72,7 @@ SECRET_ASSIGNMENT_RE = re.compile(
     re.IGNORECASE,
 )
 YAML_SECRET_ASSIGNMENT_RE = re.compile(
-    rf"^\s*-?\s*['\"]?(?P<name>{SECRET_KEY_PATTERN})(?P<suffix>[\w.-]*)['\"]?\s*:\s*"
-    r"(?P<value>[^#\s'\"][^#\n]*)",
+    rf"^\s*-?\s*['\"]?(?P<name>{SECRET_KEY_PATTERN})(?P<suffix>[\w.-]*)['\"]?\s*:\s*" r"(?P<value>[^#\s'\"][^#\n]*)",
     re.IGNORECASE,
 )
 SHELL_SECRET_ASSIGNMENT_RE = re.compile(
@@ -263,7 +263,7 @@ class SecretScanner:
                 "critical",
                 line_number,
                 "Repository contains a PEM private key block; remove it from source control, rotate the key, and move it to secret storage",
-                secret_kind="private_key",
+                secret_kind="private_key",  # noqa: S106
                 redacted="<private-key>",
             )
 

@@ -135,9 +135,7 @@ def test_sensitive_csv_report_colon_model_external_ids_are_normalized(tmp_path: 
     )
 
     findings = scan_reports(tmp_path)
-    sensitive_models = {
-        finding.model for finding in findings if finding.rule_id == "odoo-report-sensitive-no-groups"
-    }
+    sensitive_models = {finding.model for finding in findings if finding.rule_id == "odoo-report-sensitive-no-groups"}
 
     assert {"ir.config_parameter", "payment.provider"} <= sensitive_models
 

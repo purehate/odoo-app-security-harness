@@ -727,9 +727,7 @@ class IntegrationScanner(ast.NodeVisitor):
         return self._is_http_client_factory(node) or isinstance(node, ast.Name) and node.id in http_client_names
 
     def _is_request_derived(self, node: ast.AST) -> bool:
-        return _is_request_derived(
-            node, self.request_names, self.odoo_http_module_names, self.odoo_module_names
-        )
+        return _is_request_derived(node, self.request_names, self.odoo_http_module_names, self.odoo_module_names)
 
     def _add(
         self,
@@ -773,8 +771,7 @@ def _is_request_derived(
         return (
             _is_request_derived(node.func, request_names, odoo_http_module_names, odoo_module_names)
             or any(
-                _is_request_derived(arg, request_names, odoo_http_module_names, odoo_module_names)
-                for arg in node.args
+                _is_request_derived(arg, request_names, odoo_http_module_names, odoo_module_names) for arg in node.args
             )
             or any(
                 keyword.value is not None
@@ -972,8 +969,10 @@ def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, as
     if not url:
         return False
     parsed = urlparse(url)
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
-        parsed.username is not None or parsed.password is not None
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.hostname)
+        and (parsed.username is not None or parsed.password is not None)
     )
 
 
@@ -1089,9 +1088,7 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
     return node
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant_seen(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -1199,7 +1196,6 @@ def _unpack_target_value_pairs(
     rest_value = ast.List(elts=value.elts[starred_index:after_values_start], ctx=ast.Load())
     after = list(zip(target.elts[starred_index + 1 :], value.elts[after_values_start:], strict=False))
     return [*before, (target.elts[starred_index], rest_value), *after]
-
 
 
 def findings_to_json(findings: list[IntegrationFinding]) -> list[dict[str, Any]]:

@@ -587,9 +587,7 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
     return node
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant_seen(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -740,11 +738,15 @@ def _is_session_expr(
     text = _safe_unparse(node)
     if text == "request.session":
         return True
-    if isinstance(node, ast.Attribute) and node.attr == "session" and _is_request_expr(
-        node.value,
-        request_names,
-        http_module_names,
-        odoo_module_names,
+    if (
+        isinstance(node, ast.Attribute)
+        and node.attr == "session"
+        and _is_request_expr(
+            node.value,
+            request_names,
+            http_module_names,
+            odoo_module_names,
+        )
     ):
         return True
     if isinstance(node, ast.Name):
@@ -777,11 +779,15 @@ def _is_database_session_target(
     text = _safe_unparse(node)
     if text in {"request.session.db", "request.db"}:
         return True
-    if isinstance(node, ast.Attribute) and node.attr == "db" and _is_request_expr(
-        node.value,
-        request_names,
-        http_module_names,
-        odoo_module_names,
+    if (
+        isinstance(node, ast.Attribute)
+        and node.attr == "db"
+        and _is_request_expr(
+            node.value,
+            request_names,
+            http_module_names,
+            odoo_module_names,
+        )
     ):
         return True
     return (
@@ -845,7 +851,6 @@ def _unpack_target_value_pairs(
     after = list(zip(target.elts[starred_index + 1 :], value.elts[after_values_start:], strict=False))
     rest_value = ast.List(elts=starred_values, ctx=ast.Load())
     return [*before, (target.elts[starred_index], rest_value), *after]
-
 
 
 def findings_to_json(findings: list[DatabaseFinding]) -> list[dict[str, Any]]:

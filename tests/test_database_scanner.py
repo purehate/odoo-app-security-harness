@@ -236,15 +236,11 @@ class Controller(http.Controller):
     findings = scan_database_operations(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-database-management-call"
-        and f.severity == "critical"
-        and f.route == "/db/drop,/db/drop/alt"
+        f.rule_id == "odoo-database-management-call" and f.severity == "critical" and f.route == "/db/drop,/db/drop/alt"
         for f in findings
     )
     assert any(
-        f.rule_id == "odoo-database-listing-route"
-        and f.severity == "high"
-        and f.route == "/db/drop,/db/drop/alt"
+        f.rule_id == "odoo-database-listing-route" and f.severity == "high" and f.route == "/db/drop,/db/drop/alt"
         for f in findings
     )
     assert any(f.rule_id == "odoo-database-session-db-assignment" and f.severity == "critical" for f in findings)
@@ -277,9 +273,7 @@ class Controller(http.Controller):
     findings = scan_database_operations(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-database-management-call"
-        and f.severity == "critical"
-        and f.route == "/db/drop"
+        f.rule_id == "odoo-database-management-call" and f.severity == "critical" and f.route == "/db/drop"
         for f in findings
     )
     assert any(f.rule_id == "odoo-database-session-db-assignment" and f.severity == "critical" for f in findings)
@@ -310,9 +304,7 @@ class Controller(http.Controller):
     findings = scan_database_operations(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-database-management-call"
-        and f.severity == "critical"
-        and f.route == "/db/drop"
+        f.rule_id == "odoo-database-management-call" and f.severity == "critical" and f.route == "/db/drop"
         for f in findings
     )
     assert any(f.rule_id == "odoo-database-tainted-management-input" for f in findings)
@@ -346,9 +338,7 @@ class Controller(http.Controller):
     findings = scan_database_operations(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-database-management-call"
-        and f.severity == "critical"
-        and f.route == "/db/drop"
+        f.rule_id == "odoo-database-management-call" and f.severity == "critical" and f.route == "/db/drop"
         for f in findings
     )
     assert any(f.rule_id == "odoo-database-tainted-management-input" for f in findings)
@@ -384,9 +374,7 @@ class Controller(http.Controller):
     findings = scan_database_operations(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-database-management-call"
-        and f.severity == "critical"
-        and f.route == "/db/drop"
+        f.rule_id == "odoo-database-management-call" and f.severity == "critical" and f.route == "/db/drop"
         for f in findings
     )
     assert any(f.rule_id == "odoo-database-tainted-management-input" for f in findings)
@@ -417,9 +405,7 @@ class Controller(http.Controller):
     findings = scan_database_operations(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-database-management-call"
-        and f.severity == "critical"
-        and f.route == "/db/drop"
+        f.rule_id == "odoo-database-management-call" and f.severity == "critical" and f.route == "/db/drop"
         for f in findings
     )
     assert any(f.rule_id == "odoo-database-tainted-management-input" for f in findings)
@@ -450,15 +436,11 @@ class Controller(http.Controller):
     findings = scan_database_operations(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-database-management-call"
-        and f.severity == "critical"
-        and f.route == "/db/drop,/db/drop/alt"
+        f.rule_id == "odoo-database-management-call" and f.severity == "critical" and f.route == "/db/drop,/db/drop/alt"
         for f in findings
     )
     assert any(
-        f.rule_id == "odoo-database-listing-route"
-        and f.severity == "high"
-        and f.route == "/db/drop,/db/drop/alt"
+        f.rule_id == "odoo-database-listing-route" and f.severity == "high" and f.route == "/db/drop,/db/drop/alt"
         for f in findings
     )
     assert any(f.rule_id == "odoo-database-session-db-assignment" and f.severity == "critical" for f in findings)
@@ -494,9 +476,7 @@ class Controller(http.Controller):
     findings = scan_database_operations(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-database-management-call"
-        and f.severity == "critical"
-        and f.route == "/db/drop"
+        f.rule_id == "odoo-database-management-call" and f.severity == "critical" and f.route == "/db/drop"
         for f in findings
     )
     assert any(f.rule_id == "odoo-database-tainted-management-input" for f in findings)
@@ -525,9 +505,7 @@ class Controller(http.Controller):
     findings = scan_database_operations(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-database-tainted-selection"
-        and f.severity == "critical"
-        and f.route == "/db/select"
+        f.rule_id == "odoo-database-tainted-selection" and f.severity == "critical" and f.route == "/db/select"
         for f in findings
     )
 

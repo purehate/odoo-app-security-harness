@@ -54,10 +54,12 @@ class TestParallelScanner:
     def test_get_summary(self, tmp_path: Path) -> None:
         scanner = ParallelScanner(max_workers=1)
         log_path = tmp_path / "scan.log"
-        scanner.run_all([
-            ("ok", ["python", "-c", "print('ok')"], tmp_path, log_path, 10),
-            ("fail", ["python", "-c", "import sys; sys.exit(1)"], tmp_path, log_path, 10),
-        ])
+        scanner.run_all(
+            [
+                ("ok", ["python", "-c", "print('ok')"], tmp_path, log_path, 10),
+                ("fail", ["python", "-c", "import sys; sys.exit(1)"], tmp_path, log_path, 10),
+            ]
+        )
         summary = scanner.get_summary()
         assert summary["total"] == 2
         assert summary["passed"] == 1

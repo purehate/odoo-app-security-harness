@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -247,7 +248,6 @@ def _has_url_embedded_credentials(value: str) -> bool:
 
 def _locale_for(path: Path) -> str:
     return path.stem
-
 
 
 def findings_to_json(findings: list[TranslationFinding]) -> list[dict[str, Any]]:

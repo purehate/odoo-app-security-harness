@@ -7,5 +7,5 @@
     "external_dependencies": {"python": ["requests", "cryptography"]},
     "installable": true,
     "application": false,
-    "license": "LGPL-3"
+    "license": "LGPL-3",
 }

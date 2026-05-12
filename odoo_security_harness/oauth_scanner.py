@@ -1228,8 +1228,7 @@ def _call_has_tainted_url(
     if any(is_tainted(value) for value in _keyword_values(node, "endpoint", constants)):
         return True
     return any(
-        keyword.arg is None and keyword.value is not None and is_tainted(keyword.value)
-        for keyword in node.keywords
+        keyword.arg is None and keyword.value is not None and is_tainted(keyword.value) for keyword in node.keywords
     )
 
 
@@ -1397,8 +1396,10 @@ def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, as
     if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
         return False
     parsed = urlparse(value.value.strip())
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
-        parsed.username is not None or parsed.password is not None
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.hostname)
+        and (parsed.username is not None or parsed.password is not None)
     )
 
 
@@ -1457,7 +1458,6 @@ def _safe_unparse(node: ast.AST) -> str:
         return ast.unparse(node)
     except Exception:
         return ""
-
 
 
 def findings_to_json(findings: list[OAuthFinding]) -> list[dict[str, Any]]:

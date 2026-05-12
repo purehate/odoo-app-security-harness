@@ -204,9 +204,7 @@ class Invite(http.Controller):
     findings = scan_sequences(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-sequence-public-route-next"
-        and f.severity == "high"
-        and f.route == "/invite/code"
+        f.rule_id == "odoo-sequence-public-route-next" and f.severity == "high" and f.route == "/invite/code"
         for f in findings
     )
     assert any(f.rule_id == "odoo-sequence-sensitive-code-use" for f in findings)
@@ -243,15 +241,10 @@ class Invite(http.Controller):
     findings = scan_sequences(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-sequence-public-route-next"
-        and f.severity == "high"
-        and f.route == "/invite/code"
+        f.rule_id == "odoo-sequence-public-route-next" and f.severity == "high" and f.route == "/invite/code"
         for f in findings
     )
-    assert any(
-        f.rule_id == "odoo-sequence-sensitive-code-use" and f.code == "access.token.sequence"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-sequence-sensitive-code-use" and f.code == "access.token.sequence" for f in findings)
 
 
 def test_local_constant_public_route_sensitive_sequence_use(tmp_path: Path) -> None:
@@ -276,15 +269,10 @@ class Invite(http.Controller):
     findings = scan_sequences(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-sequence-public-route-next"
-        and f.severity == "high"
-        and f.route == "/invite/code"
+        f.rule_id == "odoo-sequence-public-route-next" and f.severity == "high" and f.route == "/invite/code"
         for f in findings
     )
-    assert any(
-        f.rule_id == "odoo-sequence-sensitive-code-use" and f.code == "access.token.sequence"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-sequence-sensitive-code-use" and f.code == "access.token.sequence" for f in findings)
 
 
 def test_local_constant_public_route_sequence_alias_use(tmp_path: Path) -> None:
@@ -336,9 +324,7 @@ class Invite(http.Controller):
     findings = scan_sequences(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-sequence-public-route-next"
-        and f.severity == "high"
-        and f.route == "/invite/code"
+        f.rule_id == "odoo-sequence-public-route-next" and f.severity == "high" and f.route == "/invite/code"
         for f in findings
     )
     assert any(f.rule_id == "odoo-sequence-sensitive-code-use" for f in findings)
@@ -367,9 +353,7 @@ class Invite(http.Controller):
     findings = scan_sequences(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-sequence-public-route-next"
-        and f.severity == "high"
-        and f.route == "/invite/code"
+        f.rule_id == "odoo-sequence-public-route-next" and f.severity == "high" and f.route == "/invite/code"
         for f in findings
     )
     assert any(f.rule_id == "odoo-sequence-sensitive-code-use" for f in findings)
@@ -398,9 +382,7 @@ class Invite(http.Controller):
     findings = scan_sequences(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-sequence-public-route-next"
-        and f.severity == "high"
-        and f.route == "/invite/code"
+        f.rule_id == "odoo-sequence-public-route-next" and f.severity == "high" and f.route == "/invite/code"
         for f in findings
     )
     assert any(f.rule_id == "odoo-sequence-sensitive-code-use" for f in findings)
@@ -429,9 +411,7 @@ class Invite(http.Controller):
     findings = scan_sequences(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-sequence-public-route-next"
-        and f.severity == "critical"
-        and f.route == "/invite/code"
+        f.rule_id == "odoo-sequence-public-route-next" and f.severity == "critical" and f.route == "/invite/code"
         for f in findings
     )
     assert any(f.rule_id == "odoo-sequence-sensitive-code-use" for f in findings)
@@ -460,9 +440,7 @@ class Invite(http.Controller):
     findings = scan_sequences(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-sequence-public-route-next"
-        and f.severity == "high"
-        and f.route == "/invite/code"
+        f.rule_id == "odoo-sequence-public-route-next" and f.severity == "high" and f.route == "/invite/code"
         for f in findings
     )
     assert any(f.rule_id == "odoo-sequence-sensitive-code-use" for f in findings)
@@ -491,9 +469,7 @@ class Invite(http.Controller):
     findings = scan_sequences(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-sequence-public-route-next"
-        and f.severity == "high"
-        and f.route == "/invite/code"
+        f.rule_id == "odoo-sequence-public-route-next" and f.severity == "high" and f.route == "/invite/code"
         for f in findings
     )
     assert any(f.rule_id == "odoo-sequence-sensitive-code-use" for f in findings)
@@ -524,10 +500,7 @@ class Invite(http.Controller):
 
     findings = scan_sequences(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-sequence-sensitive-code-use" and f.code == "access.token.sequence"
-        for f in findings
-    )
+    assert any(f.rule_id == "odoo-sequence-sensitive-code-use" and f.code == "access.token.sequence" for f in findings)
 
 
 def test_keyword_constant_backed_none_route_sequence_use_is_critical(tmp_path: Path) -> None:
@@ -553,9 +526,7 @@ class Invite(http.Controller):
     findings = scan_sequences(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-sequence-public-route-next"
-        and f.severity == "critical"
-        and f.route == "/invite/code"
+        f.rule_id == "odoo-sequence-public-route-next" and f.severity == "critical" and f.route == "/invite/code"
         for f in findings
     )
 
@@ -1015,8 +986,7 @@ def test_company_scoped_normal_csv_sequence_is_ignored(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir_sequence.csv").write_text(
-        "id,name,code,company_id/id\n"
-        "seq_ticket,Helpdesk Ticket,helpdesk.ticket,base.main_company\n",
+        "id,name,code,company_id/id\n" "seq_ticket,Helpdesk Ticket,helpdesk.ticket,base.main_company\n",
         encoding="utf-8",
     )
 
@@ -1028,8 +998,7 @@ def test_company_scoped_normal_csv_sequence_colon_company_is_ignored(tmp_path: P
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir_sequence.csv").write_text(
-        "id,name,code,company_id:id\n"
-        "seq_ticket,Helpdesk Ticket,helpdesk.ticket,base.main_company\n",
+        "id,name,code,company_id:id\n" "seq_ticket,Helpdesk Ticket,helpdesk.ticket,base.main_company\n",
         encoding="utf-8",
     )
 

@@ -117,8 +117,7 @@ def test_flags_alias_mixin_csv_fields(tmp_path: Path) -> None:
     findings = scan_mail_aliases(tmp_path)
 
     assert any(
-        finding.rule_id == "odoo-mail-alias-broad-contact-policy"
-        and finding.model == "project.project"
+        finding.rule_id == "odoo-mail-alias-broad-contact-policy" and finding.model == "project.project"
         for finding in findings
     )
 

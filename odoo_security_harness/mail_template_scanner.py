@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import XmlScanner, _record_fields, _should_skip
 
 

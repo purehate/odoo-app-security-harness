@@ -627,9 +627,7 @@ def import_array(**kwargs):
     findings = SerializationScanner(py).scan_file()
 
     assert any(
-        f.rule_id == "odoo-serialization-unsafe-deserialization"
-        and f.severity == "critical"
-        and f.sink == "numpy.load"
+        f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical" and f.sink == "numpy.load"
         for f in findings
     )
 
@@ -1136,8 +1134,7 @@ class ImportController(http.Controller):
     findings = SerializationScanner(py).scan_file()
 
     assert not any(
-        f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical"
-        for f in findings
+        f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "critical" for f in findings
     )
     assert any(f.rule_id == "odoo-serialization-unsafe-deserialization" and f.severity == "high" for f in findings)
 
@@ -1196,8 +1193,7 @@ def import_xml(payload):
     findings = SerializationScanner(py).scan_file()
 
     assert any(
-        f.rule_id == "odoo-serialization-xml-fromstring-tainted"
-        and f.sink == "xml.etree.ElementTree.XML"
+        f.rule_id == "odoo-serialization-xml-fromstring-tainted" and f.sink == "xml.etree.ElementTree.XML"
         for f in findings
     )
 
@@ -1220,14 +1216,10 @@ def import_xml(payload):
     findings = SerializationScanner(py).scan_file()
 
     assert any(
-        f.rule_id == "odoo-serialization-xml-fromstring-tainted"
-        and f.sink == "lxml.etree.fromstring"
-        for f in findings
+        f.rule_id == "odoo-serialization-xml-fromstring-tainted" and f.sink == "lxml.etree.fromstring" for f in findings
     )
     assert any(
-        f.rule_id == "odoo-serialization-xml-fromstring-tainted"
-        and f.sink == "lxml.etree.XML"
-        for f in findings
+        f.rule_id == "odoo-serialization-xml-fromstring-tainted" and f.sink == "lxml.etree.XML" for f in findings
     )
 
 
@@ -1249,14 +1241,11 @@ def import_xml(payload):
     findings = SerializationScanner(py).scan_file()
 
     assert any(
-        f.rule_id == "odoo-serialization-xml-fromstring-tainted"
-        and f.sink == "xml.dom.minidom.parseString"
+        f.rule_id == "odoo-serialization-xml-fromstring-tainted" and f.sink == "xml.dom.minidom.parseString"
         for f in findings
     )
     assert any(
-        f.rule_id == "odoo-serialization-xml-fromstring-tainted"
-        and f.sink == "xml.sax.parseString"
-        for f in findings
+        f.rule_id == "odoo-serialization-xml-fromstring-tainted" and f.sink == "xml.sax.parseString" for f in findings
     )
 
 

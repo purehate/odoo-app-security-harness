@@ -755,8 +755,10 @@ def _http_url_values(node: ast.Call, sink: str, constants: dict[str, ast.AST]) -
 
 def _is_cleartext_literal_url(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
     value = _resolve_constant(node, constants)
-    return isinstance(value, ast.Constant) and isinstance(value.value, str) and value.value.strip().lower().startswith(
-        "http://"
+    return (
+        isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+        and value.value.strip().lower().startswith("http://")
     )
 
 
@@ -765,8 +767,10 @@ def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, as
     if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
         return False
     parsed = urlparse(value.value.strip())
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
-        parsed.username is not None or parsed.password is not None
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.hostname)
+        and (parsed.username is not None or parsed.password is not None)
     )
 
 
@@ -872,9 +876,7 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[st
     return node
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -966,7 +968,6 @@ def _mark_target_names(target: ast.AST, names: set[str]) -> None:
             _mark_target_names(element, names)
     elif isinstance(target, ast.Starred):
         _mark_target_names(target.value, names)
-
 
 
 def findings_to_json(findings: list[ScheduledJobFinding]) -> list[dict[str, Any]]:

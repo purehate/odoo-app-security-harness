@@ -570,7 +570,6 @@ def _relaxes_inherited_route_security(route: RouteInfo) -> bool:
     return route.auth in {"public", "none"} or route.csrf is False or route.cors.strip() == "*"
 
 
-
 def findings_to_json(findings: list[RouteSecurityFinding]) -> list[dict[str, Any]]:
     """Convert findings to JSON-serializable dictionaries."""
     return [

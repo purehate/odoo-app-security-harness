@@ -7,7 +7,6 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-
 VALID_SEVERITIES = {"critical", "high", "medium", "low", "info"}
 VALID_TRIAGE = {"ACCEPT", "DOWNGRADE", "REJECT", "NEEDS-MANUAL"}
 
@@ -86,10 +85,7 @@ def validation_report(findings: list[dict[str, Any]]) -> dict[str, Any]:
         "valid": not issues,
         "finding_count": len(findings),
         "issue_count": len(issues),
-        "issues": [
-            {"index": issue.index, "field": issue.field, "message": issue.message}
-            for issue in issues
-        ],
+        "issues": [{"index": issue.index, "field": issue.field, "message": issue.message} for issue in issues],
     }
 
 

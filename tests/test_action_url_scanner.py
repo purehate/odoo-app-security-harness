@@ -1038,9 +1038,7 @@ class Redirect(http.Controller):
     findings = scan_action_urls(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-act-url-embedded-credentials"
-        and f.sink == "python-dict"
-        and f.severity == "high"
+        f.rule_id == "odoo-act-url-embedded-credentials" and f.sink == "python-dict" and f.severity == "high"
         for f in findings
     )
 
@@ -1336,9 +1334,7 @@ class Document(models.Model):
 
     findings = scan_action_urls(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-act-url-embedded-credentials" and f.sink == "python-dict-update" for f in findings
-    )
+    assert any(f.rule_id == "odoo-act-url-embedded-credentials" and f.sink == "python-dict-update" for f in findings)
 
 
 def test_flags_annotated_mutated_unsafe_act_url(tmp_path: Path) -> None:

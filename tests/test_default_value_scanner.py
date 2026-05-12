@@ -299,8 +299,7 @@ class Defaults(http.Controller):
     assert "odoo-default-public-route-set" in rule_ids
     assert "odoo-default-request-derived-set" in rule_ids
     assert any(
-        finding.rule_id == "odoo-default-public-route-set" and finding.severity == "critical"
-        for finding in findings
+        finding.rule_id == "odoo-default-public-route-set" and finding.severity == "critical" for finding in findings
     )
 
 

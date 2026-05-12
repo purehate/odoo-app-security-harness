@@ -95,9 +95,7 @@ class Controller(http.Controller):
     findings = scan_oauth_flows(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-oauth-jwt-missing-algorithms"
-        and f.severity == "high"
-        and f.sink == "jwt.decode"
+        f.rule_id == "odoo-oauth-jwt-missing-algorithms" and f.severity == "high" and f.sink == "jwt.decode"
         for f in findings
     )
 
@@ -954,8 +952,7 @@ class Controller(http.Controller):
     assert "odoo-oauth-http-verify-disabled" in rule_ids
     assert "odoo-oauth-session-authenticate" in rule_ids
     assert any(
-        f.rule_id == "odoo-oauth-public-callback-route" and f.route == "/auth/oauth/class-callback"
-        for f in findings
+        f.rule_id == "odoo-oauth-public-callback-route" and f.route == "/auth/oauth/class-callback" for f in findings
     )
 
 

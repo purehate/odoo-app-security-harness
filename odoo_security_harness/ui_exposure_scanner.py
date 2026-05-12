@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml import ElementTree
+
 from odoo_security_harness.base_scanner import _line_for, _should_skip
 
 

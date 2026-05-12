@@ -113,9 +113,7 @@ def test_dom_event_handler_setattribute_detected(tmp_path: Path) -> None:
 
     findings = WebAssetScanner(path).scan_file()
 
-    assert any(
-        f.rule_id == "odoo-web-dom-xss-sink" and f.sink == "setAttribute-event-handler" for f in findings
-    )
+    assert any(f.rule_id == "odoo-web-dom-xss-sink" and f.sink == "setAttribute-event-handler" for f in findings)
 
 
 def test_dom_event_handler_trusted_function_reference_ignored(tmp_path: Path) -> None:
@@ -130,15 +128,15 @@ select.onchange = handleChange;
 
     findings = WebAssetScanner(path).scan_file()
 
-    assert not any(
-        f.rule_id == "odoo-web-dom-xss-sink" and "event-handler" in f.sink for f in findings
-    )
+    assert not any(f.rule_id == "odoo-web-dom-xss-sink" and "event-handler" in f.sink for f in findings)
 
 
 def test_string_eval_sink_detected(tmp_path: Path) -> None:
     """String code execution should be reported."""
     path = tmp_path / "widget.js"
-    path.write_text("setTimeout('refresh()');\nconst fn = new Function(code);\n$.globalEval(script);\n", encoding="utf-8")
+    path.write_text(
+        "setTimeout('refresh()');\nconst fn = new Function(code);\n$.globalEval(script);\n", encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -931,9 +929,7 @@ def test_fetch_insecure_http_url_detected(tmp_path: Path) -> None:
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-insecure-http-request-url"
-        and f.sink == "http-request"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-insecure-http-request-url" and f.sink == "http-request" and f.severity == "medium"
         for f in findings
     )
 
@@ -969,9 +965,7 @@ xhr.send();
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-insecure-http-request-url"
-        and f.sink == "XMLHttpRequest.open"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-insecure-http-request-url" and f.sink == "XMLHttpRequest.open" and f.severity == "medium"
         for f in findings
     )
 
@@ -990,9 +984,7 @@ this.xhr.send();
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-insecure-http-request-url"
-        and f.sink == "XMLHttpRequest.open"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-insecure-http-request-url" and f.sink == "XMLHttpRequest.open" and f.severity == "medium"
         for f in findings
     )
 
@@ -1044,8 +1036,7 @@ def test_sensitive_browser_storage_read_detected(tmp_path: Path) -> None:
     """Reading credential-like values from browser storage is also an exposure signal."""
     path = tmp_path / "widget.js"
     path.write_text(
-        "const token = localStorage.getItem('access_token');\n"
-        "const apiKey = sessionStorage.getItem('api-key');\n",
+        "const token = localStorage.getItem('access_token');\n" "const apiKey = sessionStorage.getItem('api-key');\n",
         encoding="utf-8",
     )
 
@@ -1306,9 +1297,7 @@ def test_postmessage_dynamic_origin_detected(tmp_path: Path) -> None:
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-postmessage-dynamic-origin"
-        and f.sink == "postMessage"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-postmessage-dynamic-origin" and f.sink == "postMessage" and f.severity == "medium"
         for f in findings
     )
 
@@ -1336,14 +1325,14 @@ def test_postmessage_same_origin_ignored(tmp_path: Path) -> None:
 def test_postmessage_sensitive_payload_detected(tmp_path: Path) -> None:
     """postMessage should not carry credentials across frame/window boundaries."""
     path = tmp_path / "widget.js"
-    path.write_text("window.parent.postMessage({access_token: response.token}, 'https://portal.example.com');\n", encoding="utf-8")
+    path.write_text(
+        "window.parent.postMessage({access_token: response.token}, 'https://portal.example.com');\n", encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-sensitive-postmessage-payload"
-        and f.sink == "postMessage"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-sensitive-postmessage-payload" and f.sink == "postMessage" and f.severity == "medium"
         for f in findings
     )
 
@@ -1351,7 +1340,9 @@ def test_postmessage_sensitive_payload_detected(tmp_path: Path) -> None:
 def test_postmessage_non_sensitive_payload_ignored(tmp_path: Path) -> None:
     """Routine frame messages without credential-shaped data should stay quiet."""
     path = tmp_path / "widget.js"
-    path.write_text("window.parent.postMessage({event: 'invoice-ready'}, 'https://portal.example.com');\n", encoding="utf-8")
+    path.write_text(
+        "window.parent.postMessage({event: 'invoice-ready'}, 'https://portal.example.com');\n", encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1499,24 +1490,19 @@ export const template = xml`<div><span t-raw="props.html"/></div>`;
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-t-raw"
-        and f.sink == "owl-template"
-        and f.severity == "medium"
-        for f in findings
+        f.rule_id == "odoo-web-owl-qweb-t-raw" and f.sink == "owl-template" and f.severity == "medium" for f in findings
     )
 
 
 def test_owl_inline_template_t_js_detected(tmp_path: Path) -> None:
     """OWL xml template literals can carry QWeb inline JavaScript blocks."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<t t-js=\"ctx\">console.log(ctx.record_name)</t>`;\n", encoding="utf-8")
+    path.write_text('export const template = xml`<t t-js="ctx">console.log(ctx.record_name)</t>`;\n', encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-t-js-inline-script"
-        and f.sink == "owl-template"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-owl-qweb-t-js-inline-script" and f.sink == "owl-template" and f.severity == "medium"
         for f in findings
     )
 
@@ -1538,9 +1524,7 @@ export const template = xml`
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-raw-output-mode"
-        and f.sink == "owl-template"
-        and f.severity == "high"
+        f.rule_id == "odoo-web-owl-raw-output-mode" and f.sink == "owl-template" and f.severity == "high"
         for f in findings
     )
 
@@ -1548,14 +1532,15 @@ export const template = xml`
 def test_owl_inline_template_dangerous_tag_detected(tmp_path: Path) -> None:
     """OWL inline templates should surface embedded active or submission tags."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<div><form action=\"/portal/pay\"><input name=\"amount\"/></form></div>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<div><form action="/portal/pay"><input name="amount"/></form></div>`;\n',
+        encoding="utf-8",
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-dangerous-tag"
-        and f.sink == "owl-template"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-owl-qweb-dangerous-tag" and f.sink == "owl-template" and f.severity == "medium"
         for f in findings
     )
 
@@ -1563,7 +1548,10 @@ def test_owl_inline_template_dangerous_tag_detected(tmp_path: Path) -> None:
 def test_owl_inline_template_dangerous_tag_does_not_hide_raw_output(tmp_path: Path) -> None:
     """Dangerous OWL template tags should not suppress sibling raw-output leads."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<div><iframe src=\"https://player.example.com\"></iframe><span t-raw=\"props.html\"/></div>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<div><iframe src="https://player.example.com"></iframe><span t-raw="props.html"/></div>`;\n',
+        encoding="utf-8",
+    )
 
     findings = WebAssetScanner(path).scan_file()
     rule_ids = {finding.rule_id for finding in findings}
@@ -1575,14 +1563,15 @@ def test_owl_inline_template_dangerous_tag_does_not_hide_raw_output(tmp_path: Pa
 def test_owl_inline_template_post_form_missing_csrf_detected(tmp_path: Path) -> None:
     """OWL inline POST forms should show a visible CSRF token."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<form action=\"/portal/pay\" method=\"post\"><input name=\"amount\"/></form>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<form action="/portal/pay" method="post"><input name="amount"/></form>`;\n',
+        encoding="utf-8",
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-post-form-missing-csrf"
-        and f.sink == "owl-template"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-owl-qweb-post-form-missing-csrf" and f.sink == "owl-template" and f.severity == "medium"
         for f in findings
     )
 
@@ -1591,7 +1580,7 @@ def test_owl_inline_template_post_form_with_csrf_ignored(tmp_path: Path) -> None
     """Visible csrf_token fields suppress OWL POST form CSRF leads."""
     path = tmp_path / "widget.js"
     path.write_text(
-        "export const template = xml`<form method=\"post\"><input type=\"hidden\" name=\"csrf_token\" t-att-value=\"request.csrf_token()\"/></form>`;\n",
+        'export const template = xml`<form method="post"><input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/></form>`;\n',
         encoding="utf-8",
     )
 
@@ -1603,7 +1592,10 @@ def test_owl_inline_template_post_form_with_csrf_ignored(tmp_path: Path) -> None
 def test_owl_inline_template_get_form_missing_csrf_ignored(tmp_path: Path) -> None:
     """OWL GET/search forms do not need CSRF tokens."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<form action=\"/shop\" method=\"get\"><input name=\"search\"/></form>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<form action="/shop" method="get"><input name="search"/></form>`;\n',
+        encoding="utf-8",
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1613,7 +1605,9 @@ def test_owl_inline_template_get_form_missing_csrf_ignored(tmp_path: Path) -> No
 def test_owl_inline_template_target_blank_without_noopener_detected(tmp_path: Path) -> None:
     """OWL inline links opening a new tab should isolate window.opener."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<a href=\"https://example.com\" target=\"_blank\">Open</a>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<a href="https://example.com" target="_blank">Open</a>`;\n', encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1629,7 +1623,7 @@ def test_owl_inline_template_target_blank_with_noopener_ignored(tmp_path: Path) 
     """rel=noopener/noreferrer suppresses OWL target blank opener leads."""
     path = tmp_path / "widget.js"
     path.write_text(
-        "export const template = xml`<a href=\"https://example.com\" target=\"_blank\" rel=\"noopener noreferrer\">Open</a>`;\n",
+        'export const template = xml`<a href="https://example.com" target="_blank" rel="noopener noreferrer">Open</a>`;\n',
         encoding="utf-8",
     )
 
@@ -1641,14 +1635,14 @@ def test_owl_inline_template_target_blank_with_noopener_ignored(tmp_path: Path) 
 def test_owl_inline_template_iframe_missing_sandbox_detected(tmp_path: Path) -> None:
     """OWL inline iframes should declare sandbox restrictions."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<iframe src=\"https://player.example.com/embed/1\"></iframe>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<iframe src="https://player.example.com/embed/1"></iframe>`;\n', encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-iframe-missing-sandbox"
-        and f.sink == "owl-template"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-owl-qweb-iframe-missing-sandbox" and f.sink == "owl-template" and f.severity == "medium"
         for f in findings
     )
 
@@ -1656,7 +1650,10 @@ def test_owl_inline_template_iframe_missing_sandbox_detected(tmp_path: Path) -> 
 def test_owl_inline_template_iframe_with_sandbox_ignored(tmp_path: Path) -> None:
     """A visible OWL iframe sandbox suppresses the missing-sandbox lead."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<iframe src=\"https://player.example.com/embed/1\" sandbox=\"allow-scripts\"></iframe>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<iframe src="https://player.example.com/embed/1" sandbox="allow-scripts"></iframe>`;\n',
+        encoding="utf-8",
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1666,14 +1663,15 @@ def test_owl_inline_template_iframe_with_sandbox_ignored(tmp_path: Path) -> None
 def test_owl_inline_template_iframe_sandbox_escape_detected(tmp_path: Path) -> None:
     """OWL iframe sandbox should not combine scripts with same-origin."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<iframe src=\"/my/widget\" sandbox=\"allow-forms allow-scripts allow-same-origin\"></iframe>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<iframe src="/my/widget" sandbox="allow-forms allow-scripts allow-same-origin"></iframe>`;\n',
+        encoding="utf-8",
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-iframe-sandbox-escape"
-        and f.sink == "owl-template"
-        and f.severity == "high"
+        f.rule_id == "odoo-web-owl-qweb-iframe-sandbox-escape" and f.sink == "owl-template" and f.severity == "high"
         for f in findings
     )
 
@@ -1682,7 +1680,7 @@ def test_owl_inline_template_iframe_broad_permissions_detected(tmp_path: Path) -
     """OWL iframe allow policies should scope sensitive browser features to trusted origins."""
     path = tmp_path / "widget.js"
     path.write_text(
-        "export const template = xml`<iframe src=\"/my/widget\" sandbox=\"\" allow=\"camera *; geolocation; payment https://pay.example\"></iframe>`;\n",
+        'export const template = xml`<iframe src="/my/widget" sandbox="" allow="camera *; geolocation; payment https://pay.example"></iframe>`;\n',
         encoding="utf-8",
     )
 
@@ -1700,7 +1698,7 @@ def test_owl_inline_template_iframe_origin_scoped_permissions_ignored(tmp_path: 
     """Origin-scoped OWL iframe feature policies avoid the broad-permission lead."""
     path = tmp_path / "widget.js"
     path.write_text(
-        "export const template = xml`<iframe src=\"/my/widget\" sandbox=\"\" allow=\"camera https://camera.example; payment https://pay.example\"></iframe>`;\n",
+        'export const template = xml`<iframe src="/my/widget" sandbox="" allow="camera https://camera.example; payment https://pay.example"></iframe>`;\n',
         encoding="utf-8",
     )
 
@@ -1712,7 +1710,10 @@ def test_owl_inline_template_iframe_origin_scoped_permissions_ignored(tmp_path: 
 def test_owl_inline_template_iframe_safe_sandbox_tokens_ignored(tmp_path: Path) -> None:
     """OWL iframe sandbox tokens without the escape combination stay quiet."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<iframe src=\"/my/widget\" sandbox=\"allow-forms allow-popups\"></iframe>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<iframe src="/my/widget" sandbox="allow-forms allow-popups"></iframe>`;\n',
+        encoding="utf-8",
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1722,7 +1723,9 @@ def test_owl_inline_template_iframe_safe_sandbox_tokens_ignored(tmp_path: Path) 
 def test_owl_inline_template_external_script_missing_sri_detected(tmp_path: Path) -> None:
     """OWL inline third-party scripts should be pinned with SRI."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<script src=\"https://cdn.example.com/widget.js\"></script>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<script src="https://cdn.example.com/widget.js"></script>`;\n', encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1738,7 +1741,7 @@ def test_owl_inline_template_external_script_with_sri_ignored(tmp_path: Path) ->
     """External OWL scripts with integrity are already pinned for review."""
     path = tmp_path / "widget.js"
     path.write_text(
-        "export const template = xml`<script src=\"https://cdn.example.com/widget.js\" integrity=\"sha384-test\"></script>`;\n",
+        'export const template = xml`<script src="https://cdn.example.com/widget.js" integrity="sha384-test"></script>`;\n',
         encoding="utf-8",
     )
 
@@ -1750,7 +1753,10 @@ def test_owl_inline_template_external_script_with_sri_ignored(tmp_path: Path) ->
 def test_owl_inline_template_external_stylesheet_missing_sri_detected(tmp_path: Path) -> None:
     """OWL inline third-party stylesheets should be pinned with SRI."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<link rel=\"stylesheet\" href=\"https://cdn.example.com/theme.css\"/>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<link rel="stylesheet" href="https://cdn.example.com/theme.css"/>`;\n',
+        encoding="utf-8",
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1766,7 +1772,7 @@ def test_owl_inline_template_external_stylesheet_with_sri_ignored(tmp_path: Path
     """External OWL stylesheets with integrity are already pinned for review."""
     path = tmp_path / "widget.js"
     path.write_text(
-        "export const template = xml`<link rel=\"stylesheet\" href=\"https://cdn.example.com/theme.css\" integrity=\"sha384-test\"/>`;\n",
+        'export const template = xml`<link rel="stylesheet" href="https://cdn.example.com/theme.css" integrity="sha384-test"/>`;\n',
         encoding="utf-8",
     )
 
@@ -1778,7 +1784,7 @@ def test_owl_inline_template_external_stylesheet_with_sri_ignored(tmp_path: Path
 def test_owl_inline_template_escaped_output_ignored(tmp_path: Path) -> None:
     """Escaped OWL inline template output should not create raw-output leads."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<span t-out=\"props.name\"/>`;\n", encoding="utf-8")
+    path.write_text('export const template = xml`<span t-out="props.name"/>`;\n', encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1788,14 +1794,14 @@ def test_owl_inline_template_escaped_output_ignored(tmp_path: Path) -> None:
 def test_owl_inline_template_dynamic_event_handler_detected(tmp_path: Path) -> None:
     """OWL inline templates should not build JavaScript event handlers dynamically."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<button t-att-onclick=\"props.handler\">Pay</button>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<button t-att-onclick="props.handler">Pay</button>`;\n', encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-dynamic-event-handler"
-        and f.sink == "owl-template"
-        and f.severity == "high"
+        f.rule_id == "odoo-web-owl-qweb-dynamic-event-handler" and f.sink == "owl-template" and f.severity == "high"
         for f in findings
     )
 
@@ -1803,14 +1809,14 @@ def test_owl_inline_template_dynamic_event_handler_detected(tmp_path: Path) -> N
 def test_owl_inline_template_srcdoc_detected(tmp_path: Path) -> None:
     """OWL inline iframe srcdoc attributes should stay out of request-derived HTML."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<iframe sandbox=\"\" t-att-srcdoc=\"props.preview_html\"/>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<iframe sandbox="" t-att-srcdoc="props.preview_html"/>`;\n', encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-srcdoc-html"
-        and f.sink == "owl-template"
-        and f.severity == "high"
+        f.rule_id == "odoo-web-owl-qweb-srcdoc-html" and f.sink == "owl-template" and f.severity == "high"
         for f in findings
     )
 
@@ -1819,16 +1825,14 @@ def test_owl_inline_template_srcdoc_mapping_detected(tmp_path: Path) -> None:
     """OWL t-att mappings can also feed dynamic HTML into iframe srcdoc."""
     path = tmp_path / "widget.js"
     path.write_text(
-        "export const template = xml`<iframe sandbox=\"\" t-att=\"{'srcdoc': props.preview_html}\"/>`;\n",
+        'export const template = xml`<iframe sandbox="" t-att="{\'srcdoc\': props.preview_html}"/>`;\n',
         encoding="utf-8",
     )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-srcdoc-html"
-        and f.sink == "owl-template"
-        and f.severity == "high"
+        f.rule_id == "odoo-web-owl-qweb-srcdoc-html" and f.sink == "owl-template" and f.severity == "high"
         for f in findings
     )
 
@@ -1836,14 +1840,12 @@ def test_owl_inline_template_srcdoc_mapping_detected(tmp_path: Path) -> None:
 def test_owl_inline_template_dynamic_script_src_detected(tmp_path: Path) -> None:
     """OWL inline script src attributes should not import runtime-selected code."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<script t-att-src=\"props.script_url\"></script>`;\n", encoding="utf-8")
+    path.write_text('export const template = xml`<script t-att-src="props.script_url"></script>`;\n', encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-dynamic-script-src"
-        and f.sink == "owl-template"
-        and f.severity == "high"
+        f.rule_id == "odoo-web-owl-qweb-dynamic-script-src" and f.sink == "owl-template" and f.severity == "high"
         for f in findings
     )
 
@@ -1851,7 +1853,7 @@ def test_owl_inline_template_dynamic_script_src_detected(tmp_path: Path) -> None
 def test_owl_inline_template_owl_event_binding_ignored(tmp_path: Path) -> None:
     """OWL t-on handlers reference component methods and are not string event attributes."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<button t-on-click=\"onPay\">Pay</button>`;\n", encoding="utf-8")
+    path.write_text('export const template = xml`<button t-on-click="onPay">Pay</button>`;\n', encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1862,16 +1864,14 @@ def test_owl_inline_template_dynamic_stylesheet_href_detected(tmp_path: Path) ->
     """OWL inline stylesheet links should not load runtime-selected CSS."""
     path = tmp_path / "widget.js"
     path.write_text(
-        "export const template = xml`<link rel=\"stylesheet\" t-att-href=\"props.theme_url\"/>`;\n",
+        'export const template = xml`<link rel="stylesheet" t-att-href="props.theme_url"/>`;\n',
         encoding="utf-8",
     )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-dynamic-stylesheet-href"
-        and f.sink == "owl-template"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-owl-qweb-dynamic-stylesheet-href" and f.sink == "owl-template" and f.severity == "medium"
         for f in findings
     )
 
@@ -1879,14 +1879,12 @@ def test_owl_inline_template_dynamic_stylesheet_href_detected(tmp_path: Path) ->
 def test_owl_inline_template_dynamic_style_attribute_detected(tmp_path: Path) -> None:
     """OWL inline style attributes should not render runtime-selected CSS."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<div t-att-style=\"props.css_text\">Panel</div>`;\n", encoding="utf-8")
+    path.write_text('export const template = xml`<div t-att-style="props.css_text">Panel</div>`;\n', encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-dynamic-style-attribute"
-        and f.sink == "owl-template"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-owl-qweb-dynamic-style-attribute" and f.sink == "owl-template" and f.severity == "medium"
         for f in findings
     )
 
@@ -1904,14 +1902,14 @@ def test_owl_inline_template_dynamic_style_mapping_detected(tmp_path: Path) -> N
 def test_owl_inline_template_dynamic_class_attribute_detected(tmp_path: Path) -> None:
     """OWL inline class attributes should not render runtime-selected UI state."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<button t-att-class=\"props.buttonClass\">Pay</button>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<button t-att-class="props.buttonClass">Pay</button>`;\n', encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-dynamic-class-attribute"
-        and f.sink == "owl-template"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-owl-qweb-dynamic-class-attribute" and f.sink == "owl-template" and f.severity == "medium"
         for f in findings
     )
 
@@ -1919,7 +1917,9 @@ def test_owl_inline_template_dynamic_class_attribute_detected(tmp_path: Path) ->
 def test_owl_inline_template_dynamic_class_mapping_detected(tmp_path: Path) -> None:
     """OWL t-att mappings can also bind dynamic classes."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<button t-att=\"{'class': props.buttonClass}\"/>`;\n", encoding="utf-8")
+    path.write_text(
+        "export const template = xml`<button t-att=\"{'class': props.buttonClass}\"/>`;\n", encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1929,14 +1929,12 @@ def test_owl_inline_template_dynamic_class_mapping_detected(tmp_path: Path) -> N
 def test_owl_inline_template_dynamic_url_attribute_detected(tmp_path: Path) -> None:
     """OWL inline URL-bearing attributes should not use runtime-selected targets."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<a t-att-href=\"props.next_url\">Continue</a>`;\n", encoding="utf-8")
+    path.write_text('export const template = xml`<a t-att-href="props.next_url">Continue</a>`;\n', encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-dynamic-url-attribute"
-        and f.sink == "owl-template"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-owl-qweb-dynamic-url-attribute" and f.sink == "owl-template" and f.severity == "medium"
         for f in findings
     )
 
@@ -1954,14 +1952,14 @@ def test_owl_inline_template_dynamic_url_mapping_detected(tmp_path: Path) -> Non
 def test_owl_inline_template_dangerous_static_url_detected(tmp_path: Path) -> None:
     """OWL inline templates should not hard-code executable URL schemes."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<a href=\"javascript:alert(document.cookie)\">Open</a>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<a href="javascript:alert(document.cookie)">Open</a>`;\n', encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-dangerous-url-scheme"
-        and f.sink == "owl-template"
-        and f.severity == "high"
+        f.rule_id == "odoo-web-owl-qweb-dangerous-url-scheme" and f.sink == "owl-template" and f.severity == "high"
         for f in findings
     )
 
@@ -1969,7 +1967,10 @@ def test_owl_inline_template_dangerous_static_url_detected(tmp_path: Path) -> No
 def test_owl_inline_template_dangerous_data_svg_url_detected(tmp_path: Path) -> None:
     """OWL inline templates should not embed active SVG data documents."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<iframe src=\"data:image/svg+xml,<svg onload='alert(1)'/>\"></iframe>`;\n", encoding="utf-8")
+    path.write_text(
+        "export const template = xml`<iframe src=\"data:image/svg+xml,<svg onload='alert(1)'/>\"></iframe>`;\n",
+        encoding="utf-8",
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1979,7 +1980,7 @@ def test_owl_inline_template_dangerous_data_svg_url_detected(tmp_path: Path) -> 
 def test_owl_inline_template_safe_static_url_ignored(tmp_path: Path) -> None:
     """Normal local OWL URLs should not create dangerous-scheme noise."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<a href=\"/web#action=12\">Open</a>`;\n", encoding="utf-8")
+    path.write_text('export const template = xml`<a href="/web#action=12">Open</a>`;\n', encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -1989,14 +1990,14 @@ def test_owl_inline_template_safe_static_url_ignored(tmp_path: Path) -> None:
 def test_owl_inline_template_insecure_static_url_detected(tmp_path: Path) -> None:
     """OWL inline templates should not hard-code insecure external URLs."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<img src=\"http://cdn.example.com/logo.png\" alt=\"Logo\"/>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<img src="http://cdn.example.com/logo.png" alt="Logo"/>`;\n', encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-insecure-asset-url"
-        and f.sink == "owl-template"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-owl-qweb-insecure-asset-url" and f.sink == "owl-template" and f.severity == "medium"
         for f in findings
     )
 
@@ -2004,7 +2005,9 @@ def test_owl_inline_template_insecure_static_url_detected(tmp_path: Path) -> Non
 def test_owl_inline_template_https_static_url_ignored(tmp_path: Path) -> None:
     """HTTPS OWL template URLs should not create mixed-content leads."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<img src=\"https://cdn.example.com/logo.png\" alt=\"Logo\"/>`;\n", encoding="utf-8")
+    path.write_text(
+        'export const template = xml`<img src="https://cdn.example.com/logo.png" alt="Logo"/>`;\n', encoding="utf-8"
+    )
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -2015,16 +2018,14 @@ def test_owl_inline_template_url_embedded_credentials_detected(tmp_path: Path) -
     """OWL inline template URLs should not expose embedded credentials."""
     path = tmp_path / "widget.js"
     path.write_text(
-        "export const template = xml`<a href=\"https://api_user:secret@example.com/hook\">Hook</a>`;\n",
+        'export const template = xml`<a href="https://api_user:secret@example.com/hook">Hook</a>`;\n',
         encoding="utf-8",
     )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-url-embedded-credentials"
-        and f.sink == "owl-template"
-        and f.severity == "high"
+        f.rule_id == "odoo-web-owl-qweb-url-embedded-credentials" and f.sink == "owl-template" and f.severity == "high"
         for f in findings
     )
 
@@ -2033,16 +2034,14 @@ def test_owl_inline_template_sensitive_url_token_detected(tmp_path: Path) -> Non
     """OWL inline template URLs should not expose dynamic credential parameters."""
     path = tmp_path / "widget.js"
     path.write_text(
-        "export const template = xml`<a t-attf-href=\"/portal/pay?access_token=#{props.accessToken}\">Pay</a>`;\n",
+        'export const template = xml`<a t-attf-href="/portal/pay?access_token=#{props.accessToken}">Pay</a>`;\n',
         encoding="utf-8",
     )
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-sensitive-url-token"
-        and f.sink == "owl-template"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-owl-qweb-sensitive-url-token" and f.sink == "owl-template" and f.severity == "medium"
         for f in findings
     )
 
@@ -2063,7 +2062,7 @@ def test_owl_inline_template_sensitive_url_mapping_detected(tmp_path: Path) -> N
 def test_owl_inline_template_static_sensitive_url_example_ignored(tmp_path: Path) -> None:
     """Static examples/defaults should not create OWL sensitive URL noise."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<a href=\"/docs?access_token=example\">Docs</a>`;\n", encoding="utf-8")
+    path.write_text('export const template = xml`<a href="/docs?access_token=example">Docs</a>`;\n', encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -2073,14 +2072,12 @@ def test_owl_inline_template_static_sensitive_url_example_ignored(tmp_path: Path
 def test_owl_inline_template_sensitive_field_render_detected(tmp_path: Path) -> None:
     """OWL inline templates should not expose credential-shaped values."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<span t-out=\"props.accessToken\"/>`;\n", encoding="utf-8")
+    path.write_text('export const template = xml`<span t-out="props.accessToken"/>`;\n', encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-owl-qweb-sensitive-field-render"
-        and f.sink == "owl-template"
-        and f.severity == "high"
+        f.rule_id == "odoo-web-owl-qweb-sensitive-field-render" and f.sink == "owl-template" and f.severity == "high"
         for f in findings
     )
 
@@ -2088,7 +2085,7 @@ def test_owl_inline_template_sensitive_field_render_detected(tmp_path: Path) -> 
 def test_owl_inline_template_sensitive_data_attribute_detected(tmp_path: Path) -> None:
     """Credential-shaped dynamic data attributes are still exposed to browser scripts."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<input t-att-data-token=\"props.csrf_token\"/>`;\n", encoding="utf-8")
+    path.write_text('export const template = xml`<input t-att-data-token="props.csrf_token"/>`;\n', encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -2098,7 +2095,7 @@ def test_owl_inline_template_sensitive_data_attribute_detected(tmp_path: Path) -
 def test_owl_inline_template_non_sensitive_field_render_ignored(tmp_path: Path) -> None:
     """Routine escaped field output should not create credential exposure leads."""
     path = tmp_path / "widget.js"
-    path.write_text("export const template = xml`<span t-out=\"props.display_name\"/>`;\n", encoding="utf-8")
+    path.write_text('export const template = xml`<span t-out="props.display_name"/>`;\n', encoding="utf-8")
 
     findings = WebAssetScanner(path).scan_file()
 
@@ -2552,10 +2549,7 @@ document.head.appendChild(script);
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-insecure-asset-url"
-        and f.sink == "script"
-        and f.severity == "medium"
-        for f in findings
+        f.rule_id == "odoo-web-insecure-asset-url" and f.sink == "script" and f.severity == "medium" for f in findings
     )
 
 
@@ -2570,9 +2564,7 @@ def test_frontend_url_embedded_credentials_detected(tmp_path: Path) -> None:
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-url-embedded-credentials"
-        and f.sink == "url-credentials"
-        and f.severity == "high"
+        f.rule_id == "odoo-web-url-embedded-credentials" and f.sink == "url-credentials" and f.severity == "high"
         for f in findings
     )
 
@@ -2642,9 +2634,7 @@ document.head.appendChild(style);
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-insecure-asset-url"
-        and f.sink == "stylesheet"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-insecure-asset-url" and f.sink == "stylesheet" and f.severity == "medium"
         for f in findings
     )
 
@@ -2768,9 +2758,7 @@ def test_dynamic_odoo_action_window_detected(tmp_path: Path) -> None:
     findings = WebAssetScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-web-dynamic-action-window"
-        and f.sink == "ir.actions.act_window"
-        and f.severity == "medium"
+        f.rule_id == "odoo-web-dynamic-action-window" and f.sink == "ir.actions.act_window" and f.severity == "medium"
         for f in findings
     )
 
@@ -2820,7 +2808,9 @@ this.el.querySelector('img').setAttribute('srcset', checkout);
     findings = WebAssetScanner(path).scan_file()
 
     assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "element.href") == 2
-    assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "setAttribute-url") == 2
+    assert (
+        sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "setAttribute-url") == 2
+    )
 
 
 def test_dynamic_jquery_url_attribute_detected(tmp_path: Path) -> None:
@@ -2855,7 +2845,9 @@ this.$link.attr('ping', beacon);
     findings = WebAssetScanner(path).scan_file()
 
     assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "element.href") == 1
-    assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "setAttribute-url") == 1
+    assert (
+        sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "setAttribute-url") == 1
+    )
     assert sum(1 for f in findings if f.rule_id == "odoo-web-client-side-redirect" and f.sink == "jquery.attr-url") == 1
 
 

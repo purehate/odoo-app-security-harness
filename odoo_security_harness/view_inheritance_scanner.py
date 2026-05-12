@@ -9,7 +9,7 @@ from typing import Any
 
 from defusedxml import ElementTree
 
-from odoo_security_harness.base_scanner import _line_for, _record_fields, XmlScanner, _should_skip
+from odoo_security_harness.base_scanner import XmlScanner, _line_for, _record_fields, _should_skip
 
 
 @dataclass

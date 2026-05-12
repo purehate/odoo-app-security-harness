@@ -6,6 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 from odoo_security_harness.base_scanner import _should_skip
 
 
@@ -1108,7 +1109,6 @@ def _unpack_target_value_pairs(
     rest_value = ast.List(elts=value.elts[starred_index:after_values_start], ctx=ast.Load())
     after = list(zip(target.elts[starred_index + 1 :], value.elts[after_values_start:], strict=False))
     return [*before, (target.elts[starred_index], rest_value), *after]
-
 
 
 def findings_to_json(findings: list[FileUploadFinding]) -> list[dict[str, Any]]:

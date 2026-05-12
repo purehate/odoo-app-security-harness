@@ -589,9 +589,7 @@ class Controller(http.Controller):
     findings = scan_cache_headers(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-cache-public-sensitive-response"
-        and f.severity == "high"
-        and f.route == "/public/token"
+        f.rule_id == "odoo-cache-public-sensitive-response" and f.severity == "high" and f.route == "/public/token"
         for f in findings
     )
 
@@ -622,9 +620,7 @@ class Controller(http.Controller):
     findings = scan_cache_headers(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-cache-public-sensitive-response"
-        and f.severity == "high"
-        and f.route == "/public/token"
+        f.rule_id == "odoo-cache-public-sensitive-response" and f.severity == "high" and f.route == "/public/token"
         for f in findings
     )
 
@@ -755,9 +751,7 @@ class Controller(http.Controller):
     findings = scan_cache_headers(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-cache-public-sensitive-response"
-        and f.severity == "high"
-        and f.route == "/public/token"
+        f.rule_id == "odoo-cache-public-sensitive-response" and f.severity == "high" and f.route == "/public/token"
         for f in findings
     )
 
@@ -823,9 +817,7 @@ class Controller(http.Controller):
 
     findings = scan_cache_headers(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-cache-public-file-download" and f.route == "/public/download" for f in findings
-    )
+    assert any(f.rule_id == "odoo-cache-public-file-download" and f.route == "/public/download" for f in findings)
 
 
 def test_keyword_constant_backed_public_sensitive_file_download_is_reported(tmp_path: Path) -> None:
@@ -850,9 +842,7 @@ class Controller(http.Controller):
 
     findings = scan_cache_headers(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-cache-public-file-download" and f.route == "/public/download" for f in findings
-    )
+    assert any(f.rule_id == "odoo-cache-public-file-download" and f.route == "/public/download" for f in findings)
 
 
 def test_assigned_public_sensitive_response_is_reported_on_neutral_route(tmp_path: Path) -> None:

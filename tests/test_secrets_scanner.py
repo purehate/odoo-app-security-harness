@@ -86,9 +86,7 @@ MIIEvQIBADANBgkqhkiG9w0BAQEFAASC
     findings = SecretScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-secret-private-key-block"
-        and f.severity == "critical"
-        and f.redacted == "<private-key>"
+        f.rule_id == "odoo-secret-private-key-block" and f.severity == "critical" and f.redacted == "<private-key>"
         for f in findings
     )
 
@@ -161,8 +159,7 @@ def test_ir_config_parameter_integration_key_in_xml(tmp_path: Path) -> None:
     findings = SecretScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "access_key"
-        for f in findings
+        f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "access_key" for f in findings
     )
     assert any(
         f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "reset_password_url"
@@ -279,8 +276,7 @@ def test_ir_config_parameter_integration_key_in_csv(tmp_path: Path) -> None:
     findings = SecretScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "license_key"
-        for f in findings
+        f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "license_key" for f in findings
     )
     assert any(
         f.rule_id == "odoo-secret-config-parameter" and f.secret_kind == "connector." + "reset_password_url"
@@ -350,8 +346,7 @@ def test_integration_key_in_config_file_is_reported(tmp_path: Path) -> None:
     findings = SecretScanner(path).scan_file()
 
     assert any(
-        f.rule_id == "odoo-secret-config-file-value" and f.secret_kind == "connector_" + "access_key"
-        for f in findings
+        f.rule_id == "odoo-secret-config-file-value" and f.secret_kind == "connector_" + "access_key" for f in findings
     )
     assert any(
         f.rule_id == "odoo-secret-config-file-value" and f.secret_kind == "connector_" + "reset_password_url"
@@ -395,9 +390,7 @@ def test_yaml_unquoted_secret_assignment_is_reported(tmp_path: Path) -> None:
     findings = scan_secrets(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-secret-hardcoded-value"
-        and f.file == str(path)
-        and f.secret_kind == "api_key"
+        f.rule_id == "odoo-secret-hardcoded-value" and f.file == str(path) and f.secret_kind == "api_key"
         for f in findings
     )
     assert not any(f.secret_kind == "password" for f in findings)
@@ -417,9 +410,7 @@ ODOO_PASSWORD=${ODOO_PASSWORD}
     findings = scan_secrets(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-secret-hardcoded-value"
-        and f.file == str(path)
-        and f.secret_kind == "odoo_api_key"
+        f.rule_id == "odoo-secret-hardcoded-value" and f.file == str(path) and f.secret_kind == "odoo_api_key"
         for f in findings
     )
     assert not any(f.secret_kind == "odoo_password" for f in findings)
@@ -439,9 +430,7 @@ ENV ODOO_PASSWORD=${ODOO_PASSWORD}
     findings = scan_secrets(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-secret-hardcoded-value"
-        and f.file == str(path)
-        and f.secret_kind == "odoo_api_key"
+        f.rule_id == "odoo-secret-hardcoded-value" and f.file == str(path) and f.secret_kind == "odoo_api_key"
         for f in findings
     )
     assert not any(f.secret_kind == "odoo_password" for f in findings)

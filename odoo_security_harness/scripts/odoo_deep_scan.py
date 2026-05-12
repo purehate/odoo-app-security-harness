@@ -34,7 +34,6 @@ from pathlib import Path
 
 import yaml
 
-from odoo_security_harness.base_scanner import _should_skip
 from odoo_security_harness import (
     analyze_access_control,
     analyze_directory,
@@ -106,6 +105,7 @@ from odoo_security_harness import (
     scan_xml_data,
     validation_report,
 )
+from odoo_security_harness.base_scanner import _should_skip
 
 _SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
 _SEVERITY_RANK = {severity: index for index, severity in enumerate(_SEVERITY_ORDER)}

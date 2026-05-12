@@ -1230,7 +1230,6 @@ def _csv_dict_rows(content: str) -> list[tuple[dict[str, str], int]]:
     return rows
 
 
-
 def findings_to_json(findings: list[ApiKeyFinding]) -> list[dict[str, Any]]:
     """Convert findings to JSON-serializable dictionaries."""
     return [

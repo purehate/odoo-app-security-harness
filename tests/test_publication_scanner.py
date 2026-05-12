@@ -210,8 +210,7 @@ def test_public_attachment_csv_is_reported(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.attachment.csv").write_text(
-        "id,name,res_model,public\n"
-        "attachment_invoice,invoice.pdf,account.move,1\n",
+        "id,name,res_model,public\n" "attachment_invoice,invoice.pdf,account.move,1\n",
         encoding="utf-8",
     )
 
@@ -227,17 +226,14 @@ def test_active_public_attachment_csv_is_reported(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "ir.attachment.csv").write_text(
-        "id,name,mimetype,public\n"
-        "attachment_widget,widget.html,text/html,1\n",
+        "id,name,mimetype,public\n" "attachment_widget,widget.html,text/html,1\n",
         encoding="utf-8",
     )
 
     findings = scan_publication(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-publication-active-public-attachment"
-        and "mimetype=text/html" in f.message
-        for f in findings
+        f.rule_id == "odoo-publication-active-public-attachment" and "mimetype=text/html" in f.message for f in findings
     )
 
 
@@ -246,8 +242,7 @@ def test_sensitive_website_published_csv_is_reported(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "res_partner.csv").write_text(
-        "id,name,website_published\n"
-        "vip_customer,VIP Customer,True\n",
+        "id,name,website_published\n" "vip_customer,VIP Customer,True\n",
         encoding="utf-8",
     )
 
@@ -266,8 +261,7 @@ def test_portal_share_csv_sensitive_target_is_reported(tmp_path: Path) -> None:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "portal_share.csv").write_text(
-        "id,res_model/id,access_warning\n"
-        "share_provider,payment.model_payment_provider,\n",
+        "id,res_model/id,access_warning\n" "share_provider,payment.model_payment_provider,\n",
         encoding="utf-8",
     )
 
@@ -281,8 +275,7 @@ def test_portal_share_csv_colon_res_model_sensitive_target_is_reported(tmp_path:
     data = tmp_path / "module" / "data"
     data.mkdir(parents=True)
     (data / "portal_share.csv").write_text(
-        "id,res_model:id,access_warning\n"
-        "share_provider,payment.model_payment_provider,\n",
+        "id,res_model:id,access_warning\n" "share_provider,payment.model_payment_provider,\n",
         encoding="utf-8",
     )
 
@@ -565,9 +558,7 @@ class Publish(odoo_http.Controller):
     assert "odoo-publication-public-route-mutation" in rule_ids
     assert "odoo-publication-sensitive-runtime-published" in rule_ids
     assert "odoo-publication-tainted-runtime-published" in rule_ids
-    assert any(
-        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings)
 
 
 def test_imported_odoo_module_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
@@ -595,9 +586,7 @@ class Publish(od.http.Controller):
     assert "odoo-publication-public-route-mutation" in rule_ids
     assert "odoo-publication-sensitive-runtime-published" in rule_ids
     assert "odoo-publication-tainted-runtime-published" in rule_ids
-    assert any(
-        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings)
 
 
 def test_non_odoo_route_decorator_runtime_publication_write_is_not_public(tmp_path: Path) -> None:
@@ -663,9 +652,7 @@ class Publish(http.Controller):
     assert "odoo-publication-public-route-mutation" in rule_ids
     assert "odoo-publication-sensitive-runtime-published" in rule_ids
     assert "odoo-publication-tainted-runtime-published" in rule_ids
-    assert any(
-        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings)
 
 
 def test_class_constant_backed_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
@@ -696,9 +683,7 @@ class Publish(http.Controller):
     assert "odoo-publication-public-route-mutation" in rule_ids
     assert "odoo-publication-sensitive-runtime-published" in rule_ids
     assert "odoo-publication-tainted-runtime-published" in rule_ids
-    assert any(
-        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings)
 
 
 def test_static_unpack_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
@@ -728,12 +713,8 @@ class Publish(http.Controller):
 
     findings = scan_publication(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings
-    )
-    assert any(
-        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings)
+    assert any(f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings)
 
 
 def test_nested_static_unpack_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
@@ -760,12 +741,8 @@ class Publish(http.Controller):
 
     findings = scan_publication(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings
-    )
-    assert any(
-        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings)
+    assert any(f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings)
 
 
 def test_dict_union_static_unpack_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
@@ -792,12 +769,8 @@ class Publish(http.Controller):
 
     findings = scan_publication(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings
-    )
-    assert any(
-        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings)
+    assert any(f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings)
 
 
 def test_updated_static_unpack_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
@@ -832,12 +805,8 @@ class Publish(http.Controller):
 
     findings = scan_publication(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings
-    )
-    assert any(
-        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings)
+    assert any(f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings)
 
 
 def test_class_constant_static_unpack_public_route_runtime_publication_write_is_reported(tmp_path: Path) -> None:
@@ -867,12 +836,8 @@ class Publish(http.Controller):
 
     findings = scan_publication(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings
-    )
-    assert any(
-        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings)
+    assert any(f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings)
 
 
 def test_keyword_constant_backed_none_route_publication_write_is_critical(tmp_path: Path) -> None:
@@ -899,12 +864,8 @@ class Publish(http.Controller):
 
     findings = scan_publication(tmp_path)
 
-    assert any(
-        f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings
-    )
-    assert any(
-        f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings
-    )
+    assert any(f.rule_id == "odoo-publication-public-route-mutation" and f.severity == "critical" for f in findings)
+    assert any(f.rule_id == "odoo-publication-tainted-runtime-published" and f.severity == "critical" for f in findings)
 
 
 def test_constant_alias_runtime_publication_write_is_reported(tmp_path: Path) -> None:

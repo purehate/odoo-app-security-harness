@@ -600,8 +600,10 @@ def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, as
     if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
         return False
     parsed = urlparse(value.value.strip())
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
-        parsed.username is not None or parsed.password is not None
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.hostname)
+        and (parsed.username is not None or parsed.password is not None)
     )
 
 
@@ -674,9 +676,7 @@ def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST
     return values
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant_seen(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -767,7 +767,6 @@ def _destructive_without_where(sql: str) -> bool:
     if re.search(r"\b(drop|truncate|alter\s+table)\b", lowered):
         return True
     return "delete from" in lowered and " where " not in lowered
-
 
 
 def findings_to_json(findings: list[MigrationFinding]) -> list[dict[str, Any]]:

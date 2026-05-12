@@ -576,8 +576,7 @@ def test_xml_config_parameter_insecure_base_url_is_reported(tmp_path: Path) -> N
     findings = XmlDataScanner(xml).scan_file()
 
     assert any(
-        finding.rule_id == "odoo-xml-config-param-insecure-base-url"
-        and finding.record_id == "config_base_url"
+        finding.rule_id == "odoo-xml-config-param-insecure-base-url" and finding.record_id == "config_base_url"
         for finding in findings
     )
 
@@ -616,8 +615,7 @@ def test_xml_mail_server_without_tls_is_reported(tmp_path: Path) -> None:
     findings = XmlDataScanner(xml).scan_file()
 
     assert any(
-        finding.rule_id == "odoo-xml-mail-server-no-tls"
-        and finding.record_id == "mail_server_cleartext"
+        finding.rule_id == "odoo-xml-mail-server-no-tls" and finding.record_id == "mail_server_cleartext"
         for finding in findings
     )
 
@@ -640,8 +638,7 @@ def test_xml_mail_server_hardcoded_credential_is_reported(tmp_path: Path) -> Non
     findings = XmlDataScanner(xml).scan_file()
 
     assert any(
-        finding.rule_id == "odoo-xml-mail-server-hardcoded-credential"
-        and finding.record_id == "mail_server_secret"
+        finding.rule_id == "odoo-xml-mail-server-hardcoded-credential" and finding.record_id == "mail_server_secret"
         for finding in findings
     )
 
@@ -659,8 +656,7 @@ def test_csv_mail_server_starttls_is_not_reported(tmp_path: Path) -> None:
     findings = XmlDataScanner(csv_file).scan_csv_file()
 
     assert any(
-        finding.rule_id == "odoo-xml-mail-server-no-tls"
-        and finding.record_id == "mail_server_cleartext"
+        finding.rule_id == "odoo-xml-mail-server-no-tls" and finding.record_id == "mail_server_cleartext"
         for finding in findings
     )
     assert not any(
@@ -681,8 +677,7 @@ def test_csv_mail_server_hardcoded_credential_is_reported(tmp_path: Path) -> Non
     findings = XmlDataScanner(csv_file).scan_csv_file()
 
     assert any(
-        finding.rule_id == "odoo-xml-mail-server-hardcoded-credential"
-        and finding.record_id == "mail_server_secret"
+        finding.rule_id == "odoo-xml-mail-server-hardcoded-credential" and finding.record_id == "mail_server_secret"
         for finding in findings
     )
 

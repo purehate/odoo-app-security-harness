@@ -148,9 +148,7 @@ def test_flags_qweb_mapped_file_upload_accept(tmp_path: Path) -> None:
 
     assert "odoo-website-form-file-upload" in rule_ids
     assert any(
-        f.rule_id == "odoo-website-form-active-file-upload"
-        and "image/svg+xml" in f.message
-        and ".html" in f.message
+        f.rule_id == "odoo-website-form-active-file-upload" and "image/svg+xml" in f.message and ".html" in f.message
         for f in findings
     )
 
@@ -214,10 +212,7 @@ def test_flags_get_method_website_form_submission(tmp_path: Path) -> None:
     findings = scan_website_forms(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-website-form-get-method"
-        and f.severity == "high"
-        and f.field == "method"
-        for f in findings
+        f.rule_id == "odoo-website-form-get-method" and f.severity == "high" and f.field == "method" for f in findings
     )
     assert not any(f.rule_id == "odoo-website-form-missing-csrf-token" for f in findings)
 
@@ -240,10 +235,7 @@ def test_flags_qweb_mapped_get_method_submission(tmp_path: Path) -> None:
     findings = scan_website_forms(tmp_path)
 
     assert any(
-        f.rule_id == "odoo-website-form-get-method"
-        and f.severity == "high"
-        and f.field == "method"
-        for f in findings
+        f.rule_id == "odoo-website-form-get-method" and f.severity == "high" and f.field == "method" for f in findings
     )
     assert not any(f.rule_id == "odoo-website-form-missing-csrf-token" for f in findings)
 
@@ -567,9 +559,7 @@ def test_flags_token_visibility_and_relational_website_form_fields(tmp_path: Pat
     )
 
     findings = scan_website_forms(tmp_path)
-    sensitive_fields = {
-        finding.field for finding in findings if finding.rule_id == "odoo-website-form-sensitive-field"
-    }
+    sensitive_fields = {finding.field for finding in findings if finding.rule_id == "odoo-website-form-sensitive-field"}
 
     assert {
         "signup_token",

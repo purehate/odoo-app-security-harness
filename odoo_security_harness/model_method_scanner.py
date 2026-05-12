@@ -771,8 +771,10 @@ def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, as
     if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
         return False
     parsed = urlparse(value.value.strip())
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
-        parsed.username is not None or parsed.password is not None
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.hostname)
+        and (parsed.username is not None or parsed.password is not None)
     )
 
 
@@ -814,9 +816,7 @@ def _dict_keyword_values(node: ast.Dict, name: str, constants: dict[str, ast.AST
     return values
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant_seen(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -954,7 +954,6 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _is_static_literal(node.left) and _is_static_literal(node.right)
     return isinstance(node, ast.Constant) and isinstance(node.value, str | bool | int | float | type(None))
-
 
 
 def findings_to_json(findings: list[ModelMethodFinding]) -> list[dict[str, Any]]:

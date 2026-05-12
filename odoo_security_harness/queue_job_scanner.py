@@ -525,9 +525,7 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[st
     return node
 
 
-def _resolve_static_dict(
-    node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None
-) -> ast.Dict | None:
+def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
     seen = seen or set()
     node = _resolve_constant(node, constants, seen)
     if isinstance(node, ast.Dict):
@@ -594,8 +592,10 @@ def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, as
     if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
         return False
     parsed = urlparse(value.value.strip())
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
-        parsed.username is not None or parsed.password is not None
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.hostname)
+        and (parsed.username is not None or parsed.password is not None)
     )
 
 
@@ -906,7 +906,6 @@ def _enqueue_has_keyword(node: ast.Call, name: str) -> bool:
         else:
             current = current.value
     return False
-
 
 
 def findings_to_json(findings: list[QueueJobFinding]) -> list[dict[str, Any]]:

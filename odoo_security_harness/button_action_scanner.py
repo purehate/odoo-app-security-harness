@@ -650,7 +650,6 @@ def _is_static_literal(node: ast.AST) -> bool:
     return False
 
 
-
 def findings_to_json(findings: list[ButtonActionFinding]) -> list[dict[str, Any]]:
     """Convert findings to JSON-serializable dictionaries."""
     return [

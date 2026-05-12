@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import yaml
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
+
 from odoo_security_harness.base_scanner import _line_for
 
 
@@ -769,8 +770,10 @@ def _url_has_embedded_credentials(value: str) -> bool:
     if not normalized:
         return False
     parsed = urlparse(normalized)
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
-        parsed.username is not None or parsed.password is not None
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.hostname)
+        and (parsed.username is not None or parsed.password is not None)
     )
 
 

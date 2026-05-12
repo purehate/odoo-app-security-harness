@@ -895,8 +895,7 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
 
 def _regex_sudo_mutation(code: str) -> bool:
     superuser_with_user = (
-        r"with_user\(\s*(?:(?:user|uid)\s*=\s*)?"
-        r"(?:SUPERUSER_ID|1|[^)]*base\.user_(?:admin|root)[^)]*)\s*\)"
+        r"with_user\(\s*(?:(?:user|uid)\s*=\s*)?" r"(?:SUPERUSER_ID|1|[^)]*base\.user_(?:admin|root)[^)]*)\s*\)"
     )
     return bool(re.search(rf"\.(?:sudo\(\)|{superuser_with_user}).*?\.(write|create|unlink)\s*\(", code, re.DOTALL))
 
@@ -1025,7 +1024,9 @@ def _is_http_call(node: ast.AST) -> bool:
             ".put",
             ".request",
         )
-    ) and _call_root_name(node) in {"client", "session"}
+    ) and _call_root_name(
+        node
+    ) in {"client", "session"}
 
 
 def _keyword_is_false(node: ast.Call, name: str, constants: dict[str, ast.AST]) -> bool:
@@ -1072,8 +1073,10 @@ def _literal_url_has_embedded_credentials(node: ast.AST, constants: dict[str, as
     if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
         return False
     parsed = urlparse(value.value.strip())
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
-        parsed.username is not None or parsed.password is not None
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.hostname)
+        and (parsed.username is not None or parsed.password is not None)
     )
 
 
@@ -1288,8 +1291,10 @@ def _url_has_embedded_credentials(value: str) -> bool:
     if not normalized:
         return False
     parsed = urlparse(normalized)
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and (
-        parsed.username is not None or parsed.password is not None
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.hostname)
+        and (parsed.username is not None or parsed.password is not None)
     )
 
 

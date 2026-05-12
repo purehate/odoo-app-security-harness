@@ -54,6 +54,7 @@ class ParallelScanner:
         try:
             preexec_fn = None
             if max_memory_mb:
+
                 def apply_memory_limit() -> None:
                     _set_memory_limit(max_memory_mb)
 

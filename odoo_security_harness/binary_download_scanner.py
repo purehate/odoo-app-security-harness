@@ -1347,7 +1347,6 @@ def _safe_unparse(node: ast.AST) -> str:
         return ""
 
 
-
 def findings_to_json(findings: list[BinaryDownloadFinding]) -> list[dict[str, Any]]:
     """Convert findings to JSON-serializable dictionaries."""
     return [
