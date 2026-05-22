@@ -1374,9 +1374,10 @@ class TestController(http.Controller):
 
     assert analyze_directory(tmp_path) == []
 
-    def test_detects_public_route_with_read_group(self) -> None:
-        """_read_group (Odoo 17+ private method) should be treated like read_group."""
-        source = """
+
+def test_detects_public_route_with_read_group() -> None:
+    """_read_group (Odoo 17+ private method) should be treated like read_group."""
+    source = """
 from odoo import http
 from odoo.http import request
 
@@ -1386,15 +1387,16 @@ class TestController(http.Controller):
         data = request.env['res.partner'].sudo()._read_group([])
         return {'count': len(data)}
 """
-        analyzer = OdooDeepAnalyzer("test.py")
-        findings = analyzer.analyze(source)
-        rule_ids = {finding.rule_id for finding in findings}
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
 
-        assert "odoo-deep-public-sudo" in rule_ids
+    assert "odoo-deep-public-sudo" in rule_ids
 
-    def test_detects_getattr_with_tainted_name(self) -> None:
-        """getattr(self, request.params['field']) should be flagged as arbitrary attribute access."""
-        source = """
+
+def test_detects_getattr_with_tainted_name() -> None:
+    """getattr(self, request.params['field']) should be flagged as arbitrary attribute access."""
+    source = """
 from odoo import http
 from odoo.http import request
 
@@ -1405,15 +1407,16 @@ class TestController(http.Controller):
         value = getattr(self, field_name)
         return {'value': value}
 """
-        analyzer = OdooDeepAnalyzer("test.py")
-        findings = analyzer.analyze(source)
-        rule_ids = {finding.rule_id for finding in findings}
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
 
-        assert "odoo-deep-getattr-setattr-tainted-name" in rule_ids
+    assert "odoo-deep-getattr-setattr-tainted-name" in rule_ids
 
-    def test_detects_setattr_with_tainted_name(self) -> None:
-        """setattr(cls, request.params['field'], value) should be flagged."""
-        source = """
+
+def test_detects_setattr_with_tainted_name() -> None:
+    """setattr(cls, request.params['field'], value) should be flagged."""
+    source = """
 from odoo import http
 from odoo.http import request
 
@@ -1424,8 +1427,84 @@ class TestController(http.Controller):
         setattr(self, field_name, 'injected')
         return {'ok': True}
 """
-        analyzer = OdooDeepAnalyzer("test.py")
-        findings = analyzer.analyze(source)
-        rule_ids = {finding.rule_id for finding in findings}
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
 
-        assert "odoo-deep-getattr-setattr-tainted-name" in rule_ids
+    assert "odoo-deep-getattr-setattr-tainted-name" in rule_ids
+
+
+def test_detects_monkey_patch_base_model_create() -> None:
+    """odoo.models.BaseModel.create = _audited_create should be flagged."""
+    source = """
+import odoo
+from odoo import models as odoo_models
+
+def install_hooks():
+    odoo_models.BaseModel.create = _audited_create
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-monkey-patch-base-model" in rule_ids
+
+
+def test_detects_monkey_patch_base_model_write() -> None:
+    """models.BaseModel.write = _wrapped_write should be flagged."""
+    source = """
+from odoo import models
+
+models.BaseModel.write = _wrapped_write
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-monkey-patch-base-model" in rule_ids
+
+
+def test_detects_setattr_monkey_patch_base_model() -> None:
+    """setattr(BaseModel, 'unlink', _wrapped) should be flagged."""
+    source = """
+from odoo.models import BaseModel
+
+setattr(BaseModel, 'unlink', _wrapped_unlink)
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-monkey-patch-base-model" in rule_ids
+
+
+def test_detects_setattr_monkey_patch_odoo_models() -> None:
+    """setattr(odoo.models.BaseModel, 'create', _) should be flagged."""
+    source = """
+import odoo
+
+setattr(odoo.models.BaseModel, 'create', _wrapped)
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-monkey-patch-base-model" in rule_ids
+
+
+def test_ignores_normal_attribute_assignment() -> None:
+    """Regular model attribute assignments should not be flagged."""
+    source = """
+from odoo import models
+
+class MyModel(models.Model):
+    _name = 'my.model'
+
+    def action_do(self):
+        self.name = 'test'
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-monkey-patch-base-model" not in rule_ids

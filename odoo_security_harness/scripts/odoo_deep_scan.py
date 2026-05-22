@@ -1089,6 +1089,15 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "monkey_patch_base_model",
+        (
+            "odoo-deep-monkey-patch-base-model",
+            "module patches BaseModel method",
+            "monkey-patching of core ORM behavior",
+            "modifies BaseModel create/write/unlink",
+        ),
+    ),
+    (
         "model_method_sensitive_model_mutation",
         (
             "model-method-onchange-sensitive-model-mutation",

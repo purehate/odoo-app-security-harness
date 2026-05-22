@@ -927,6 +927,12 @@
       "capec": ["CAPEC-242"],
       "owasp": "A03:2021 Injection"
     },
+    "monkey_patch_base_model": {
+      "label": "Monkey-patching of BaseModel method",
+      "cwe": ["CWE-94", "CWE-696"],
+      "capec": ["CAPEC-242"],
+      "owasp": "A03:2021 Injection"
+    },
     "model_method_sensitive_model_mutation": {
       "label": "Odoo lifecycle model method mutates a sensitive model",
       "cwe": ["CWE-269", "CWE-284", "CWE-732"],

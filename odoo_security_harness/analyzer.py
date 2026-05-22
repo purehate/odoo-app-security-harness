@@ -80,6 +80,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.field_module_names: set[str] = {"fields"}
         self.superuser_names: set[str] = {"SUPERUSER_ID"}
         self.route_decorator_names: set[str] = set()
+        self.base_model_names: set[str] = {"BaseModel"}
+        self.models_module_names: set[str] = set()
         self.constants: dict[str, ast.AST] = {}
         self.class_constants_stack: list[dict[str, ast.AST]] = []
         self.local_constants: dict[str, ast.AST] = {}
@@ -103,6 +105,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 self.http_module_names.add(alias.asname)
             elif alias.name == "odoo.fields" and alias.asname:
                 self.field_module_names.add(alias.asname)
+            elif alias.name == "odoo.models" and alias.asname:
+                self.models_module_names.add(alias.asname)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -113,6 +117,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                     self.http_module_names.add(alias.asname or alias.name)
                 elif alias.name == "fields":
                     self.field_module_names.add(alias.asname or alias.name)
+                elif alias.name == "models":
+                    self.models_module_names.add(alias.asname or alias.name)
                 elif alias.name == "SUPERUSER_ID":
                     self.superuser_names.add(alias.asname or alias.name)
         if node.module == "odoo.http":
@@ -121,6 +127,12 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                     self.request_names.add(alias.asname or alias.name)
                 elif alias.name == "route":
                     self.route_decorator_names.add(alias.asname or alias.name)
+        if node.module == "odoo.models":
+            for alias in node.names:
+                if alias.name == "BaseModel":
+                    self.base_model_names.add(alias.asname or alias.name)
+                elif alias.name in {"models", "api", "fields"}:
+                    self.models_module_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -184,7 +196,12 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         self.local_constants = previous_local_constants
 
     def visit_Assign(self, node: ast.Assign) -> None:
-        """Visit assignments to track tainted variables."""
+        """Visit assignments to track tainted variables and monkey-patching."""
+        # Check for monkey-patching at module level or inside functions
+        for target in node.targets:
+            if self._is_monkey_patch_target(target):
+                self._check_monkey_patch(node, target)
+
         if self.current_function is None:
             self.generic_visit(node)
             return
@@ -204,6 +221,9 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """Visit annotated assignments to track tainted variables."""
+        if self._is_monkey_patch_target(node.target):
+            self._check_monkey_patch(node, node.target)
+
         if self.current_function is None or node.value is None:
             self.generic_visit(node)
             return
@@ -262,6 +282,10 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
         if self._is_html_sanitize_call(node):
             self._check_html_sanitize_options(node)
+
+        # Detect setattr-based monkey-patching of BaseModel (module-level or inside functions)
+        if self._is_setattr_monkey_patch(node):
+            self._check_setattr_monkey_patch(node)
 
         if self.current_function is None:
             self.generic_visit(node)
@@ -868,6 +892,80 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 column=node.col_offset,
                 message=f"{node.func.id if isinstance(node.func, ast.Name) else node.func.attr}() receives an attribute name from user-controlled data; this can lead to arbitrary attribute access or manipulation",
             )
+
+    # -- Monkey-patch detection --
+
+    _MONKEY_PATCH_CRITICAL_ATTRS = {"create", "write", "unlink", "read", "search", "browse", "copy", "exists", "ensure_one"}
+
+    def _is_monkey_patch_target(self, target: ast.AST) -> bool:
+        """Check if assignment target is a BaseModel attribute (monkey-patch)."""
+        if not isinstance(target, ast.Attribute):
+            return False
+        # Target looks like BaseModel.create or odoo.models.BaseModel.create
+        base = target.value
+        if isinstance(base, ast.Attribute) and base.attr == "BaseModel":
+            # Could be models.BaseModel or odoo.models.BaseModel
+            if isinstance(base.value, ast.Name):
+                if base.value.id in self.models_module_names or base.value.id in self.odoo_module_names:
+                    return True
+            if isinstance(base.value, ast.Attribute) and base.value.attr == "models":
+                if isinstance(base.value.value, ast.Name) and base.value.value.id in self.odoo_module_names:
+                    return True
+        # Could be direct BaseModel.create if BaseModel imported from odoo.models
+        if isinstance(base, ast.Name) and base.id in self.base_model_names:
+            return True
+        return False
+
+    def _check_monkey_patch(self, node: ast.Assign | ast.AnnAssign, target: ast.Attribute) -> None:
+        """Flag monkey-patching of BaseModel methods as a security concern."""
+        attr_name = target.attr
+        severity = "high" if attr_name in self._MONKEY_PATCH_CRITICAL_ATTRS else "medium"
+        self._add_finding(
+            rule_id="odoo-deep-monkey-patch-base-model",
+            title="Monkey-patching of BaseModel method",
+            severity=severity,
+            line=node.lineno,
+            column=node.col_offset,
+            message=f"Module patches BaseModel.{attr_name}; this modifies core ORM behavior for all models and is a significant security/reliability risk. Verify the patch is narrowly scoped and has an uninstall hook to restore the original method.",
+        )
+
+    def _is_setattr_monkey_patch(self, node: ast.Call) -> bool:
+        """Check if call is setattr(BaseModel, 'create', ...) or similar."""
+        if not isinstance(node.func, ast.Name) or node.func.id != "setattr":
+            return False
+        if len(node.args) < 2:
+            return False
+        obj_arg = node.args[0]
+        # setattr(BaseModel, ...)
+        if isinstance(obj_arg, ast.Name) and obj_arg.id in self.base_model_names:
+            return True
+        # setattr(odoo.models.BaseModel, ...) or setattr(models.BaseModel, ...)
+        if isinstance(obj_arg, ast.Attribute) and obj_arg.attr == "BaseModel":
+            if isinstance(obj_arg.value, ast.Name):
+                if obj_arg.value.id in self.models_module_names or obj_arg.value.id in self.odoo_module_names:
+                    return True
+            if isinstance(obj_arg.value, ast.Attribute) and obj_arg.value.attr == "models":
+                if isinstance(obj_arg.value.value, ast.Name) and obj_arg.value.value.id in self.odoo_module_names:
+                    return True
+        return False
+
+    def _check_setattr_monkey_patch(self, node: ast.Call) -> None:
+        """Flag setattr-based monkey-patching of BaseModel."""
+        attr_arg = node.args[1]
+        attr_name = ""
+        if isinstance(attr_arg, ast.Constant) and isinstance(attr_arg.value, str):
+            attr_name = attr_arg.value
+        elif isinstance(attr_arg, ast.Str):  # Python < 3.8
+            attr_name = attr_arg.s
+        severity = "high" if attr_name in self._MONKEY_PATCH_CRITICAL_ATTRS else "medium"
+        self._add_finding(
+            rule_id="odoo-deep-monkey-patch-base-model",
+            title="Monkey-patching of BaseModel method via setattr",
+            severity=severity,
+            line=node.lineno,
+            column=node.col_offset,
+            message=f"Module uses setattr to patch BaseModel{' (' + attr_name + ')' if attr_name else ''}; this modifies core ORM behavior for all models and is a significant security/reliability risk.",
+        )
 
     def _check_mass_assignment(self, node: ast.Call) -> None:
         """Check for mass assignment in write/create."""
