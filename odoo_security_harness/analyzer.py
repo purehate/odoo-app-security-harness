@@ -336,6 +336,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
             self._check_tainted_search_domain(node)
         elif self._is_orm_read(node):
             self.current_function.calls_read = True
+            self._check_orm_read_fields(node)
         elif self._is_orm_browse(node):
             self._check_tainted_browse(node)
 
@@ -590,6 +591,44 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
     def _is_orm_browse(self, node: ast.Call) -> bool:
         """Check if call is an ORM browse()."""
         return isinstance(node.func, ast.Attribute) and node.func.attr == "browse"
+
+    def _check_orm_read_fields(self, node: ast.Call) -> None:
+        """Flag .read() calls without explicit field lists (info disclosure risk)."""
+        # Only flag in controllers/public methods
+        if not self.current_function or not self.current_function.is_controller:
+            return
+        # read() with no args
+        if len(node.args) == 0 and len(node.keywords) == 0:
+            self._add_finding(
+                rule_id="odoo-deep-orm-read-no-fields",
+                title="ORM read() without explicit fields in controller",
+                severity="medium",
+                line=node.lineno,
+                column=node.col_offset,
+                message="record.read() with no field list returns all fields including potentially sensitive ones; pass an explicit fields list",
+            )
+            return
+        # read([]) - empty list
+        if len(node.args) >= 1 and isinstance(node.args[0], (ast.List, ast.Tuple)) and len(node.args[0].elts) == 0:
+            self._add_finding(
+                rule_id="odoo-deep-orm-read-empty-fields",
+                title="ORM read() with empty field list in controller",
+                severity="low",
+                line=node.lineno,
+                column=node.col_offset,
+                message="record.read([]) returns only id; verify this is intentional",
+            )
+            return
+        # read(tainted_var)
+        if len(node.args) >= 1 and isinstance(node.args[0], ast.Name) and node.args[0].id in self.tainted_vars:
+            self._add_finding(
+                rule_id="odoo-deep-orm-read-tainted-fields",
+                title="ORM read() with tainted field list in controller",
+                severity="medium",
+                line=node.lineno,
+                column=node.col_offset,
+                message="record.read() receives a field list from request-controlled data; verify field whitelist enforcement",
+            )
 
     def _is_with_user_admin(self, node: ast.Call) -> bool:
         """Check if call switches to the admin/root user."""

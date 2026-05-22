@@ -2664,6 +2664,12 @@
       "capec": ["CAPEC-126", "CAPEC-118"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "controller_orm_read_fields": {
+      "label": "Controller ORM read() without explicit field list or with tainted fields",
+      "cwe": ["CWE-200", "CWE-20"],
+      "capec": ["CAPEC-118"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "orm_context_active_test_disabled": {
       "label": "Odoo ORM context disables active record filtering and can include inactive records",
       "cwe": ["CWE-200", "CWE-284", "CWE-670"],

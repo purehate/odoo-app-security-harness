@@ -1508,3 +1508,61 @@ class MyModel(models.Model):
     rule_ids = {finding.rule_id for finding in findings}
 
     assert "odoo-deep-monkey-patch-base-model" not in rule_ids
+
+
+def test_detects_orm_read_without_fields_in_public_controller() -> None:
+    """record.read() in a public controller should be flagged."""
+    source = """
+from odoo import http
+from odoo.http import request
+
+class TestController(http.Controller):
+    @http.route('/test/read', auth='public')
+    def test_read(self):
+        partner = request.env['res.partner'].sudo().browse(1)
+        data = partner.read()
+        return {'data': data}
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-orm-read-no-fields" in rule_ids
+
+
+def test_allows_orm_read_with_fields_in_controller() -> None:
+    """record.read(['name']) in a controller should not be flagged."""
+    source = """
+from odoo import http
+from odoo.http import request
+
+class TestController(http.Controller):
+    @http.route('/test/read', auth='public')
+    def test_read(self):
+        partner = request.env['res.partner'].sudo().browse(1)
+        data = partner.read(['name', 'email'])
+        return {'data': data}
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-orm-read-no-fields" not in rule_ids
+
+
+def test_ignores_orm_read_without_fields_in_model() -> None:
+    """record.read() inside a model method should not be flagged."""
+    source = """
+from odoo import models
+
+class MyModel(models.Model):
+    _name = 'x.my.model'
+
+    def action_do(self):
+        return self.read()
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-orm-read-no-fields" not in rule_ids

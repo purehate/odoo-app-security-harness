@@ -4519,6 +4519,17 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "controller_orm_read_fields",
+        (
+            "odoo-deep-orm-read-no-fields",
+            "odoo-deep-orm-read-empty-fields",
+            "odoo-deep-orm-read-tainted-fields",
+            "controller calls read() without explicit field list",
+            "read() returns all fields including potentially sensitive ones",
+            "tainted field list passed to read()",
+        ),
+    ),
+    (
         "binary_content_sudo",
         (
             "odoo-binary-ir-http-binary-content-sudo",
