@@ -28,6 +28,10 @@ test-all: ## Run all tests including slow/integration
 test-cov: ## Run tests with coverage report
 	pytest --cov=odoo_security_harness --cov-report=html --cov-report=term
 
+test-corpus: ## Fetch OCA corpus and run corpus integration tests
+	python -m tests.corpus.fetch_oca
+	pytest -m corpus tests/corpus/
+
 lint: ## Run all linters
 	black --check .
 	ruff check .

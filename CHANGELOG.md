@@ -16,8 +16,11 @@ All notable changes to the Odoo Application Security Harness will be documented 
 - **Field tracking validation** — flags `tracking=True` on models not inheriting `mail.thread` (`odoo-field-tracking-without-mail-thread`)
 - **Privileged group admin check** — flags `res.groups` with admin-level names missing `base.user_root`/`base.user_admin` (`odoo-xml-privileged-group-missing-admin-users`)
 - **QWeb dynamic t-component detection** — flags dynamic `t-component` template selection (`odoo-qweb-dynamic-t-component`)
+- **Auto-fix catalog** — 135 rule IDs mapped to Odoo-idiomatic remediation text (`odoo_security_harness/fix_catalog.py`); injected into findings by `normalize_finding()`
+- **OCA Corpus Testing** — integration test harness against real OCA modules (`tests/corpus/`); validates scanners don't crash on real-world code
+- **OWASP Coverage Matrix** — `docs/owasp-coverage-matrix.md` mapping 589 shapes and 357 rules to OWASP Top 10 2021 with explicit gap analysis
 - Expanded taxonomy: 588 Odoo bug-shape → CWE/CAPEC/OWASP mappings (up from 584)
-- Comprehensive test suite with pytest (3841 tests, ~89% coverage on core modules)
+- Comprehensive test suite with pytest (3854 tests, ~89% coverage on core modules)
 - Docker support for consistent execution environments
 - GitHub Actions CI/CD pipeline
 - Pre-commit hooks for code quality

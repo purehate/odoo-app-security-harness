@@ -31,6 +31,14 @@ def normalize_finding(finding: dict[str, Any], index: int) -> dict[str, Any]:
     normalized.setdefault("triage", "NEEDS-MANUAL")
     normalized.setdefault("description", normalized.get("message") or normalized.get("title") or "")
     normalized.setdefault("fingerprint", compute_fingerprint(normalized))
+    # Attach Odoo-idiomatic auto-fix if available
+    rule_id = str(normalized.get("rule_id") or "")
+    if rule_id and "fix" not in normalized:
+        from odoo_security_harness.fix_catalog import get_fix_for_rule
+
+        fix_text = get_fix_for_rule(rule_id)
+        if fix_text:
+            normalized["fix"] = fix_text
     # Tag with Odoo Responsible Disclosure Policy classification
     try:
         from odoo_security_harness.odoo_disclosure_mapper import classify_finding

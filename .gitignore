@@ -16,3 +16,5 @@ id_ed25519*
 
 # Audit output (never commit client review artifacts)
 .audit/
+uv.lock
+tests/corpus/.cache/
