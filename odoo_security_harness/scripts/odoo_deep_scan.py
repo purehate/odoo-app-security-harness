@@ -9871,7 +9871,7 @@ def _route_text(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> s
     node = _resolve_constant(node, constants)
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         values = [
             element.value
             for raw_element in node.elts
@@ -9986,9 +9986,9 @@ def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dic
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return all(isinstance(element, ast.Constant | ast.Name) for element in node.elts)
+        return isinstance(node.value, (str, bool, int, float, type(None)))
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return all(isinstance(element, (ast.Constant, ast.Name)) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
             (
