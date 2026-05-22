@@ -36,7 +36,7 @@ HTTP_CLIENT_FACTORIES = {"AsyncClient", "Client", "ClientSession", "Session"}
 MUTATION_METHODS = {"create", "write", "unlink"}
 SENSITIVE_MODEL_MUTATION_METHODS = {*MUTATION_METHODS, "set", "set_param"}
 ELEVATED_BUSINESS_METHOD_PREFIXES = ("_action_", "_button_", "action_", "button_", "do_", "post_", "run_", "send_")
-UNBOUNDED_READ_METHODS = {"read_group", "search", "search_count", "search_read"}
+UNBOUNDED_READ_METHODS = {"_read_group", "read_group", "search", "search_count", "search_read"}
 SYNC_NAME_RE = re.compile(r"(^|_)(fetch|sync|import|pull|callback|callbacks|webhook|feed|export)($|_)", re.IGNORECASE)
 SENSITIVE_MUTATION_MODELS = {
     "account.move",

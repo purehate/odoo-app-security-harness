@@ -32,7 +32,7 @@ class ApiKeyFinding:
 
 API_KEY_MODELS = {"res.users.apikeys", "res.users.apikeys.description"}
 MUTATION_METHODS = {"create", "write", "unlink"}
-LOOKUP_METHODS = {"browse", "read_group", "search", "search_count", "search_read"}
+LOOKUP_METHODS = {"browse", "_read_group", "read_group", "search", "search_count", "search_read"}
 API_KEY_NAME_MARKERS = (
     "access_key",
     "access_token",

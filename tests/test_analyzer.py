@@ -1373,3 +1373,59 @@ class TestController(http.Controller):
     )
 
     assert analyze_directory(tmp_path) == []
+
+    def test_detects_public_route_with_read_group(self) -> None:
+        """_read_group (Odoo 17+ private method) should be treated like read_group."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+class TestController(http.Controller):
+    @http.route('/test/public', auth='public')
+    def test_public(self):
+        data = request.env['res.partner'].sudo()._read_group([])
+        return {'count': len(data)}
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-public-sudo" in rule_ids
+
+    def test_detects_getattr_with_tainted_name(self) -> None:
+        """getattr(self, request.params['field']) should be flagged as arbitrary attribute access."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+class TestController(http.Controller):
+    @http.route('/test/get', auth='public')
+    def test_get(self):
+        field_name = request.params.get('field')
+        value = getattr(self, field_name)
+        return {'value': value}
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-getattr-setattr-tainted-name" in rule_ids
+
+    def test_detects_setattr_with_tainted_name(self) -> None:
+        """setattr(cls, request.params['field'], value) should be flagged."""
+        source = """
+from odoo import http
+from odoo.http import request
+
+class TestController(http.Controller):
+    @http.route('/test/set', auth='public')
+    def test_set(self):
+        field_name = request.params.get('field')
+        setattr(self, field_name, 'injected')
+        return {'ok': True}
+"""
+        analyzer = OdooDeepAnalyzer("test.py")
+        findings = analyzer.analyze(source)
+        rule_ids = {finding.rule_id for finding in findings}
+
+        assert "odoo-deep-getattr-setattr-tainted-name" in rule_ids

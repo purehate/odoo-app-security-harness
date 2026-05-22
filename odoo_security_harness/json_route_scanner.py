@@ -27,7 +27,7 @@ class JsonRouteFinding:
 
 TAINTED_ARG_NAMES = {"data", "domain", "kwargs", "kw", "payload", "post", "values"}
 MUTATION_METHODS = {"create", "write", "unlink"}
-READ_METHODS = {"browse", "read", "read_group", "search", "search_count", "search_read"}
+READ_METHODS = {"browse", "read", "_read_group", "read_group", "search", "search_count", "search_read"}
 DOMAIN_READ_KEYWORDS = {"args", "domain"}
 ROUTE_ID_ARG_RE = re.compile(r"(?:^id$|_ids?$)")
 
@@ -271,7 +271,7 @@ class JsonRouteScanner(ast.NodeVisitor):
         if (
             domain_arg is not None
             and self._expr_is_tainted(domain_arg)
-            and method in {"search", "search_count", "search_read", "read_group"}
+            and method in {"search", "search_count", "search_read", "read_group", "_read_group"}
         ):
             self._add(
                 "odoo-json-route-tainted-domain",
@@ -829,7 +829,7 @@ def _call_chain_has_tainted_record_selector(node: ast.AST, is_tainted: Any) -> b
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
         if isinstance(current, ast.Call):
             method = _call_name(current.func).split(".")[-1]
-            if method in {"browse", "search", "search_count", "search_read", "read_group"} and _call_has_tainted_input(
+            if method in {"browse", "search", "search_count", "search_read", "read_group", "_read_group"} and _call_has_tainted_input(
                 current, is_tainted
             ):
                 return True

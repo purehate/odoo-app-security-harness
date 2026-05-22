@@ -1347,6 +1347,7 @@ def _set_cookie_name(node: ast.Call, constants: dict[str, ast.AST] | None = None
 def _is_res_users_lookup_call(node: ast.Call) -> bool:
     if not isinstance(node.func, ast.Attribute) or node.func.attr not in {
         "browse",
+        "_read_group",
         "read_group",
         "search",
         "search_count",

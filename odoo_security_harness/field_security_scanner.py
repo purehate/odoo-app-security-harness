@@ -281,6 +281,28 @@ class FieldSecurityScanner(ast.NodeVisitor):
                 field.name,
             )
 
+        if field.field_type == "Json":
+            if is_sensitive and not groups:
+                self._add(
+                    "odoo-field-json-sensitive-no-groups",
+                    "Json field with sensitive name lacks group restriction",
+                    "high",
+                    field.line,
+                    f"Json field '{field.name}' stores unstructured data and has no groups= restriction; secrets or tokens may be serialized without field-level protection",
+                    model,
+                    field.name,
+                )
+            if not groups:
+                self._add(
+                    "odoo-field-json-unstructured-no-groups",
+                    "Json field lacks group restriction",
+                    "medium",
+                    field.line,
+                    f"Json field '{field.name}' stores arbitrary JSON without groups= restriction; verify nested data cannot leak cross-user or cross-company information",
+                    model,
+                    field.name,
+                )
+
         if field.field_type == "Html":
             disabled_sanitizers = [
                 keyword for keyword in HTML_SANITIZER_KEYWORDS if _kw_is_false(field, keyword, constants)

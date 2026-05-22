@@ -44,7 +44,7 @@ PRIVILEGED_DEFAULT_FIELDS = {
     "user_id",
 }
 MUTATION_METHODS = {"create", "write", "unlink"}
-READ_METHODS = {"browse", "read", "read_group", "search", "search_count", "search_read"}
+READ_METHODS = {"browse", "read", "_read_group", "read_group", "search", "search_count", "search_read"}
 
 
 def scan_orm_context(repo_path: Path) -> list[OrmContextFinding]:

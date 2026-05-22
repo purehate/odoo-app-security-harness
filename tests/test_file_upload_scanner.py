@@ -1367,3 +1367,39 @@ def test_repository_scan_finds_upload_handlers(tmp_path: Path) -> None:
     findings = scan_file_uploads(tmp_path)
 
     assert len([f for f in findings if f.rule_id == "odoo-file-upload-tainted-path-write"]) == 1
+
+
+def test_tainted_open_read_path_is_reported(tmp_path: Path) -> None:
+    """Reading from request-controlled filenames should be reported."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def download(**kwargs):
+    filename = kwargs.get('filename')
+    with open(filename, 'r') as handle:
+        return handle.read()
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-tainted-path-read" for f in findings)
+
+
+def test_tainted_open_read_no_mode_is_reported(tmp_path: Path) -> None:
+    """Read-mode default open() on request-controlled paths should be reported."""
+    py = tmp_path / "controller.py"
+    py.write_text(
+        """
+def download(**kwargs):
+    filename = kwargs.get('filename')
+    with open(filename) as handle:
+        return handle.read()
+""",
+        encoding="utf-8",
+    )
+
+    findings = FileUploadScanner(py).scan_file()
+
+    assert any(f.rule_id == "odoo-file-upload-tainted-path-read" for f in findings)

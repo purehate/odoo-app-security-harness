@@ -24,7 +24,7 @@ class PortalFinding:
     sink: str = ""
 
 
-READ_METHODS = {"browse", "read", "read_group", "search", "search_count", "search_read"}
+READ_METHODS = {"browse", "read", "_read_group", "read_group", "search", "search_count", "search_read"}
 ACCESS_HELPERS = {
     "_document_check_access",
     "_get_page_view_values",

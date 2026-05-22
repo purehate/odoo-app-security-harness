@@ -1078,7 +1078,7 @@ def _is_token_lookup(
     text = _safe_unparse(node).lower()
     identity_model_names = identity_model_names or set()
     return (
-        method in {"search", "search_count", "search_read", "read_group"}
+        method in {"search", "search_count", "search_read", "read_group", "_read_group"}
         and (
             any(model in text for model in IDENTITY_MODEL_MARKERS)
             or sink.split(".", 1)[0] in identity_model_names
@@ -1220,6 +1220,7 @@ def _is_elevated_identity_access(
             "browse",
             "create",
             "read",
+            "_read_group",
             "read_group",
             "search",
             "search_count",

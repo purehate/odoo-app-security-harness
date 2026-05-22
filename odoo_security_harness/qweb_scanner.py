@@ -235,6 +235,9 @@ class QWebScanner:
             if attr_name == "t-call":
                 self._check_t_call(tag, attr_name, value)
 
+            if attr_name == "t-component":
+                self._check_t_component(tag, attr_name, value)
+
             if attr_name == "t-js":
                 self._add_finding(
                     rule_id="odoo-qweb-t-js-inline-script",
@@ -561,6 +564,32 @@ class QWebScanner:
             attribute=attr,
             message=f"t-call='{value}' chooses a template dynamically; verify untrusted data cannot select privileged templates",
         )
+
+    def _check_t_component(self, tag: str, attr: str, value: str) -> None:
+        """Check t-component for dynamic component selection."""
+        if not self._looks_dynamic_t_component(value):
+            return
+        self._add_finding(
+            rule_id="odoo-qweb-dynamic-t-component",
+            title="QWeb t-component uses dynamic component selection",
+            severity="medium",
+            element=tag,
+            attribute=attr,
+            message=f"t-component='{value}' selects a component dynamically; verify untrusted data cannot instantiate arbitrary or privileged components",
+        )
+
+    def _looks_dynamic_t_component(self, value: str) -> bool:
+        """Return True for t-component values that look expression-backed."""
+        stripped = value.strip()
+        if not stripped:
+            return False
+        # Literal component names are usually PascalCase strings like 'MyComponent'
+        if re.fullmatch(r"[A-Z][a-zA-Z0-9_]*", stripped):
+            return False
+        # String literals are safe
+        if re.fullmatch(r"'[^']+'|\"[^\"]+\"", stripped):
+            return False
+        return True
 
     def _looks_dynamic_t_call(self, value: str) -> bool:
         """Return True for t-call values that look expression-backed, not literal XML IDs."""

@@ -282,6 +282,10 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
             self.current_function.has_safe_eval = True
             self._check_safe_eval(node)
 
+        # Detect getattr/setattr with tainted names
+        if self._is_getattr_setattr(node):
+            self._check_getattr_setattr(node)
+
         # Detect request.params usage in calls
         for arg in node.args:
             if isinstance(arg, ast.Attribute) and self._is_request_params_attr(arg):
@@ -553,11 +557,11 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
     def _is_orm_search(self, node: ast.Call) -> bool:
         """Check if call is an ORM search or aggregate lookup."""
-        return isinstance(node.func, ast.Attribute) and node.func.attr in {"read_group", "search", "search_count"}
+        return isinstance(node.func, ast.Attribute) and node.func.attr in {"_read_group", "read_group", "search", "search_count"}
 
     def _is_orm_read(self, node: ast.Call) -> bool:
         """Check if call is an ORM read()."""
-        return isinstance(node.func, ast.Attribute) and node.func.attr in ("read", "search_read", "read_group")
+        return isinstance(node.func, ast.Attribute) and node.func.attr in ("read", "search_read", "read_group", "_read_group")
 
     def _is_orm_browse(self, node: ast.Call) -> bool:
         """Check if call is an ORM browse()."""
@@ -589,7 +593,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         """Check if call is sudo/admin-root search/read_group over an empty domain."""
         if not (
             isinstance(node.func, ast.Attribute)
-            and node.func.attr in {"read_group", "search", "search_count", "search_read"}
+            and node.func.attr in {"_read_group", "read_group", "search", "search_count", "search_read"}
         ):
             return False
         if not node.args or not self._is_empty_domain(node.args[0]):
@@ -842,6 +846,29 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                     message="safe_eval() called with user-controlled input; potential code execution",
                 )
 
+    def _is_getattr_setattr(self, node: ast.Call) -> bool:
+        """Check if call is getattr() or setattr() with potentially tainted name."""
+        if isinstance(node.func, ast.Name):
+            return node.func.id in {"getattr", "setattr"}
+        if isinstance(node.func, ast.Attribute):
+            return node.func.attr in {"getattr", "setattr"}
+        return False
+
+    def _check_getattr_setattr(self, node: ast.Call) -> None:
+        """Check for getattr/setattr with user-controlled attribute names."""
+        if len(node.args) < 2:
+            return
+        name_arg = node.args[1]
+        if self._is_tainted_expr(name_arg) or (isinstance(name_arg, ast.Name) and name_arg.id in self.tainted_vars):
+            self._add_finding(
+                rule_id="odoo-deep-getattr-setattr-tainted-name",
+                title="getattr/setattr with tainted attribute name",
+                severity="high",
+                line=node.lineno,
+                column=node.col_offset,
+                message=f"{node.func.id if isinstance(node.func, ast.Name) else node.func.attr}() receives an attribute name from user-controlled data; this can lead to arbitrary attribute access or manipulation",
+            )
+
     def _check_mass_assignment(self, node: ast.Call) -> None:
         """Check for mass assignment in write/create."""
         if len(node.args) < 1:
@@ -1031,7 +1058,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
             return
         if not (
             isinstance(node.func, ast.Attribute)
-            and node.func.attr in {"browse", "read_group", "search", "search_count", "search_read"}
+            and node.func.attr in {"browse", "_read_group", "read_group", "search", "search_count", "search_read"}
         ):
             return
         model_name = self._extract_env_model_name(node.func.value)

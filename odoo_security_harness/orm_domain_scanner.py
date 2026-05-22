@@ -46,7 +46,7 @@ CONTEXT_DOMAIN_MARKERS = (
     "self._context.get('active_domain'",
     'self._context.get("active_domain"',
 )
-DOMAIN_READ_METHODS = {"filtered_domain", "read_group", "search", "search_count", "search_read"}
+DOMAIN_READ_METHODS = {"filtered_domain", "_read_group", "read_group", "search", "search_count", "search_read"}
 DOMAIN_EVAL_SINKS = {"ast.literal_eval", "literal_eval", "safe_eval"}
 DOMAIN_READ_KEYWORDS = {"args", "domain"}
 DOMAIN_EVAL_KEYWORDS = {"expr", "expression", "source"}

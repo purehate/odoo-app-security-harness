@@ -1280,3 +1280,29 @@ def test_https_url_attribute_ignored(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert not any(f.rule_id == "odoo-qweb-insecure-asset-url" for f in findings)
+
+
+def test_detects_dynamic_t_component(tmp_path: Path) -> None:
+    """t-component with dynamic expression should be flagged."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        '''<odoo><template id="x"><MyWidget t-component="widget_name"/></template></odoo>''',
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-dynamic-t-component" for f in findings)
+
+
+def test_allows_literal_t_component(tmp_path: Path) -> None:
+    """t-component with a literal PascalCase string should not be flagged."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        '''<odoo><template id="x"><MyWidget t-component="'MyComponent'"/></template></odoo>''',
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-dynamic-t-component" for f in findings)

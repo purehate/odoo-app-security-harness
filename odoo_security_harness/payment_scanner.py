@@ -42,7 +42,7 @@ NOTIFICATION_METHODS = {
     "_get_tx_from_notification_data",
     "_process_payment_notification",
 }
-PAYMENT_TRANSACTION_LOOKUP_METHODS = {"browse", "read_group", "search", "search_count", "search_read"}
+PAYMENT_TRANSACTION_LOOKUP_METHODS = {"browse", "_read_group", "read_group", "search", "search_count", "search_read"}
 
 
 def scan_payments(repo_path: Path) -> list[PaymentFinding]:

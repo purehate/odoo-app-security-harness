@@ -30,6 +30,20 @@ def normalize_finding(finding: dict[str, Any], index: int) -> dict[str, Any]:
     normalized.setdefault("triage", "NEEDS-MANUAL")
     normalized.setdefault("description", normalized.get("message") or normalized.get("title") or "")
     normalized.setdefault("fingerprint", compute_fingerprint(normalized))
+    # Tag with Odoo Responsible Disclosure Policy classification
+    try:
+        from odoo_security_harness.odoo_disclosure_mapper import classify_finding
+
+        disclosure = classify_finding(normalized)
+        normalized.setdefault("odoo_disclosure", {
+            "eligibility": disclosure.eligibility,
+            "category": disclosure.category,
+            "reason": disclosure.reason,
+            "odoo_policy_section": disclosure.odoo_policy_section,
+            "recommendation": disclosure.recommendation,
+        })
+    except Exception:
+        pass
     return normalized
 
 

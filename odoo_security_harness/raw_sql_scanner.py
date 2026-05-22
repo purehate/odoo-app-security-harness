@@ -134,6 +134,7 @@ class RawSqlScanner(ast.NodeVisitor):
             self._mark_unsafe_sql_target(target, node.value, previous_unsafe_sql_vars)
             self._mark_sql_literal_target(target, node.value, previous_sql_literal_vars)
             self._mark_tainted_target(target, is_tainted)
+            self._check_query_order_injection(target, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
@@ -451,6 +452,20 @@ class RawSqlScanner(ast.NodeVisitor):
         elif isinstance(target, ast.Tuple | ast.List):
             for element in target.elts:
                 self._discard_local_constant_target(element)
+
+    def _check_query_order_injection(self, target: ast.AST, value: ast.AST) -> None:
+        """Detect SQL injection through ORM Query.order assignment (Odoo 16+ pattern)."""
+        if not isinstance(target, ast.Attribute) or target.attr != "order":
+            return
+        if self._expr_is_unsafe_sql(value) or self._expr_is_tainted(value):
+            self._add(
+                "odoo-raw-sql-query-order-injection",
+                "ORM query.order is assigned an interpolated or tainted value",
+                "high",
+                value.lineno if hasattr(value, "lineno") else target.lineno if hasattr(target, "lineno") else 1,
+                "query.order is assigned a formatted or request-derived string; this bypasses ORM parameterization and can lead to SQL injection",
+                "query.order",
+            )
 
     def _effective_constants(self) -> dict[str, ast.AST]:
         if not self.local_constants:

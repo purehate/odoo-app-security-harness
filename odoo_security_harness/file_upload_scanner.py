@@ -256,19 +256,30 @@ class FileUploadScanner(ast.NodeVisitor):
         if not node.args:
             return
         mode = _open_mode(node, self._effective_constants())
-        if not any(flag in mode for flag in ("w", "a", "x", "+")):
-            return
-        if self._expr_is_tainted(node.args[0]):
-            self._add(
-                "odoo-file-upload-tainted-path-write",
-                "Request-controlled path is opened for write",
-                "high",
-                node.lineno,
-                "open() writes to a request-controlled path; validate basename, extension, destination, and traversal handling",
-                "open",
-            )
-        if self._expr_uses_secure_filename(node.args[0]):
-            self._scan_secure_filename_path_write(node, "open")
+        is_write = any(flag in mode for flag in ("w", "a", "x", "+"))
+        if is_write:
+            if self._expr_is_tainted(node.args[0]):
+                self._add(
+                    "odoo-file-upload-tainted-path-write",
+                    "Request-controlled path is opened for write",
+                    "high",
+                    node.lineno,
+                    "open() writes to a request-controlled path; validate basename, extension, destination, and traversal handling",
+                    "open",
+                )
+            if self._expr_uses_secure_filename(node.args[0]):
+                self._scan_secure_filename_path_write(node, "open")
+        elif "r" in mode or not mode:
+            # Read-mode path traversal: open(user_path) or open(user_path, 'r')
+            if self._expr_is_tainted(node.args[0]):
+                self._add(
+                    "odoo-file-upload-tainted-path-read",
+                    "Request-controlled path is opened for read",
+                    "high",
+                    node.lineno,
+                    "open() reads from a request-controlled path; validate basename, extension, destination, and traversal handling to prevent arbitrary file read",
+                    "open",
+                )
 
     def _scan_shutil_write(self, node: ast.Call, sink: str) -> None:
         if len(node.args) >= 2 and self._expr_is_tainted(node.args[1]):

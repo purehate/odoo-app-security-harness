@@ -314,6 +314,7 @@ _TAXONOMY_SHAPE_HINTS = (
         "secret_hardcoded_value",
         (
             "odoo-secret-hardcoded-value",
+            "odoo-ai-hardcoded-api-key",
             "hardcoded secret-like value",
             "secret-like assignment",
             "contains committed value",
@@ -618,6 +619,7 @@ _TAXONOMY_SHAPE_HINTS = (
         "qweb_dynamic_template_render",
         (
             "qweb-dynamic-t-call",
+            "odoo-qweb-dynamic-t-component",
             "dynamic-t-call",
             "t-call uses a dynamic template",
             "chooses a template dynamically",
@@ -638,6 +640,7 @@ _TAXONOMY_SHAPE_HINTS = (
         "qweb_markup_escape_bypass",
         (
             "qweb-markup-escape-bypass",
+            "odoo-ai-unsanitized-output",
             "markup escape bypass",
             "markup() bypasses escaping",
             "already-safe html",
@@ -731,6 +734,8 @@ _TAXONOMY_SHAPE_HINTS = (
             "odoo-field-sensitive-no-groups",
             "odoo-field-sensitive-public-groups",
             "odoo-field-related-sensitive-no-admin-groups",
+            "odoo-field-json-sensitive-no-groups",
+            "odoo-field-json-unstructured-no-groups",
         ),
     ),
     (
@@ -1077,6 +1082,7 @@ _TAXONOMY_SHAPE_HINTS = (
         "model_method_dynamic_evaluation",
         (
             "model-method-dynamic-eval",
+            "odoo-deep-getattr-setattr-tainted-name",
             "odoo model method performs dynamic evaluation",
             "model method calls eval/exec/safe_eval",
             "record field or context value can control evaluated code",
@@ -5156,7 +5162,7 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     ("raw_sql_injection", ("raw-sql", "sql", "cr.execute", "execute")),
-    ("safe_eval_user_input", ("safe-eval", "safe_eval", "eval", "server-action", "loose-python")),
+    ("safe_eval_user_input", ("safe-eval", "safe_eval", "eval", "server-action", "loose-python", "odoo-ai-tainted-prompt")),
     (
         "session_cookie_weak_flags",
         (
@@ -5508,7 +5514,9 @@ _TAXONOMY_SHAPE_HINTS = (
         "file_upload_tainted_path_write",
         (
             "odoo-file-upload-tainted-path-write",
+            "odoo-file-upload-tainted-path-read",
             "request-controlled path is opened for write",
+            "request-controlled path is opened for read",
             "request-controlled path receives file copy/move",
             "request-controlled path object is written",
             "validate basename, extension, destination, and traversal handling",

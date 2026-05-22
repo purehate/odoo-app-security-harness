@@ -25,7 +25,7 @@ class ConstraintFinding:
     field: str = ""
 
 
-READ_METHODS = {"browse", "read", "read_group", "search", "search_count", "search_read"}
+READ_METHODS = {"browse", "read", "_read_group", "read_group", "search", "search_count", "search_read"}
 API_CONSTRAINT_DECORATORS = {"constrains"}
 
 
@@ -519,7 +519,7 @@ def _is_superuser_arg(
 
 
 def _is_unbounded_search(node: ast.Call, sink: str) -> bool:
-    if sink.rsplit(".", 1)[-1] not in {"read_group", "search", "search_count", "search_read"}:
+    if sink.rsplit(".", 1)[-1] not in {"_read_group", "read_group", "search", "search_count", "search_read"}:
         return False
     if any(keyword.arg == "limit" for keyword in node.keywords):
         return False

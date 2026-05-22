@@ -27,7 +27,7 @@ class AttachmentFinding:
 
 ATTACHMENT_MODEL = "ir.attachment"
 MUTATION_METHODS = {"create", "write", "unlink"}
-LOOKUP_METHODS = {"browse", "read_group", "search", "search_count", "search_read"}
+LOOKUP_METHODS = {"browse", "_read_group", "read_group", "search", "search_count", "search_read"}
 TAINTED_ARG_NAMES = {"attachment_id", "id", "res_id", "res_model", "model", "kwargs", "kw", "post", "params"}
 ROUTE_ID_ARG_RE = re.compile(r"(?:^id$|_ids?$)")
 REQUEST_MARKERS = (

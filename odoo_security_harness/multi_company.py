@@ -295,6 +295,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
     def _is_elevated_search(self, node: ast.Call) -> bool:
         """Check if call is .sudo()/with_user(SUPERUSER_ID).search(...)."""
         if isinstance(node.func, ast.Attribute) and node.func.attr in {
+            "_read_group",
             "read_group",
             "search",
             "search_count",
@@ -364,7 +365,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
         """Check if call is search on a multi-company model."""
         if not (
             isinstance(node.func, ast.Attribute)
-            and node.func.attr in {"search", "search_count", "search_read", "read_group"}
+            and node.func.attr in {"search", "search_count", "search_read", "read_group", "_read_group"}
         ):
             return False
         model_name = self._extract_env_model_name(node.func.value)

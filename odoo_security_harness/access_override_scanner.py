@@ -44,7 +44,7 @@ ACCESS_OVERRIDE_METHODS = {
     "check_access_rule",
 }
 SEARCH_OVERRIDE_METHODS = {"_search", "name_search", "search", "search_read"}
-READ_METHODS = {"browse", "read", "read_group", "search", "search_count", "search_read"}
+READ_METHODS = {"browse", "read", "_read_group", "read_group", "search", "search_count", "search_read"}
 
 
 def scan_access_overrides(repo_path: Path) -> list[AccessOverrideFinding]:

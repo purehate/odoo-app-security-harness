@@ -757,3 +757,67 @@ class Connector(models.Model):
     )
 
     assert scan_field_security(tmp_path) == []
+
+
+def test_flags_json_field_without_groups(tmp_path: Path) -> None:
+    """Json fields storing unstructured data should have group restrictions."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "config.py").write_text(
+        """
+from odoo import fields, models
+
+class Config(models.Model):
+    _name = 'x.config'
+
+    metadata = fields.Json()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert any(f.rule_id == "odoo-field-json-unstructured-no-groups" for f in findings)
+
+
+def test_flags_sensitive_json_field_without_groups(tmp_path: Path) -> None:
+    """Json fields with sensitive names should be flagged more severely."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "connector.py").write_text(
+        """
+from odoo import fields, models
+
+class Connector(models.Model):
+    _name = 'x.connector'
+
+    api_keys = fields.Json()
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert any(f.rule_id == "odoo-field-json-sensitive-no-groups" for f in findings)
+    assert any(f.rule_id == "odoo-field-json-unstructured-no-groups" for f in findings)
+
+
+def test_allows_json_field_with_groups(tmp_path: Path) -> None:
+    """Json fields with explicit groups should not be flagged."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "config.py").write_text(
+        """
+from odoo import fields, models
+
+class Config(models.Model):
+    _name = 'x.config'
+
+    metadata = fields.Json(groups='base.group_system')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert not any(f.rule_id == "odoo-field-json-unstructured-no-groups" for f in findings)

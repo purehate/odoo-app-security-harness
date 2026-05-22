@@ -1039,3 +1039,31 @@ def test_repo_scan_skips_tests_and_migrations(tmp_path: Path) -> None:
     (migrations / "post-migrate.py").write_text("cr.execute('DELETE FROM sale_order')", encoding="utf-8")
 
     assert scan_raw_sql(tmp_path) == []
+
+
+def test_flags_query_order_injection(tmp_path: Path) -> None:
+    """query.order assignment with formatted strings should be flagged."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "move.py").write_text(
+        """
+from odoo import models
+
+class AccountMoveLine(models.Model):
+    _inherit = 'account.move.line'
+
+    def search_read(self, domain=None, fields=None, offset=0, limit=None, order=None):
+        preferred_ids = self.env.context.get("matching_amount_aml_ids")
+        if preferred_ids and fields and not order:
+            query = super()._search(domain, offset=offset, limit=limit, order=order)
+            placeholder_ids = ", ".join(str(x) for x in preferred_ids)
+            order_origin = self.env.cr.mogrify(query.order).decode()
+            query.order = f'"account_move_line".id IN ({placeholder_ids}) DESC,{order_origin}'
+        return super().search_read(domain=domain, fields=fields, offset=offset, limit=limit, order=order)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_raw_sql(tmp_path)
+
+    assert any(f.rule_id == "odoo-raw-sql-query-order-injection" for f in findings)
