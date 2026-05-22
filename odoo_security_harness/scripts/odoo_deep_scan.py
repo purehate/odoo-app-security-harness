@@ -53,6 +53,7 @@ from odoo_security_harness import (
     scan_cache_headers,
     scan_config_parameters,
     scan_constraints,
+    scan_controller_paths,
     scan_controller_responses,
     scan_data_integrity,
     scan_database_operations,
@@ -5806,7 +5807,18 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     ("ssrf_outbound_request", ("ssrf", "request", "requests.", "urllib", "callback", "webhook")),
-    ("path_traversal_attachment", ("path", "traversal", "attachment", "file-upload", "binary-download")),
+    (
+        "path_traversal_attachment",
+        (
+            "path",
+            "traversal",
+            "attachment",
+            "file-upload",
+            "binary-download",
+            "odoo-controller-path-traversal",
+            "odoo-controller-unsafe-send-file",
+        ),
+    ),
     ("hardcoded_secret", ("secret", "api-key", "token", "password", "credential", "oauth")),
     ("weak_crypto", ("crypto", "md5", "sha1", "weak-random", "random")),
     ("deserialize_user_input", ("serialization", "deserialize", "pickle", "yaml", "marshal")),
@@ -6617,6 +6629,20 @@ def main() -> int:
 
     # 36. Controller response scan
     print("36. Scanning controller responses...")
+    path_findings = scan_controller_paths(repo)
+    path_results = [
+        {
+            "source": "controller-paths",
+            "rule_id": f.rule_id,
+            "title": f.title,
+            "severity": f.severity,
+            "file": f.file,
+            "line": f.line,
+            "message": f.message,
+            "sink": f.sink,
+        }
+        for f in path_findings
+    ]
     response_findings = scan_controller_responses(repo)
     response_results = [
         {
@@ -6631,8 +6657,9 @@ def main() -> int:
         }
         for f in response_findings
     ]
+    all_findings.extend(path_results)
     all_findings.extend(response_results)
-    print(f"   Found {len(response_results)} issues")
+    print(f"   Found {len(path_results) + len(response_results)} issues")
 
     # 36a. Controller cache-control/header posture scan
     print("36a. Scanning controller cache-control posture...")

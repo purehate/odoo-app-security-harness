@@ -23,6 +23,7 @@ from odoo_security_harness.button_action_scanner import scan_button_actions
 from odoo_security_harness.cache_header_scanner import scan_cache_headers
 from odoo_security_harness.config_parameter_scanner import scan_config_parameters
 from odoo_security_harness.constraint_scanner import scan_constraints
+from odoo_security_harness.controller_path_scanner import scan_controller_paths
 from odoo_security_harness.controller_response_scanner import scan_controller_responses
 from odoo_security_harness.data_integrity_scanner import scan_data_integrity
 from odoo_security_harness.database_scanner import scan_database_operations
@@ -96,6 +97,7 @@ __all__ = [
     "scan_cache_headers",
     "scan_config_parameters",
     "scan_constraints",
+    "scan_controller_paths",
     "scan_controller_responses",
     "scan_data_integrity",
     "scan_database_operations",

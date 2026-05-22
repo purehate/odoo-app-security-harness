@@ -3257,6 +3257,12 @@
       "capec": ["CAPEC-126"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "controller_path_traversal": {
+      "label": "Controller constructs file path with user input",
+      "cwe": ["CWE-22", "CWE-73"],
+      "capec": ["CAPEC-126"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "hardcoded_secret": {
       "label": "API key / password / token committed to source",
       "cwe": ["CWE-798", "CWE-259"],
