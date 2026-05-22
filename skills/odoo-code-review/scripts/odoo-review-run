@@ -19,7 +19,10 @@ from urllib.parse import urlparse
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
-    tomllib = None
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ModuleNotFoundError:
+        tomllib = None
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
@@ -67,26 +70,94 @@ FIX_LIST_STATUSES = ("open", "in-progress", "fixed", "wontfix")
 FIX_LIST_SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
 
 HUNTERS = [
-    ("01-access-control", "Access Control", "ACL CSV, ir.rule, groups, sudo/with_user/with_context misuse, portal/user/admin boundaries."),
-    ("02-controller-route", "Controller / Route", "@http.route, auth, csrf, request.params/jsonrequest, IDOR, unsafe response data."),
-    ("03-orm-sql-domain", "ORM / SQL / Domain", "cr.execute, dynamic SQL, domains, search/read/write/unlink misuse, mass assignment."),
-    ("04-qweb-xss", "QWeb / XSS", "t-raw, Markup, fields.Html(sanitize=False), mail templates, website/portal rendering."),
-    ("05-business-logic", "Business Logic", "state transitions, approvals, workflow bypass, wizards, server actions, cron."),
-    ("06-secrets-config", "Secrets / Config", "hardcoded secrets, ir.config_parameter, creds in logs/config/templates."),
-    ("07-external-integration", "External Integration", "webhooks, outbound requests, SSRF-ish behavior, file import, scheduled jobs."),
-    ("08-data-exposure", "Data Exposure", "portal access, attachments, chatter, report generation, multi-company leakage."),
-    ("09-dependency", "Dependency", "Python package CVEs, Odoo addon dependencies, JS/assets, reachable dependency paths."),
+    (
+        "01-access-control",
+        "Access Control",
+        "ACL CSV, ir.rule, groups, sudo/with_user/with_context misuse, portal/user/admin boundaries.",
+    ),
+    (
+        "02-controller-route",
+        "Controller / Route",
+        "@http.route, auth, csrf, request.params/jsonrequest, IDOR, unsafe response data.",
+    ),
+    (
+        "03-orm-sql-domain",
+        "ORM / SQL / Domain",
+        "cr.execute, dynamic SQL, domains, search/read/write/unlink misuse, mass assignment.",
+    ),
+    (
+        "04-qweb-xss",
+        "QWeb / XSS",
+        "t-raw, Markup, fields.Html(sanitize=False), mail templates, website/portal rendering.",
+    ),
+    (
+        "05-business-logic",
+        "Business Logic",
+        "state transitions, approvals, workflow bypass, wizards, server actions, cron.",
+    ),
+    (
+        "06-secrets-config",
+        "Secrets / Config",
+        "hardcoded secrets, ir.config_parameter, creds in logs/config/templates.",
+    ),
+    (
+        "07-external-integration",
+        "External Integration",
+        "webhooks, outbound requests, SSRF-ish behavior, file import, scheduled jobs.",
+    ),
+    (
+        "08-data-exposure",
+        "Data Exposure",
+        "portal access, attachments, chatter, report generation, multi-company leakage.",
+    ),
+    (
+        "09-dependency",
+        "Dependency",
+        "Python package CVEs, Odoo addon dependencies, JS/assets, reachable dependency paths.",
+    ),
 ]
 
 ENSEMBLE_FOCI = [
-    ("public-sudo", "Public Route + sudo Boundary", "Find public/auth=none routes that call sudo(), with_user(admin), raw SQL, or broad search/read paths. Prioritize data disclosure and write-side effects."),
-    ("portal-idor", "Portal IDOR / Ownership", "Find portal and /my/* flows where request-controlled ids reach browse/search/read/write/report/download without ownership, partner, commercial_partner, or company checks."),
-    ("csrf-methods", "CSRF and HTTP Method Weirdness", "Find state-changing GET routes, csrf=False POST routes without HMAC/signature verification, JSON routes with cookie auth, and method-unbounded controllers."),
-    ("multi-company", "Multi-Company Isolation", "Find missing company_id filters, weak ir.rule domain_force, sudo recompute leaks, cross-company reports, and shared attachment/chatter exposure."),
-    ("qweb-html", "QWeb / HTML Sinks", "Find t-raw, Markup(), fields.Html(sanitize=False), unsafe mail template rendering, and portal/website rendering of user-controlled values."),
-    ("raw-sql-domain", "Raw SQL / Domain Injection", "Find cr.execute string construction, request-controlled ORDER BY/WHERE/domain fields, unsafe search([])+sudo, and mass-assignment through request params."),
-    ("attachments-reports", "Attachments and Reports", "Find public ir.attachment exposure, report download IDOR, token confusion, and generated files leaking across portal/company boundaries."),
-    ("external-proxy", "External Integrations and Proxy Context", "Find SSRF-ish requests, webhook auth gaps, trusted X-Forwarded-* assumptions, proxy_mode-sensitive logic, mail/header injection, and callback URL misuse."),
+    (
+        "public-sudo",
+        "Public Route + sudo Boundary",
+        "Find public/auth=none routes that call sudo(), with_user(admin), raw SQL, or broad search/read paths. Prioritize data disclosure and write-side effects.",
+    ),
+    (
+        "portal-idor",
+        "Portal IDOR / Ownership",
+        "Find portal and /my/* flows where request-controlled ids reach browse/search/read/write/report/download without ownership, partner, commercial_partner, or company checks.",
+    ),
+    (
+        "csrf-methods",
+        "CSRF and HTTP Method Weirdness",
+        "Find state-changing GET routes, csrf=False POST routes without HMAC/signature verification, JSON routes with cookie auth, and method-unbounded controllers.",
+    ),
+    (
+        "multi-company",
+        "Multi-Company Isolation",
+        "Find missing company_id filters, weak ir.rule domain_force, sudo recompute leaks, cross-company reports, and shared attachment/chatter exposure.",
+    ),
+    (
+        "qweb-html",
+        "QWeb / HTML Sinks",
+        "Find t-raw, Markup(), fields.Html(sanitize=False), unsafe mail template rendering, and portal/website rendering of user-controlled values.",
+    ),
+    (
+        "raw-sql-domain",
+        "Raw SQL / Domain Injection",
+        "Find cr.execute string construction, request-controlled ORDER BY/WHERE/domain fields, unsafe search([])+sudo, and mass-assignment through request params.",
+    ),
+    (
+        "attachments-reports",
+        "Attachments and Reports",
+        "Find public ir.attachment exposure, report download IDOR, token confusion, and generated files leaking across portal/company boundaries.",
+    ),
+    (
+        "external-proxy",
+        "External Integrations and Proxy Context",
+        "Find SSRF-ish requests, webhook auth gaps, trusted X-Forwarded-* assumptions, proxy_mode-sensitive logic, mail/header injection, and callback URL misuse.",
+    ),
 ]
 
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b[()][A-Za-z0-9]")
@@ -120,55 +191,172 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run repeatable setup for the odoo-code-review Odoo audit harness.")
     parser.add_argument("target", nargs="?", default=".", help="Odoo repo/addons path. Defaults to current directory.")
     parser.add_argument("--out", help="Output directory. Defaults to <target>/.audit-YYYYMMDD-HHMM (stamped per run).")
-    parser.add_argument("--prune-old-runs", type=int, metavar="N", help="After successful run, keep only the most recent N stamped <target>/.audit-YYYYMMDD-HHMM/ dirs.")
+    parser.add_argument(
+        "--prune-old-runs",
+        type=int,
+        metavar="N",
+        help="After successful run, keep only the most recent N stamped <target>/.audit-YYYYMMDD-HHMM/ dirs.",
+    )
     parser.add_argument("--modules", help="Comma-separated module names to include")
     parser.add_argument("--odoo-version", help="Override Odoo version in run plan")
-    parser.add_argument("--config", dest="project_config", help="Project config TOML. Defaults to .odoo-review/config.toml or .odoo-review.toml when present.")
-    parser.add_argument("--model-pack", choices=sorted(MODEL_PACKS.keys()), default="default", help="Model/lane preset. Default: default.")
+    parser.add_argument(
+        "--config",
+        dest="project_config",
+        help="Project config TOML. Defaults to .odoo-review/config.toml or .odoo-review.toml when present.",
+    )
+    parser.add_argument(
+        "--model-pack",
+        choices=sorted(MODEL_PACKS.keys()),
+        default="default",
+        help="Model/lane preset. Default: default.",
+    )
     parser.add_argument("--quick", action="store_true", help="Skip automated scanners and discourse prep")
     parser.add_argument("--no-discourse", action="store_true")
     parser.add_argument("--no-local-qwen", action="store_true", help="Skip Ollama/Qwen advisory pass")
     parser.add_argument("--local-model", default=DEFAULT_MODEL, help=f"Ollama model. Default: {DEFAULT_MODEL}")
     parser.add_argument("--allow-missing-lanes", action="store_true", help="Continue if Codex or Qwen is unavailable")
     parser.add_argument("--joern", action="store_true", help="Run Joern if installed")
-    parser.add_argument("--runtime", action="store_true", help="Enable Phase 7.5 runtime evidence path; use odoo-review-runtime <OUT> to boot Odoo and replay PoCs.")
+    parser.add_argument(
+        "--runtime",
+        action="store_true",
+        help="Enable Phase 7.5 runtime evidence path; use odoo-review-runtime <OUT> to boot Odoo and replay PoCs.",
+    )
     parser.add_argument("--zap-target", help="ZAP target URL; requires --runtime")
-    parser.add_argument("--odoomap-target", help="Authorized QA/staging URL or 'self' for optional OdooMap runtime recon. Requires --runtime.")
+    parser.add_argument(
+        "--odoomap-target",
+        help="Authorized QA/staging URL or 'self' for optional OdooMap runtime recon. Requires --runtime.",
+    )
     parser.add_argument("--no-codex", action="store_true", help="Skip Codex hunter execution")
     parser.add_argument("--codex-model", default="gpt-5.3-codex", help="Codex model")
     parser.add_argument("--codex-budget", choices=["low", "normal", "deep"], default="normal")
-    parser.add_argument("--codex-mode", choices=["run", "prepare"], default="run", help="Run Codex tasks or only write prompts")
-    parser.add_argument("--ensemble", choices=["off", "cheap", "balanced"], default="off", help="Run additional focused recall passes before Phase 7 validation. Default: off.")
-    parser.add_argument("--ensemble-passes", type=int, default=0, help="Number of ensemble recall passes. 0 means preset default.")
+    parser.add_argument(
+        "--codex-mode", choices=["run", "prepare"], default="run", help="Run Codex tasks or only write prompts"
+    )
+    parser.add_argument(
+        "--ensemble",
+        choices=["off", "cheap", "balanced"],
+        default="off",
+        help="Run additional focused recall passes before Phase 7 validation. Default: off.",
+    )
+    parser.add_argument(
+        "--ensemble-passes", type=int, default=0, help="Number of ensemble recall passes. 0 means preset default."
+    )
     parser.add_argument("--requirements", help="Requirements/spec file for Phase 7.8")
     parser.add_argument("--no-html", action="store_true")
-    parser.add_argument("--no-json", action="store_true", dest="no_emit_json", help="Skip findings.json sidecar (emitted by default).")
-    parser.add_argument("--json", action="store_true", dest="emit_json", help="(Compat) findings.json is on by default; flag is a no-op kept for legacy invocations.")
-    parser.add_argument("--no-export", action="store_true", help="Skip Phase 8.6 auto-export (SARIF/fingerprints/bounty/diff). Default: on.")
-    parser.add_argument("--baseline", help="Baseline findings.json or .audit/ for Phase 8.6 auto-diff. Default: <target>/.audit-baseline/findings.json if present.")
+    parser.add_argument(
+        "--no-json", action="store_true", dest="no_emit_json", help="Skip findings.json sidecar (emitted by default)."
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="emit_json",
+        help="(Compat) findings.json is on by default; flag is a no-op kept for legacy invocations.",
+    )
+    parser.add_argument(
+        "--no-export",
+        action="store_true",
+        help="Skip Phase 8.6 auto-export (SARIF/fingerprints/bounty/diff). Default: on.",
+    )
+    parser.add_argument(
+        "--baseline",
+        help="Baseline findings.json or .audit/ for Phase 8.6 auto-diff. Default: <target>/.audit-baseline/findings.json if present.",
+    )
     parser.add_argument("--preflight-only", action="store_true", help="Write run plan/tooling, then stop")
     parser.add_argument("--no-scans", action="store_true", help="Skip scanners even when not --quick")
     parser.add_argument("--scope", help="Path to scope.yml accepted-risks file (suppresses matching findings).")
     parser.add_argument("--pr", help="GitHub PR number; scope review to files changed in this PR (requires gh CLI).")
     parser.add_argument("--pr-repo", help="GitHub repo (owner/name) for --pr; defaults to gh-detected origin.")
-    parser.add_argument("--accepted-risks", help="Path to per-finding accepted-risks suppression file (YAML or JSON). Defaults to <repo>/.audit-accepted-risks.{yml,yaml,json}.")
-    parser.add_argument("--check-only-accepted-risks", action="store_true", help="Validate accepted-risks file, write inventory, then exit. Non-zero on errors or expired entries.")
-    parser.add_argument("--fix-list", help="Path to fix-it list tracking file (YAML or JSON). Defaults to <repo>/.audit-fix-list.{yml,yaml,json}.")
-    parser.add_argument("--check-only-fix-list", action="store_true", help="Validate fix-list file, write inventory, then exit. Non-zero on validation errors or overdue open/in-progress entries.")
-    parser.add_argument("--no-server-actions", action="store_true", help="Skip docs/server_actions/*.py loose-Python sweep (default: include).")
-    parser.add_argument("--no-scripts", action="store_true", help="Skip scripts/*.py loose-Python sweep (default: include).")
-    parser.add_argument("--no-breadth", action="store_true", help="Skip Phase 1.7 breadth-sweep dispatch plan emission (same as --breadth-budget off).")
-    parser.add_argument("--breadth-budget", choices=["off", "low", "normal", "deep"], default="normal", help="Phase 1.7 Claude subagent budget. off=none, low=top 8 risky chunks, normal=top 24 risky chunks, deep=all chunks. Default: normal.")
-    parser.add_argument("--breadth-max-chunks", type=int, default=0, help="Hard cap Phase 1.7 breadth chunks after risk prioritization. 0 uses --breadth-budget default.")
-    parser.add_argument("--breadth-chunk-size", type=int, default=40, help="Files per breadth-sweep subagent chunk. Default: 40.")
-    parser.add_argument("--phase1-min-lines-per-module", type=int, default=4, help="Phase 1 fail-loud threshold: minimum lines of attack-surface content per in-scope module. Default: 4.")
-    parser.add_argument("--no-phase1-assert", action="store_true", help="Disable Phase 1 fail-loud assertion (escape hatch; not recommended).")
-    parser.add_argument("--allow-empty-scope", action="store_true", help="Allow runs with zero discovered Odoo modules/pseudo-modules. By default this fails before scanner/model lanes to avoid quota waste on the wrong target.")
-    parser.add_argument("--yes", "-y", action="store_true", dest="non_interactive", help="Non-interactive: strip every Claude/orchestration y/N prompt. With --learn, auto-applies Phase 8.7 suggestions up to iteration cap.")
-    parser.add_argument("--learn", action="store_true", help="After final findings exist, generate baseline/fix-list/accepted-risk learning artifacts. Apply accepted-risk suppressions only when --yes is also set.")
-    parser.add_argument("--learn-cap", type=int, default=3, help="Max Phase 8.7 self-improvement iterations under --learn. Default: 3.")
-    parser.add_argument("--baseline-stock-cc", action="store_true", help="Spawn one stock Claude Code control lane reviewing the same repo with no harness; stock-only findings become current-run validation leads and future hunter lessons.")
-    parser.add_argument("-ks", "--ks", "--kitchensink", "--weekly", action="store_true", dest="weekly", help="Kitchen sink: max-quality review path. Enables Joern, runtime evidence path, breadth, JSON, learn, stock-CC gate, and durable state auto-detect. Add --yes separately for zero prompts.")
+    parser.add_argument(
+        "--accepted-risks",
+        help="Path to per-finding accepted-risks suppression file (YAML or JSON). Defaults to <repo>/.audit-accepted-risks.{yml,yaml,json}.",
+    )
+    parser.add_argument(
+        "--check-only-accepted-risks",
+        action="store_true",
+        help="Validate accepted-risks file, write inventory, then exit. Non-zero on errors or expired entries.",
+    )
+    parser.add_argument(
+        "--fix-list",
+        help="Path to fix-it list tracking file (YAML or JSON). Defaults to <repo>/.audit-fix-list.{yml,yaml,json}.",
+    )
+    parser.add_argument(
+        "--check-only-fix-list",
+        action="store_true",
+        help="Validate fix-list file, write inventory, then exit. Non-zero on validation errors or overdue open/in-progress entries.",
+    )
+    parser.add_argument(
+        "--no-server-actions",
+        action="store_true",
+        help="Skip docs/server_actions/*.py loose-Python sweep (default: include).",
+    )
+    parser.add_argument(
+        "--no-scripts", action="store_true", help="Skip scripts/*.py loose-Python sweep (default: include)."
+    )
+    parser.add_argument(
+        "--no-breadth",
+        action="store_true",
+        help="Skip Phase 1.7 breadth-sweep dispatch plan emission (same as --breadth-budget off).",
+    )
+    parser.add_argument(
+        "--breadth-budget",
+        choices=["off", "low", "normal", "deep"],
+        default="normal",
+        help="Phase 1.7 Claude subagent budget. off=none, low=top 8 risky chunks, normal=top 24 risky chunks, deep=all chunks. Default: normal.",
+    )
+    parser.add_argument(
+        "--breadth-max-chunks",
+        type=int,
+        default=0,
+        help="Hard cap Phase 1.7 breadth chunks after risk prioritization. 0 uses --breadth-budget default.",
+    )
+    parser.add_argument(
+        "--breadth-chunk-size", type=int, default=40, help="Files per breadth-sweep subagent chunk. Default: 40."
+    )
+    parser.add_argument(
+        "--phase1-min-lines-per-module",
+        type=int,
+        default=4,
+        help="Phase 1 fail-loud threshold: minimum lines of attack-surface content per in-scope module. Default: 4.",
+    )
+    parser.add_argument(
+        "--no-phase1-assert",
+        action="store_true",
+        help="Disable Phase 1 fail-loud assertion (escape hatch; not recommended).",
+    )
+    parser.add_argument(
+        "--allow-empty-scope",
+        action="store_true",
+        help="Allow runs with zero discovered Odoo modules/pseudo-modules. By default this fails before scanner/model lanes to avoid quota waste on the wrong target.",
+    )
+    parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        dest="non_interactive",
+        help="Non-interactive: strip every Claude/orchestration y/N prompt. With --learn, auto-applies Phase 8.7 suggestions up to iteration cap.",
+    )
+    parser.add_argument(
+        "--learn",
+        action="store_true",
+        help="After final findings exist, generate baseline/fix-list/accepted-risk learning artifacts. Apply accepted-risk suppressions only when --yes is also set.",
+    )
+    parser.add_argument(
+        "--learn-cap", type=int, default=3, help="Max Phase 8.7 self-improvement iterations under --learn. Default: 3."
+    )
+    parser.add_argument(
+        "--baseline-stock-cc",
+        action="store_true",
+        help="Spawn one stock Claude Code control lane reviewing the same repo with no harness; stock-only findings become current-run validation leads and future hunter lessons.",
+    )
+    parser.add_argument(
+        "-ks",
+        "--ks",
+        "--kitchensink",
+        "--weekly",
+        action="store_true",
+        dest="weekly",
+        help="Kitchen sink: max-quality review path. Enables Joern, runtime evidence path, breadth, JSON, learn, stock-CC gate, and durable state auto-detect. Add --yes separately for zero prompts.",
+    )
     args = parser.parse_args()
     # findings.json is now emitted by default. --json kept as compat no-op; --no-json opts out.
     args.emit_json = not args.no_emit_json
@@ -204,7 +392,9 @@ def cli_flag_present(*flags: str) -> bool:
 
 def load_project_config(args: argparse.Namespace, repo: Path) -> tuple[dict, Path | None, list[str]]:
     warnings: list[str] = []
-    candidates = [Path(args.project_config).expanduser().resolve()] if args.project_config else [repo / p for p in CONFIG_FILES]
+    candidates = (
+        [Path(args.project_config).expanduser().resolve()] if args.project_config else [repo / p for p in CONFIG_FILES]
+    )
     chosen = next((p for p in candidates if p.exists()), None)
     if not chosen:
         return {}, None, warnings
@@ -294,7 +484,20 @@ def should_skip(path: Path) -> bool:
     parts = set(path.parts)
     if parts & {".git", ".hg", ".svn", ".audit", "__pycache__", ".venv", "venv", "node_modules", ".worktrees"}:
         return True
-    return any(part.startswith(".audit-") and part not in {".audit-accepted-risks.yml", ".audit-accepted-risks.yaml", ".audit-accepted-risks.json", ".audit-fix-list.yml", ".audit-fix-list.yaml", ".audit-fix-list.json", ".audit-baseline"} for part in path.parts)
+    return any(
+        part.startswith(".audit-")
+        and part
+        not in {
+            ".audit-accepted-risks.yml",
+            ".audit-accepted-risks.yaml",
+            ".audit-accepted-risks.json",
+            ".audit-fix-list.yml",
+            ".audit-fix-list.yaml",
+            ".audit-fix-list.json",
+            ".audit-baseline",
+        }
+        for part in path.parts
+    )
 
 
 def which(name: str) -> str | None:
@@ -324,7 +527,9 @@ def run(cmd: list[str], cwd: Path, log_path: Path, stdout_path: Path | None = No
         with log_path.open("a", encoding="utf-8") as log:
             log.write(output[-12000:])
             log.write(f"\n[exit {completed.returncode}]\n\n")
-        record.update({"returncode": completed.returncode, "output": str(stdout_path) if stdout_path else output[-2000:]})
+        record.update(
+            {"returncode": completed.returncode, "output": str(stdout_path) if stdout_path else output[-2000:]}
+        )
         progress(f"done {label}: exit {completed.returncode}")
     except subprocess.TimeoutExpired:
         with log_path.open("a", encoding="utf-8") as log:
@@ -961,7 +1166,9 @@ def scan_patterns(repo: Path, manifests: list[dict]) -> dict:
     compiled = {key: re.compile(value) for key, value in SHARP_EDGE_PATTERNS.items()}
     counts = dict.fromkeys(SHARP_EDGE_PATTERNS, 0)
     hits: dict[str, list[dict]] = {key: [] for key in SHARP_EDGE_PATTERNS}
-    per_module: dict[str, dict[str, int]] = {item["module"]: dict.fromkeys(SHARP_EDGE_PATTERNS, 0) for item in manifests}
+    per_module: dict[str, dict[str, int]] = {
+        item["module"]: dict.fromkeys(SHARP_EDGE_PATTERNS, 0) for item in manifests
+    }
     for item in manifests:
         module = item["module"]
         loose_file = item.get("_loose_file")
@@ -981,15 +1188,19 @@ def scan_patterns(repo: Path, manifests: list[dict]) -> dict:
                 counts[key] += len(matches)
                 per_module[module][key] += len(matches)
                 for match in matches[:20]:
-                    hits[key].append({
-                        "module": module,
-                        "file": rel(path, repo),
-                        "line": text.count("\n", 0, match.start()) + 1,
-                    })
+                    hits[key].append(
+                        {
+                            "module": module,
+                            "file": rel(path, repo),
+                            "line": text.count("\n", 0, match.start()) + 1,
+                        }
+                    )
     return {"counts": counts, "sample_hits": hits, "per_module": per_module}
 
 
-def compute_module_risk(manifests: list[dict], routes: list[dict], acl_rows: list[dict], pattern_summary: dict) -> list[dict]:
+def compute_module_risk(
+    manifests: list[dict], routes: list[dict], acl_rows: list[dict], pattern_summary: dict
+) -> list[dict]:
     """Heuristic risk score per module. Higher = audit first."""
     routes_by_module: dict[str, int] = {}
     public_by_module: dict[str, int] = {}
@@ -1026,17 +1237,19 @@ def compute_module_risk(manifests: list[dict], routes: list[dict], acl_rows: lis
             band = "high"
         elif score >= 10:
             band = "medium"
-        rows.append({
-            "module": module,
-            "score": score,
-            "band": band,
-            "routes": route_count,
-            "public_routes": public_count,
-            "acl_rows": acl_count,
-            "acl_global_rows": acl_global,
-            "sharp_edge_score": sharp_score,
-            "sharp_edges": sharp,
-        })
+        rows.append(
+            {
+                "module": module,
+                "score": score,
+                "band": band,
+                "routes": route_count,
+                "public_routes": public_count,
+                "acl_rows": acl_count,
+                "acl_global_rows": acl_global,
+                "sharp_edge_score": sharp_score,
+                "sharp_edges": sharp,
+            }
+        )
     rows.sort(key=lambda r: (-r["score"], r["module"]))
     return rows
 
@@ -1096,8 +1309,7 @@ def _load_accepted_risks_file(path: Path) -> object:
         import yaml  # noqa: PLC0415
     except ImportError as exc:
         raise RuntimeError(
-            f"Cannot read {path.name}: pyyaml is not installed. "
-            "Install pyyaml or convert the file to .json format."
+            f"Cannot read {path.name}: pyyaml is not installed. " "Install pyyaml or convert the file to .json format."
         ) from exc
     return yaml.safe_load(text)
 
@@ -1155,11 +1367,7 @@ def _validate_accepted_risks(data: object, source: Path) -> tuple[list[dict], li
         lines_ok = (
             lines is None
             or isinstance(lines, int)
-            or (
-                isinstance(lines, list)
-                and len(lines) == 2
-                and all(isinstance(coord, int) for coord in lines)
-            )
+            or (isinstance(lines, list) and len(lines) == 2 and all(isinstance(coord, int) for coord in lines))
         )
         if not lines_ok:
             errors.append(f"{prefix}: `lines` must be an int or [start, end] of ints.")
@@ -1250,8 +1458,7 @@ def _load_fix_list_file(path: Path) -> object:
         import yaml  # noqa: PLC0415
     except ImportError as exc:
         raise RuntimeError(
-            f"Cannot read {path.name}: pyyaml is not installed. "
-            "Install pyyaml or convert the file to .json format."
+            f"Cannot read {path.name}: pyyaml is not installed. " "Install pyyaml or convert the file to .json format."
         ) from exc
     return yaml.safe_load(text)
 
@@ -1284,14 +1491,10 @@ def _validate_fix_list(data: object, source: Path) -> tuple[list[dict], list[str
             seen_ids.add(entry_id)
         status = entry.get("status")
         if status and status not in FIX_LIST_STATUSES:
-            errors.append(
-                f"{prefix}: `status` must be one of {FIX_LIST_STATUSES}; got `{status}`."
-            )
+            errors.append(f"{prefix}: `status` must be one of {FIX_LIST_STATUSES}; got `{status}`.")
         severity = entry.get("severity")
         if severity and severity not in FIX_LIST_SEVERITIES:
-            errors.append(
-                f"{prefix}: `severity` must be one of {FIX_LIST_SEVERITIES}; got `{severity}`."
-            )
+            errors.append(f"{prefix}: `severity` must be one of {FIX_LIST_SEVERITIES}; got `{severity}`.")
         target_date = fixed_at = None
         if entry.get("target_date") is not None:
             try:
@@ -1316,11 +1519,7 @@ def _validate_fix_list(data: object, source: Path) -> tuple[list[dict], list[str
         lines_ok = (
             lines is None
             or isinstance(lines, int)
-            or (
-                isinstance(lines, list)
-                and len(lines) == 2
-                and all(isinstance(coord, int) for coord in lines)
-            )
+            or (isinstance(lines, list) and len(lines) == 2 and all(isinstance(coord, int) for coord in lines))
         )
         if not lines_ok:
             errors.append(f"{prefix}: `lines` must be an int or [start, end] of ints.")
@@ -1379,11 +1578,7 @@ def load_fix_list(args: argparse.Namespace, repo: Path) -> dict:
             "days_to_target": days_to_target,
         }
         inventory["active"].append(record)
-        if (
-            entry.get("status") in ("open", "in-progress")
-            and target_date
-            and target_date < today
-        ):
+        if entry.get("status") in ("open", "in-progress") and target_date and target_date < today:
             inventory["overdue"].append(record)
     return inventory
 
@@ -1489,7 +1684,15 @@ def write_accepted_risks_artifacts(out: Path, inventory: dict) -> None:
     (out / "00-accepted-risks.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[dict], acl_rows: list[dict], pattern_summary: dict, args: argparse.Namespace) -> None:
+def write_inventory(
+    repo: Path,
+    out: Path,
+    manifests: list[dict],
+    routes: list[dict],
+    acl_rows: list[dict],
+    pattern_summary: dict,
+    args: argparse.Namespace,
+) -> None:
     inv = out / "inventory"
     inv.mkdir(parents=True, exist_ok=True)
     (inv / "manifests.json").write_text(json.dumps(manifests, indent=2), encoding="utf-8")
@@ -1517,7 +1720,9 @@ def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[d
     for item in manifests:
         depends = ", ".join(item.get("depends") or [])
         origin = item.get("origin") or "addon"
-        lines.append(f"| `{item['module']}` | {origin} | {item.get('name') or ''} | {item.get('version') or ''} | {depends} | `{item['path']}` |")
+        lines.append(
+            f"| `{item['module']}` | {origin} | {item.get('name') or ''} | {item.get('version') or ''} | {depends} | `{item['path']}` |"
+        )
     (out / "00-modules.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     routes_by_module: dict[str, list[dict]] = {}
@@ -1570,7 +1775,9 @@ def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[d
     surface.append("")
     surface.append("## Per-Module Surface Index")
     surface.append("")
-    surface.append("Every in-scope module gets a section. Hunters MUST cite at least one file:line per module under `Reviewed:` (REJECT cases included).")
+    surface.append(
+        "Every in-scope module gets a section. Hunters MUST cite at least one file:line per module under `Reviewed:` (REJECT cases included)."
+    )
     surface.append("")
     per_module_counts = pattern_summary.get("per_module", {})
     for item in manifests:
@@ -1579,7 +1786,9 @@ def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[d
         surface.append(f"### `{module}`  (origin: {origin})")
         surface.append("")
         if item.get("name") or item.get("version"):
-            surface.append(f"- **Name/Version:** {item.get('name') or '(no name)'} / {item.get('version') or '(no version)'}")
+            surface.append(
+                f"- **Name/Version:** {item.get('name') or '(no name)'} / {item.get('version') or '(no version)'}"
+            )
         depends = ", ".join(item.get("depends") or [])
         if depends:
             surface.append(f"- **Depends:** {depends}")
@@ -1594,7 +1803,9 @@ def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[d
         if module_routes:
             surface.append(f"- **HTTP routes:** {len(module_routes)}")
             for route in module_routes[:10]:
-                surface.append(f"  - `{route['file']}:{route['line']}` `{route.get('function') or '?'}` auth=`{route.get('auth')}` csrf=`{route.get('csrf')}` type=`{route.get('type')}`")
+                surface.append(
+                    f"  - `{route['file']}:{route['line']}` `{route.get('function') or '?'}` auth=`{route.get('auth')}` csrf=`{route.get('csrf')}` type=`{route.get('type')}`"
+                )
             if len(module_routes) > 10:
                 surface.append(f"  - … +{len(module_routes) - 10} more routes")
         else:
@@ -1614,7 +1825,9 @@ def write_inventory(repo: Path, out: Path, manifests: list[dict], routes: list[d
     (out / "01-attack-surface.md").write_text("\n".join(surface) + "\n", encoding="utf-8")
 
 
-def write_goals_guide(repo: Path, out: Path, manifests: list[dict], routes: list[dict], args: argparse.Namespace) -> None:
+def write_goals_guide(
+    repo: Path, out: Path, manifests: list[dict], routes: list[dict], args: argparse.Namespace
+) -> None:
     modules = len(manifests)
     route_count = len(routes)
     scope = f"modules {args.modules}" if args.modules else f"{modules} discovered Odoo module(s)"
@@ -1655,7 +1868,9 @@ def write_goals_guide(repo: Path, out: Path, manifests: list[dict], routes: list
     elif modules <= 5:
         lines.append("- `normal`: small repo, full validation still matters more than hunter breadth.")
     elif modules <= 30:
-        lines.append("- `normal` to `deep`: medium repo; use `deep` when runtime evidence or requirements mode is in scope.")
+        lines.append(
+            "- `normal` to `deep`: medium repo; use `deep` when runtime evidence or requirements mode is in scope."
+        )
     else:
         lines.append("- `deep`: large repo; consider scoping modules before spending review budget.")
 
@@ -1722,7 +1937,11 @@ def route_methods(methods_text: str | None) -> list[str]:
             return [node.body.value.upper()]
     except SyntaxError:
         pass
-    return [m.upper() for m in re.findall(r"[A-Za-z]+", methods_text) if m.upper() in {"GET", "POST", "PUT", "PATCH", "DELETE"}]
+    return [
+        m.upper()
+        for m in re.findall(r"[A-Za-z]+", methods_text)
+        if m.upper() in {"GET", "POST", "PUT", "PATCH", "DELETE"}
+    ]
 
 
 def route_is_public(route: dict) -> bool:
@@ -1790,7 +2009,7 @@ def write_runtime_probe_plan(out: Path, routes: list[dict], args: argparse.Names
                 "set -euo pipefail",
                 ': "${ODOO_BASE_URL:?ODOO_BASE_URL is required}"',
                 ': "${ODOO_REVIEW_OUT:?ODOO_REVIEW_OUT is required}"',
-                "mkdir -p \"${ODOO_REVIEW_OUT}/runtime/reproductions\"",
+                'mkdir -p "${ODOO_REVIEW_OUT}/runtime/reproductions"',
                 f"ROUTE_PATH={shell_quote(route_path)}",
                 f"BUCKET={shell_quote(bucket)}",
                 f"SOURCE={shell_quote(str(route.get('file')) + ':' + str(route.get('line')))}",
@@ -1852,7 +2071,9 @@ def write_runtime_probe_plan(out: Path, routes: list[dict], args: argparse.Names
             if bucket == "auto-safe":
                 safe_scripts.append(script_path)
 
-    safe_list.write_text("\n".join(str(path) for path in safe_scripts) + ("\n" if safe_scripts else ""), encoding="utf-8")
+    safe_list.write_text(
+        "\n".join(str(path) for path in safe_scripts) + ("\n" if safe_scripts else ""), encoding="utf-8"
+    )
     (probe_dir / "probes.json").write_text(json.dumps(probe_records, indent=2), encoding="utf-8")
     runtime_cmd = [
         "odoo-review-runtime",
@@ -1941,14 +2162,14 @@ def write_directives_seed(out: Path) -> None:
         "---",
         "id: D-NNNN",
         "created_at: YYYY-MM-DDTHH:MM:SSZ",
-        "from_phase: \"5.5\"             # which phase issued this directive",
+        'from_phase: "5.5"             # which phase issued this directive',
         "target_lane: codex             # qwen | codex",
         "task_type: rerun-hunter        # rerun-hunter | focus-scan | build-poc | verify-claim | narrative",
         "status: pending                # pending | running | done | failed",
         "model:                         # optional override (e.g. qwen3:0.6b, gpt-5.3-codex)",
         "scope:",
         "  - addons/<module>/<file>.py  # one or more paths relative to repo root",
-        "deadline_phase: \"6\"            # latest phase that can still consume this result",
+        'deadline_phase: "6"            # latest phase that can still consume this result',
         "---",
         "",
         "## Why",
@@ -2039,45 +2260,48 @@ def write_qwen_handoff(out: Path, args: argparse.Namespace, repo: Path) -> None:
             continue
         directive_id = "-".join(filename.split("-", 2)[:2])
         path.write_text(
-            "\n".join([
-                "---",
-                f"id: {directive_id}",
-                "created_at: AUTO",
-                "from_phase: \"handoff\"",
-                "target_lane: qwen",
-                f"task_type: {task_type}",
-                "status: pending",
-                f"model: {local_model}",
-                "scope:",
-                "deadline_phase: \"7\"",
-                "---",
-                "",
-                "## Context",
-                "",
-                f"Repo: `{repo}`",
-                f"Audit output: `{out}`",
-                "",
-                "Read these artifacts if present:",
-                "",
-                f"- `{out / '00-modules.md'}`",
-                f"- `{out / '01-attack-surface.md'}`",
-                f"- `{out / 'module-risk.md'}`",
-                f"- `{out / 'inventory' / 'sharp-edge-index.json'}`",
-                f"- `{out / 'inventory' / 'breadth' / 'leads.md'}`",
-                f"- `{out / 'scans'}`",
-                f"- `{out / 'codex' / 'hunters'}`",
-                f"- `{out / 'baseline-stock' / 'validation-leads.md'}`",
-                "",
-                "## Ask",
-                "",
-                ask,
-                "",
-                "## Output Rules",
-                "",
-                "- HINT only. Do not produce final ACCEPT/REJECT verdicts.",
-                "- Cite file:line where possible.",
-                "- Keep it concise enough for a lead session to consume after compaction.",
-            ]) + "\n",
+            "\n".join(
+                [
+                    "---",
+                    f"id: {directive_id}",
+                    "created_at: AUTO",
+                    'from_phase: "handoff"',
+                    "target_lane: qwen",
+                    f"task_type: {task_type}",
+                    "status: pending",
+                    f"model: {local_model}",
+                    "scope:",
+                    'deadline_phase: "7"',
+                    "---",
+                    "",
+                    "## Context",
+                    "",
+                    f"Repo: `{repo}`",
+                    f"Audit output: `{out}`",
+                    "",
+                    "Read these artifacts if present:",
+                    "",
+                    f"- `{out / '00-modules.md'}`",
+                    f"- `{out / '01-attack-surface.md'}`",
+                    f"- `{out / 'module-risk.md'}`",
+                    f"- `{out / 'inventory' / 'sharp-edge-index.json'}`",
+                    f"- `{out / 'inventory' / 'breadth' / 'leads.md'}`",
+                    f"- `{out / 'scans'}`",
+                    f"- `{out / 'codex' / 'hunters'}`",
+                    f"- `{out / 'baseline-stock' / 'validation-leads.md'}`",
+                    "",
+                    "## Ask",
+                    "",
+                    ask,
+                    "",
+                    "## Output Rules",
+                    "",
+                    "- HINT only. Do not produce final ACCEPT/REJECT verdicts.",
+                    "- Cite file:line where possible.",
+                    "- Keep it concise enough for a lead session to consume after compaction.",
+                ]
+            )
+            + "\n",
             encoding="utf-8",
         )
 
@@ -2097,7 +2321,14 @@ def breadth_budget_defaults(args: argparse.Namespace) -> tuple[int | None, int]:
     return max_chunks, min_score
 
 
-def emit_breadth_dispatch(out: Path, manifests: list[dict], routes: list[dict], pattern_summary: dict, risk_rows: list[dict], args: argparse.Namespace) -> None:
+def emit_breadth_dispatch(
+    out: Path,
+    manifests: list[dict],
+    routes: list[dict],
+    pattern_summary: dict,
+    risk_rows: list[dict],
+    args: argparse.Namespace,
+) -> None:
     """Emit Phase 1.7 breadth-sweep dispatch plan.
 
     Lead Claude reads inventory/breadth/dispatch.json and spawns one Agent per
@@ -2123,7 +2354,9 @@ def emit_breadth_dispatch(out: Path, manifests: list[dict], routes: list[dict], 
             if should_skip(path):
                 continue
             try:
-                py_by_module.setdefault(module, []).append(str(path.relative_to(Path(args.target).expanduser().resolve())))
+                py_by_module.setdefault(module, []).append(
+                    str(path.relative_to(Path(args.target).expanduser().resolve()))
+                )
             except ValueError:
                 py_by_module.setdefault(module, []).append(str(path))
 
@@ -2146,20 +2379,22 @@ def emit_breadth_dispatch(out: Path, manifests: list[dict], routes: list[dict], 
         module_sharp = sharp.get(module, {})
         sharp_count = sum(int(v or 0) for v in module_sharp.values() if isinstance(v, int))
         for i in range(0, len(files), chunk_size):
-            piece = files[i:i + chunk_size]
-            chunks.append({
-                "chunk_id": f"BR-{chunk_id:03d}",
-                "module": module,
-                "files": piece,
-                "file_count": len(piece),
-                "module_score": module_score,
-                "route_count": route_count_by_module.get(module, 0),
-                "sharp_edge_count": sharp_count,
-                "sharp_edges_in_module": module_sharp,
-                "agent": "Agent",
-                "subagent_type": "general-purpose",
-                "objective": "eve-cc style breadth review for Odoo security: enumerate every public route, sudo() use, sql_query, eval/exec, ir.rule gap, and authentication boundary in this chunk; output candidate findings as leads (file:line, attack idea, suspected severity).",
-            })
+            piece = files[i : i + chunk_size]
+            chunks.append(
+                {
+                    "chunk_id": f"BR-{chunk_id:03d}",
+                    "module": module,
+                    "files": piece,
+                    "file_count": len(piece),
+                    "module_score": module_score,
+                    "route_count": route_count_by_module.get(module, 0),
+                    "sharp_edge_count": sharp_count,
+                    "sharp_edges_in_module": module_sharp,
+                    "agent": "Agent",
+                    "subagent_type": "general-purpose",
+                    "objective": "eve-cc style breadth review for Odoo security: enumerate every public route, sudo() use, sql_query, eval/exec, ir.rule gap, and authentication boundary in this chunk; output candidate findings as leads (file:line, attack idea, suspected severity).",
+                }
+            )
             chunk_id += 1
 
     chunks.sort(
@@ -2178,29 +2413,41 @@ def emit_breadth_dispatch(out: Path, manifests: list[dict], routes: list[dict], 
         chunk["chunk_id"] = f"BR-{idx:03d}"
 
     dispatch_path = breadth_dir / "dispatch.json"
-    dispatch_path.write_text(json.dumps({
-        "breadth_budget": args.breadth_budget,
-        "breadth_max_chunks": max_chunks,
-        "breadth_min_module_score": min_score,
-        "candidate_chunks_before_cap": total_candidate_chunks,
-        "chunks": chunks,
-    }, indent=2), encoding="utf-8")
+    dispatch_path.write_text(
+        json.dumps(
+            {
+                "breadth_budget": args.breadth_budget,
+                "breadth_max_chunks": max_chunks,
+                "breadth_min_module_score": min_score,
+                "candidate_chunks_before_cap": total_candidate_chunks,
+                "chunks": chunks,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     md_lines = ["# Phase 1.7 — Breadth Sweep Dispatch", ""]
     md_lines.append(f"Budget: `{args.breadth_budget}`")
-    md_lines.append(f"Total chunks: {len(chunks)} (chunk size {chunk_size}; candidates before cap {total_candidate_chunks})")
+    md_lines.append(
+        f"Total chunks: {len(chunks)} (chunk size {chunk_size}; candidates before cap {total_candidate_chunks})"
+    )
     md_lines.append(f"Minimum module risk score: `{min_score}`")
     md_lines.append("")
     md_lines.append("Lead Claude: dispatch only the chunks listed here via the Agent tool in parallel batches.")
     md_lines.append("Each subagent reviews its file slice for Odoo-specific security issues and")
     md_lines.append("appends its leads to `inventory/breadth/leads.md` (one section per chunk).")
     md_lines.append("Hunters in Phase 5 read leads.md as additional input.")
-    md_lines.append("If limits get tight, stop breadth after the current wave; the prioritized chunks already front-load risk.")
+    md_lines.append(
+        "If limits get tight, stop breadth after the current wave; the prioritized chunks already front-load risk."
+    )
     md_lines.append("")
     md_lines.append("| Chunk | Module | Files | Risk Score | Routes | Sharp Edges |")
     md_lines.append("|-------|--------|-------|------|--------|-------------|")
     for c in chunks:
-        md_lines.append(f"| {c['chunk_id']} | {c['module']} | {c['file_count']} | {c['module_score']} | {c['route_count']} | {c['sharp_edge_count']} |")
+        md_lines.append(
+            f"| {c['chunk_id']} | {c['module']} | {c['file_count']} | {c['module_score']} | {c['route_count']} | {c['sharp_edge_count']} |"
+        )
     (breadth_dir / "dispatch.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
     leads_path = breadth_dir / "leads.md"
@@ -2234,19 +2481,41 @@ def assert_phase1_populated(out: Path, manifests: list[dict], args: argparse.Nam
         module = item["module"]
         marker = f"### `{module}`"
         if marker not in text:
-            errors.append(f"Phase 1 fail-loud: module `{module}` missing per-module surface section in 01-attack-surface.md")
+            errors.append(
+                f"Phase 1 fail-loud: module `{module}` missing per-module surface section in 01-attack-surface.md"
+            )
             continue
         idx = text.index(marker)
         next_marker_idx = text.find("\n### ", idx + len(marker))
         section = text[idx:next_marker_idx] if next_marker_idx != -1 else text[idx:]
         non_empty_lines = [line for line in section.splitlines() if line.strip() and not line.strip().startswith("#")]
         if len(non_empty_lines) < threshold:
-            errors.append(f"Phase 1 fail-loud: module `{module}` only has {len(non_empty_lines)} content line(s) in 01-attack-surface.md (threshold: {threshold})")
+            errors.append(
+                f"Phase 1 fail-loud: module `{module}` only has {len(non_empty_lines)} content line(s) in 01-attack-surface.md (threshold: {threshold})"
+            )
     return errors
 
 
 def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, list[str]]:
-    tools = {name: which(name) for name in ["codex", "ollama", "semgrep", "bandit", "ruff", "pylint", "pre-commit", "codeql", "pyre", "pip-audit", "osv-scanner", "detect-secrets", "joern-parse", "dot"]}
+    tools = {
+        name: which(name)
+        for name in [
+            "codex",
+            "ollama",
+            "semgrep",
+            "bandit",
+            "ruff",
+            "pylint",
+            "pre-commit",
+            "codeql",
+            "pyre",
+            "pip-audit",
+            "osv-scanner",
+            "detect-secrets",
+            "joern-parse",
+            "dot",
+        ]
+    }
     lane_errors: list[str] = []
     if not args.no_codex and not tools["codex"]:
         lane_errors.append("Codex CLI not found; use --no-codex or --allow-missing-lanes.")
@@ -2255,9 +2524,13 @@ def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, li
             lane_errors.append("Ollama not found; use --no-local-qwen or --allow-missing-lanes.")
         else:
             try:
-                listed = subprocess.run(["ollama", "list"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15)
+                listed = subprocess.run(
+                    ["ollama", "list"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15
+                )
                 if args.local_model not in listed.stdout:
-                    lane_errors.append(f"Ollama model {args.local_model!r} not found; pull it or use --allow-missing-lanes.")
+                    lane_errors.append(
+                        f"Ollama model {args.local_model!r} not found; pull it or use --allow-missing-lanes."
+                    )
             except Exception as exc:  # noqa: BLE001
                 lane_errors.append(f"Could not query Ollama models: {exc}")
     plan = {
@@ -2302,61 +2575,219 @@ def run_scanners(args: argparse.Namespace, repo: Path, out: Path, log_path: Path
     progress("Phase 2-4.5 scanners starting")
     records = []
     scans = out / "scans"
-    for sub in ["semgrep", "bandit", "ruff", "pylint-odoo", "oca-precommit", "codeql", "joern", "pysa", "deps", "secrets"]:
+    for sub in [
+        "semgrep",
+        "bandit",
+        "ruff",
+        "pylint-odoo",
+        "oca-precommit",
+        "codeql",
+        "joern",
+        "pysa",
+        "deps",
+        "secrets",
+    ]:
         (scans / sub).mkdir(parents=True, exist_ok=True)
 
     if which("semgrep"):
-        records.append(run(["semgrep", "--config", str(DEFAULT_RULES), "--config", "p/python", "--config", "p/owasp-top-ten", "--config", "p/trailofbits", "--json", "--output", str(scans / "semgrep" / "results.json"), "--metrics=off", str(repo)], repo, log_path, timeout=2400))
-        records.append(run(["semgrep", "--config", str(DEFAULT_RULES), "--config", "p/python", "--sarif", "--output", str(scans / "semgrep" / "results.sarif"), "--metrics=off", str(repo)], repo, log_path, timeout=2400))
+        records.append(
+            run(
+                [
+                    "semgrep",
+                    "--config",
+                    str(DEFAULT_RULES),
+                    "--config",
+                    "p/python",
+                    "--config",
+                    "p/owasp-top-ten",
+                    "--config",
+                    "p/trailofbits",
+                    "--json",
+                    "--output",
+                    str(scans / "semgrep" / "results.json"),
+                    "--metrics=off",
+                    str(repo),
+                ],
+                repo,
+                log_path,
+                timeout=2400,
+            )
+        )
+        records.append(
+            run(
+                [
+                    "semgrep",
+                    "--config",
+                    str(DEFAULT_RULES),
+                    "--config",
+                    "p/python",
+                    "--sarif",
+                    "--output",
+                    str(scans / "semgrep" / "results.sarif"),
+                    "--metrics=off",
+                    str(repo),
+                ],
+                repo,
+                log_path,
+                timeout=2400,
+            )
+        )
     else:
         records.append({"tool": "semgrep", "status": "missing"})
 
     if which("bandit"):
-        records.append(run(["bandit", "-r", str(repo), "-f", "json", "-o", str(scans / "bandit" / "results.json"), "-lll", "--exclude", "*/tests/*,*/test_*"], repo, log_path))
+        records.append(
+            run(
+                [
+                    "bandit",
+                    "-r",
+                    str(repo),
+                    "-f",
+                    "json",
+                    "-o",
+                    str(scans / "bandit" / "results.json"),
+                    "-lll",
+                    "--exclude",
+                    "*/tests/*,*/test_*",
+                ],
+                repo,
+                log_path,
+            )
+        )
     else:
         records.append({"tool": "bandit", "status": "missing"})
 
     if which("ruff"):
-        records.append(run(["ruff", "check", str(repo), "--output-format=json"], repo, log_path, scans / "ruff" / "results.json"))
+        records.append(
+            run(["ruff", "check", str(repo), "--output-format=json"], repo, log_path, scans / "ruff" / "results.json")
+        )
     else:
         records.append({"tool": "ruff", "status": "missing"})
 
     if which("pylint"):
-        records.append(run(["pylint", "--load-plugins", "pylint_odoo", "--disable=all", "--enable=odoolint", str(repo)], repo, log_path, scans / "pylint-odoo" / "results.txt", timeout=2400))
+        records.append(
+            run(
+                ["pylint", "--load-plugins", "pylint_odoo", "--disable=all", "--enable=odoolint", str(repo)],
+                repo,
+                log_path,
+                scans / "pylint-odoo" / "results.txt",
+                timeout=2400,
+            )
+        )
     else:
         records.append({"tool": "pylint", "status": "missing"})
 
     if which("pre-commit") and (repo / ".pre-commit-config.yaml").exists():
-        records.append(run(["pre-commit", "run", "--all-files", "--config", str(repo / ".pre-commit-config.yaml")], repo, log_path, scans / "oca-precommit" / "results.txt", timeout=2400))
+        records.append(
+            run(
+                ["pre-commit", "run", "--all-files", "--config", str(repo / ".pre-commit-config.yaml")],
+                repo,
+                log_path,
+                scans / "oca-precommit" / "results.txt",
+                timeout=2400,
+            )
+        )
     else:
         records.append({"tool": "pre-commit", "status": "missing_or_no_config"})
 
     if which("codeql"):
         db = out / "codeql-dbs" / f"{repo.name or 'repo'}-python-db"
         db.parent.mkdir(parents=True, exist_ok=True)
-        records.append(run(["codeql", "database", "create", str(db), "--language=python", f"--source-root={repo}", "--build-mode=none"], repo, log_path, timeout=3600))
-        records.append(run(["codeql", "database", "analyze", str(db), "codeql/python-queries:codeql-suites/python-security-and-quality.qls", "codeql/python-queries:codeql-suites/python-security-experimental.qls", "--format=sarif-latest", f"--output={scans / 'codeql' / 'results.sarif'}", "--download"], repo, log_path, timeout=3600))
+        records.append(
+            run(
+                [
+                    "codeql",
+                    "database",
+                    "create",
+                    str(db),
+                    "--language=python",
+                    f"--source-root={repo}",
+                    "--build-mode=none",
+                ],
+                repo,
+                log_path,
+                timeout=3600,
+            )
+        )
+        records.append(
+            run(
+                [
+                    "codeql",
+                    "database",
+                    "analyze",
+                    str(db),
+                    "codeql/python-queries:codeql-suites/python-security-and-quality.qls",
+                    "codeql/python-queries:codeql-suites/python-security-experimental.qls",
+                    "--format=sarif-latest",
+                    f"--output={scans / 'codeql' / 'results.sarif'}",
+                    "--download",
+                ],
+                repo,
+                log_path,
+                timeout=3600,
+            )
+        )
     else:
         records.append({"tool": "codeql", "status": "missing"})
 
     if args.joern and which("joern-parse"):
         cpg = scans / "joern" / "cpg.bin"
-        records.append(run(["joern-parse", str(repo), "--language", "pythonsrc", "-o", str(cpg)], repo, log_path, timeout=3600))
+        records.append(
+            run(["joern-parse", str(repo), "--language", "pythonsrc", "-o", str(cpg)], repo, log_path, timeout=3600)
+        )
     elif args.joern:
         records.append({"tool": "joern-parse", "status": "missing"})
 
     if which("pip-audit"):
-        records.append(run(["pip-audit", "--path", str(repo), "--format", "json", "--output", str(scans / "deps" / "pip-audit.json")], repo, log_path, timeout=1800))
+        records.append(
+            run(
+                [
+                    "pip-audit",
+                    "--path",
+                    str(repo),
+                    "--format",
+                    "json",
+                    "--output",
+                    str(scans / "deps" / "pip-audit.json"),
+                ],
+                repo,
+                log_path,
+                timeout=1800,
+            )
+        )
     else:
         records.append({"tool": "pip-audit", "status": "missing"})
 
     if which("osv-scanner"):
-        records.append(run(["osv-scanner", "--recursive", "--format", "json", "--output", str(scans / "deps" / "osv-scanner.json"), str(repo)], repo, log_path, timeout=1800))
+        records.append(
+            run(
+                [
+                    "osv-scanner",
+                    "--recursive",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(scans / "deps" / "osv-scanner.json"),
+                    str(repo),
+                ],
+                repo,
+                log_path,
+                timeout=1800,
+            )
+        )
     else:
         records.append({"tool": "osv-scanner", "status": "missing"})
 
     if which("detect-secrets"):
-        records.append(run(["detect-secrets", "scan", "--all-files", str(repo)], repo, log_path, scans / "secrets" / "detect-secrets.json", timeout=1800))
+        records.append(
+            run(
+                ["detect-secrets", "scan", "--all-files", str(repo)],
+                repo,
+                log_path,
+                scans / "secrets" / "detect-secrets.json",
+                timeout=1800,
+            )
+        )
     else:
         records.append({"tool": "detect-secrets", "status": "missing"})
     progress("Phase 2-4.5 scanners complete")
@@ -2373,6 +2804,7 @@ def run_qwen(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) ->
         progress("skip local Qwen (ollama missing)")
         return {"status": "skipped", "reason": "ollama missing"}
     progress(f"Phase 1.5 local Qwen starting ({args.local_model})")
+
     def excerpt(path: Path, limit: int = 12000) -> str:
         if not path.exists():
             return f"(missing: {path})"
@@ -2407,8 +2839,12 @@ Rules:
 {excerpt(out / 'inventory' / 'sharp-edge-index.json', 14000)}
 """
     result = run(["ollama", "run", args.local_model, prompt], repo, log_path, qwen_dir / "module-notes.md", timeout=900)
-    (qwen_dir / "scanner-triage.md").write_text("See module-notes.md. Scanner-specific triage is advisory only.\n", encoding="utf-8")
-    (qwen_dir / "reject-candidates.md").write_text("See module-notes.md. Claude must verify before rejecting anything.\n", encoding="utf-8")
+    (qwen_dir / "scanner-triage.md").write_text(
+        "See module-notes.md. Scanner-specific triage is advisory only.\n", encoding="utf-8"
+    )
+    (qwen_dir / "reject-candidates.md").write_text(
+        "See module-notes.md. Claude must verify before rejecting anything.\n", encoding="utf-8"
+    )
     progress("Phase 1.5 local Qwen complete")
     return result
 
@@ -2510,7 +2946,9 @@ def run_codex(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) -
         output_path = codex_dir / f"{slug}.md"
         prompt_path.write_text(prompt, encoding="utf-8")
         if args.codex_mode == "prepare":
-            records.append({"hunter": slug, "status": "prepared", "prompt": str(prompt_path), "output": str(output_path)})
+            records.append(
+                {"hunter": slug, "status": "prepared", "prompt": str(prompt_path), "output": str(output_path)}
+            )
             progress(f"Codex hunter {idx}/{len(HUNTERS)} prepared: {title}")
             continue
         cmd = [
@@ -2627,7 +3065,10 @@ def run_ensemble(args: argparse.Namespace, repo: Path, out: Path, log_path: Path
     (ens_dir / "README.md").write_text("\n".join(readme) + "\n", encoding="utf-8")
     merged = ens_dir / "merged-leads.md"
     if not merged.exists():
-        merged.write_text("# Ensemble Merged Leads\n\n_Lead Claude dedupes pass outputs here before Phase 7 validation._\n", encoding="utf-8")
+        merged.write_text(
+            "# Ensemble Merged Leads\n\n_Lead Claude dedupes pass outputs here before Phase 7 validation._\n",
+            encoding="utf-8",
+        )
     if args.ensemble == "off":
         return [{"status": "skipped", "reason": "--ensemble off"}]
     if args.no_codex:
@@ -2644,7 +3085,9 @@ def run_ensemble(args: argparse.Namespace, repo: Path, out: Path, log_path: Path
         output_path = ens_dir / f"{pass_id}.md"
         prompt_path.write_text(prompt, encoding="utf-8")
         if args.codex_mode == "prepare" or args.preflight_only:
-            records.append({"pass": pass_id, "status": "prepared", "prompt": str(prompt_path), "output": str(output_path)})
+            records.append(
+                {"pass": pass_id, "status": "prepared", "prompt": str(prompt_path), "output": str(output_path)}
+            )
             continue
         cmd = [
             "codex",
@@ -2667,7 +3110,14 @@ def run_ensemble(args: argparse.Namespace, repo: Path, out: Path, log_path: Path
     return records
 
 
-def write_tooling(out: Path, plan: dict, scanner_records: list[dict], qwen_record: dict | None, codex_records: list[dict] | None, ensemble_records: list[dict] | None = None) -> None:
+def write_tooling(
+    out: Path,
+    plan: dict,
+    scanner_records: list[dict],
+    qwen_record: dict | None,
+    codex_records: list[dict] | None,
+    ensemble_records: list[dict] | None = None,
+) -> None:
     data = {
         "plan": plan,
         "scanner_records": scanner_records,
@@ -2684,7 +3134,9 @@ def write_tooling(out: Path, plan: dict, scanner_records: list[dict], qwen_recor
     lines.append(f"Project config: `{plan.get('project_config') or 'not loaded'}`")
     lines.append(f"Model pack: `{plan.get('model_pack')}`")
     lines.append(f"Local Qwen enabled: `{plan['local_qwen_enabled']}` (`{plan['local_model']}`)")
-    lines.append(f"Codex enabled: `{plan['codex_enabled']}` (`{plan['codex_model']}`, budget `{plan['codex_budget']}`, mode `{plan['codex_mode']}`)")
+    lines.append(
+        f"Codex enabled: `{plan['codex_enabled']}` (`{plan['codex_model']}`, budget `{plan['codex_budget']}`, mode `{plan['codex_mode']}`)"
+    )
     lines.append(f"Ensemble: `{plan.get('ensemble')}` (passes `{plan.get('ensemble_passes')}`)")
     lines.append(f"Runtime enabled: `{plan['runtime']}`")
     if plan.get("project_config_warnings"):
@@ -2828,17 +3280,23 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
     (out / "run-mode.json").write_text(json.dumps(mode, indent=2, sort_keys=True), encoding="utf-8")
 
     md = ["# Run Mode\n"]
-    md.append("Lead Claude session reads this file to decide whether to suppress y/N prompts and run the self-improving learn loop.\n")
+    md.append(
+        "Lead Claude session reads this file to decide whether to suppress y/N prompts and run the self-improving learn loop.\n"
+    )
     md.append("## Active flags\n")
     flag_lines = []
     if mode["weekly"]:
         flag_lines.append("- **-ks** — kitchen-sink max-quality mode")
     if mode["non_interactive"]:
-        flag_lines.append("- **--yes** — strip every y/N prompt; with --learn, Phase 8.7 auto-applies accepted-risk suggestions")
+        flag_lines.append(
+            "- **--yes** — strip every y/N prompt; with --learn, Phase 8.7 auto-applies accepted-risk suggestions"
+        )
     if mode["learn"]:
         flag_lines.append(f"- **--learn** — produce durable learning artifacts (cap: {mode['learn_cap']} iterations)")
     if mode["baseline_stock_cc"]:
-        flag_lines.append("- **--baseline-stock-cc** — spawn stock-CC control lane, validate stock-only leads, append misses to hunter prompts")
+        flag_lines.append(
+            "- **--baseline-stock-cc** — spawn stock-CC control lane, validate stock-only leads, append misses to hunter prompts"
+        )
     if mode["quick"]:
         flag_lines.append("- **--quick** — scanners + Phase 5.5 skipped")
     if mode["joern"]:
@@ -2852,22 +3310,34 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
     if mode["model_pack"] != "default":
         flag_lines.append(f"- **--model-pack {mode['model_pack']}** — model/lane preset")
     if mode["ensemble"] != "off":
-        flag_lines.append(f"- **--ensemble {mode['ensemble']}** — focused recall ensemble (passes: {mode['ensemble_passes'] or 'preset'})")
+        flag_lines.append(
+            f"- **--ensemble {mode['ensemble']}** — focused recall ensemble (passes: {mode['ensemble_passes'] or 'preset'})"
+        )
     if mode["no_breadth"] or mode["breadth_budget"] == "off":
         flag_lines.append("- **--breadth-budget off** — Phase 1.7 Claude breadth subagents disabled")
     elif mode["breadth_budget"] != "normal" or mode["breadth_max_chunks"]:
         cap = mode["breadth_max_chunks"] or "preset"
-        flag_lines.append(f"- **--breadth-budget {mode['breadth_budget']}** — Phase 1.7 Claude breadth subagents capped/prioritized (cap: {cap})")
+        flag_lines.append(
+            f"- **--breadth-budget {mode['breadth_budget']}** — Phase 1.7 Claude breadth subagents capped/prioritized (cap: {cap})"
+        )
     if not flag_lines:
         flag_lines.append("- (default mode — interactive prompts active)")
     md.extend(flag_lines)
     md.append("")
     md.append("## Orchestration contract\n")
     md.append("Lead Claude MUST honor these flags:\n")
-    md.append("- `non_interactive=true` → never emit `[y/N]` prompts; choose the documented default action and proceed.")
-    md.append("- `learn=true` → after Phase 8.6, run Phase 8.7 learning. Use `--apply` only when `non_interactive=true` or the user approved the suggestions.")
-    md.append("- `baseline_stock_cc=true` → during Phase 1, dispatch one general-purpose Agent with stock-CC review prompt against the same repo; diff before final Phase 7/8 closure and validate stock-only leads in this run.")
-    md.append("- `breadth_budget` controls Phase 1.7 Claude Agent spend. Dispatch only chunks listed in `inventory/breadth/dispatch.json`; they are risk-prioritized and may be intentionally capped.")
+    md.append(
+        "- `non_interactive=true` → never emit `[y/N]` prompts; choose the documented default action and proceed."
+    )
+    md.append(
+        "- `learn=true` → after Phase 8.6, run Phase 8.7 learning. Use `--apply` only when `non_interactive=true` or the user approved the suggestions."
+    )
+    md.append(
+        "- `baseline_stock_cc=true` → during Phase 1, dispatch one general-purpose Agent with stock-CC review prompt against the same repo; diff before final Phase 7/8 closure and validate stock-only leads in this run."
+    )
+    md.append(
+        "- `breadth_budget` controls Phase 1.7 Claude Agent spend. Dispatch only chunks listed in `inventory/breadth/dispatch.json`; they are risk-prioritized and may be intentionally capped."
+    )
     md.append("")
     (out / "00-run-mode.md").write_text("\n".join(md), encoding="utf-8")
 
@@ -2899,7 +3369,21 @@ def main() -> int:
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
         out = repo / f".audit-{stamp}"
     out.mkdir(parents=True, exist_ok=True)
-    for sub in ["inventory", "scans", "agents", "codex", "ensemble", "variants", "runtime", "attack-graphs", "requirements", "directives", "directives/results", "baseline-stock", "qwen-handoff"]:
+    for sub in [
+        "inventory",
+        "scans",
+        "agents",
+        "codex",
+        "ensemble",
+        "variants",
+        "runtime",
+        "attack-graphs",
+        "requirements",
+        "directives",
+        "directives/results",
+        "baseline-stock",
+        "qwen-handoff",
+    ]:
         (out / sub).mkdir(parents=True, exist_ok=True)
     log_path = out / "commands.log"
     write_run_mode(out, args, repo)
@@ -2949,7 +3433,9 @@ def main() -> int:
     manifests = find_manifests(repo, allowed_modules)
     loose = find_loose_python(repo, args)
     if loose:
-        print(f"Loose Python sweep: {len(loose)} pseudo-module(s) added (origins: {sorted({m.get('origin','?') for m in loose})})")
+        print(
+            f"Loose Python sweep: {len(loose)} pseudo-module(s) added (origins: {sorted({m.get('origin','?') for m in loose})})"
+        )
     manifests = manifests + loose
 
     scope_data: dict = {}
@@ -3029,9 +3515,11 @@ def main() -> int:
 
     if args.prune_old_runs and args.prune_old_runs > 0:
         stamped = sorted(
-            (p for p in repo.glob(".audit-*")
-             if p.is_dir() and len(p.name) == len(".audit-YYYYMMDD-HHMM")
-             and p.name[7:].replace("-", "").isdigit()),
+            (
+                p
+                for p in repo.glob(".audit-*")
+                if p.is_dir() and len(p.name) == len(".audit-YYYYMMDD-HHMM") and p.name[7:].replace("-", "").isdigit()
+            ),
             key=lambda p: p.name,
         )
         to_delete = stamped[: -args.prune_old_runs] if len(stamped) > args.prune_old_runs else []
