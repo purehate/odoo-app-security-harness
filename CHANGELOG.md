@@ -5,7 +5,19 @@ All notable changes to the Odoo Application Security Harness will be documented 
 ## [Unreleased]
 
 ### Added
-- Comprehensive test suite with pytest (90%+ coverage)
+- **AI Integration Scanner** — detects hardcoded AI API keys, tainted prompts, and unsanitized AI output rendering (`odoo-ai-*`)
+- **Odoo Disclosure Mapper** — classifies findings as `qualifying` / `non_qualifying` / `borderline` against Odoo responsible disclosure criteria
+- **Monkey-patch detection** — flags `BaseModel.create/write/unlink = ...` and `setattr(BaseModel, ...)` assignments (`odoo-deep-monkey-patch-base-model`)
+- **getattr/setattr tainted-name detection** — flags dynamic attribute access with user-controlled names (`odoo-deep-getattr-setattr-tainted-name`)
+- **ORM `read()` field validation** — flags empty/no-fields or tainted field lists in controller `read()` calls (`odoo-deep-orm-read-*`)
+- **Onchange/constraint mutation detection** — flags `@api.onchange` and `@api.constrains` methods that call `write()`/`create()`/`unlink()` (`odoo-deep-onchange-database-mutation`, `odoo-deep-constraint-database-mutation`)
+- **Markup(f-string) XSS detection** — flags `Markup(f"...")` where f-string interpolation happens before escaping (`odoo-deep-markup-fstring`)
+- **Font-awesome accessibility** — flags `<i class="fa...">` without `aria-label`, `aria-hidden`, or `title` (`odoo-qweb-fa-icon-missing-label`)
+- **Field tracking validation** — flags `tracking=True` on models not inheriting `mail.thread` (`odoo-field-tracking-without-mail-thread`)
+- **Privileged group admin check** — flags `res.groups` with admin-level names missing `base.user_root`/`base.user_admin` (`odoo-xml-privileged-group-missing-admin-users`)
+- **QWeb dynamic t-component detection** — flags dynamic `t-component` template selection (`odoo-qweb-dynamic-t-component`)
+- Expanded taxonomy: 588 Odoo bug-shape → CWE/CAPEC/OWASP mappings (up from 584)
+- Comprehensive test suite with pytest (3841 tests, ~89% coverage on core modules)
 - Docker support for consistent execution environments
 - GitHub Actions CI/CD pipeline
 - Pre-commit hooks for code quality

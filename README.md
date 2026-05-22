@@ -10,7 +10,7 @@ Provides one comprehensive command, `/odoo-code-review`. Claude Code remains the
 
 - Each ACCEPT finding explains the Odoo-idiomatic fix (not "validate input" but "use `ir.model.access` + `ir.rule` with `company_id` filter, drop the `sudo()`, propagate `with_user(self.env.user)` through related fields"). Cite Odoo source / docs / OCA precedent when relevant.
 - Each REJECT explains _why_ it isn't a bug in Odoo's model so you internalize the framework's invariants (e.g., "ORM ALREADY parameterizes via `psycopg2.sql` for table identifiers — the f-string here is over a hardcoded constant, not user data").
-- Findings target the Odoo bug shapes that don't show up in generic Python scanners: multi-company isolation, prefetch leakage, `sudo()` propagation, `ir.model.access` vs `ir.rule` precedence, `_sql_constraints` gaps, computed-field-with-sudo recompute amplification, QWeb sinks (`t-raw` / `Markup` / `fields.Html(sanitize=False)`), portal `/my/*` exposure, `safe_eval` sandbox edges, `with_user(env.ref('base.user_admin'))` patterns.
+- Findings target the Odoo bug shapes that don't show up in generic Python scanners: multi-company isolation, prefetch leakage, `sudo()` propagation, `ir.model.access` vs `ir.rule` precedence, `_sql_constraints` gaps, computed-field-with-sudo recompute amplification, QWeb sinks (`t-raw` / `Markup` / `fields.Html(sanitize=False)`), portal `/my/*` exposure, `safe_eval` sandbox edges, `with_user(env.ref('base.user_admin'))` patterns, monkey-patching of `BaseModel`, `getattr`/`setattr` with tainted names, `@api.onchange` and `@api.constrains` database mutations, `Markup(f"...")` XSS, `tracking=True` without `mail.thread`, missing admin users in privileged `res.groups`, and font-awesome icon accessibility gaps.
 - The iteration loop builds your knowledge base: every `accepted_risks` reason in `scope.yml` becomes a paragraph of senior-level Odoo reasoning you can show to teammates.
 
 If a finding could be lifted verbatim from `bandit -r .`, it doesn't belong in the report. The point is the Odoo expertise you absorb every iteration.
@@ -86,7 +86,7 @@ Lane outputs are leads only. Nothing ships until Claude's 6-gate validation conf
 - Reviews deployment posture across Odoo config, XML/CSV parameters, Docker, Compose, Kubernetes, Helm, Ansible-style YAML, and Terraform env declarations.
 - Scores per-module risk (`module-risk.md` + `inventory/module-risk.json`) so hunters hit highest-risk modules first.
 - Emits a risk-prioritized Phase 1.7 breadth plan for Claude Agent subagents, capped by `--breadth-budget` / `--breadth-max-chunks`.
-- Seeds hunters with `inventory/cwe-map.json` (584 Odoo bug-shape → CWE/CAPEC/OWASP mappings).
+- Seeds hunters with `inventory/cwe-map.json` (588 Odoo bug-shape → CWE/CAPEC/OWASP mappings).
 - Runs repeatable scanner setup for Semgrep, Bandit, Ruff, pylint-odoo, CodeQL, dependency tools, and optional Joern.
 - Runs local Qwen advisory notes through Ollama.
 - Launches or prepares Codex hunter tasks.
