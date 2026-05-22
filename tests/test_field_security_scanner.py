@@ -821,3 +821,67 @@ class Config(models.Model):
     findings = scan_field_security(tmp_path)
 
     assert not any(f.rule_id == "odoo-field-json-unstructured-no-groups" for f in findings)
+
+
+def test_flags_tracking_without_mail_thread(tmp_path: Path) -> None:
+    """tracking=True on a model without mail.thread inheritance should be flagged."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "my_model.py").write_text(
+        """
+from odoo import fields, models
+
+class MyModel(models.Model):
+    _name = 'x.my.model'
+
+    state = fields.Selection([('draft', 'Draft'), ('done', 'Done')], tracking=True)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert any(f.rule_id == "odoo-field-tracking-without-mail-thread" for f in findings)
+
+
+def test_allows_tracking_with_mail_thread_inherit(tmp_path: Path) -> None:
+    """tracking=True when _inherit includes mail.thread should not be flagged."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "my_model.py").write_text(
+        """
+from odoo import fields, models
+
+class MyModel(models.Model):
+    _name = 'x.my.model'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
+
+    state = fields.Selection([('draft', 'Draft'), ('done', 'Done')], tracking=True)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert not any(f.rule_id == "odoo-field-tracking-without-mail-thread" for f in findings)
+
+
+def test_allows_tracking_for_known_mail_thread_models(tmp_path: Path) -> None:
+    """tracking=True on a known mail.thread inheritor like res.partner should not be flagged."""
+    models = tmp_path / "module" / "models"
+    models.mkdir(parents=True)
+    (models / "partner.py").write_text(
+        """
+from odoo import fields, models
+
+class ResPartner(models.Model):
+    _inherit = 'res.partner'
+
+    custom_field = fields.Char(tracking=True)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_field_security(tmp_path)
+
+    assert not any(f.rule_id == "odoo-field-tracking-without-mail-thread" for f in findings)

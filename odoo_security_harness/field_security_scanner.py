@@ -144,14 +144,16 @@ class FieldSecurityScanner(ast.NodeVisitor):
             return
 
         self.class_constants_stack.append(_static_constants_from_body(node.body))
-        model = _extract_model_name(node, self._effective_constants())
+        constants = self._effective_constants()
+        model = _extract_model_name(node, constants)
+        has_mail_thread = _has_mail_thread_inheritance(node, constants)
         for field in _extract_fields(
             node,
-            self._effective_constants(),
+            constants,
             self.field_module_names,
             self.odoo_module_names,
         ):
-            self._scan_field(model, field)
+            self._scan_field(model, field, has_mail_thread)
 
         self.generic_visit(node)
         self.class_constants_stack.pop()
@@ -171,10 +173,11 @@ class FieldSecurityScanner(ast.NodeVisitor):
                     self.field_module_names.add(alias.asname or alias.name)
         self.generic_visit(node)
 
-    def _scan_field(self, model: str, field: FieldDef) -> None:
+    def _scan_field(self, model: str, field: FieldDef, has_mail_thread: bool = False) -> None:
         constants = self._effective_constants()
         groups = _string_keyword(field, "groups", constants)
         is_sensitive = _is_sensitive_field(field.name)
+        tracking_enabled = _kw_is_tracking_enabled(field, constants)
 
         if is_sensitive and not groups:
             self._add(
@@ -208,13 +211,25 @@ class FieldSecurityScanner(ast.NodeVisitor):
                 field.name,
             )
 
-        if is_sensitive and _kw_is_tracking_enabled(field, constants):
+        if is_sensitive and tracking_enabled:
             self._add(
                 "odoo-field-sensitive-tracking",
                 "Sensitive field is tracked in chatter",
                 "high",
                 field.line,
                 f"Sensitive-looking field '{field.name}' enables mail tracking; value changes can leak into chatter, notifications, or audit exports",
+                model,
+                field.name,
+            )
+
+        # Flag tracking=True on any field when model does not inherit mail.thread
+        if tracking_enabled and not has_mail_thread:
+            self._add(
+                "odoo-field-tracking-without-mail-thread",
+                "Field tracking without mail.thread inheritance",
+                "medium",
+                field.line,
+                f"Field '{field.name}' sets tracking=True but the model does not appear to inherit 'mail.thread'; this produces a framework warning and tracking will not work. Either inherit mail.thread or remove tracking.",
                 model,
                 field.name,
             )
@@ -491,6 +506,65 @@ def _extract_model_name(node: ast.ClassDef, constants: dict[str, ast.AST] | None
                 if isinstance(value, ast.Constant) and isinstance(value.value, str):
                     return value.value
     return node.name
+
+
+# Models known to inherit mail.thread in standard Odoo (reduces false positives)
+_MAIL_THREAD_INHERITORS = {
+    "res.partner",
+    "sale.order",
+    "purchase.order",
+    "account.move",
+    "account.move.line",
+    "project.task",
+    "project.project",
+    "crm.lead",
+    "hr.employee",
+    "stock.picking",
+    "mrp.production",
+    "repair.order",
+    "event.event",
+    "event.registration",
+    "slide.channel",
+    "forum.forum",
+    "forum.post",
+    "helpdesk.ticket",
+    "maintenance.request",
+    "mail.thread",
+}
+
+
+def _has_mail_thread_inheritance(node: ast.ClassDef, constants: dict[str, ast.AST]) -> bool:
+    """Check if an Odoo model class inherits mail.thread directly or indirectly."""
+    # Check _inherit attribute for direct mail.thread inheritance
+    for item in node.body:
+        if isinstance(item, ast.Assign):
+            for target in item.targets:
+                if isinstance(target, ast.Name) and target.id == "_inherit":
+                    value = _resolve_constant(item.value, constants)
+                    if isinstance(value, ast.Constant) and value.value == "mail.thread":
+                        return True
+                    if isinstance(value, (ast.List, ast.Tuple)):
+                        for elt in value.elts:
+                            elt_resolved = _resolve_constant(elt, constants)
+                            if isinstance(elt_resolved, ast.Constant) and elt_resolved.value == "mail.thread":
+                                return True
+        elif isinstance(item, ast.AnnAssign):
+            if isinstance(item.target, ast.Name) and item.target.id == "_inherit" and item.value is not None:
+                value = _resolve_constant(item.value, constants)
+                if isinstance(value, ast.Constant) and value.value == "mail.thread":
+                    return True
+                if isinstance(value, (ast.List, ast.Tuple)):
+                    for elt in value.elts:
+                        elt_resolved = _resolve_constant(elt, constants)
+                        if isinstance(elt_resolved, ast.Constant) and elt_resolved.value == "mail.thread":
+                            return True
+
+    # Check if model name is a known mail.thread inheritor
+    model_name = _extract_model_name(node, constants)
+    if model_name in _MAIL_THREAD_INHERITORS:
+        return True
+
+    return False
 
 
 def _is_sensitive_field(name: str) -> bool:

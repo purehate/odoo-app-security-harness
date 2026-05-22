@@ -744,6 +744,7 @@ _TAXONOMY_SHAPE_HINTS = (
             "odoo-field-sensitive-indexed",
             "odoo-field-sensitive-tracking",
             "odoo-field-sensitive-copyable",
+            "odoo-field-tracking-without-mail-thread",
         ),
     ),
     (
