@@ -1452,6 +1452,12 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     (
+        "xml_data_privileged_group_missing_admins",
+        (
+            "odoo-xml-privileged-group-missing-admin-users",
+        ),
+    ),
+    (
         "xml_data_user_admin_group_assignment",
         (
             "odoo-xml-user-admin-group-assignment",

@@ -447,19 +447,43 @@ class XmlDataScanner:
 
     def _scan_group_fields(self, fields: dict[str, str], line: int, record_id: str) -> None:
         implied_groups = fields.get("implied_ids", "")
-        if not implied_groups or not _mentions_privileged_group(implied_groups):
-            return
+        if implied_groups and _mentions_privileged_group(implied_groups):
+            self._add(
+                "odoo-xml-group-implies-privilege",
+                "XML data changes implied group privileges",
+                "critical" if ADMIN_GROUP_RE.search(implied_groups) else "high",
+                line,
+                "res.groups XML data writes implied_ids toward internal/administrator groups; "
+                "verify no public, portal, or signup-assigned group inherits unintended privileges",
+                "res.groups",
+                record_id,
+            )
 
-        self._add(
-            "odoo-xml-group-implies-privilege",
-            "XML data changes implied group privileges",
-            "critical" if ADMIN_GROUP_RE.search(implied_groups) else "high",
-            line,
-            "res.groups XML data writes implied_ids toward internal/administrator groups; "
-            "verify no public, portal, or signup-assigned group inherits unintended privileges",
-            "res.groups",
-            record_id,
+        # Check privileged groups for missing admin users
+        group_name = fields.get("name", "").lower()
+        is_privileged_name = any(
+            marker in group_name for marker in ("admin", "manager", "officer", "root", "superuser")
         )
+        if is_privileged_name:
+            user_ids = fields.get("user_ids", "")
+            has_root = "base.user_root" in user_ids
+            has_admin = "base.user_admin" in user_ids
+            if not has_root or not has_admin:
+                missing = []
+                if not has_root:
+                    missing.append("base.user_root")
+                if not has_admin:
+                    missing.append("base.user_admin")
+                self._add(
+                    "odoo-xml-privileged-group-missing-admin-users",
+                    "Privileged group missing standard administrator users",
+                    "medium",
+                    line,
+                    f"res.groups record '{record_id}' looks like a privileged role but does not assign "
+                    f"{', '.join(missing)} in user_ids; standard admin accounts may not have access to this group",
+                    "res.groups",
+                    record_id,
+                )
 
     def _scan_config_parameter_record(self, record: ElementTree.Element) -> None:
         fields = self._fields(record)

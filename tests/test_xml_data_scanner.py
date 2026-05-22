@@ -1349,3 +1349,59 @@ def test_repository_scan_finds_xml_data(tmp_path: Path) -> None:
     findings = scan_xml_data(tmp_path)
 
     assert any(f.rule_id == "odoo-xml-server-action-dynamic-eval" for f in findings)
+
+
+def test_privileged_group_missing_admin_users(tmp_path: Path) -> None:
+    """Privileged res.groups without base.user_root and base.user_admin should be flagged."""
+    data = tmp_path / "module" / "security"
+    data.mkdir(parents=True)
+    (data / "groups.xml").write_text(
+        """<odoo>
+  <record id="group_custom_manager" model="res.groups">
+    <field name="name">Custom Manager</field>
+    <field name="user_ids" eval="[(4, ref('base.user_admin'))]"/>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_xml_data(tmp_path)
+
+    assert any(f.rule_id == "odoo-xml-privileged-group-missing-admin-users" for f in findings)
+
+
+def test_privileged_group_with_both_admins_is_clean(tmp_path: Path) -> None:
+    """Privileged res.groups with both base.user_root and base.user_admin should pass."""
+    data = tmp_path / "module" / "security"
+    data.mkdir(parents=True)
+    (data / "groups.xml").write_text(
+        """<odoo>
+  <record id="group_custom_manager" model="res.groups">
+    <field name="name">Custom Manager</field>
+    <field name="user_ids" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_xml_data(tmp_path)
+
+    assert not any(f.rule_id == "odoo-xml-privileged-group-missing-admin-users" for f in findings)
+
+
+def test_non_privileged_group_missing_admins_is_clean(tmp_path: Path) -> None:
+    """Non-privileged group names should not require admin users."""
+    data = tmp_path / "module" / "security"
+    data.mkdir(parents=True)
+    (data / "groups.xml").write_text(
+        """<odoo>
+  <record id="group_custom_user" model="res.groups">
+    <field name="name">Custom User</field>
+  </record>
+</odoo>""",
+        encoding="utf-8",
+    )
+
+    findings = scan_xml_data(tmp_path)
+
+    assert not any(f.rule_id == "odoo-xml-privileged-group-missing-admin-users" for f in findings)

@@ -1206,6 +1206,12 @@
       "capec": ["CAPEC-122"],
       "owasp": "A01:2021 Broken Access Control"
     },
+    "xml_data_privileged_group_missing_admins": {
+      "label": "Privileged Odoo group missing standard administrator users",
+      "cwe": ["CWE-269", "CWE-284"],
+      "capec": ["CAPEC-122"],
+      "owasp": "A01:2021 Broken Access Control"
+    },
     "xml_data_user_admin_group_assignment": {
       "label": "Odoo XML data assigns users to privileged groups",
       "cwe": ["CWE-269", "CWE-284", "CWE-732"],
