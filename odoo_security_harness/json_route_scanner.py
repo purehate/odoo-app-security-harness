@@ -829,9 +829,14 @@ def _call_chain_has_tainted_record_selector(node: ast.AST, is_tainted: Any) -> b
     while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
         if isinstance(current, ast.Call):
             method = _call_name(current.func).split(".")[-1]
-            if method in {"browse", "search", "search_count", "search_read", "read_group", "_read_group"} and _call_has_tainted_input(
-                current, is_tainted
-            ):
+            if method in {
+                "browse",
+                "search",
+                "search_count",
+                "search_read",
+                "read_group",
+                "_read_group",
+            } and _call_has_tainted_input(current, is_tainted):
                 return True
             current = current.func
         elif isinstance(current, ast.Attribute):

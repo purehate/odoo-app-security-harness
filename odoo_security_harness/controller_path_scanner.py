@@ -167,7 +167,14 @@ class ControllerPathScanner(ast.NodeVisitor):
     def _track_path_sanitization(self, node: ast.Assign) -> None:
         if isinstance(node.value, ast.Call):
             func_name = self._call_name(node.value.func)
-            if func_name in {"os.path.basename", "basename", "pathlib.Path.resolve", "Path.resolve", "os.path.realpath", "realpath"}:
+            if func_name in {
+                "os.path.basename",
+                "basename",
+                "pathlib.Path.resolve",
+                "Path.resolve",
+                "os.path.realpath",
+                "realpath",
+            }:
                 self.state.has_basename_sanitization = True
             if func_name in {"os.path.commonprefix", "os.path.abspath"}:
                 self.state.has_traversal_check = True
@@ -180,9 +187,7 @@ class ControllerPathScanner(ast.NodeVisitor):
         if not self._is_path_sink(node.func, func_name):
             return
         has_tainted_arg = any(self._expr_is_tainted(arg) for arg in node.args)
-        has_tainted_kwarg = any(
-            self._expr_is_tainted(kw.value) for kw in node.keywords
-        )
+        has_tainted_kwarg = any(self._expr_is_tainted(kw.value) for kw in node.keywords)
         if not has_tainted_arg and not has_tainted_kwarg:
             return
         if self.state.has_basename_sanitization or self.state.has_traversal_check:
@@ -263,7 +268,12 @@ class ControllerPathScanner(ast.NodeVisitor):
         if func_name in self.PATH_SINK_METHODS:
             return True
         if isinstance(func, ast.Attribute) and func.attr in {
-            "join", "resolve", "absolute", "relative_to", "with_name", "with_suffix"
+            "join",
+            "resolve",
+            "absolute",
+            "relative_to",
+            "with_name",
+            "with_suffix",
         }:
             return True
         return False
@@ -278,11 +288,7 @@ class ControllerPathScanner(ast.NodeVisitor):
         if isinstance(node, ast.BinOp):
             return self._expr_is_tainted(node.left) or self._expr_is_tainted(node.right)
         if isinstance(node, ast.JoinedStr):
-            return any(
-                self._expr_is_tainted(v.value)
-                for v in node.values
-                if isinstance(v, ast.FormattedValue)
-            )
+            return any(self._expr_is_tainted(v.value) for v in node.values if isinstance(v, ast.FormattedValue))
         if isinstance(node, ast.Call):
             # Method calls on tainted objects are tainted (e.g. request.params.get('file'))
             if isinstance(node.func, ast.Attribute) and self._expr_is_tainted(node.func.value):

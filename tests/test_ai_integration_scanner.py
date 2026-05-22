@@ -12,7 +12,7 @@ def test_detects_hardcoded_openai_key(tmp_path: Path) -> None:
     models = tmp_path / "module" / "models"
     models.mkdir(parents=True)
     (models / "ai.py").write_text(
-        '''
+        """
 from odoo import models
 
 class AiHelper(models.Model):
@@ -21,7 +21,7 @@ class AiHelper(models.Model):
     def ask(self, question):
         api_key = "sk-abcdefghijklmnopqrstuvwxyz1234567890abcd"
         return api_key
-''',
+""",
         encoding="utf-8",
     )
 
@@ -35,7 +35,7 @@ def test_detects_tainted_prompt_via_openai(tmp_path: Path) -> None:
     models = tmp_path / "module" / "models"
     models.mkdir(parents=True)
     (models / "ai.py").write_text(
-        '''
+        """
 from odoo import http, models
 from odoo.http import request
 import openai
@@ -49,7 +49,7 @@ class AiController(http.Controller):
             model="gpt-4",
         )
         return {"answer": response.choices[0].message.content}
-''',
+""",
         encoding="utf-8",
     )
 
@@ -63,7 +63,7 @@ def test_detects_unsanitized_ai_output_to_markup(tmp_path: Path) -> None:
     models = tmp_path / "module" / "models"
     models.mkdir(parents=True)
     (models / "ai.py").write_text(
-        '''
+        """
 from odoo import models
 from odoo.tools import Markup
 import openai
@@ -75,7 +75,7 @@ class AiHelper(models.Model):
         client = openai.OpenAI()
         response = client.completions.create(prompt=prompt, model="gpt-4")
         return Markup(response.choices[0].text)
-''',
+""",
         encoding="utf-8",
     )
 
@@ -89,7 +89,7 @@ def test_allows_safe_ai_usage(tmp_path: Path) -> None:
     models = tmp_path / "module" / "models"
     models.mkdir(parents=True)
     (models / "ai.py").write_text(
-        '''
+        """
 from odoo import models
 import openai
 
@@ -103,7 +103,7 @@ class AiHelper(models.Model):
             model="gpt-4",
         )
         return response.choices[0].text
-''',
+""",
         encoding="utf-8",
     )
 

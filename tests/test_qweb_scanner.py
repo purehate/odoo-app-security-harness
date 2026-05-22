@@ -1286,7 +1286,7 @@ def test_detects_dynamic_t_component(tmp_path: Path) -> None:
     """t-component with dynamic expression should be flagged."""
     template = tmp_path / "template.xml"
     template.write_text(
-        '''<odoo><template id="x"><MyWidget t-component="widget_name"/></template></odoo>''',
+        """<odoo><template id="x"><MyWidget t-component="widget_name"/></template></odoo>""",
         encoding="utf-8",
     )
 
@@ -1299,7 +1299,7 @@ def test_allows_literal_t_component(tmp_path: Path) -> None:
     """t-component with a literal PascalCase string should not be flagged."""
     template = tmp_path / "template.xml"
     template.write_text(
-        '''<odoo><template id="x"><MyWidget t-component="'MyComponent'"/></template></odoo>''',
+        """<odoo><template id="x"><MyWidget t-component="'MyComponent'"/></template></odoo>""",
         encoding="utf-8",
     )
 
@@ -1312,7 +1312,7 @@ def test_detects_fa_icon_missing_accessibility(tmp_path: Path) -> None:
     """Font-awesome icons without aria-label/aria-hidden/title should be flagged."""
     template = tmp_path / "template.xml"
     template.write_text(
-        '''<odoo><template id="x"><i class="fa fa-check"/></template></odoo>''',
+        """<odoo><template id="x"><i class="fa fa-check"/></template></odoo>""",
         encoding="utf-8",
     )
 
@@ -1325,7 +1325,7 @@ def test_allows_fa_icon_with_aria_label(tmp_path: Path) -> None:
     """Font-awesome icons with aria-label should not be flagged."""
     template = tmp_path / "template.xml"
     template.write_text(
-        '''<odoo><template id="x"><i class="fa fa-check" aria-label="Completed"/></template></odoo>''',
+        """<odoo><template id="x"><i class="fa fa-check" aria-label="Completed"/></template></odoo>""",
         encoding="utf-8",
     )
 
@@ -1338,7 +1338,7 @@ def test_allows_fa_icon_with_aria_hidden(tmp_path: Path) -> None:
     """Font-awesome icons with aria-hidden should not be flagged."""
     template = tmp_path / "template.xml"
     template.write_text(
-        '''<odoo><template id="x"><i class="fa fa-check" aria-hidden="true"/></template></odoo>''',
+        """<odoo><template id="x"><i class="fa fa-check" aria-hidden="true"/></template></odoo>""",
         encoding="utf-8",
     )
 
@@ -1351,7 +1351,7 @@ def test_allows_fa_icon_with_title(tmp_path: Path) -> None:
     """Font-awesome icons with title should not be flagged."""
     template = tmp_path / "template.xml"
     template.write_text(
-        '''<odoo><template id="x"><i class="fa fa-check" title="Done"/></template></odoo>''',
+        """<odoo><template id="x"><i class="fa fa-check" title="Done"/></template></odoo>""",
         encoding="utf-8",
     )
 
@@ -1364,7 +1364,7 @@ def test_allows_non_fa_i_tag(tmp_path: Path) -> None:
     """Non-font-awesome <i> tags should not be flagged."""
     template = tmp_path / "template.xml"
     template.write_text(
-        '''<odoo><template id="x"><i class="icon-check"/></template></odoo>''',
+        """<odoo><template id="x"><i class="icon-check"/></template></odoo>""",
         encoding="utf-8",
     )
 

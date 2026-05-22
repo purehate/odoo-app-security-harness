@@ -611,11 +611,21 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
     def _is_orm_search(self, node: ast.Call) -> bool:
         """Check if call is an ORM search or aggregate lookup."""
-        return isinstance(node.func, ast.Attribute) and node.func.attr in {"_read_group", "read_group", "search", "search_count"}
+        return isinstance(node.func, ast.Attribute) and node.func.attr in {
+            "_read_group",
+            "read_group",
+            "search",
+            "search_count",
+        }
 
     def _is_orm_read(self, node: ast.Call) -> bool:
         """Check if call is an ORM read()."""
-        return isinstance(node.func, ast.Attribute) and node.func.attr in ("read", "search_read", "read_group", "_read_group")
+        return isinstance(node.func, ast.Attribute) and node.func.attr in (
+            "read",
+            "search_read",
+            "read_group",
+            "_read_group",
+        )
 
     def _is_orm_browse(self, node: ast.Call) -> bool:
         """Check if call is an ORM browse()."""
@@ -745,9 +755,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
             return any(self._is_tainted_expr(child) for child in child_nodes)
         if isinstance(node, ast.JoinedStr):
             return any(
-                self._is_tainted_expr(value.value)
-                for value in node.values
-                if isinstance(value, ast.FormattedValue)
+                self._is_tainted_expr(value.value) for value in node.values if isinstance(value, ast.FormattedValue)
             )
         return False
 
@@ -969,7 +977,17 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
     # -- Monkey-patch detection --
 
-    _MONKEY_PATCH_CRITICAL_ATTRS = {"create", "write", "unlink", "read", "search", "browse", "copy", "exists", "ensure_one"}
+    _MONKEY_PATCH_CRITICAL_ATTRS = {
+        "create",
+        "write",
+        "unlink",
+        "read",
+        "search",
+        "browse",
+        "copy",
+        "exists",
+        "ensure_one",
+    }
 
     def _is_monkey_patch_target(self, target: ast.AST) -> bool:
         """Check if assignment target is a BaseModel attribute (monkey-patch)."""

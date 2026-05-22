@@ -1469,9 +1469,7 @@ _TAXONOMY_SHAPE_HINTS = (
     ),
     (
         "xml_data_privileged_group_missing_admins",
-        (
-            "odoo-xml-privileged-group-missing-admin-users",
-        ),
+        ("odoo-xml-privileged-group-missing-admin-users",),
     ),
     (
         "xml_data_user_admin_group_assignment",
@@ -5205,7 +5203,10 @@ _TAXONOMY_SHAPE_HINTS = (
         ),
     ),
     ("raw_sql_injection", ("raw-sql", "sql", "cr.execute", "execute")),
-    ("safe_eval_user_input", ("safe-eval", "safe_eval", "eval", "server-action", "loose-python", "odoo-ai-tainted-prompt")),
+    (
+        "safe_eval_user_input",
+        ("safe-eval", "safe_eval", "eval", "server-action", "loose-python", "odoo-ai-tainted-prompt"),
+    ),
     (
         "session_cookie_weak_flags",
         (

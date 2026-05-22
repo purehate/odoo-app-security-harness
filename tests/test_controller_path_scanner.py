@@ -4,12 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from odoo_security_harness.controller_path_scanner import (
-    ControllerPathFinding,
     ControllerPathScanner,
-    scan_controller_paths,
 )
 
 

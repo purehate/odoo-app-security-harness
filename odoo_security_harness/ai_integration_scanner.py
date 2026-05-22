@@ -17,7 +17,6 @@ import ast
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from odoo_security_harness.base_scanner import _should_skip
 

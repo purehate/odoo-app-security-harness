@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -35,15 +36,18 @@ def normalize_finding(finding: dict[str, Any], index: int) -> dict[str, Any]:
         from odoo_security_harness.odoo_disclosure_mapper import classify_finding
 
         disclosure = classify_finding(normalized)
-        normalized.setdefault("odoo_disclosure", {
-            "eligibility": disclosure.eligibility,
-            "category": disclosure.category,
-            "reason": disclosure.reason,
-            "odoo_policy_section": disclosure.odoo_policy_section,
-            "recommendation": disclosure.recommendation,
-        })
+        normalized.setdefault(
+            "odoo_disclosure",
+            {
+                "eligibility": disclosure.eligibility,
+                "category": disclosure.category,
+                "reason": disclosure.reason,
+                "odoo_policy_section": disclosure.odoo_policy_section,
+                "recommendation": disclosure.recommendation,
+            },
+        )
     except Exception:
-        pass
+        logging.debug("Odoo disclosure classification failed for finding %s", normalized.get("id"), exc_info=True)
     return normalized
 
 
