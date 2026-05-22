@@ -1306,3 +1306,68 @@ def test_allows_literal_t_component(tmp_path: Path) -> None:
     findings = QWebScanner(str(template)).scan_file()
 
     assert not any(f.rule_id == "odoo-qweb-dynamic-t-component" for f in findings)
+
+
+def test_detects_fa_icon_missing_accessibility(tmp_path: Path) -> None:
+    """Font-awesome icons without aria-label/aria-hidden/title should be flagged."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        '''<odoo><template id="x"><i class="fa fa-check"/></template></odoo>''',
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert any(f.rule_id == "odoo-qweb-fa-icon-missing-label" for f in findings)
+
+
+def test_allows_fa_icon_with_aria_label(tmp_path: Path) -> None:
+    """Font-awesome icons with aria-label should not be flagged."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        '''<odoo><template id="x"><i class="fa fa-check" aria-label="Completed"/></template></odoo>''',
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-fa-icon-missing-label" for f in findings)
+
+
+def test_allows_fa_icon_with_aria_hidden(tmp_path: Path) -> None:
+    """Font-awesome icons with aria-hidden should not be flagged."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        '''<odoo><template id="x"><i class="fa fa-check" aria-hidden="true"/></template></odoo>''',
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-fa-icon-missing-label" for f in findings)
+
+
+def test_allows_fa_icon_with_title(tmp_path: Path) -> None:
+    """Font-awesome icons with title should not be flagged."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        '''<odoo><template id="x"><i class="fa fa-check" title="Done"/></template></odoo>''',
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-fa-icon-missing-label" for f in findings)
+
+
+def test_allows_non_fa_i_tag(tmp_path: Path) -> None:
+    """Non-font-awesome <i> tags should not be flagged."""
+    template = tmp_path / "template.xml"
+    template.write_text(
+        '''<odoo><template id="x"><i class="icon-check"/></template></odoo>''',
+        encoding="utf-8",
+    )
+
+    findings = QWebScanner(str(template)).scan_file()
+
+    assert not any(f.rule_id == "odoo-qweb-fa-icon-missing-label" for f in findings)

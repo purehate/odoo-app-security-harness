@@ -266,6 +266,12 @@
       "capec": ["CAPEC-63"],
       "owasp": "A03:2021 Injection"
     },
+    "qweb_accessibility_gap": {
+      "label": "Font-awesome icon lacks accessibility label",
+      "cwe": ["CWE-1021"],
+      "capec": ["CAPEC-131"],
+      "owasp": "A04:2021 Insecure Design"
+    },
     "qweb_inline_script_execution": {
       "label": "QWeb template embeds inline JavaScript or output expressions in JavaScript context",
       "cwe": ["CWE-79", "CWE-116"],

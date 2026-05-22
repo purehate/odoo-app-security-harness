@@ -208,6 +208,9 @@ class QWebScanner:
             self._check_external_script_integrity(element, tag)
             self._check_dynamic_script_src(element, tag)
 
+        if tag.lower() == "i":
+            self._check_fa_icon_accessibility(element, tag)
+
         self._check_t_set_markup_value(element, tag)
 
         # Check attributes
@@ -833,6 +836,26 @@ class QWebScanner:
 
     def _looks_blank_target(self, value: str) -> bool:
         return bool(re.search(r"['\"]?_blank['\"]?", value, re.IGNORECASE))
+
+    def _check_fa_icon_accessibility(self, element: ElementTree.Element, tag: str) -> None:
+        """Check font-awesome icons for missing accessibility labels."""
+        class_value = _xml_attr(element, "class")
+        if not class_value or not re.search(r"\bfa[sbr]?\b|\bfa-", class_value):
+            return
+        has_aria = (
+            _xml_has_attr(element, "aria-label")
+            or _xml_has_attr(element, "aria-hidden")
+            or _xml_has_attr(element, "title")
+        )
+        if not has_aria:
+            self._add_finding(
+                rule_id="odoo-qweb-fa-icon-missing-label",
+                title="Font-awesome icon lacks accessibility label",
+                severity="low",
+                element=tag,
+                attribute="class",
+                message=f"<{tag} class='{class_value}'> is missing aria-label, aria-hidden, or title; screen readers may misread the icon or UI may be inaccessible",
+            )
 
     def _check_iframe_sandbox(self, element: ElementTree.Element, tag: str) -> None:
         """Check embedded frames for sandbox containment."""

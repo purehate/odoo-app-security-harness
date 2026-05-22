@@ -1566,3 +1566,135 @@ class MyModel(models.Model):
     rule_ids = {finding.rule_id for finding in findings}
 
     assert "odoo-deep-orm-read-no-fields" not in rule_ids
+
+
+def test_detects_onchange_with_write() -> None:
+    """@api.onchange that calls write() should be flagged."""
+    source = """
+from odoo import models, api
+
+class MyModel(models.Model):
+    _name = 'x.my.model'
+
+    @api.onchange('name')
+    def _onchange_name(self):
+        self.write({'note': 'changed'})
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-onchange-database-mutation" in rule_ids
+
+
+def test_allows_onchange_returning_warning() -> None:
+    """@api.onchange that returns a warning dict should not be flagged."""
+    source = """
+from odoo import models, api
+
+class MyModel(models.Model):
+    _name = 'x.my.model'
+
+    @api.onchange('name')
+    def _onchange_name(self):
+        return {'warning': {'title': 'Warning', 'message': 'Name changed'}}
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-onchange-database-mutation" not in rule_ids
+
+
+def test_detects_constraint_with_write() -> None:
+    """@api.constrains that calls write() should be flagged."""
+    source = """
+from odoo import models, api
+
+class MyModel(models.Model):
+    _name = 'x.my.model'
+
+    @api.constrains('name')
+    def _check_name(self):
+        for rec in self:
+            if rec.name:
+                rec.write({'note': 'checked'})
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-constraint-database-mutation" in rule_ids
+
+
+def test_allows_constraint_only_raising() -> None:
+    """@api.constrains that only raises ValidationError should not be flagged."""
+    source = """
+from odoo import models, api, exceptions
+
+class MyModel(models.Model):
+    _name = 'x.my.model'
+
+    @api.constrains('name')
+    def _check_name(self):
+        for rec in self:
+            if not rec.name:
+                raise exceptions.ValidationError('Name is required')
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-constraint-database-mutation" not in rule_ids
+
+
+def test_detects_markup_fstring() -> None:
+    """Markup(f'...') should be flagged because interpolation happens before escaping."""
+    source = """
+from odoo import models, api
+
+class MyModel(models.Model):
+    def get_html(self, name):
+        return Markup(f"<b>{name}</b>")
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-markup-fstring" in rule_ids
+
+
+def test_detects_markup_fstring_with_tainted_value() -> None:
+    """Markup(f'...{tainted}...') should flag both f-string and user-input rules."""
+    source = """
+from odoo import http
+
+class MyController(http.Controller):
+    @http.route('/greet', auth='public')
+    def greet(self):
+        name = request.params.get('name', '')
+        return Markup(f"<h1>Hello {name}</h1>")
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-markup-user-input" in rule_ids
+    assert "odoo-deep-markup-fstring" in rule_ids
+
+
+def test_allows_markup_constant_string() -> None:
+    """Markup('constant') should not be flagged."""
+    source = """
+from odoo import models, api
+
+class MyModel(models.Model):
+    def get_html(self):
+        return Markup("<b>Hello</b>")
+"""
+    analyzer = OdooDeepAnalyzer("test.py")
+    findings = analyzer.analyze(source)
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert "odoo-deep-markup-fstring" not in rule_ids
+    assert "odoo-deep-markup-user-input" not in rule_ids

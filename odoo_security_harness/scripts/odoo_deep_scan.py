@@ -225,7 +225,10 @@ _TAXONOMY_SHAPE_HINTS = (
     ),
     (
         "deep_markup_user_input",
-        ("odoo-deep-markup-user-input",),
+        (
+            "odoo-deep-markup-user-input",
+            "odoo-deep-markup-fstring",
+        ),
     ),
     (
         "deep_html_sanitize_false",
@@ -645,6 +648,16 @@ _TAXONOMY_SHAPE_HINTS = (
             "markup() bypasses escaping",
             "already-safe html",
             "renders a markup() value",
+        ),
+    ),
+    (
+        "qweb_accessibility_gap",
+        (
+            "odoo-qweb-fa-icon-missing-label",
+            "font-awesome icon lacks accessibility label",
+            "missing aria-label",
+            "missing aria-hidden",
+            "screen reader",
         ),
     ),
     (
@@ -1105,6 +1118,8 @@ _TAXONOMY_SHAPE_HINTS = (
             "model-method-compute-sensitive-model-mutation",
             "model-method-constraint-sensitive-model-mutation",
             "model-method-inverse-sensitive-model-mutation",
+            "odoo-deep-onchange-database-mutation",
+            "odoo-deep-constraint-database-mutation",
             "odoo model method mutates sensitive model",
             "model method mutates sensitive model",
             "lifecycle side effects, caller access, and audit trail",

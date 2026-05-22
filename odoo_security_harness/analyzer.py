@@ -62,6 +62,8 @@ class OdooFunction:
     has_request_env: bool = False
     has_tainted_browse: bool = False
     has_attachment_access: bool = False
+    is_onchange: bool = False
+    is_constraint: bool = False
 
 
 class OdooDeepAnalyzer(ast.NodeVisitor):
@@ -157,6 +159,10 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 func.csrf_enabled = csrf
                 func.http_methods = methods
                 func.route_paths = route_paths
+            elif self._is_onchange_decorator(decorator):
+                func.is_onchange = True
+            elif self._is_constraint_decorator(decorator):
+                func.is_constraint = True
 
         self.function_stack.append(func)
         self.current_function = func
@@ -379,6 +385,29 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 return self._is_http_module_expr(decorator.func.value) and decorator.func.attr == "route"
             elif isinstance(decorator.func, ast.Name):
                 return decorator.func.id in self.route_decorator_names
+        return False
+
+    def _is_onchange_decorator(self, decorator: ast.expr) -> bool:
+        """Check if decorator is @api.onchange(...)."""
+        if isinstance(decorator, ast.Call):
+            if isinstance(decorator.func, ast.Attribute) and decorator.func.attr == "onchange":
+                return self._is_api_module_expr(decorator.func.value)
+        return False
+
+    def _is_constraint_decorator(self, decorator: ast.expr) -> bool:
+        """Check if decorator is @api.constrains(...)."""
+        if isinstance(decorator, ast.Call):
+            if isinstance(decorator.func, ast.Attribute) and decorator.func.attr == "constrains":
+                return self._is_api_module_expr(decorator.func.value)
+        return False
+
+    def _is_api_module_expr(self, node: ast.AST) -> bool:
+        """Check if node refers to the api module (e.g., api.constrains)."""
+        if isinstance(node, ast.Name) and node.id == "api":
+            return True
+        if isinstance(node, ast.Attribute) and node.attr == "api":
+            if isinstance(node.value, ast.Name) and node.value.id in self.odoo_module_names:
+                return True
         return False
 
     def _extract_route_kwargs(self, decorator: ast.Call) -> tuple[str, bool, list[str], list[str]]:
@@ -714,6 +743,12 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
             else:
                 child_nodes = list(node.elts)
             return any(self._is_tainted_expr(child) for child in child_nodes)
+        if isinstance(node, ast.JoinedStr):
+            return any(
+                self._is_tainted_expr(value.value)
+                for value in node.values
+                if isinstance(value, ast.FormattedValue)
+            )
         return False
 
     def _mark_target_names(self, target: ast.AST, names: set[str], should_mark: bool) -> None:
@@ -1076,8 +1111,11 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         return False
 
     def _check_markup(self, node: ast.Call) -> None:
-        """Check for Markup() applied to request-controlled input."""
-        if node.args and self._is_tainted_expr(node.args[0]):
+        """Check for Markup() applied to request-controlled input or f-strings."""
+        if not node.args:
+            return
+        arg = node.args[0]
+        if self._is_tainted_expr(arg):
             self._add_finding(
                 rule_id="odoo-deep-markup-user-input",
                 title="Markup() applied to user input",
@@ -1085,6 +1123,15 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 line=node.lineno,
                 column=node.col_offset,
                 message="Markup() marks request-controlled HTML as safe; stored or reflected XSS possible",
+            )
+        if isinstance(arg, ast.JoinedStr):
+            self._add_finding(
+                rule_id="odoo-deep-markup-fstring",
+                title="Markup() wraps an f-string",
+                severity="medium",
+                line=node.lineno,
+                column=node.col_offset,
+                message="Markup(f'...') evaluates interpolation before escaping; any tainted value is rendered unsanitized",
             )
 
     def _is_html_sanitize_call(self, node: ast.Call) -> bool:
@@ -1306,6 +1353,28 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 line=func.line,
                 column=0,
                 message="User input reaches sudo()/with_user(SUPERUSER_ID).write(); privilege escalation and data mutation",
+            )
+
+        # Check for @api.onchange methods that write to the database
+        if func.is_onchange and (func.calls_write or func.calls_create or func.calls_unlink or func.has_cr_execute):
+            self._add_finding(
+                rule_id="odoo-deep-onchange-database-mutation",
+                title="@api.onchange method performs database mutation",
+                severity="high",
+                line=func.line,
+                column=0,
+                message="@api.onchange method calls write/create/unlink or cr.execute(); onchange should only return domain/warning dicts, not persist data",
+            )
+
+        # Check for @api.constrains methods that write to the database
+        if func.is_constraint and (func.calls_write or func.calls_create or func.calls_unlink or func.has_cr_execute):
+            self._add_finding(
+                rule_id="odoo-deep-constraint-database-mutation",
+                title="@api.constrains method performs database mutation",
+                severity="high",
+                line=func.line,
+                column=0,
+                message="@api.constrains method calls write/create/unlink or cr.execute(); constraints should only raise ValidationError, not mutate data",
             )
 
     def _add_finding(
