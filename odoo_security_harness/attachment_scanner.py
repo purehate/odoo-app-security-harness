@@ -541,11 +541,11 @@ class AttachmentScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
         if isinstance(node, ast.Starred):
             return self._expr_is_tainted(node.value)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(if_expr) for if_expr in generator.ifs)
@@ -581,8 +581,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 self.sudo_attachment_vars.discard(target.id)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_attachment_target(target_element, value_element)
             elif is_attachment:
@@ -598,7 +598,7 @@ class AttachmentScanner(ast.NodeVisitor):
             self._mark_attachment_target(target.value, value)
 
     def _mark_attachment_value_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_attachment_value_target(target_element, value_element)
             return
@@ -675,8 +675,8 @@ class AttachmentScanner(ast.NodeVisitor):
                 self.tainted_names.discard(target.id)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_tainted_target(target_element, value_element)
             elif self._expr_is_tainted(value):
@@ -692,7 +692,7 @@ class AttachmentScanner(ast.NodeVisitor):
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.add(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -701,14 +701,14 @@ class AttachmentScanner(ast.NodeVisitor):
     def _discard_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.discard(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -721,7 +721,7 @@ class AttachmentScanner(ast.NodeVisitor):
             else:
                 self.local_constants.pop(target.id, None)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 if isinstance(element, ast.Name):
                     self.local_constants.pop(element.id, None)
@@ -857,7 +857,7 @@ def _is_http_module_expr(
 def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> list[str]:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return [node.value]
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         values: list[str] = []
         for element in node.elts:
             value = _resolve_constant(element, constants or {})
@@ -962,8 +962,8 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        return isinstance(node.value, (str, bool, int, float, type(None)))
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -1008,7 +1008,7 @@ def _attachment_model_in_expr(
 def _uses_sudo_attachment_var(node: ast.AST, sudo_attachment_vars: set[str]) -> bool:
     if isinstance(node, ast.Name):
         return node.id in sudo_attachment_vars
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_uses_sudo_attachment_var(element, sudo_attachment_vars) for element in node.elts)
     if isinstance(node, ast.Starred):
         return _uses_sudo_attachment_var(node.value, sudo_attachment_vars)
@@ -1065,12 +1065,12 @@ def _call_has_tainted_input(node: ast.Call, is_tainted: Any) -> bool:
 
 
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_attr(element, attr) for element in node.elts)
     if isinstance(node, ast.Starred):
         return _call_chain_has_attr(node.value, attr)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -1087,12 +1087,12 @@ def _call_chain_has_superuser_with_user(
     constants: dict[str, ast.AST] | None = None,
     superuser_names: set[str] | None = None,
 ) -> bool:
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     if isinstance(node, ast.Starred):
         return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if (
                 isinstance(current.func, ast.Attribute)

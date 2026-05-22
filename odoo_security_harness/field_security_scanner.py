@@ -679,15 +679,15 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        return isinstance(node.value, (str, bool, int, float, type(None)))
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
             (key is None or _is_static_literal(key)) and _is_static_literal(value)
             for key, value in zip(node.keys, node.values, strict=False)
         )
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
         return _is_static_literal(node.operand)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _is_static_literal(node.left) and _is_static_literal(node.right)

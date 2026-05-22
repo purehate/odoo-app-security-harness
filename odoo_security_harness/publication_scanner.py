@@ -569,11 +569,11 @@ class PublicationModelScanner(ast.NodeVisitor):
             return any(self._expr_is_tainted(key) for key in node.keys if key is not None) or any(
                 value is not None and self._expr_is_tainted(value) for value in node.values
             )
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
         if isinstance(node, ast.Starred):
             return self._expr_is_tainted(node.value)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -602,8 +602,8 @@ class PublicationModelScanner(ast.NodeVisitor):
                 self.tainted_names.discard(target.id)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_tainted_target(target_element, value_element)
             elif is_tainted:
@@ -624,7 +624,7 @@ class PublicationModelScanner(ast.NodeVisitor):
                 self.dict_aliases.pop(target.id, None)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             self._discard_dict_alias_target(target)
             return
 
@@ -635,7 +635,7 @@ class PublicationModelScanner(ast.NodeVisitor):
         if not self.route_stack:
             return
 
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -651,13 +651,13 @@ class PublicationModelScanner(ast.NodeVisitor):
             self._mark_local_constant_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             self._discard_local_constant_target(target)
 
     def _discard_local_constant_target(self, target: ast.AST) -> None:
         if isinstance(target, ast.Name):
             self.local_constants.pop(target.id, None)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_local_constant_target(element)
         elif isinstance(target, ast.Starred):
@@ -675,7 +675,7 @@ class PublicationModelScanner(ast.NodeVisitor):
     def _discard_dict_alias_target(self, target: ast.AST) -> None:
         if isinstance(target, ast.Name):
             self.dict_aliases.pop(target.id, None)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_dict_alias_target(element)
         elif isinstance(target, ast.Starred):
@@ -684,7 +684,7 @@ class PublicationModelScanner(ast.NodeVisitor):
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.add(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -693,7 +693,7 @@ class PublicationModelScanner(ast.NodeVisitor):
     def _discard_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.discard(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -937,10 +937,10 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(

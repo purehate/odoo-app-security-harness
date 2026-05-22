@@ -522,9 +522,9 @@ class PropertyFieldScanner(ast.NodeVisitor):
             return any(self._expr_is_tainted(key) for key in node.keys if key is not None) or any(
                 value is not None and self._expr_is_tainted(value) for value in node.values
             )
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -545,7 +545,7 @@ class PropertyFieldScanner(ast.NodeVisitor):
         return False
 
     def _mark_property_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_property_target(target_element, value_element)
             return
@@ -568,7 +568,7 @@ class PropertyFieldScanner(ast.NodeVisitor):
                 self.elevated_property_vars.discard(name)
 
     def _mark_tainted_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_tainted_target(target_element, value_element)
             return
@@ -586,7 +586,7 @@ class PropertyFieldScanner(ast.NodeVisitor):
             names.discard(name)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -980,10 +980,10 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -1050,7 +1050,7 @@ def _is_ir_property_expr(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _is_ir_property_expr(node.value, property_vars, constants)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_is_ir_property_expr(element, property_vars, constants) for element in node.elts)
     if isinstance(node, ast.Name) and node.id in property_vars:
         return True
@@ -1070,7 +1070,7 @@ def _is_elevated_expr(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _is_elevated_expr(node.value, constants, superuser_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_is_elevated_expr(element, constants, superuser_names) for element in node.elts)
     return (
         _call_chain_has_attr(node, "sudo")
@@ -1173,7 +1173,7 @@ def _is_request_derived(
         return True
     if isinstance(node, ast.Starred):
         return _is_request_derived(node.value, request_names, http_module_names, odoo_module_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(
             _is_request_derived(element, request_names, http_module_names, odoo_module_names) for element in node.elts
         )
@@ -1230,7 +1230,7 @@ def _is_request_expr(
 def _target_names(node: ast.AST) -> set[str]:
     if isinstance(node, ast.Name):
         return {node.id}
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         return {name for element in node.elts for name in _target_names(element)}
     if isinstance(node, ast.Starred):
         return _target_names(node.value)
@@ -1240,10 +1240,10 @@ def _target_names(node: ast.AST) -> set[str]:
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     if isinstance(node, ast.Starred):
         return _call_chain_has_attr(node.value, attr)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_attr(element, attr) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True

@@ -299,11 +299,11 @@ class ConstraintScanner(ast.NodeVisitor):
         )
 
     def _track_sudo_alias(self, target: ast.expr, value: ast.AST, context: ConstraintContext) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
                 self._track_sudo_alias(child_target, child_value, context)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for child_target in target.elts:
                 self._track_sudo_alias(child_target, value, context)
             return
@@ -318,7 +318,7 @@ class ConstraintScanner(ast.NodeVisitor):
             context.sudo_vars.discard(target.id)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_local_constant_target(child_target, child_value)
             return
@@ -331,7 +331,7 @@ class ConstraintScanner(ast.NodeVisitor):
             else:
                 self.local_constants.pop(target.id, None)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for name in _target_names(target):
                 self.local_constants.pop(name, None)
 
@@ -460,7 +460,7 @@ def _is_sudo_expr(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _is_sudo_expr(node.value, sudo_vars, constants, superuser_names)
-    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
         return any(_is_sudo_expr(element, sudo_vars, constants, superuser_names) for element in node.elts)
     return (
         _call_chain_has_attr(node, "sudo")
@@ -476,7 +476,7 @@ def _call_chain_has_superuser_with_user(
 ) -> bool:
     constants = constants or {}
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if (
                 isinstance(current.func, ast.Attribute)
@@ -534,10 +534,10 @@ def _returns_false_or_none(node: ast.Return, constants: dict[str, ast.AST] | Non
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     if isinstance(node, ast.Starred):
         return _call_chain_has_attr(node.value, attr)
-    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
         return any(_call_chain_has_attr(element, attr) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -554,7 +554,7 @@ def _target_names(node: ast.AST) -> set[str]:
         return {node.id}
     if isinstance(node, ast.Starred):
         return _target_names(node.value)
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         names: set[str] = set()
         for element in node.elts:
             names.update(_target_names(element))
@@ -647,7 +647,7 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     return isinstance(node, ast.Name)
 
 

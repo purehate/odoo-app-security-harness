@@ -518,9 +518,9 @@ class IntegrationScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -550,8 +550,8 @@ class IntegrationScanner(ast.NodeVisitor):
                 self.tainted_names.discard(target.id)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target, value):
                     self._mark_tainted_target(target_element, value_element)
             elif is_tainted:
@@ -561,7 +561,7 @@ class IntegrationScanner(ast.NodeVisitor):
                 self._discard_name_target(target, self.tainted_names)
 
     def _mark_http_client_target(self, target: ast.AST, value: ast.AST, http_client_names: set[str]) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_http_client_target(target_element, value_element, http_client_names)
             return
@@ -572,7 +572,7 @@ class IntegrationScanner(ast.NodeVisitor):
             self._discard_name_target(target, self.http_client_names)
 
     def _mark_tainted_auth_header_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_tainted_auth_header_target(target_element, value_element)
             return
@@ -583,7 +583,7 @@ class IntegrationScanner(ast.NodeVisitor):
             self._discard_name_target(target, self.tainted_auth_header_names)
 
     def _mark_hardcoded_auth_header_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_hardcoded_auth_header_target(target_element, value_element)
             return
@@ -600,7 +600,7 @@ class IntegrationScanner(ast.NodeVisitor):
             return node.id in self.tainted_auth_header_names
         if isinstance(node, ast.Subscript):
             return self._expr_contains_tainted_sensitive_header(node.value)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             if any(self._expr_contains_tainted_sensitive_header(element) for element in node.elts):
                 return True
         for header_name, value in _literal_header_pairs_with_constants(node, self._effective_constants()):
@@ -615,7 +615,7 @@ class IntegrationScanner(ast.NodeVisitor):
             return node.id in self.hardcoded_auth_header_names
         if isinstance(node, ast.Subscript):
             return self._expr_contains_hardcoded_sensitive_header(node.value)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             if any(self._expr_contains_hardcoded_sensitive_header(element) for element in node.elts):
                 return True
         for header_name, value in _literal_header_pairs_with_constants(node, self._effective_constants()):
@@ -641,7 +641,7 @@ class IntegrationScanner(ast.NodeVisitor):
             self._discard_name_target(target, self.hardcoded_http_auth_names)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -669,7 +669,7 @@ class IntegrationScanner(ast.NodeVisitor):
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.add(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -678,7 +678,7 @@ class IntegrationScanner(ast.NodeVisitor):
     def _discard_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.discard(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -720,7 +720,7 @@ class IntegrationScanner(ast.NodeVisitor):
     def _is_http_client_expr(self, node: ast.AST, http_client_names: set[str]) -> bool:
         if isinstance(node, ast.Starred):
             return self._is_http_client_expr(node.value, http_client_names)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._is_http_client_expr(element, http_client_names) for element in node.elts)
         if isinstance(node, ast.Subscript):
             return self._is_http_client_expr(node.value, http_client_names)
@@ -876,10 +876,10 @@ def _literal_header_pairs_with_constants(node: ast.AST, constants: dict[str, ast
             if header_name:
                 pairs.append((header_name, value))
         return pairs
-    if isinstance(node, ast.List | ast.Tuple):
+    if isinstance(node, (ast.List, ast.Tuple)):
         pairs = []
         for element in node.elts:
-            if not isinstance(element, ast.Tuple | ast.List) or len(element.elts) < 2:
+            if not isinstance(element, (ast.Tuple, ast.List)) or len(element.elts) < 2:
                 continue
             header_name = _constant_string(element.elts[0], constants)
             if header_name:
@@ -913,7 +913,7 @@ def _expr_contains_hardcoded_secret_value(node: ast.AST, constants: dict[str, as
         return _expr_contains_hardcoded_secret_value(node.value, constants)
     if _is_hardcoded_secret_value(node, constants):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_expr_contains_hardcoded_secret_value(element, constants) for element in node.elts)
     if isinstance(node, ast.Dict):
         return any(_expr_contains_hardcoded_secret_value(value, constants) for value in node.values)
@@ -1159,8 +1159,8 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        return isinstance(node.value, (str, bool, int, float, type(None)))
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(

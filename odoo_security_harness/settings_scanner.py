@@ -214,7 +214,7 @@ class SettingsScanner(ast.NodeVisitor):
             self._track_config_parameter_alias_target(target, value)
 
     def _track_config_parameter_alias_target(self, target: ast.expr, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in _unpack_target_value_pairs(target, value):
                 self._track_config_parameter_alias_target(child_target, child_value)
             return
@@ -236,7 +236,7 @@ class SettingsScanner(ast.NodeVisitor):
                 self.sudo_config_parameter_names.discard(name)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(child_target, child_value)
             return
@@ -249,7 +249,7 @@ class SettingsScanner(ast.NodeVisitor):
             else:
                 self.local_constants.pop(target.id, None)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for name in _target_names(target):
                 self.local_constants.pop(name, None)
 
@@ -517,7 +517,7 @@ def _is_config_parameter_expr(
             config_parameter_names,
             constants,
         )
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_is_config_parameter_expr(element, config_parameter_names, constants) for element in node.elts)
     return False
 
@@ -525,10 +525,10 @@ def _is_config_parameter_expr(
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     if isinstance(node, ast.Starred):
         return _call_chain_has_attr(node.value, attr)
-    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
         return any(_call_chain_has_attr(element, attr) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -561,10 +561,10 @@ def _call_chain_has_superuser_with_user(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
-    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
         return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if (
                 isinstance(current.func, ast.Attribute)
@@ -609,7 +609,7 @@ def _is_superuser_arg(
 def _target_names(node: ast.AST) -> set[str]:
     if isinstance(node, ast.Name):
         return {node.id}
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         names: set[str] = set()
         for element in node.elts:
             names.update(_target_names(element))
@@ -716,8 +716,8 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        return isinstance(node.value, (str, bool, int, float, type(None)))
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(

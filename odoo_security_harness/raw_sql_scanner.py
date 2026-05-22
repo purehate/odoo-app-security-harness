@@ -270,9 +270,9 @@ class RawSqlScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -301,7 +301,7 @@ class RawSqlScanner(ast.NodeVisitor):
             return node.id in self.unsafe_sql_vars
         if isinstance(node, ast.Subscript):
             return self._expr_is_unsafe_sql(node.value)
-        if isinstance(node, ast.Tuple | ast.List | ast.Set):
+        if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
             return any(self._expr_is_unsafe_sql(element) for element in node.elts)
         return False
 
@@ -327,7 +327,7 @@ class RawSqlScanner(ast.NodeVisitor):
         cursor_vars = self.cursor_vars if cursor_vars is None else cursor_vars
         if isinstance(node, ast.Starred):
             return self._is_cursor_expr(node.value, cursor_vars)
-        if isinstance(node, ast.Tuple | ast.List | ast.Set):
+        if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
             return any(self._is_cursor_expr(element, cursor_vars) for element in node.elts)
         if isinstance(node, ast.Name):
             return node.id in cursor_vars
@@ -336,7 +336,7 @@ class RawSqlScanner(ast.NodeVisitor):
         return isinstance(node, ast.Attribute) and node.attr == "cr"
 
     def _mark_cursor_target(self, target: ast.AST, value: ast.AST, cursor_vars: set[str]) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_cursor_target(target_element, value_element, cursor_vars)
             return
@@ -346,7 +346,7 @@ class RawSqlScanner(ast.NodeVisitor):
             self._discard_name_target(target, self.cursor_vars)
 
     def _mark_unsafe_sql_target(self, target: ast.AST, value: ast.AST, unsafe_sql_vars: set[str]) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_unsafe_sql_target(target_element, value_element, unsafe_sql_vars)
             return
@@ -364,7 +364,7 @@ class RawSqlScanner(ast.NodeVisitor):
             return node.id in unsafe_sql_vars
         if isinstance(node, ast.Subscript):
             return self._expr_is_unsafe_sql_with_vars(node.value, unsafe_sql_vars)
-        if isinstance(node, ast.Tuple | ast.List | ast.Set):
+        if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
             return any(self._expr_is_unsafe_sql_with_vars(element, unsafe_sql_vars) for element in node.elts)
         return False
 
@@ -374,7 +374,7 @@ class RawSqlScanner(ast.NodeVisitor):
         value: ast.AST,
         sql_literal_vars: dict[str, str],
     ) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_sql_literal_target(target_element, value_element, sql_literal_vars)
             return
@@ -405,7 +405,7 @@ class RawSqlScanner(ast.NodeVisitor):
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.add(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -414,7 +414,7 @@ class RawSqlScanner(ast.NodeVisitor):
     def _discard_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.discard(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -427,7 +427,7 @@ class RawSqlScanner(ast.NodeVisitor):
             self._discard_name_target(target, self.tainted_vars)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -440,7 +440,7 @@ class RawSqlScanner(ast.NodeVisitor):
             else:
                 self.local_constants.pop(target.id, None)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_local_constant_target(element)
 
@@ -449,7 +449,7 @@ class RawSqlScanner(ast.NodeVisitor):
             self.local_constants.pop(target.id, None)
         elif isinstance(target, ast.Starred):
             self._discard_local_constant_target(target.value)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_local_constant_target(element)
 
@@ -489,7 +489,7 @@ class RawSqlScanner(ast.NodeVisitor):
 def _is_unsafe_sql_expr(node: ast.AST) -> bool:
     if isinstance(node, ast.JoinedStr):
         return True
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Mod):
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
         return True
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format":
         return True
@@ -612,8 +612,8 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+        return isinstance(node.value, (str, bool, int, float, type(None)))
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(key is None or _is_static_literal(key) for key in node.keys)

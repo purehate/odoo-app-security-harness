@@ -226,11 +226,11 @@ class AccessOverrideScanner(ast.NodeVisitor):
             self._track_sudo_alias(target, value, context)
 
     def _track_sudo_alias(self, target: ast.expr, value: ast.AST, context: MethodContext) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in _unpack_target_value_pairs(target, value):
                 self._track_sudo_alias(child_target, child_value, context)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for child_target in target.elts:
                 self._track_sudo_alias(child_target, value, context)
             return
@@ -245,7 +245,7 @@ class AccessOverrideScanner(ast.NodeVisitor):
             context.sudo_vars.discard(target.id)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(child_target, child_value)
             return
@@ -258,7 +258,7 @@ class AccessOverrideScanner(ast.NodeVisitor):
             else:
                 self.local_constants.pop(target.id, None)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for name in _target_names(target):
                 self.local_constants.pop(name, None)
 
@@ -307,7 +307,7 @@ def _is_sudo_expr(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _is_sudo_expr(node.value, sudo_vars, constants, superuser_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_is_sudo_expr(elt, sudo_vars, constants, superuser_names) for elt in node.elts)
     return (
         _call_chain_has_attr(node, "sudo")

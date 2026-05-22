@@ -276,9 +276,9 @@ class OrmDomainScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_is_tainted_domain(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted_domain(element) for element in node.elts)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted_domain(node.elt) or any(
                 self._expr_is_tainted_domain(generator.iter)
                 or any(self._expr_is_tainted_domain(condition) for condition in generator.ifs)
@@ -304,18 +304,18 @@ class OrmDomainScanner(ast.NodeVisitor):
                 self.tainted_names.add(target.id)
             else:
                 self.tainted_names.discard(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_tainted_target(element, is_tainted)
         elif isinstance(target, ast.Starred):
             self._mark_tainted_target(target.value, is_tainted)
 
     def _track_elevated_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in zip(target.elts, value.elts, strict=False):
                 self._track_elevated_target(child_target, child_value)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._track_elevated_target(element, value)
             return
@@ -332,7 +332,7 @@ class OrmDomainScanner(ast.NodeVisitor):
             self.elevated_names.discard(target.id)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in zip(target.elts, value.elts, strict=False):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -567,10 +567,10 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -587,7 +587,7 @@ def _target_names(node: ast.AST) -> set[str]:
         return {node.id}
     if isinstance(node, ast.Starred):
         return _target_names(node.value)
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         names: set[str] = set()
         for element in node.elts:
             names.update(_target_names(element))
@@ -671,10 +671,10 @@ def _is_request_expr(
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     if isinstance(node, ast.Starred):
         return _call_chain_has_attr(node.value, attr)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_attr(element, attr) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -693,10 +693,10 @@ def _call_chain_has_superuser_with_user(
 ) -> bool:
     if isinstance(node, ast.Starred):
         return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if (
                 isinstance(current.func, ast.Attribute)

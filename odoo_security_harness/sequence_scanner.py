@@ -372,9 +372,9 @@ class SequenceScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -393,7 +393,7 @@ class SequenceScanner(ast.NodeVisitor):
         return False
 
     def _mark_sequence_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_sequence_target(target_element, value_element)
             return
@@ -406,7 +406,7 @@ class SequenceScanner(ast.NodeVisitor):
                 self.sequence_vars.discard(name)
 
     def _mark_tainted_target(self, target: ast.AST, value: ast.AST, is_tainted: bool) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_tainted_target(target_element, value_element, self._expr_is_tainted(value_element))
             return
@@ -418,7 +418,7 @@ class SequenceScanner(ast.NodeVisitor):
                 self.tainted_names.discard(name)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -590,7 +590,7 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
     node = _resolve_constant(node, constants)
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return [node.value]
-    if isinstance(node, ast.List | ast.Tuple):
+    if isinstance(node, (ast.List, ast.Tuple)):
         values: list[str] = []
         for item in node.elts:
             value = _resolve_constant(item, constants)
@@ -695,10 +695,10 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -861,7 +861,7 @@ def _is_request_expr(
 def _target_names(node: ast.AST) -> set[str]:
     if isinstance(node, ast.Name):
         return {node.id}
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         return {name for element in node.elts for name in _target_names(element)}
     if isinstance(node, ast.Starred):
         return _target_names(node.value)

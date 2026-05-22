@@ -219,7 +219,7 @@ class MigrationScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _record_alias_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._record_alias_target(target_element, value_element)
             return
@@ -238,7 +238,7 @@ class MigrationScanner(ast.NodeVisitor):
         value: ast.AST,
         predicate: Callable[[ast.AST], bool],
     ) -> None:
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for target_element in target.elts:
                 self._track_sudo_alias(target_element, value, predicate)
             return
@@ -255,14 +255,14 @@ class MigrationScanner(ast.NodeVisitor):
     def _record_sql_target(self, target: ast.AST, value: ast.expr) -> None:
         if isinstance(target, ast.Name):
             self.sql_vars[target.id] = value
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._record_sql_target(element, value)
         elif isinstance(target, ast.Starred):
             self._record_sql_target(target.value, value)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -377,7 +377,7 @@ def _defined_function_names(path: Path) -> set[str]:
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
     except Exception:
         return set()
-    return {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)}
+    return {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
 
 
 def _manifest_hooks(manifest: Path) -> set[str]:
@@ -427,7 +427,7 @@ def _is_sudo_expr(
 ) -> bool:
     if isinstance(node, ast.Starred):
         return _is_sudo_expr(node.value, sudo_vars, constants, superuser_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_is_sudo_expr(element, sudo_vars, constants, superuser_names) for element in node.elts)
     return (
         _call_chain_has_attr(node, "sudo")
@@ -443,10 +443,10 @@ def _call_chain_has_superuser_with_user(
 ) -> bool:
     if isinstance(node, ast.Starred):
         return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if isinstance(current.func, ast.Attribute) and current.func.attr == "with_user":
                 return any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args) or any(
@@ -495,7 +495,7 @@ def _is_manual_transaction(node: ast.Call) -> bool:
 def _looks_sql_expr(node: ast.expr) -> bool:
     if isinstance(node, ast.Starred):
         return _looks_sql_expr(node.value)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_looks_sql_expr(element) for element in node.elts)
     literal = _literal_string(node)
     return bool(
@@ -506,7 +506,7 @@ def _looks_sql_expr(node: ast.expr) -> bool:
 def _is_interpolated_sql(node: ast.expr) -> bool:
     if isinstance(node, ast.Starred):
         return _is_interpolated_sql(node.value)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_is_interpolated_sql(element) for element in node.elts)
     if isinstance(node, ast.JoinedStr):
         return True
@@ -559,10 +559,10 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -718,10 +718,10 @@ def _call_root_name(node: ast.AST) -> str:
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     if isinstance(node, ast.Starred):
         return _call_chain_has_attr(node.value, attr)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_attr(element, attr) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -736,7 +736,7 @@ def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
 def _mark_target_names(target: ast.AST, names: set[str]) -> None:
     if isinstance(target, ast.Name):
         names.add(target.id)
-    elif isinstance(target, ast.Tuple | ast.List):
+    elif isinstance(target, (ast.Tuple, ast.List)):
         for element in target.elts:
             _mark_target_names(element, names)
     elif isinstance(target, ast.Starred):

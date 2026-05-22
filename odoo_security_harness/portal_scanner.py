@@ -384,14 +384,14 @@ class PortalScanner(ast.NodeVisitor):
             self._track_sudo_alias(target, value, context)
 
     def _track_sudo_alias(self, target: ast.expr, value: ast.AST, context: FunctionContext) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._track_sudo_alias(target_element, value_element, context)
             return
         if isinstance(target, ast.Starred):
             self._track_sudo_alias(target.value, value, context)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for target_element in target.elts:
                 self._track_sudo_alias(target_element, value, context)
             return
@@ -581,7 +581,7 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
     node = _resolve_constant(node, constants)
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return [node.value]
-    if isinstance(node, ast.List | ast.Tuple):
+    if isinstance(node, (ast.List, ast.Tuple)):
         values: list[str] = []
         for item in node.elts:
             value = _resolve_constant(item, constants)
@@ -661,10 +661,10 @@ def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dic
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -688,8 +688,8 @@ def _mark_local_constant_target(constants: dict[str, ast.AST], target: ast.AST, 
         _mark_local_constant_target(constants, target.value, value)
         return
 
-    if isinstance(target, ast.Tuple | ast.List):
-        if isinstance(value, ast.Tuple | ast.List):
+    if isinstance(target, (ast.Tuple, ast.List)):
+        if isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 _mark_local_constant_target(constants, target_element, value_element)
         else:
@@ -701,7 +701,7 @@ def _discard_local_constant_target(constants: dict[str, ast.AST], target: ast.AS
         constants.pop(target.id, None)
     elif isinstance(target, ast.Starred):
         _discard_local_constant_target(constants, target.value)
-    elif isinstance(target, ast.Tuple | ast.List):
+    elif isinstance(target, (ast.Tuple, ast.List)):
         for element in target.elts:
             _discard_local_constant_target(constants, element)
 
@@ -811,7 +811,7 @@ def _expr_mentions_token(node: ast.AST) -> bool:
 
 
 def _is_manual_access_token_compare(node: ast.Compare) -> bool:
-    if not any(isinstance(op, ast.Eq | ast.NotEq | ast.Is | ast.IsNot) for op in node.ops):
+    if not any(isinstance(op, (ast.Eq, ast.NotEq, ast.Is, ast.IsNot)) for op in node.ops):
         return False
     expressions = [node.left, *node.comparators]
     token_sides = [_expr_mentions_name(expression, "access_token") for expression in expressions]
@@ -833,10 +833,10 @@ def _expr_mentions_name(node: ast.AST, name: str) -> bool:
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     if isinstance(node, ast.Starred):
         return _call_chain_has_attr(node.value, attr)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_attr(element, attr) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -857,7 +857,7 @@ def _is_sudo_expr(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _is_sudo_expr(node.value, sudo_vars, constants, superuser_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_is_sudo_expr(element, sudo_vars, constants, superuser_names) for element in node.elts)
     return (
         _call_chain_has_attr(node, "sudo")
@@ -874,10 +874,10 @@ def _call_chain_has_superuser_with_user(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if isinstance(current.func, ast.Attribute) and current.func.attr == "with_user":
                 return any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args) or any(
@@ -916,7 +916,7 @@ def _is_superuser_arg(
 
 def _call_root_name(node: ast.AST) -> str:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             current = current.value
         elif isinstance(current, ast.Call):

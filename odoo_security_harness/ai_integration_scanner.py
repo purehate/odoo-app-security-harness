@@ -138,7 +138,7 @@ class AiIntegrationScanner(ast.NodeVisitor):
 
     def _is_static_literal(self, node: ast.AST) -> bool:
         if isinstance(node, ast.Constant):
-            return isinstance(node.value, str | bool | int | float | type(None))
+            return isinstance(node.value, (str, bool, int, float, type(None)))
         return False
 
     def _effective_constants(self) -> dict[str, ast.AST]:
@@ -364,7 +364,7 @@ class AiIntegrationScanner(ast.NodeVisitor):
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute) and node.func.attr in {"get", "get_param", "pop"}:
                 return self._expr_is_tainted(node.func.value)
-        if isinstance(node, ast.List | ast.Tuple):
+        if isinstance(node, (ast.List, ast.Tuple)):
             return any(self._expr_is_tainted(elt) for elt in node.elts)
         if isinstance(node, ast.Dict):
             return any(self._expr_is_tainted(v) for v in node.values)

@@ -368,9 +368,9 @@ class RealtimeScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -402,8 +402,8 @@ class RealtimeScanner(ast.NodeVisitor):
                 self.tainted_names.discard(target.id)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target, value):
                     self._mark_tainted_target(target_element, value_element)
             elif is_tainted:
@@ -418,14 +418,14 @@ class RealtimeScanner(ast.NodeVisitor):
             self._track_sudo_alias(target, value)
 
     def _track_sudo_alias(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._track_sudo_alias(target_element, value_element)
             return
         if isinstance(target, ast.Starred):
             self._track_sudo_alias(target.value, value)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for target_element in target.elts:
                 self._track_sudo_alias(target_element, value)
             return
@@ -437,7 +437,7 @@ class RealtimeScanner(ast.NodeVisitor):
             self.sudo_names.discard(target.id)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -455,7 +455,7 @@ class RealtimeScanner(ast.NodeVisitor):
     def _clear_local_constant_target(self, target: ast.AST) -> None:
         if isinstance(target, ast.Name):
             self.local_constants.pop(target.id, None)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._clear_local_constant_target(element)
         elif isinstance(target, ast.Starred):
@@ -464,7 +464,7 @@ class RealtimeScanner(ast.NodeVisitor):
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.add(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -473,7 +473,7 @@ class RealtimeScanner(ast.NodeVisitor):
     def _discard_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.discard(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -665,15 +665,15 @@ def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         keys = [key for key in node.keys if key is not None]
         return all(_is_static_literal(key) for key in keys) and all(_is_static_literal(value) for value in node.values)
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
         return _is_static_literal(node.operand)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _is_static_literal(node.left) and _is_static_literal(node.right)
@@ -758,11 +758,11 @@ def _sendmany_items(node: ast.Call) -> list[tuple[ast.AST, ast.AST]]:
     if not isinstance(node.func, ast.Attribute) or node.func.attr not in {"_sendmany", "sendmany"}:
         return []
     messages = node.args[0] if node.args else _keyword_value(node, "messages")
-    if not isinstance(messages, ast.List | ast.Tuple):
+    if not isinstance(messages, (ast.List, ast.Tuple)):
         return []
     items: list[tuple[ast.AST, ast.AST]] = []
     for element in messages.elts:
-        if not isinstance(element, ast.Tuple | ast.List) or len(element.elts) < 2:
+        if not isinstance(element, (ast.Tuple, ast.List)) or len(element.elts) < 2:
             continue
         payload_index = 2 if len(element.elts) >= 3 else 1
         items.append((element.elts[0], element.elts[payload_index]))
@@ -788,7 +788,7 @@ def _is_request_derived(
         return True
     if isinstance(node, ast.Starred):
         return _is_request_derived(node.value, request_names, http_module_names, odoo_module_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(
             _is_request_derived(element, request_names, http_module_names, odoo_module_names) for element in node.elts
         )
@@ -871,10 +871,10 @@ def _call_has_tainted_input(node: ast.Call, is_tainted: Any) -> bool:
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     if isinstance(node, ast.Starred):
         return _call_chain_has_attr(node.value, attr)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_attr(element, attr) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -895,7 +895,7 @@ def _is_sudo_expr(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _is_sudo_expr(node.value, sudo_names, constants, superuser_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_is_sudo_expr(element, sudo_names, constants, superuser_names) for element in node.elts)
     return (
         _call_chain_has_attr(node, "sudo")
@@ -912,10 +912,10 @@ def _call_chain_has_superuser_with_user(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if isinstance(current.func, ast.Attribute) and current.func.attr == "with_user":
                 return any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args) or any(
@@ -951,7 +951,7 @@ def _is_superuser_arg(
 
 def _call_root_name(node: ast.AST) -> str:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             current = current.value
         elif isinstance(current, ast.Call):

@@ -528,7 +528,7 @@ class ReportPythonScanner(ast.NodeVisitor):
         return False
 
     def _record_target_state(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._record_target_state(target_element, value_element)
             return
@@ -578,13 +578,13 @@ class ReportPythonScanner(ast.NodeVisitor):
                 or any(self._expr_is_tainted(arg) for arg in node.args)
                 or any(keyword.value is not None and self._expr_is_tainted(keyword.value) for keyword in node.keywords)
             )
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
         if isinstance(node, ast.Dict):
             return any(self._expr_is_tainted(key) for key in node.keys if key is not None) or any(
                 value is not None and self._expr_is_tainted(value) for value in node.values
             )
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -647,11 +647,11 @@ class ReportPythonScanner(ast.NodeVisitor):
             return self._expr_has_sudo(node.value)
         if isinstance(node, ast.Subscript):
             return self._expr_has_sudo(node.value)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_has_sudo(element) for element in node.elts)
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_has_sudo(value) for value in node.values)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_has_sudo(node.elt) or any(
                 self._expr_has_sudo(generator.iter) for generator in node.generators
             )
@@ -664,7 +664,7 @@ class ReportPythonScanner(ast.NodeVisitor):
         return False
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -680,7 +680,7 @@ class ReportPythonScanner(ast.NodeVisitor):
             self._mark_local_constant_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for name in _target_names(target):
                 self.local_constants.pop(name, None)
 
@@ -841,17 +841,17 @@ def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dic
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         keys = [key for key in node.keys if key is not None]
         return all(_is_static_literal(key) for key in keys) and all(_is_static_literal(value) for value in node.values)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _is_static_literal(node.left) and _is_static_literal(node.right)
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
         return _is_static_literal(node.operand)
     return False
 
@@ -930,7 +930,7 @@ def _is_request_derived(
         return True
     if isinstance(node, ast.Starred):
         return _is_request_derived(node.value, request_names, http_module_names, odoo_module_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(
             _is_request_derived(element, request_names, http_module_names, odoo_module_names) for element in node.elts
         )
@@ -1037,7 +1037,7 @@ def _call_name(node: ast.AST) -> str:
 def _target_names(node: ast.AST) -> set[str]:
     if isinstance(node, ast.Name):
         return {node.id}
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         return {name for element in node.elts for name in _target_names(element)}
     if isinstance(node, ast.Starred):
         return _target_names(node.value)

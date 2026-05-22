@@ -121,7 +121,7 @@ def _static_constants_from_body(statements: list[ast.stmt]) -> dict[str, ast.AST
 def _is_static_literal(node: ast.AST) -> bool:
     """Return True if *node* is a compile-time static literal."""
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Dict):
         return all(key is None or _is_static_literal(key) for key in node.keys)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
@@ -317,7 +317,7 @@ def _target_names(node: ast.AST) -> set[str]:
         return {node.id}
     if isinstance(node, ast.Starred):
         return _target_names(node.value)
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         names: set[str] = set()
         for element in node.elts:
             names |= _target_names(element)

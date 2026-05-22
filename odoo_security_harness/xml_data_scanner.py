@@ -898,11 +898,11 @@ class _ServerActionCodeScanner(ast.NodeVisitor):
         return call_name
 
     def _track_elevated_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in zip(target.elts, value.elts, strict=False):
                 self._track_elevated_target(target_element, value_element)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._track_elevated_target(element, value)
             return
@@ -934,7 +934,7 @@ def _is_elevated_expr(
         return _is_elevated_expr(node.value, elevated_names, constants, superuser_names)
     if isinstance(node, ast.Name):
         return node.id in elevated_names
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_is_elevated_expr(element, elevated_names, constants, superuser_names) for element in node.elts)
     return (
         _call_root_name(node) in elevated_names
@@ -945,7 +945,7 @@ def _is_elevated_expr(
 
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -963,7 +963,7 @@ def _call_chain_has_superuser_with_user(
     superuser_names: set[str] | None = None,
 ) -> bool:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if isinstance(current.func, ast.Attribute) and current.func.attr == "with_user":
                 return any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args) or any(
@@ -1000,7 +1000,7 @@ def _call_receiver_env_model(node: ast.AST, constants: dict[str, ast.AST]) -> st
     if not isinstance(node, ast.Attribute):
         return ""
     current = node.value
-    while isinstance(current, ast.Call | ast.Attribute):
+    while isinstance(current, (ast.Call, ast.Attribute)):
         current = current.func if isinstance(current, ast.Call) else current.value
     if not isinstance(current, ast.Subscript):
         return ""
@@ -1260,12 +1260,12 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
         return _is_static_literal(node.operand)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(

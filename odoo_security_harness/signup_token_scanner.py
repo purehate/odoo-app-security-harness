@@ -418,11 +418,11 @@ class SignupTokenScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
         if isinstance(node, ast.Starred):
             return self._expr_is_tainted(node.value)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(if_expr) for if_expr in generator.ifs)
@@ -450,8 +450,8 @@ class SignupTokenScanner(ast.NodeVisitor):
                 self.tainted_names.discard(target.id)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_tainted_target(target_element, value_element)
             elif self._is_request_derived(value) or self._expr_is_tainted(value):
@@ -470,7 +470,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         value: ast.AST,
         identity_model_names: set[str],
     ) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_identity_model_target(target_element, value_element, identity_model_names)
             return
@@ -491,7 +491,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         identity_model_names: set[str],
         identity_record_names: set[str],
     ) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_identity_record_target(
                     target_element,
@@ -522,7 +522,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         identity_model_names: set[str],
         elevated_identity_names: set[str],
     ) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_elevated_identity_target(
                     target_element,
@@ -549,7 +549,7 @@ class SignupTokenScanner(ast.NodeVisitor):
         value: ast.AST,
         token_mutation_names: set[str],
     ) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_token_mutation_target(target_element, value_element, token_mutation_names)
             return
@@ -566,7 +566,7 @@ class SignupTokenScanner(ast.NodeVisitor):
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.add(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -575,7 +575,7 @@ class SignupTokenScanner(ast.NodeVisitor):
     def _discard_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.discard(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -782,7 +782,7 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
     node = _resolve_constant(node, constants)
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return [node.value]
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         values: list[str] = []
         for element in node.elts:
             resolved = _resolve_constant(element, constants)
@@ -901,13 +901,13 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return all(isinstance(element, ast.Constant | ast.Name) for element in node.elts)
+        return isinstance(node.value, (str, bool, int, float, type(None)))
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return all(isinstance(element, (ast.Constant, ast.Name)) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
-            (key is None or isinstance(key, ast.Constant | ast.Name))
-            and isinstance(value, ast.Constant | ast.Name | ast.List | ast.Tuple | ast.Set)
+            (key is None or isinstance(key, (ast.Constant, ast.Name)))
+            and isinstance(value, (ast.Constant, ast.Name, ast.List, ast.Tuple, ast.Set))
             for key, value in zip(node.keys, node.values, strict=False)
         )
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
@@ -927,8 +927,8 @@ def _mark_local_constant_target(constants: dict[str, ast.AST], target: ast.AST, 
         _mark_local_constant_target(constants, target.value, value)
         return
 
-    if isinstance(target, ast.Tuple | ast.List):
-        if isinstance(value, ast.Tuple | ast.List):
+    if isinstance(target, (ast.Tuple, ast.List)):
+        if isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 _mark_local_constant_target(constants, target_element, value_element)
         else:
@@ -940,7 +940,7 @@ def _discard_local_constant_target(constants: dict[str, ast.AST], target: ast.AS
         constants.pop(target.id, None)
     elif isinstance(target, ast.Starred):
         _discard_local_constant_target(constants, target.value)
-    elif isinstance(target, ast.Tuple | ast.List):
+    elif isinstance(target, (ast.Tuple, ast.List)):
         for element in target.elts:
             _discard_local_constant_target(constants, element)
 
@@ -1186,7 +1186,7 @@ def _expr_mentions_token_mutation(
         return node.id in token_mutation_names
     if isinstance(node, ast.Subscript) and _call_root_name(node) in token_mutation_names:
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_expr_mentions_token_mutation(element, token_mutation_names, constants) for element in node.elts)
     if isinstance(node, ast.Starred):
         return _expr_mentions_token_mutation(node.value, token_mutation_names, constants)
@@ -1251,7 +1251,7 @@ def _is_elevated_identity_expr(
         return node.id in (elevated_identity_names or set())
     if isinstance(node, ast.Subscript):
         return _call_root_name(node) in (elevated_identity_names or set())
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(
             _is_elevated_identity_expr(
                 element, identity_model_names, elevated_identity_names, constants, superuser_names
@@ -1338,7 +1338,7 @@ def _expr_mentions_any_token_field(
         ) or any(
             value is not None and _expr_mentions_any_token_field(value, fields, constants) for value in node.values
         )
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_expr_mentions_any_token_field(element, fields, constants) for element in node.elts)
     if isinstance(node, ast.Subscript):
         return _expr_mentions_any_token_field(node.slice, fields, constants) or _expr_mentions_any_token_field(

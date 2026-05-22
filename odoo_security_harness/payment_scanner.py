@@ -435,10 +435,10 @@ def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dic
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -481,7 +481,7 @@ def _has_weak_signature_compare(node: ast.FunctionDef) -> bool:
     for child in ast.walk(node):
         if not isinstance(child, ast.Compare):
             continue
-        if not any(isinstance(op, ast.Eq | ast.NotEq) for op in child.ops):
+        if not any(isinstance(op, (ast.Eq, ast.NotEq)) for op in child.ops):
             continue
         expressions = [child.left, *child.comparators]
         if any(_expr_mentions_signature(expr) for expr in expressions) and not any(
@@ -558,7 +558,7 @@ class _PaymentStateTransitionVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _mark_state_payload_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_state_payload_target(target_element, value_element)
             return
@@ -636,7 +636,7 @@ def _dict_sets_payment_state(node: ast.AST, constants: dict[str, ast.AST] | None
 
 
 def _assigns_payment_state(target: ast.AST, value: ast.AST, constants: dict[str, ast.AST]) -> bool:
-    if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+    if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
         return any(
             _assigns_payment_state(target_element, value_element, constants)
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts)
@@ -672,8 +672,8 @@ def _mark_local_constant_target(constants: dict[str, ast.AST], target: ast.AST, 
         _mark_local_constant_target(constants, target.value, value)
         return
 
-    if isinstance(target, ast.Tuple | ast.List):
-        if isinstance(value, ast.Tuple | ast.List):
+    if isinstance(target, (ast.Tuple, ast.List)):
+        if isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 _mark_local_constant_target(constants, target_element, value_element)
         else:
@@ -685,7 +685,7 @@ def _discard_local_constant_target(constants: dict[str, ast.AST], target: ast.AS
         constants.pop(target.id, None)
     elif isinstance(target, ast.Starred):
         _discard_local_constant_target(constants, target.value)
-    elif isinstance(target, ast.Tuple | ast.List):
+    elif isinstance(target, (ast.Tuple, ast.List)):
         for element in target.elts:
             _discard_local_constant_target(constants, element)
 
@@ -794,7 +794,7 @@ class _PaymentTransactionLookupVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _mark_domain_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_domain_target(target_element, value_element)
             return
@@ -906,9 +906,9 @@ def _search_domain_arg(node: ast.Call) -> ast.AST | None:
 
 def _looks_like_domain(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
     constants = constants or {}
-    if isinstance(node, ast.List | ast.Tuple):
+    if isinstance(node, (ast.List, ast.Tuple)):
         return any(_domain_term_field(element, constants) for element in node.elts)
-    if isinstance(node, ast.BoolOp | ast.BinOp | ast.Call | ast.Name):
+    if isinstance(node, (ast.BoolOp, ast.BinOp, ast.Call, ast.Name)):
         return True
     return False
 
@@ -927,7 +927,7 @@ def _domain_has_provider_reference_scope(node: ast.AST | None, constants: dict[s
 def _domain_field_names(node: ast.AST, constants: dict[str, ast.AST]) -> set[str]:
     node = _resolve_constant(node, constants)
     fields: set[str] = set()
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         field = _domain_term_field(node, constants)
         if field:
             fields.add(field)
@@ -944,7 +944,7 @@ def _domain_field_names(node: ast.AST, constants: dict[str, ast.AST]) -> set[str
 
 def _domain_term_field(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> str:
     constants = constants or {}
-    if isinstance(node, ast.Tuple | ast.List) and node.elts:
+    if isinstance(node, (ast.Tuple, ast.List)) and node.elts:
         first = _resolve_constant(node.elts[0], constants)
         if isinstance(first, ast.Constant):
             return str(first.value)

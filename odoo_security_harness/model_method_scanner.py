@@ -282,11 +282,11 @@ class ModelMethodScanner(ast.NodeVisitor):
         aliases: set[str],
         predicate: Callable[[ast.AST], bool],
     ) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
                 self._track_alias(child_target, child_value, aliases, predicate)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for child_target in target.elts:
                 self._track_alias(child_target, value, aliases, predicate)
             return
@@ -301,7 +301,7 @@ class ModelMethodScanner(ast.NodeVisitor):
             aliases.discard(target.id)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_local_constant_target(child_target, child_value)
             return
@@ -314,7 +314,7 @@ class ModelMethodScanner(ast.NodeVisitor):
             else:
                 self.local_constants.pop(target.id, None)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for name in _target_names(target):
                 self.local_constants.pop(name, None)
 
@@ -549,7 +549,7 @@ def _is_sudo_expr(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _is_sudo_expr(node.value, sudo_vars, constants, superuser_names)
-    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
         return any(_is_sudo_expr(element, sudo_vars, constants, superuser_names) for element in node.elts)
     return (
         _call_chain_has_attr(node, "sudo")
@@ -579,7 +579,7 @@ def _is_http_client_factory(node: ast.AST, http_modules: set[str]) -> bool:
 def _is_http_client_expr(node: ast.AST, http_modules: set[str], http_client_vars: set[str]) -> bool:
     if isinstance(node, ast.Starred):
         return _is_http_client_expr(node.value, http_modules, http_client_vars)
-    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
         return any(_is_http_client_expr(element, http_modules, http_client_vars) for element in node.elts)
     return _is_http_client_factory(node, http_modules) or _call_root_name(node) in http_client_vars
 
@@ -594,7 +594,7 @@ def _call_receiver_sensitive_model(node: ast.AST, constants: dict[str, ast.AST] 
     if not isinstance(node, ast.Attribute):
         return None
     current: ast.AST = node.value
-    while isinstance(current, ast.Call | ast.Attribute):
+    while isinstance(current, (ast.Call, ast.Attribute)):
         if isinstance(current, ast.Call):
             current = current.func
         else:
@@ -648,10 +648,10 @@ def _call_root_name(node: ast.AST) -> str:
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     if isinstance(node, ast.Starred):
         return _call_chain_has_attr(node.value, attr)
-    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
         return any(_call_chain_has_attr(element, attr) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -671,10 +671,10 @@ def _call_chain_has_superuser_with_user(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
-    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
         return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if (
                 isinstance(current.func, ast.Attribute)
@@ -721,7 +721,7 @@ def _target_names(node: ast.AST) -> set[str]:
         return {node.id}
     if isinstance(node, ast.Starred):
         return _target_names(node.value)
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         names: set[str] = set()
         for element in node.elts:
             names.update(_target_names(element))
@@ -953,7 +953,7 @@ def _is_static_literal(node: ast.AST) -> bool:
         )
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _is_static_literal(node.left) and _is_static_literal(node.right)
-    return isinstance(node, ast.Constant) and isinstance(node.value, str | bool | int | float | type(None))
+    return isinstance(node, ast.Constant) and isinstance(node.value, (str, bool, int, float, type(None)))
 
 
 def findings_to_json(findings: list[ModelMethodFinding]) -> list[dict[str, Any]]:

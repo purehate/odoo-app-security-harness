@@ -466,9 +466,9 @@ class ConfigParameterScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -499,8 +499,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
             self._mark_tainted_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_tainted_target(target_element, value_element)
             elif is_tainted:
@@ -542,8 +542,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
             )
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_config_parameter_target(
                         target_element,
@@ -566,7 +566,7 @@ class ConfigParameterScanner(ast.NodeVisitor):
             names.add(target.id)
         elif isinstance(target, ast.Starred):
             self._mark_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
 
@@ -575,7 +575,7 @@ class ConfigParameterScanner(ast.NodeVisitor):
             names.discard(target.id)
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
 
@@ -591,8 +591,8 @@ class ConfigParameterScanner(ast.NodeVisitor):
             self._mark_local_constant_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_local_constant_target(target_element, value_element)
             else:
@@ -811,8 +811,8 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        return isinstance(node.value, (str, bool, int, float, type(None)))
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -1033,7 +1033,7 @@ def _is_sensitive_default(value: str) -> bool:
 
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -1077,7 +1077,7 @@ def _call_chain_has_superuser_with_user(
     superuser_names: set[str] | None = None,
 ) -> bool:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if (
                 isinstance(current.func, ast.Attribute)

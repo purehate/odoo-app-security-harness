@@ -442,7 +442,7 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
     node = _resolve_constant(node, constants or {})
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return [node.value]
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         routes = []
         for element in node.elts:
             value = _resolve_constant(element, constants or {})
@@ -454,7 +454,7 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
 
 def _string_set(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> set[str]:
     node = _resolve_constant(node, constants or {})
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         values = set()
         for element in node.elts:
             value = _resolve_constant(element, constants or {})
@@ -537,10 +537,10 @@ def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dic
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(

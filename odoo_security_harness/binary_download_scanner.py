@@ -440,11 +440,11 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
         if isinstance(node, ast.Starred):
             return self._expr_is_tainted(node.value)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._comprehension_is_tainted(node.elt, node.generators)
         if isinstance(node, ast.DictComp):
             return self._comprehension_is_tainted(node.key, node.generators) or self._comprehension_is_tainted(
@@ -473,11 +473,11 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_is_binary(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_binary(element) for element in node.elts)
         if isinstance(node, ast.Starred):
             return self._expr_is_binary(node.value)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._comprehension_is_binary(node.elt, node.generators)
         if isinstance(node, ast.DictComp):
             return self._comprehension_is_binary(node.key, node.generators) or self._comprehension_is_binary(
@@ -504,11 +504,11 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         sudo_names: set[str],
         model_names: dict[str, str],
     ) -> None:
-        if isinstance(target, ast.List | ast.Tuple) and isinstance(value, ast.List | ast.Tuple):
+        if isinstance(target, (ast.List, ast.Tuple)) and isinstance(value, (ast.List, ast.Tuple)):
             for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
                 self._track_alias_target(child_target, child_value, attachment_names, sudo_names, model_names)
             return
-        if isinstance(target, ast.List | ast.Tuple):
+        if isinstance(target, (ast.List, ast.Tuple)):
             for child_target in target.elts:
                 self._track_alias_target(child_target, value, attachment_names, sudo_names, model_names)
             return
@@ -536,7 +536,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             self.attachment_names.discard(target.id)
 
     def _mark_tainted_target(self, target: ast.expr, value: ast.AST) -> None:
-        if isinstance(target, ast.List | ast.Tuple) and isinstance(value, ast.List | ast.Tuple):
+        if isinstance(target, (ast.List, ast.Tuple)) and isinstance(value, (ast.List, ast.Tuple)):
             for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
                 if self._is_request_derived(child_value) or self._expr_is_tainted(child_value):
                     self._mark_name_target(child_target, self.tainted_names)
@@ -549,7 +549,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             self._discard_name_target(target, self.tainted_names)
 
     def _mark_binary_target(self, target: ast.expr, value: ast.AST) -> None:
-        if isinstance(target, ast.List | ast.Tuple) and isinstance(value, ast.List | ast.Tuple):
+        if isinstance(target, (ast.List, ast.Tuple)) and isinstance(value, (ast.List, ast.Tuple)):
             for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_binary_target(child_target, child_value)
             return
@@ -562,7 +562,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         if not self.route_stack:
             return
 
-        if isinstance(target, ast.List | ast.Tuple) and isinstance(value, ast.List | ast.Tuple):
+        if isinstance(target, (ast.List, ast.Tuple)) and isinstance(value, (ast.List, ast.Tuple)):
             for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_local_constant_target(child_target, child_value)
             return
@@ -578,13 +578,13 @@ class BinaryDownloadScanner(ast.NodeVisitor):
             self._mark_local_constant_target(target.value, value)
             return
 
-        if isinstance(target, ast.List | ast.Tuple):
+        if isinstance(target, (ast.List, ast.Tuple)):
             self._discard_local_constant_target(target)
 
     def _discard_local_constant_target(self, target: ast.expr) -> None:
         if isinstance(target, ast.Name):
             self.local_constants.pop(target.id, None)
-        elif isinstance(target, ast.List | ast.Tuple):
+        elif isinstance(target, (ast.List, ast.Tuple)):
             for element in target.elts:
                 self._discard_local_constant_target(element)
         elif isinstance(target, ast.Starred):
@@ -603,7 +603,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         if isinstance(target, ast.Name):
             names.add(target.id)
             return
-        if isinstance(target, ast.List | ast.Tuple):
+        if isinstance(target, (ast.List, ast.Tuple)):
             for element in target.elts:
                 self._mark_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -613,7 +613,7 @@ class BinaryDownloadScanner(ast.NodeVisitor):
         if isinstance(target, ast.Name):
             names.discard(target.id)
             return
-        if isinstance(target, ast.List | ast.Tuple):
+        if isinstance(target, (ast.List, ast.Tuple)):
             for element in target.elts:
                 self._discard_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -813,10 +813,10 @@ def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dic
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -1064,10 +1064,10 @@ def _literal_header_pairs(node: ast.AST, constants: dict[str, ast.AST]) -> list[
             if name and text:
                 pairs.append((name, text))
         return pairs
-    if isinstance(resolved, ast.List | ast.Tuple | ast.Set):
+    if isinstance(resolved, (ast.List, ast.Tuple, ast.Set)):
         pairs = []
         for element in resolved.elts:
-            if isinstance(element, ast.Tuple | ast.List) and len(element.elts) >= 2:
+            if isinstance(element, (ast.Tuple, ast.List)) and len(element.elts) >= 2:
                 name = _constant_string(element.elts[0], constants)
                 text = _constant_string(element.elts[1], constants) or (
                     "attachment" if _is_content_disposition_helper(element.elts[1]) else ""
@@ -1184,7 +1184,7 @@ def _call_has_tainted_input(node: ast.Call, is_tainted: Any, constants: dict[str
 
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -1203,7 +1203,7 @@ def _call_chain_has_superuser_with_user(
 ) -> bool:
     constants = constants or {}
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if (
                 isinstance(current.func, ast.Attribute)
@@ -1255,7 +1255,7 @@ def _is_sudo_expr(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _is_sudo_expr(node.value, sudo_names, constants, superuser_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_is_sudo_expr(element, sudo_names, constants, superuser_names) for element in node.elts)
     return (
         _call_chain_has_attr(node, "sudo")
@@ -1275,7 +1275,7 @@ def _model_name_in_expr(
         return _model_name_in_expr(resolved, model_names, constants)
     if isinstance(node, ast.Starred):
         return _model_name_in_expr(node.value, model_names, constants)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         for element in node.elts:
             model = _model_name_in_expr(element, model_names, constants)
             if model:
@@ -1296,7 +1296,7 @@ def _aliases_for_model(model_names: dict[str, str], model_name: str) -> set[str]
 
 def _call_root_name(node: ast.AST) -> str:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             current = current.value
         elif isinstance(current, ast.Call):

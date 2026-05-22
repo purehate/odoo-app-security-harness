@@ -556,11 +556,11 @@ class ActionUrlScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
         if isinstance(node, ast.Starred):
             return self._expr_is_tainted(node.value)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -593,7 +593,7 @@ class ActionUrlScanner(ast.NodeVisitor):
             isinstance(node, ast.Dict)
             and _dict_fields(node, self._effective_constants()).get("type") == "ir.actions.act_url"
             or self._expr_is_action_url(node)
-            or isinstance(node, ast.List | ast.Tuple | ast.Set)
+            or isinstance(node, (ast.List, ast.Tuple, ast.Set))
             and any(self._expr_creates_action_url(element) for element in node.elts)
         )
 
@@ -610,8 +610,8 @@ class ActionUrlScanner(ast.NodeVisitor):
             self._mark_tainted_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_tainted_target(target_element, value_element)
             elif is_tainted:
@@ -625,7 +625,7 @@ class ActionUrlScanner(ast.NodeVisitor):
             self._mark_action_url_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_action_url_target(target_element, value_element)
             return
@@ -639,7 +639,7 @@ class ActionUrlScanner(ast.NodeVisitor):
         if not self.route_stack:
             return
 
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -655,7 +655,7 @@ class ActionUrlScanner(ast.NodeVisitor):
             self._mark_local_constant_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             self._discard_local_constant_target(target)
 
     def _discard_local_constant_target(self, target: ast.AST) -> None:
@@ -663,7 +663,7 @@ class ActionUrlScanner(ast.NodeVisitor):
             self.local_constants.pop(target.id, None)
         elif isinstance(target, ast.Starred):
             self._discard_local_constant_target(target.value)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_local_constant_target(element)
 
@@ -681,7 +681,7 @@ class ActionUrlScanner(ast.NodeVisitor):
             names.add(target.id)
         elif isinstance(target, ast.Starred):
             self._mark_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
 
@@ -690,7 +690,7 @@ class ActionUrlScanner(ast.NodeVisitor):
             names.discard(target.id)
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
 
@@ -853,7 +853,7 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
     node = _resolve_constant(node, constants or {})
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return [node.value]
-    if isinstance(node, ast.List | ast.Tuple):
+    if isinstance(node, (ast.List, ast.Tuple)):
         return [
             str(value.value)
             for item in node.elts
@@ -933,10 +933,10 @@ def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dic
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(

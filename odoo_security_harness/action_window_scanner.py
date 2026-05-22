@@ -624,11 +624,11 @@ class ActionWindowScanner(ast.NodeVisitor):
             return any(self._expr_is_tainted(key) for key in node.keys if key is not None) or any(
                 value is not None and self._expr_is_tainted(value) for value in node.values
             )
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
         if isinstance(node, ast.Starred):
             return self._expr_is_tainted(node.value)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -680,7 +680,7 @@ class ActionWindowScanner(ast.NodeVisitor):
             isinstance(node, ast.Dict)
             and _dict_literal_fields(node, self._effective_constants()).get("type") == "ir.actions.act_window"
             or self._expr_is_action_window(node)
-            or isinstance(node, ast.List | ast.Tuple | ast.Set)
+            or isinstance(node, (ast.List, ast.Tuple, ast.Set))
             and any(self._expr_creates_action_window(element) for element in node.elts)
         )
 
@@ -697,8 +697,8 @@ class ActionWindowScanner(ast.NodeVisitor):
             self._mark_tainted_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_tainted_target(target_element, value_element)
             elif is_tainted:
@@ -712,7 +712,7 @@ class ActionWindowScanner(ast.NodeVisitor):
             self._mark_action_window_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_action_window_target(target_element, value_element)
             return
@@ -735,7 +735,7 @@ class ActionWindowScanner(ast.NodeVisitor):
             names.add(target.id)
         elif isinstance(target, ast.Starred):
             self._mark_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
 
@@ -744,12 +744,12 @@ class ActionWindowScanner(ast.NodeVisitor):
             names.discard(target.id)
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -937,7 +937,7 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
     node = _resolve_constant(node, constants or {})
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return [node.value]
-    if isinstance(node, ast.List | ast.Tuple):
+    if isinstance(node, (ast.List, ast.Tuple)):
         values: list[str] = []
         for item in node.elts:
             value = _resolve_constant(item, constants or {})
@@ -1019,10 +1019,10 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
+        return isinstance(node.value, (str, bool, int, float, type(None)))
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
         return _is_static_literal(node.operand)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -1198,7 +1198,7 @@ def _is_broad_domain(node: ast.AST | None, constants: dict[str, ast.AST] | None 
     if node is None:
         return True
     value = _resolve_constant(node, constants or {})
-    if isinstance(value, ast.List | ast.Tuple):
+    if isinstance(value, (ast.List, ast.Tuple)):
         return len(value.elts) == 0
     if isinstance(value, ast.Constant) and isinstance(value.value, str):
         return value.value.strip() in {"", "[]", "[(1,'=',1)]", "[(1, '=', 1)]"}
@@ -1280,7 +1280,7 @@ def _is_empty_or_false(node: ast.AST, constants: dict[str, ast.AST] | None = Non
     value = _resolve_constant(node, constants or {})
     if isinstance(value, ast.Constant):
         return value.value is False or value.value is None or value.value == "" or value.value == 0
-    if isinstance(value, ast.List | ast.Tuple | ast.Set):
+    if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
         return len(value.elts) == 0
     if isinstance(value, ast.Dict):
         return len(value.keys) == 0

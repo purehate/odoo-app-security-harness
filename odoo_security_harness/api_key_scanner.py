@@ -406,9 +406,9 @@ class ApiKeyScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(if_expr) for if_expr in generator.ifs)
@@ -452,8 +452,8 @@ class ApiKeyScanner(ast.NodeVisitor):
             self._mark_tainted_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_tainted_target(target_element, value_element)
             elif is_tainted:
@@ -482,8 +482,8 @@ class ApiKeyScanner(ast.NodeVisitor):
             self._mark_api_key_model_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_api_key_model_target(target_element, value_element)
             elif model:
@@ -511,8 +511,8 @@ class ApiKeyScanner(ast.NodeVisitor):
             self._mark_config_parameter_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_config_parameter_target(target_element, value_element)
             elif is_config_parameter:
@@ -532,8 +532,8 @@ class ApiKeyScanner(ast.NodeVisitor):
             self._mark_key_response_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_key_response_target(target_element, value_element)
             elif self._expr_mentions_key_return(value):
@@ -546,7 +546,7 @@ class ApiKeyScanner(ast.NodeVisitor):
             names.add(target.id)
         elif isinstance(target, ast.Starred):
             self._mark_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
 
@@ -555,7 +555,7 @@ class ApiKeyScanner(ast.NodeVisitor):
             names.discard(target.id)
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
 
@@ -563,14 +563,14 @@ class ApiKeyScanner(ast.NodeVisitor):
         return self.route_stack[-1] if self.route_stack else RouteContext(is_route=False)
 
     def _mark_local_constant_target(self, target: ast.expr, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_local_constant_target(target_element, value_element)
             return
         if isinstance(target, ast.Starred):
             self._mark_local_constant_target(target.value, value)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             self._discard_local_constant_target(target)
             return
         if not isinstance(target, ast.Name):
@@ -587,7 +587,7 @@ class ApiKeyScanner(ast.NodeVisitor):
         if isinstance(target, ast.Starred):
             self._discard_local_constant_target(target.value)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_local_constant_target(element)
 
@@ -748,7 +748,7 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
     node = _resolve_constant(node, constants)
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return [node.value]
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         routes = []
         for element in node.elts:
             value = _resolve_constant(element, constants)
@@ -873,13 +873,13 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return all(isinstance(element, ast.Constant | ast.Name) for element in node.elts)
+        return isinstance(node.value, (str, bool, int, float, type(None)))
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return all(isinstance(element, (ast.Constant, ast.Name)) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
-            (key is None or isinstance(key, ast.Constant | ast.Name))
-            and isinstance(value, ast.Constant | ast.Name | ast.List | ast.Tuple | ast.Set)
+            (key is None or isinstance(key, (ast.Constant, ast.Name)))
+            and isinstance(value, (ast.Constant, ast.Name, ast.List, ast.Tuple, ast.Set))
             for key, value in zip(node.keys, node.values, strict=False)
         )
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
@@ -1062,7 +1062,7 @@ def _is_config_parameter_expr(
 
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -1106,7 +1106,7 @@ def _call_chain_has_superuser_with_user(
     superuser_names: set[str] | None = None,
 ) -> bool:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if (
                 isinstance(current.func, ast.Attribute)

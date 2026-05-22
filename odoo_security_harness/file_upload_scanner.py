@@ -430,9 +430,9 @@ class FileUploadScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -465,8 +465,8 @@ class FileUploadScanner(ast.NodeVisitor):
             self._mark_tainted_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target, value):
                     self._mark_tainted_target(target_element, value_element)
             elif is_tainted:
@@ -480,7 +480,7 @@ class FileUploadScanner(ast.NodeVisitor):
             names.add(target.id)
         elif isinstance(target, ast.Starred):
             self._mark_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
 
@@ -489,12 +489,12 @@ class FileUploadScanner(ast.NodeVisitor):
             names.discard(target.id)
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -510,7 +510,7 @@ class FileUploadScanner(ast.NodeVisitor):
             self._mark_local_constant_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             self._discard_local_constant_target(target)
 
     def _discard_local_constant_target(self, target: ast.AST) -> None:
@@ -518,7 +518,7 @@ class FileUploadScanner(ast.NodeVisitor):
             self.local_constants.pop(target.id, None)
         elif isinstance(target, ast.Starred):
             self._discard_local_constant_target(target.value)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_local_constant_target(element)
 
@@ -546,12 +546,12 @@ class FileUploadScanner(ast.NodeVisitor):
                 self.attachment_names.discard(target.id)
         elif isinstance(target, ast.Starred):
             self._mark_attachment_target(target.value, is_attachment)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_attachment_target(element, is_attachment)
 
     def _mark_attachment_value_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_attachment_value_target(target_element, value_element)
             return
@@ -630,7 +630,7 @@ class FileUploadScanner(ast.NodeVisitor):
                 self.tainted_archive_names.discard(target.id)
         elif isinstance(target, ast.Starred):
             self._mark_archive_target(target.value, is_tainted_archive)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_archive_target(element, is_tainted_archive)
 
@@ -641,7 +641,7 @@ class FileUploadScanner(ast.NodeVisitor):
             self._mark_archive_target_from_value(target.value, value, is_tainted_archive)
             return
 
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_archive_target_from_value(target_element, value_element)
             return
@@ -658,7 +658,7 @@ class FileUploadScanner(ast.NodeVisitor):
                 self.secure_filename_names.discard(target.id)
         elif isinstance(target, ast.Starred):
             self._mark_secure_filename_target(target.value, is_secure_filename)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_secure_filename_target(element, is_secure_filename)
 
@@ -677,7 +677,7 @@ class FileUploadScanner(ast.NodeVisitor):
             return self._is_tainted_archive(node.value)
         if isinstance(node, ast.Name):
             return node.id in self.tainted_archive_names
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._is_tainted_archive(element) for element in node.elts)
         if isinstance(node, ast.Call):
             return self._is_tainted_archive_open(node)
@@ -745,7 +745,7 @@ class FileUploadScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_uses_secure_filename(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_uses_secure_filename(element) for element in node.elts)
         return False
 
@@ -940,7 +940,7 @@ def _attachment_model_in_expr(
         return _attachment_model_in_expr(node.value, attachment_names, constants)
     if isinstance(node, ast.Name):
         return node.id in attachment_names
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_attachment_model_in_expr(element, attachment_names, constants) for element in node.elts)
     if isinstance(node, ast.Attribute):
         return _attachment_model_in_expr(node.value, attachment_names, constants)
@@ -1027,7 +1027,7 @@ def _is_static_literal(node: ast.AST) -> bool:
         return all(key is None or _is_static_literal(key) for key in node.keys)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _is_static_literal(node.left) and _is_static_literal(node.right)
-    return isinstance(node, ast.Constant) and isinstance(node.value, str | bool | int | float | type(None))
+    return isinstance(node, ast.Constant) and isinstance(node.value, (str, bool, int, float, type(None)))
 
 
 def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> ast.Dict | None:

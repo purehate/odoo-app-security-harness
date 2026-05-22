@@ -491,7 +491,7 @@ class OrmContextScanner(ast.NodeVisitor):
             scope.context_dict_vars.pop(name, None)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_local_constant_target(child_target, child_value)
             return
@@ -504,7 +504,7 @@ class OrmContextScanner(ast.NodeVisitor):
             else:
                 self.local_constants.pop(target.id, None)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for name in _target_names(target):
                 self.local_constants.pop(name, None)
 
@@ -592,7 +592,7 @@ def _context_flags_in_chain(
 ) -> dict[str, ast.AST]:
     flags: dict[str, ast.AST] = {}
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             current = current.value
         elif isinstance(current, ast.Subscript):
@@ -700,7 +700,7 @@ def _privileged_default_flags(flags: dict[str, ast.AST]) -> set[str]:
 def _is_empty_or_false(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
         return node.value is False or node.value is None or node.value == "" or node.value == 0
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return len(node.elts) == 0
     if isinstance(node, ast.Dict):
         return len(node.keys) == 0
@@ -709,7 +709,7 @@ def _is_empty_or_false(node: ast.AST) -> bool:
 
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -740,7 +740,7 @@ def _call_chain_has_superuser_with_user(
     superuser_names: set[str] | None = None,
 ) -> bool:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if isinstance(current.func, ast.Attribute) and current.func.attr == "with_user":
                 return any(_is_superuser_arg(arg, constants, superuser_names) for arg in current.args) or any(
@@ -803,7 +803,7 @@ def _target_names(node: ast.AST) -> set[str]:
         return {node.id}
     if isinstance(node, ast.Starred):
         return _target_names(node.value)
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         names: set[str] = set()
         for element in node.elts:
             names |= _target_names(element)
@@ -850,10 +850,10 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -867,7 +867,7 @@ def _is_static_literal(node: ast.AST) -> bool:
 
 def _call_root_name(node: ast.AST) -> str:
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             current = current.value
         elif isinstance(current, ast.Call):

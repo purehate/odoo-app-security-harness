@@ -355,7 +355,7 @@ class LoosePythonScanner(ast.NodeVisitor):
             return True
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format":
             return True
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._is_unsafe_sql_expr(element) for element in node.elts)
         return False
 
@@ -413,7 +413,7 @@ class LoosePythonScanner(ast.NodeVisitor):
 
     def _env_subscript_model(self, node: ast.AST) -> str:
         current = node
-        while isinstance(current, ast.Call | ast.Attribute):
+        while isinstance(current, (ast.Call, ast.Attribute)):
             current = current.func if isinstance(current, ast.Call) else current.value
         if not isinstance(current, ast.Subscript):
             return ""
@@ -474,7 +474,7 @@ class LoosePythonScanner(ast.NodeVisitor):
     def _mark_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.add(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
         elif isinstance(target, ast.Starred):
@@ -483,14 +483,14 @@ class LoosePythonScanner(ast.NodeVisitor):
     def _discard_name_target(self, target: ast.AST, names: set[str]) -> None:
         if isinstance(target, ast.Name):
             names.discard(target.id)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
 
     def _mark_unsafe_sql_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_unsafe_sql_target(target_element, value_element)
             return
@@ -500,7 +500,7 @@ class LoosePythonScanner(ast.NodeVisitor):
             self._discard_name_target(target, self.unsafe_sql_vars)
 
     def _mark_http_client_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_http_client_target(target_element, value_element)
             return
@@ -510,7 +510,7 @@ class LoosePythonScanner(ast.NodeVisitor):
             self._discard_name_target(target, self.http_client_names)
 
     def _mark_elevated_record_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_elevated_record_target(target_element, value_element)
             return
@@ -520,7 +520,7 @@ class LoosePythonScanner(ast.NodeVisitor):
             self._discard_name_target(target, self.elevated_record_names)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -533,7 +533,7 @@ class LoosePythonScanner(ast.NodeVisitor):
             else:
                 self.local_constants.pop(target.id, None)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 if isinstance(element, ast.Name):
                     self.local_constants.pop(element.id, None)
@@ -557,7 +557,7 @@ class LoosePythonScanner(ast.NodeVisitor):
             return self._expr_has_elevated_record(node.value)
         if isinstance(node, ast.Subscript):
             return self._expr_has_elevated_record(node.value)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_has_elevated_record(element) for element in node.elts)
         return False
 
@@ -572,7 +572,7 @@ class LoosePythonScanner(ast.NodeVisitor):
             return self._is_http_client_expr(node.value)
         if isinstance(node, ast.Call):
             return self._canonical_call_name(node.func) in self.HTTP_CLIENT_CONSTRUCTORS
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._is_http_client_expr(element) for element in node.elts)
         return False
 
@@ -909,10 +909,10 @@ def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dic
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(

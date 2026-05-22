@@ -683,7 +683,7 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
         if isinstance(target, ast.Starred):
             self._mark_local_constant_target(target.value, value)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_local_constant_target(element)
 
@@ -694,7 +694,7 @@ class WebsiteFormRouteScanner(ast.NodeVisitor):
         if isinstance(target, ast.Starred):
             self._discard_local_constant_target(target.value)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_local_constant_target(element)
 
@@ -932,7 +932,7 @@ def _route_path_from_arg(node: ast.AST, constants: dict[str, ast.AST] | None = N
     node = _resolve_constant(node, constants or {})
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
-    if isinstance(node, ast.List | ast.Tuple):
+    if isinstance(node, (ast.List, ast.Tuple)):
         return " ".join(_route_path_from_arg(element, constants) for element in node.elts)
     return ""
 
@@ -1038,10 +1038,10 @@ def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: s
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(

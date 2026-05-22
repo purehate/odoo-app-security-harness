@@ -426,7 +426,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
                 auth = str(value.value)
             elif key == "csrf" and isinstance(value, ast.Constant):
                 csrf = bool(value.value)
-            elif key == "methods" and isinstance(value, ast.List | ast.Tuple | ast.Set):
+            elif key == "methods" and isinstance(value, (ast.List, ast.Tuple, ast.Set)):
                 for elt in value.elts:
                     resolved = self._resolve_constant(elt)
                     if isinstance(resolved, ast.Constant):
@@ -466,7 +466,7 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
         node = self._resolve_constant(node)
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return [node.value]
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             values: list[str] = []
             for elt in node.elts:
                 resolved = self._resolve_constant(elt)
@@ -521,8 +521,8 @@ class OdooDeepAnalyzer(ast.NodeVisitor):
 
     def _is_static_literal(self, node: ast.AST) -> bool:
         if isinstance(node, ast.Constant):
-            return isinstance(node.value, str | bool | int | float | type(None))
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+            return isinstance(node.value, (str, bool, int, float, type(None)))
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return all(self._is_static_literal(element) for element in node.elts)
         if isinstance(node, ast.Dict):
             return all(

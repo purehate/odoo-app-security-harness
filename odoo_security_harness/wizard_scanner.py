@@ -343,11 +343,11 @@ class WizardScanner(ast.NodeVisitor):
             )
 
     def _track_sudo_alias(self, target: ast.expr, value: ast.AST, context: MethodContext) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in _unpack_target_value_pairs(target, value):
                 self._track_sudo_alias(child_target, child_value, context)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for child_target in target.elts:
                 self._track_sudo_alias(child_target, value, context)
             return
@@ -364,7 +364,7 @@ class WizardScanner(ast.NodeVisitor):
             context.sudo_vars.discard(target.id)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for child_target, child_value in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(child_target, child_value)
             return
@@ -477,7 +477,7 @@ def _numeric_class_attr(node: ast.ClassDef, attr: str, constants: dict[str, ast.
             if not isinstance(target, ast.Name) or target.id != attr:
                 continue
             resolved = _resolve_constant(value, constants)
-            if isinstance(resolved, ast.Constant) and isinstance(resolved.value, int | float):
+            if isinstance(resolved, ast.Constant) and isinstance(resolved.value, (int, float)):
                 return resolved.value
     return None
 
@@ -487,7 +487,7 @@ def _has_long_transient_retention(hours: int | float | None, count: int | float 
 
 
 def _is_binary_field_assignment(node: ast.AST) -> bool:
-    if not isinstance(node, ast.Assign | ast.AnnAssign):
+    if not isinstance(node, (ast.Assign, ast.AnnAssign)):
         return False
     value = node.value
     return isinstance(value, ast.Call) and _call_name(value.func) in {"fields.Binary", "Binary"}
@@ -529,7 +529,7 @@ def _call_receiver_sensitive_model(node: ast.AST, constants: dict[str, ast.AST] 
         return None
     constants = constants or {}
     current: ast.AST = node.value
-    while isinstance(current, ast.Call | ast.Attribute):
+    while isinstance(current, (ast.Call, ast.Attribute)):
         if isinstance(current, ast.Call):
             current = current.func
         else:
@@ -575,10 +575,10 @@ def _uses_name(node: ast.AST, names: set[str]) -> bool:
 def _call_chain_has_attr(node: ast.AST, attr: str) -> bool:
     if isinstance(node, ast.Starred):
         return _call_chain_has_attr(node.value, attr)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_attr(element, attr) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Attribute):
             if current.attr == attr:
                 return True
@@ -598,10 +598,10 @@ def _call_chain_has_superuser_with_user(
     constants = constants or {}
     if isinstance(node, ast.Starred):
         return _call_chain_has_superuser_with_user(node.value, constants, superuser_names)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_call_chain_has_superuser_with_user(element, constants, superuser_names) for element in node.elts)
     current: ast.AST | None = node
-    while isinstance(current, ast.Attribute | ast.Call | ast.Subscript):
+    while isinstance(current, (ast.Attribute, ast.Call, ast.Subscript)):
         if isinstance(current, ast.Call):
             if (
                 isinstance(current.func, ast.Attribute)
@@ -653,7 +653,7 @@ def _is_elevated_expr(
 def _target_names(node: ast.AST) -> set[str]:
     if isinstance(node, ast.Name):
         return {node.id}
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         return {name for element in node.elts for name in _target_names(element)}
     if isinstance(node, ast.Starred):
         return _target_names(node.value)
@@ -718,15 +718,15 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST], seen: set[st
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         keys = [key for key in node.keys if key is not None]
         return all(_is_static_literal(key) for key in keys) and all(_is_static_literal(value) for value in node.values)
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
         return _is_static_literal(node.operand)
     return False
 

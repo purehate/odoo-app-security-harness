@@ -652,7 +652,7 @@ def _looks_odoo_env_key(key: str) -> bool:
 
 
 def _is_scalar_config_value(value: object) -> bool:
-    return isinstance(value, str | int | float | bool)
+    return isinstance(value, (str, int, float, bool))
 
 
 def _normalize_config_key(key: str) -> str:

@@ -473,9 +473,9 @@ class SessionAuthScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(condition) for condition in generator.ifs)
@@ -508,8 +508,8 @@ class SessionAuthScanner(ast.NodeVisitor):
             self._mark_tainted_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_tainted_target(target_element, value_element)
             elif is_tainted:
@@ -520,7 +520,7 @@ class SessionAuthScanner(ast.NodeVisitor):
                     self._discard_name_target(target_element, self.tainted_names)
 
     def _mark_session_update_value_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_session_update_value_target(target_element, value_element)
             return
@@ -592,7 +592,7 @@ class SessionAuthScanner(ast.NodeVisitor):
             names.add(target.id)
         elif isinstance(target, ast.Starred):
             self._mark_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
 
@@ -601,12 +601,12 @@ class SessionAuthScanner(ast.NodeVisitor):
             names.discard(target.id)
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -619,7 +619,7 @@ class SessionAuthScanner(ast.NodeVisitor):
             else:
                 self.local_constants.pop(target.id, None)
             return
-        if isinstance(target, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
             for name in _target_names(target):
                 self.local_constants.pop(name, None)
 
@@ -774,7 +774,7 @@ def _auth_method_grants_superuser(
 ) -> bool:
     constants = constants or {}
     for child in ast.walk(node):
-        if isinstance(child, ast.Assign | ast.AnnAssign | ast.AugAssign):
+        if isinstance(child, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
             targets: list[ast.AST] = []
             if isinstance(child, ast.Assign):
                 targets = list(child.targets)
@@ -1002,13 +1002,13 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return True
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
-        return all(isinstance(element, ast.Constant | ast.Name) for element in node.elts)
+        return isinstance(node.value, (str, bool, int, float, type(None)))
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return all(isinstance(element, (ast.Constant, ast.Name)) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
-            (key is None or isinstance(key, ast.Constant | ast.Name))
-            and isinstance(value, ast.Constant | ast.Name | ast.List | ast.Tuple | ast.Set)
+            (key is None or isinstance(key, (ast.Constant, ast.Name)))
+            and isinstance(value, (ast.Constant, ast.Name, ast.List, ast.Tuple, ast.Set))
             for key, value in zip(node.keys, node.values, strict=False)
         )
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
@@ -1054,7 +1054,7 @@ def _is_http_module_expr(
 def _string_set(node: ast.AST) -> set[str]:
     if isinstance(node, ast.Name):
         return set()
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return {
             str(element.value).upper()
             for element in node.elts
@@ -1285,7 +1285,7 @@ def _target_names(node: ast.AST) -> set[str]:
         return {node.id}
     if isinstance(node, ast.Starred):
         return _target_names(node.value)
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         names: set[str] = set()
         for element in node.elts:
             names |= _target_names(element)
@@ -1388,7 +1388,7 @@ def _expr_mentions_token(node: ast.AST, constants: dict[str, ast.AST] | None = N
         return any(
             key is not None and _expr_mentions_token(_resolve_constant(key, constants), constants) for key in node.keys
         ) or any(_expr_mentions_token(value, constants) for value in node.values if value is not None)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_expr_mentions_token(element, constants) for element in node.elts)
     return False
 

@@ -531,10 +531,10 @@ class ModelStructureScanner(ast.NodeVisitor):
 
     def _is_static_literal(self, node: ast.AST) -> bool:
         if isinstance(node, ast.Constant):
-            return isinstance(node.value, str | bool | int | float | type(None))
+            return isinstance(node.value, (str, bool, int, float, type(None)))
         if isinstance(node, ast.Name):
             return True
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return all(self._is_static_literal(element) for element in node.elts)
         if isinstance(node, ast.Dict):
             keys = [key for key in node.keys if key is not None]
@@ -543,7 +543,7 @@ class ModelStructureScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
             return self._is_static_literal(node.left) and self._is_static_literal(node.right)
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             return self._is_static_literal(node.operand)
         return False
 

@@ -405,7 +405,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
             return self._is_elevated_record_expr(node.value)
         if isinstance(node, ast.Starred):
             return self._is_elevated_record_expr(node.value)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._is_elevated_record_expr(element) for element in node.elts)
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute):
@@ -490,7 +490,7 @@ class MultiCompanyChecker(ast.NodeVisitor):
 
     def _mark_local_constant_target(self, target: ast.AST, value: ast.AST) -> None:
         """Track static constants assigned inside the current function."""
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target, value):
                 self._mark_local_constant_target(target_element, value_element)
             return
@@ -651,7 +651,7 @@ def _module_constants(tree: ast.Module) -> dict[str, ast.AST]:
 def _target_names(node: ast.AST) -> set[str]:
     if isinstance(node, ast.Name):
         return {node.id}
-    if isinstance(node, ast.Tuple | ast.List):
+    if isinstance(node, (ast.Tuple, ast.List)):
         names: set[str] = set()
         for element in node.elts:
             names.update(_target_names(element))
@@ -708,7 +708,7 @@ def _resolve_constant_seen(node: ast.AST | None, constants: dict[str, ast.AST], 
 def _is_static_literal(node: ast.AST) -> bool:
     return (
         isinstance(node, ast.Constant)
-        and isinstance(node.value, str | bool | int | float | type(None))
+        and isinstance(node.value, (str, bool, int, float, type(None)))
         or isinstance(node, ast.Name)
     )
 

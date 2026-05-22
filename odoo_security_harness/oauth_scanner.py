@@ -448,9 +448,9 @@ class OAuthScanner(ast.NodeVisitor):
             )
         if isinstance(node, ast.Dict):
             return any(value is not None and self._expr_is_tainted(value) for value in node.values)
-        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             return any(self._expr_is_tainted(element) for element in node.elts)
-        if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
             return self._expr_is_tainted(node.elt) or any(
                 self._expr_is_tainted(generator.iter)
                 or any(self._expr_is_tainted(if_expr) for if_expr in generator.ifs)
@@ -482,8 +482,8 @@ class OAuthScanner(ast.NodeVisitor):
             self._mark_tainted_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_tainted_target(target_element, value_element)
             elif self._is_request_derived(value) or self._expr_is_tainted(value):
@@ -493,7 +493,7 @@ class OAuthScanner(ast.NodeVisitor):
                 self._discard_name_target(target, self.tainted_names)
 
     def _mark_user_model_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_user_model_target(target_element, value_element)
             return
@@ -507,7 +507,7 @@ class OAuthScanner(ast.NodeVisitor):
             self._discard_name_target(target, self.user_model_names)
 
     def _mark_oauth_identity_payload_target(self, target: ast.AST, value: ast.AST) -> None:
-        if isinstance(target, ast.Tuple | ast.List) and isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
             for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                 self._mark_oauth_identity_payload_target(target_element, value_element)
             return
@@ -614,8 +614,8 @@ class OAuthScanner(ast.NodeVisitor):
             self._mark_local_constant_target(target.value, value)
             return
 
-        if isinstance(target, ast.Tuple | ast.List):
-            if isinstance(value, ast.Tuple | ast.List):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)):
                 for target_element, value_element in _unpack_target_value_pairs(target.elts, value.elts):
                     self._mark_local_constant_target(target_element, value_element)
             else:
@@ -626,7 +626,7 @@ class OAuthScanner(ast.NodeVisitor):
             self.local_constants.pop(target.id, None)
         elif isinstance(target, ast.Starred):
             self._discard_local_constant_target(target.value)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_local_constant_target(element)
 
@@ -644,7 +644,7 @@ class OAuthScanner(ast.NodeVisitor):
             names.add(target.id)
         elif isinstance(target, ast.Starred):
             self._mark_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._mark_name_target(element, names)
 
@@ -653,7 +653,7 @@ class OAuthScanner(ast.NodeVisitor):
             names.discard(target.id)
         elif isinstance(target, ast.Starred):
             self._discard_name_target(target.value, names)
-        elif isinstance(target, ast.Tuple | ast.List):
+        elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
                 self._discard_name_target(element, names)
 
@@ -806,7 +806,7 @@ def _route_values(node: ast.AST, constants: dict[str, ast.AST] | None = None) ->
     node = _resolve_constant(node, constants)
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return [node.value]
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         routes = []
         for element in node.elts:
             value = _resolve_constant(element, constants)
@@ -930,10 +930,10 @@ def _literal_subscript_key(node: ast.AST, constants: dict[str, ast.AST]) -> str:
 
 def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
-        return isinstance(node.value, str | bool | int | float | type(None))
+        return isinstance(node.value, (str, bool, int, float, type(None)))
     if isinstance(node, ast.Name):
         return True
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return all(_is_static_literal(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return all(
@@ -1143,7 +1143,7 @@ def _expr_contains_tainted_key(
             if _expr_contains_tainted_key(value, key_name, is_tainted, constants):
                 return True
         return False
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_expr_contains_tainted_key(element, key_name, is_tainted, constants) for element in node.elts)
     if isinstance(node, ast.Call):
         return any(_expr_contains_tainted_key(arg, key_name, is_tainted, constants) for arg in node.args) or any(
@@ -1165,7 +1165,7 @@ def _expr_contains_key(node: ast.AST, key_name: str, constants: dict[str, ast.AS
             if isinstance(key, ast.Constant) and str(key.value) == key_name:
                 return True
         return any(value is not None and _expr_contains_key(value, key_name, constants) for value in node.values)
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(_expr_contains_key(element, key_name, constants) for element in node.elts)
     if isinstance(node, ast.Call):
         return any(_expr_contains_key(arg, key_name, constants) for arg in node.args) or any(
@@ -1269,7 +1269,7 @@ def _jwt_decode_missing_algorithms(node: ast.Call, constants: dict[str, ast.AST]
 def _is_missing_algorithm_value(node: ast.AST) -> bool:
     if isinstance(node, ast.Constant):
         return node.value is None or node.value == ""
-    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return not node.elts
     return False
 
@@ -1448,7 +1448,7 @@ def _call_name(node: ast.AST) -> str:
 def _call_root_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
-    if isinstance(node, ast.Attribute | ast.Subscript | ast.Call):
+    if isinstance(node, (ast.Attribute, ast.Subscript, ast.Call)):
         return _call_root_name(node.value if not isinstance(node, ast.Call) else node.func)
     return ""
 
