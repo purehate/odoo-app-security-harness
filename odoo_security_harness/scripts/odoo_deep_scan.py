@@ -37,9 +37,12 @@ import yaml
 from odoo_security_harness import (
     analyze_access_control,
     analyze_directory,
+    build_candidate_ledger,
     check_multi_company_isolation,
     compute_fingerprint,
+    filter_files_for_hunters,
     generate_pocs,
+    ledger_summary,
     normalize_findings,
     poc_coverage_report,
     scan_access_overrides,
@@ -7363,6 +7366,18 @@ def main() -> int:
     sarif_report = generate_sarif_report(repo, all_findings)
     sarif_file.write_text(json.dumps(sarif_report, indent=2), encoding="utf-8")
     print(f"Wrote SARIF report to {sarif_file}")
+
+    # Candidate ledger for hunter lane filtering
+    candidate_ledger = build_candidate_ledger(repo, all_findings)
+    hunter_files = filter_files_for_hunters(candidate_ledger)
+    candidates_file = out / "inventory" / "candidates.json"
+    candidates_file.parent.mkdir(parents=True, exist_ok=True)
+    candidates_file.write_text(
+        json.dumps(ledger_summary(candidate_ledger) | {"hunter_files": hunter_files}, indent=2),
+        encoding="utf-8",
+    )
+    print(f"Wrote candidate ledger to {candidates_file}")
+    print(f"   Hunter-eligible files: {len(hunter_files)} / {len(candidate_ledger)}")
 
     # Generate PoCs if requested
     generated_pocs: list[Path] = []

@@ -76,6 +76,7 @@ from odoo_security_harness.view_inheritance_scanner import scan_view_inheritance
 from odoo_security_harness.web_asset_scanner import scan_web_assets
 from odoo_security_harness.website_form_scanner import scan_website_forms
 from odoo_security_harness.wizard_scanner import scan_wizards
+from odoo_security_harness.candidate_ledger import build_candidate_ledger, filter_files_for_hunters, ledger_summary
 from odoo_security_harness.xml_data_scanner import scan_xml_data
 
 __all__ = [
