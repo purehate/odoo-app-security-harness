@@ -91,6 +91,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "corpus: marks tests as OCA corpus integration tests (requires cloned repos)",
+    "eval: marks tests as eval-harness tests (intentionally vulnerable modules)",
 ]
 
 [tool.black]

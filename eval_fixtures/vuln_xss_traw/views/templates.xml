@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <template id="comment_page" name="Comment Page">
+        <div>
+            <!-- VULNERABILITY: t-raw renders user input without escaping -->
+            <t t-raw="comment"/>
+        </div>
+    </template>
+</odoo>

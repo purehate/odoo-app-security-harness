@@ -18,3 +18,4 @@ id_ed25519*
 .audit/
 uv.lock
 tests/corpus/.cache/
+eval_fixtures/**/.eval_findings/

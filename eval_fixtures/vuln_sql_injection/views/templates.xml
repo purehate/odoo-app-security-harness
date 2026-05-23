@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <template id="results" name="SQL Search Results">
+        <t t-foreach="results" t-as="row">
+            <p t-esc="row[1]"/>
+        </t>
+    </template>
+</odoo>
