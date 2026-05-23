@@ -77,9 +77,21 @@ from odoo_security_harness.web_asset_scanner import scan_web_assets
 from odoo_security_harness.website_form_scanner import scan_website_forms
 from odoo_security_harness.wizard_scanner import scan_wizards
 from odoo_security_harness.candidate_ledger import build_candidate_ledger, filter_files_for_hunters, ledger_summary
+from odoo_security_harness.session_progress import (
+    SessionProgress,
+    add_scanner_status,
+    complete_phase,
+    create_session_progress,
+    fail_phase,
+    load_session_progress,
+    next_pending_phase,
+    save_session_progress,
+    start_phase,
+)
 from odoo_security_harness.xml_data_scanner import scan_xml_data
 
 __all__ = [
+    "add_scanner_status",
     "analyze_access_control",
     "analyze_directory",
     "analyze_file",

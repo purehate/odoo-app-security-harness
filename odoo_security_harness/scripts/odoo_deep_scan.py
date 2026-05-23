@@ -27,7 +27,9 @@ import fnmatch
 import html
 import json
 import re
+import subprocess
 import sys
+import time
 from collections import Counter
 from datetime import date
 from pathlib import Path
@@ -35,16 +37,20 @@ from pathlib import Path
 import yaml
 
 from odoo_security_harness import (
+    add_scanner_status,
     analyze_access_control,
     analyze_directory,
     build_candidate_ledger,
     check_multi_company_isolation,
+    complete_phase,
     compute_fingerprint,
+    create_session_progress,
     filter_files_for_hunters,
     generate_pocs,
     ledger_summary,
     normalize_findings,
     poc_coverage_report,
+    save_session_progress,
     scan_access_overrides,
     scan_action_urls,
     scan_action_windows,
@@ -5932,15 +5938,51 @@ def main() -> int:
     print(f"Output: {out}")
     print()
 
+    # Session progress tracking for resumable reviews
+    git_head = ""
+    try:
+        git_head = (
+            subprocess.run(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            .stdout.strip()
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    session_progress = create_session_progress(repo, out, git_head=git_head)
+    progress_file = out / "session-progress.json"
+
     check_only_status = run_policy_check_only(repo, out, args)
     if check_only_status is not None:
         return check_only_status
 
     all_findings: list[dict] = []
+    from odoo_security_harness.session_progress import start_phase, complete_phase
+    start_phase(session_progress, "scanners")
+
+    def _run_tracked_scanner(name: str, scanner_fn, repo_path: Path):
+        """Run a scanner with progress tracking and checkpoint save."""
+        t0 = time.perf_counter()
+        add_scanner_status(session_progress, name, "running")
+        save_session_progress(session_progress, progress_file)
+        try:
+            findings = scanner_fn(repo_path)
+        except Exception as exc:
+            elapsed = time.perf_counter() - t0
+            add_scanner_status(session_progress, name, "failed", elapsed_seconds=elapsed, error=str(exc))
+            save_session_progress(session_progress, progress_file)
+            raise
+        elapsed = time.perf_counter() - t0
+        add_scanner_status(session_progress, name, "completed", findings_count=len(findings), elapsed_seconds=elapsed)
+        save_session_progress(session_progress, progress_file)
+        return findings
 
     # 1. Deep pattern analysis
     print("1. Running deep pattern analysis...")
-    findings = analyze_directory(repo)
+    findings = _run_tracked_scanner("analyze_directory", analyze_directory, repo)
     deep_findings = [
         {
             "source": "deep-pattern",
@@ -5958,7 +6000,7 @@ def main() -> int:
 
     # 2. QWeb scanning
     print("2. Scanning QWeb templates...")
-    qweb_findings = scan_qweb_templates(repo)
+    qweb_findings = _run_tracked_scanner("scan_qweb_templates", scan_qweb_templates, repo)
     qweb_results = [
         {
             "source": "qweb",
@@ -5998,7 +6040,7 @@ def main() -> int:
 
     # 4. Record rule domain scan
     print("4. Scanning record-rule domains...")
-    record_rule_findings = scan_record_rules(repo)
+    record_rule_findings = _run_tracked_scanner("scan_record_rules", scan_record_rules, repo)
     record_rule_results = [
         {
             "source": "record-rules",
@@ -6019,7 +6061,7 @@ def main() -> int:
 
     # 5. Access override scan
     print("5. Scanning model access/search overrides...")
-    access_override_findings = scan_access_overrides(repo)
+    access_override_findings = _run_tracked_scanner("scan_access_overrides", scan_access_overrides, repo)
     access_override_results = [
         {
             "source": "access-overrides",
@@ -6039,7 +6081,7 @@ def main() -> int:
 
     # 6. Multi-company isolation
     print("6. Checking multi-company isolation...")
-    mc_findings = check_multi_company_isolation(repo)
+    mc_findings = _run_tracked_scanner("check_multi_company_isolation", check_multi_company_isolation, repo)
     mc_results = [
         {
             "source": "multi-company",
@@ -6058,7 +6100,7 @@ def main() -> int:
 
     # 7. Manifest/package scan
     print("7. Scanning Odoo manifests...")
-    manifest_findings = scan_manifests(repo)
+    manifest_findings = _run_tracked_scanner("scan_manifests", scan_manifests, repo)
     manifest_results = [
         {
             "source": "manifest",
@@ -6077,7 +6119,7 @@ def main() -> int:
 
     # 8. Migration/lifecycle hook scan
     print("8. Scanning migrations and lifecycle hooks...")
-    migration_findings = scan_migrations(repo)
+    migration_findings = _run_tracked_scanner("scan_migrations", scan_migrations, repo)
     migration_results = [
         {
             "source": "migrations",
@@ -6096,7 +6138,7 @@ def main() -> int:
 
     # 9. Model structure scan
     print("9. Scanning Odoo model structure...")
-    model_findings = scan_models(repo)
+    model_findings = _run_tracked_scanner("scan_models", scan_models, repo)
     model_results = [
         {
             "source": "model-structure",
@@ -6116,7 +6158,7 @@ def main() -> int:
 
     # 10. Field security scan
     print("10. Scanning Odoo field security metadata...")
-    field_security_findings = scan_field_security(repo)
+    field_security_findings = _run_tracked_scanner("scan_field_security", scan_field_security, repo)
     field_security_results = [
         {
             "source": "field-security",
@@ -6136,7 +6178,7 @@ def main() -> int:
 
     # 11. Property/company-dependent field scan
     print("11. Scanning property and company-dependent fields...")
-    property_findings = scan_property_fields(repo)
+    property_findings = _run_tracked_scanner("scan_property_fields", scan_property_fields, repo)
     property_results = [
         {
             "source": "property-fields",
@@ -6157,7 +6199,7 @@ def main() -> int:
 
     # 12. Settings model scan
     print("12. Scanning Odoo settings models...")
-    settings_findings = scan_settings(repo)
+    settings_findings = _run_tracked_scanner("scan_settings", scan_settings, repo)
     settings_results = [
         {
             "source": "settings",
@@ -6177,7 +6219,7 @@ def main() -> int:
 
     # 13. Model method behavior scan
     print("13. Scanning Odoo model method behavior...")
-    model_method_findings = scan_model_methods(repo)
+    model_method_findings = _run_tracked_scanner("scan_model_methods", scan_model_methods, repo)
     model_method_results = [
         {
             "source": "model-methods",
@@ -6197,7 +6239,7 @@ def main() -> int:
 
     # 14. Model constraint scan
     print("14. Scanning Odoo model constraints...")
-    constraint_findings = scan_constraints(repo)
+    constraint_findings = _run_tracked_scanner("scan_constraints", scan_constraints, repo)
     constraint_results = [
         {
             "source": "constraints",
@@ -6218,7 +6260,7 @@ def main() -> int:
 
     # 15. Button/action method scan
     print("15. Scanning Odoo button/action methods...")
-    button_findings = scan_button_actions(repo)
+    button_findings = _run_tracked_scanner("scan_button_actions", scan_button_actions, repo)
     button_results = [
         {
             "source": "button-actions",
@@ -6238,7 +6280,7 @@ def main() -> int:
 
     # 16. Wizard/transient model scan
     print("16. Scanning transient model wizards...")
-    wizard_findings = scan_wizards(repo)
+    wizard_findings = _run_tracked_scanner("scan_wizards", scan_wizards, repo)
     wizard_results = [
         {
             "source": "wizards",
@@ -6258,7 +6300,7 @@ def main() -> int:
 
     # 17. Metadata/data security scan
     print("17. Scanning security-sensitive metadata...")
-    metadata_findings = scan_metadata(repo)
+    metadata_findings = _run_tracked_scanner("scan_metadata", scan_metadata, repo)
     metadata_results = [
         {
             "source": "metadata",
@@ -6278,7 +6320,7 @@ def main() -> int:
 
     # 18. XML data/external-ID integrity scan
     print("18. Scanning XML data and external-ID integrity...")
-    data_integrity_findings = scan_data_integrity(repo)
+    data_integrity_findings = _run_tracked_scanner("scan_data_integrity", scan_data_integrity, repo)
     data_integrity_results = [
         {
             "source": "data-integrity",
@@ -6298,7 +6340,7 @@ def main() -> int:
 
     # 19. Publication/data exposure scan
     print("19. Scanning published data and attachments...")
-    publication_findings = scan_publication(repo)
+    publication_findings = _run_tracked_scanner("scan_publication", scan_publication, repo)
     publication_results = [
         {
             "source": "publication",
@@ -6318,7 +6360,7 @@ def main() -> int:
 
     # 20. Secrets/config scan
     print("20. Scanning secrets and committed config...")
-    secret_findings = scan_secrets(repo)
+    secret_findings = _run_tracked_scanner("scan_secrets", scan_secrets, repo)
     secret_results = [
         {
             "source": "secrets",
@@ -6338,7 +6380,7 @@ def main() -> int:
 
     # 21. Deployment posture scan
     print("21. Scanning deployment posture...")
-    deployment_findings = scan_deployment_config(repo)
+    deployment_findings = _run_tracked_scanner("scan_deployment_config", scan_deployment_config, repo)
     deployment_results = [
         {
             "source": "deployment",
@@ -6358,7 +6400,7 @@ def main() -> int:
 
     # 22. Runtime ir.config_parameter scan
     print("22. Scanning runtime config parameter access...")
-    config_param_findings = scan_config_parameters(repo)
+    config_param_findings = _run_tracked_scanner("scan_config_parameters", scan_config_parameters, repo)
     config_param_results = [
         {
             "source": "config-parameters",
@@ -6378,7 +6420,7 @@ def main() -> int:
 
     # 23. ORM context override scan
     print("23. Scanning ORM context overrides...")
-    context_findings = scan_orm_context(repo)
+    context_findings = _run_tracked_scanner("scan_orm_context", scan_orm_context, repo)
     context_results = [
         {
             "source": "orm-context",
@@ -6398,7 +6440,7 @@ def main() -> int:
 
     # 24. Runtime ORM domain construction scan
     print("24. Scanning runtime ORM domain construction...")
-    domain_findings = scan_orm_domains(repo)
+    domain_findings = _run_tracked_scanner("scan_orm_domains", scan_orm_domains, repo)
     domain_results = [
         {
             "source": "orm-domains",
@@ -6417,7 +6459,7 @@ def main() -> int:
 
     # 25. Runtime raw SQL scan
     print("25. Scanning runtime raw SQL usage...")
-    raw_sql_findings = scan_raw_sql(repo)
+    raw_sql_findings = _run_tracked_scanner("scan_raw_sql", scan_raw_sql, repo)
     raw_sql_results = [
         {
             "source": "raw-sql",
@@ -6436,7 +6478,7 @@ def main() -> int:
 
     # 26. Inbound mail alias scan
     print("26. Scanning inbound mail aliases...")
-    alias_findings = scan_mail_aliases(repo)
+    alias_findings = _run_tracked_scanner("scan_mail_aliases", scan_mail_aliases, repo)
     alias_results = [
         {
             "source": "mail-aliases",
@@ -6456,7 +6498,7 @@ def main() -> int:
 
     # 27. Mail template exposure scan
     print("27. Scanning mail templates...")
-    mail_findings = scan_mail_templates(repo)
+    mail_findings = _run_tracked_scanner("scan_mail_templates", scan_mail_templates, repo)
     mail_results = [
         {
             "source": "mail-templates",
@@ -6476,7 +6518,7 @@ def main() -> int:
 
     # 28. Python mail/chatter scan
     print("28. Scanning Python mail/chatter usage...")
-    chatter_findings = scan_mail_chatter(repo)
+    chatter_findings = _run_tracked_scanner("scan_mail_chatter", scan_mail_chatter, repo)
     chatter_results = [
         {
             "source": "mail-chatter",
@@ -6495,7 +6537,7 @@ def main() -> int:
 
     # 29. Report action exposure scan
     print("29. Scanning report actions...")
-    report_findings = scan_reports(repo)
+    report_findings = _run_tracked_scanner("scan_reports", scan_reports, repo)
     report_results = [
         {
             "source": "reports",
@@ -6515,7 +6557,7 @@ def main() -> int:
 
     # 30. UI exposure scan
     print("30. Scanning XML UI exposure...")
-    ui_findings = scan_ui_exposure(repo)
+    ui_findings = _run_tracked_scanner("scan_ui_exposure", scan_ui_exposure, repo)
     ui_results = [
         {
             "source": "ui-exposure",
@@ -6535,7 +6577,7 @@ def main() -> int:
 
     # 31. XML inherited view modification scan
     print("31. Scanning inherited view modifications...")
-    view_inherit_findings = scan_view_inheritance(repo)
+    view_inherit_findings = _run_tracked_scanner("scan_view_inheritance", scan_view_inheritance, repo)
     view_inherit_results = [
         {
             "source": "view-inheritance",
@@ -6555,7 +6597,7 @@ def main() -> int:
 
     # 32. XML domain/context scan
     print("32. Scanning XML domains and contexts...")
-    view_domain_findings = scan_view_domains(repo)
+    view_domain_findings = _run_tracked_scanner("scan_view_domains", scan_view_domains, repo)
     view_domain_results = [
         {
             "source": "view-domains",
@@ -6575,7 +6617,7 @@ def main() -> int:
 
     # 33. Frontend/static asset scan
     print("33. Scanning frontend/static assets...")
-    web_findings = scan_web_assets(repo)
+    web_findings = _run_tracked_scanner("scan_web_assets", scan_web_assets, repo)
     web_results = [
         {
             "source": "web-assets",
@@ -6594,7 +6636,7 @@ def main() -> int:
 
     # 34. Website form scan
     print("34. Scanning website forms...")
-    website_form_findings = scan_website_forms(repo)
+    website_form_findings = _run_tracked_scanner("scan_website_forms", scan_website_forms, repo)
     website_form_results = [
         {
             "source": "website-forms",
@@ -6614,7 +6656,7 @@ def main() -> int:
 
     # 35. Binary/download response scan
     print("35. Scanning binary/download responses...")
-    binary_findings = scan_binary_downloads(repo)
+    binary_findings = _run_tracked_scanner("scan_binary_downloads", scan_binary_downloads, repo)
     binary_results = [
         {
             "source": "binary-downloads",
@@ -6633,7 +6675,7 @@ def main() -> int:
 
     # 36. Controller response scan
     print("36. Scanning controller responses...")
-    path_findings = scan_controller_paths(repo)
+    path_findings = _run_tracked_scanner("scan_controller_paths", scan_controller_paths, repo)
     path_results = [
         {
             "source": "controller-paths",
@@ -6647,7 +6689,7 @@ def main() -> int:
         }
         for f in path_findings
     ]
-    response_findings = scan_controller_responses(repo)
+    response_findings = _run_tracked_scanner("scan_controller_responses", scan_controller_responses, repo)
     response_results = [
         {
             "source": "controller-responses",
@@ -6667,7 +6709,7 @@ def main() -> int:
 
     # 36a. Controller cache-control/header posture scan
     print("36a. Scanning controller cache-control posture...")
-    cache_findings = scan_cache_headers(repo)
+    cache_findings = _run_tracked_scanner("scan_cache_headers", scan_cache_headers, repo)
     cache_results = [
         {
             "source": "cache-headers",
@@ -6687,7 +6729,7 @@ def main() -> int:
 
     # 37. Portal route scan
     print("37. Scanning portal routes...")
-    portal_findings = scan_portal_routes(repo)
+    portal_findings = _run_tracked_scanner("scan_portal_routes", scan_portal_routes, repo)
     portal_results = [
         {
             "source": "portal-routes",
@@ -6707,7 +6749,7 @@ def main() -> int:
 
     # 38. Route decorator security scan
     print("38. Scanning route decorator security...")
-    route_security_findings = scan_route_security(repo)
+    route_security_findings = _run_tracked_scanner("scan_route_security", scan_route_security, repo)
     route_security_results = [
         {
             "source": "route-security",
@@ -6727,7 +6769,7 @@ def main() -> int:
 
     # 39. JSON route scan
     print("39. Scanning JSON routes...")
-    json_route_findings = scan_json_routes(repo)
+    json_route_findings = _run_tracked_scanner("scan_json_routes", scan_json_routes, repo)
     json_route_results = [
         {
             "source": "json-routes",
@@ -6747,7 +6789,7 @@ def main() -> int:
 
     # 40. Session/authentication scan
     print("40. Scanning session and authentication handling...")
-    session_findings = scan_session_auth(repo)
+    session_findings = _run_tracked_scanner("scan_session_auth", scan_session_auth, repo)
     session_results = [
         {
             "source": "session-auth",
@@ -6766,7 +6808,7 @@ def main() -> int:
 
     # 40a. Runtime OAuth/OIDC callback and token validation scan
     print("40a. Scanning OAuth/OIDC callback and token validation flows...")
-    oauth_findings = scan_oauth_flows(repo)
+    oauth_findings = _run_tracked_scanner("scan_oauth_flows", scan_oauth_flows, repo)
     oauth_results = [
         {
             "source": "oauth-flows",
@@ -6786,7 +6828,7 @@ def main() -> int:
 
     # 40b. Runtime signup/reset token lifecycle scan
     print("40b. Scanning signup/reset token lifecycle flows...")
-    signup_token_findings = scan_signup_tokens(repo)
+    signup_token_findings = _run_tracked_scanner("scan_signup_tokens", scan_signup_tokens, repo)
     signup_token_results = [
         {
             "source": "signup-tokens",
@@ -6806,7 +6848,7 @@ def main() -> int:
 
     # 41. Realtime bus/notification scan
     print("41. Scanning realtime bus and notifications...")
-    realtime_findings = scan_realtime(repo)
+    realtime_findings = _run_tracked_scanner("scan_realtime", scan_realtime, repo)
     realtime_results = [
         {
             "source": "realtime",
@@ -6825,7 +6867,7 @@ def main() -> int:
 
     # 42. Automated action scan
     print("42. Scanning automated actions...")
-    automation_findings = scan_automations(repo)
+    automation_findings = _run_tracked_scanner("scan_automations", scan_automations, repo)
     automation_results = [
         {
             "source": "automations",
@@ -6845,7 +6887,7 @@ def main() -> int:
 
     # 43. Executable XML data scan
     print("43. Scanning executable XML data records...")
-    xml_data_findings = scan_xml_data(repo)
+    xml_data_findings = _run_tracked_scanner("scan_xml_data", scan_xml_data, repo)
     xml_data_results = [
         {
             "source": "xml-data",
@@ -6865,7 +6907,7 @@ def main() -> int:
 
     # 44. Scheduled job Python scan
     print("44. Scanning scheduled job Python methods...")
-    scheduled_findings = scan_scheduled_jobs(repo)
+    scheduled_findings = _run_tracked_scanner("scan_scheduled_jobs", scan_scheduled_jobs, repo)
     scheduled_results = [
         {
             "source": "scheduled-jobs",
@@ -6885,7 +6927,7 @@ def main() -> int:
 
     # 45. File upload/filesystem scan
     print("45. Scanning file upload and filesystem handling...")
-    file_findings = scan_file_uploads(repo)
+    file_findings = _run_tracked_scanner("scan_file_uploads", scan_file_uploads, repo)
     file_results = [
         {
             "source": "file-uploads",
@@ -6904,7 +6946,7 @@ def main() -> int:
 
     # 46. CSV/XLSX export scan
     print("46. Scanning CSV/XLSX exports...")
-    export_findings = scan_exports(repo)
+    export_findings = _run_tracked_scanner("scan_exports", scan_exports, repo)
     export_results = [
         {
             "source": "exports",
@@ -6923,7 +6965,7 @@ def main() -> int:
 
     # 47. Payment/webhook handler scan
     print("47. Scanning payment and webhook handlers...")
-    payment_findings = scan_payments(repo)
+    payment_findings = _run_tracked_scanner("scan_payments", scan_payments, repo)
     payment_results = [
         {
             "source": "payments",
@@ -6942,7 +6984,7 @@ def main() -> int:
 
     # 48. Unsafe deserialization/parser scan
     print("48. Scanning unsafe deserialization and parsers...")
-    serialization_findings = scan_serialization(repo)
+    serialization_findings = _run_tracked_scanner("scan_serialization", scan_serialization, repo)
     serialization_results = [
         {
             "source": "serialization",
@@ -6961,7 +7003,7 @@ def main() -> int:
 
     # 49. Queue/delayed job scan
     print("49. Scanning queue/delayed jobs...")
-    queue_findings = scan_queue_jobs(repo)
+    queue_findings = _run_tracked_scanner("scan_queue_jobs", scan_queue_jobs, repo)
     queue_results = [
         {
             "source": "queue-jobs",
@@ -6980,7 +7022,7 @@ def main() -> int:
 
     # 50. Translation catalog scan
     print("50. Scanning translation catalogs...")
-    translation_findings = scan_translations(repo)
+    translation_findings = _run_tracked_scanner("scan_translations", scan_translations, repo)
     translation_results = [
         {
             "source": "translations",
@@ -7000,7 +7042,7 @@ def main() -> int:
 
     # 51. Outbound integration scan
     print("51. Scanning outbound integrations...")
-    integration_findings = scan_integrations(repo)
+    integration_findings = _run_tracked_scanner("scan_integrations", scan_integrations, repo)
     integration_results = [
         {
             "source": "integrations",
@@ -7019,7 +7061,7 @@ def main() -> int:
 
     # 52. Loose Python/server action scan
     print("52. Scanning loose Python/server actions...")
-    loose_findings = scan_loose_python(repo)
+    loose_findings = _run_tracked_scanner("scan_loose_python", scan_loose_python, repo)
     loose_results = [
         {
             "source": "loose-python",
@@ -7038,7 +7080,7 @@ def main() -> int:
 
     # 53. User/group identity mutation scan
     print("53. Scanning user and group identity mutations...")
-    identity_findings = scan_identity_mutations(repo)
+    identity_findings = _run_tracked_scanner("scan_identity_mutations", scan_identity_mutations, repo)
     identity_results = [
         {
             "source": "identity-mutations",
@@ -7059,7 +7101,7 @@ def main() -> int:
 
     # 54. ir.default persistent default scan
     print("54. Scanning persisted ir.default values...")
-    default_findings = scan_default_values(repo)
+    default_findings = _run_tracked_scanner("scan_default_values", scan_default_values, repo)
     default_results = [
         {
             "source": "default-values",
@@ -7081,7 +7123,7 @@ def main() -> int:
 
     # 55. ir.sequence declaration/runtime scan
     print("55. Scanning ir.sequence declarations and usage...")
-    sequence_findings = scan_sequences(repo)
+    sequence_findings = _run_tracked_scanner("scan_sequences", scan_sequences, repo)
     sequence_results = [
         {
             "source": "sequences",
@@ -7103,7 +7145,7 @@ def main() -> int:
 
     # 56. URL action scan
     print("56. Scanning URL actions...")
-    action_url_findings = scan_action_urls(repo)
+    action_url_findings = _run_tracked_scanner("scan_action_urls", scan_action_urls, repo)
     action_url_results = [
         {
             "source": "action-urls",
@@ -7125,7 +7167,7 @@ def main() -> int:
 
     # 57. API key handling scan
     print("57. Scanning API key handling...")
-    api_key_findings = scan_api_keys(repo)
+    api_key_findings = _run_tracked_scanner("scan_api_keys", scan_api_keys, repo)
     api_key_results = [
         {
             "source": "api-keys",
@@ -7146,7 +7188,7 @@ def main() -> int:
 
     # 58. Runtime module lifecycle scan
     print("58. Scanning runtime module lifecycle operations...")
-    module_lifecycle_findings = scan_module_lifecycle(repo)
+    module_lifecycle_findings = _run_tracked_scanner("scan_module_lifecycle", scan_module_lifecycle, repo)
     module_lifecycle_results = [
         {
             "source": "module-lifecycle",
@@ -7166,7 +7208,7 @@ def main() -> int:
 
     # 59. Database operation route scan
     print("59. Scanning database operation routes...")
-    database_findings = scan_database_operations(repo)
+    database_findings = _run_tracked_scanner("scan_database_operations", scan_database_operations, repo)
     database_results = [
         {
             "source": "database-operations",
@@ -7186,7 +7228,7 @@ def main() -> int:
 
     # 60. Attachment metadata/mutation scan
     print("60. Scanning attachment metadata and mutations...")
-    attachment_findings = scan_attachments(repo)
+    attachment_findings = _run_tracked_scanner("scan_attachments", scan_attachments, repo)
     attachment_results = [
         {
             "source": "attachments",
@@ -7206,7 +7248,7 @@ def main() -> int:
 
     # 61. Python action window scan
     print("61. Scanning Python action windows...")
-    action_window_findings = scan_action_windows(repo)
+    action_window_findings = _run_tracked_scanner("scan_action_windows", scan_action_windows, repo)
     action_window_results = [
         {
             "source": "action-windows",
@@ -7225,6 +7267,10 @@ def main() -> int:
     ]
     all_findings.extend(action_window_results)
     print(f"   Found {len(action_window_results)} issues")
+
+    complete_phase(session_progress, "scanners", findings_count=len(all_findings))
+    save_session_progress(session_progress, progress_file)
+    start_phase(session_progress, "normalization")
 
     all_findings = normalize_findings(all_findings)
     accepted_risks = load_deep_scan_accepted_risks(repo, args.accepted_risks)
@@ -7246,6 +7292,10 @@ def main() -> int:
         fail_on_fix_regression=args.fail_on_fix_regression,
     )
     coverage_report["governance_gate"] = governance_gate
+    complete_phase(session_progress, "normalization")
+    save_session_progress(session_progress, progress_file)
+    start_phase(session_progress, "validation")
+
     review_gate = build_review_gate(all_findings, fail_on=args.fail_on)
     coverage_report["review_gate"] = review_gate
     taxonomy_gate = build_taxonomy_gate(
@@ -7351,6 +7401,10 @@ def main() -> int:
     tooling_file = out / "tooling.md"
     tooling_file.write_text(generate_tooling_report(coverage_report), encoding="utf-8")
     print(f"Wrote tooling coverage summary to {tooling_file}")
+
+    complete_phase(session_progress, "validation")
+    save_session_progress(session_progress, progress_file)
+    start_phase(session_progress, "reporting")
 
     # Generate Markdown report
     report_file = out / "deep-scan-report.md"
@@ -7554,6 +7608,13 @@ def main() -> int:
             "count": len(generated_pocs),
         },
         {
+            "path": progress_file,
+            "kind": "json",
+            "required": True,
+            "description": "Session progress checkpoint for resumable reviews",
+            "count": len(session_progress.scanner_status),
+        },
+        {
             "path": artifact_manifest_file,
             "kind": "json",
             "required": True,
@@ -7601,8 +7662,12 @@ def main() -> int:
         print(
             f"Baseline gate failed: {baseline_gate['blocking_new_findings']} new findings at or above {args.fail_on_new}."
         )
+        session_progress.report_generated = True
+        save_session_progress(session_progress, progress_file)
         return 2
 
+    session_progress.report_generated = True
+    save_session_progress(session_progress, progress_file)
     return 0
 
 
@@ -9507,7 +9572,25 @@ def _deep_scan_called_callables() -> set[str]:
         tree = ast.parse(Path(__file__).read_text(encoding="utf-8", errors="replace"))
     except Exception:
         return set()
-    return {node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+    called = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    # Scanners wrapped via _run_tracked_scanner pass the function name as a
+    # string literal in the first positional argument.
+    tracked = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_run_tracked_scanner"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            tracked.add(node.args[0].value)
+    return called | tracked
 
 
 def _deep_scan_manifest() -> list[dict[str, object]]:
@@ -9517,11 +9600,25 @@ def _deep_scan_manifest() -> list[dict[str, object]]:
         return []
 
     exported = _exported_deep_scan_callables()
-    calls = sorted(
+    direct_calls = sorted(
         (node.lineno, node.func.id)
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in exported
     )
+    tracked_calls = sorted(
+        (node.lineno, node.args[0].value)
+        for node in ast.walk(tree)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_run_tracked_scanner"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+            and node.args[0].value in exported
+        )
+    )
+    calls = sorted(set(direct_calls) | set(tracked_calls))
     source_nodes = sorted(_deep_scan_source_nodes(tree))
     entries: list[dict[str, object]] = []
     used_source_indexes: set[int] = set()

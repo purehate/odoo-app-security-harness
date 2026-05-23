@@ -42,8 +42,21 @@ def test_deep_scan_calls_every_exported_scanner() -> None:
         for node in ast.walk(deep_scan_tree)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
+    # Scanners wrapped via _run_tracked_scanner pass the function name as a
+    # string literal in the first positional argument.
+    tracked = set()
+    for node in ast.walk(deep_scan_tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_run_tracked_scanner"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            tracked.add(node.args[0].value)
 
-    assert _exported_deep_scan_callables() <= called
+    assert _exported_deep_scan_callables() <= (called | tracked)
 
 
 def test_scanner_source_coverage_flags_zero_and_unexpected_sources(monkeypatch) -> None:

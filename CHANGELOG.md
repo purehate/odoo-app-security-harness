@@ -26,6 +26,7 @@ All notable changes to the Odoo Application Security Harness will be documented 
 - Pre-commit hooks for code quality
 - Configuration validation script (`odoo-review-validate-config`)
 - Parallel scanner execution support
+- **Session progress tracking** — per-scanner checkpointing with `session-progress.json` for resumable large reviews across context windows
 - Progress indicators and better UX
 - Python package structure (`odoo_security_harness`)
 - `pyproject.toml` with proper dependency management
