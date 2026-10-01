@@ -25,6 +25,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repo", help="Target repository. Defaults to findings.json target.repo.")
     parser.add_argument("--finding", help="Finding ID. Defaults to the strongest reproducible ACCEPT finding.")
     parser.add_argument("--patched-ref", help="Patched Git commit or ref used for fix verification.")
+    parser.add_argument("--diff-base", help="Git ref immediately before the focused remediation changes.")
     parser.add_argument("--pre-fix", help="Pre-fix reproduction output path.")
     parser.add_argument("--post-fix", help="Post-fix replay output path.")
     parser.add_argument("--legitimate", help="Legitimate-behavior test output path.")
@@ -196,7 +197,13 @@ def initial_record(
             "worktree_patch": snapshot.get("tracked_patch"),
             "worktree_patch_sha256": snapshot.get("tracked_patch_sha256"),
         },
-        "remediation": {"patched_commit": "", "diff_artifact": "", "pr_url": "", "ticket_url": ""},
+        "remediation": {
+            "patched_commit": "",
+            "diff_base": "",
+            "diff_artifact": "",
+            "pr_url": "",
+            "ticket_url": "",
+        },
         "verification": {
             "test_command": "",
             "pre_fix_artifact": str(artifacts[0]) if artifacts else "",
@@ -226,6 +233,7 @@ def update_record(record: dict[str, Any], args: argparse.Namespace) -> None:
     verification = record.setdefault("verification", {})
     updates = {
         "patched_commit": args.patched_ref,
+        "diff_base": args.diff_base,
         "pr_url": args.pr_url,
         "ticket_url": args.ticket_url,
     }
@@ -262,7 +270,7 @@ def update_record(record: dict[str, Any], args: argparse.Namespace) -> None:
 
 def capture_remediation_diff(record: dict[str, Any], repo: Path, assessment_dir: Path) -> None:
     """Capture the focused baseline-to-patched Git diff when both refs resolve."""
-    baseline = str(record.get("baseline", {}).get("commit") or "")
+    baseline = str(record.get("remediation", {}).get("diff_base") or record.get("baseline", {}).get("commit") or "")
     patched = str(record.get("remediation", {}).get("patched_commit") or "")
     if not baseline or not patched or baseline == patched:
         return
@@ -440,6 +448,7 @@ def render_pr_body(out: Path, repo: Path, finding: dict[str, Any], record: dict[
         reviewer_value(review.get("fix_summary")),
         "",
         f"- **Patched commit:** `{reviewer_value(remediation.get('patched_commit'))}`",
+        f"- **Focused diff base:** `{reviewer_value(remediation.get('diff_base') or baseline.get('commit'))}`",
         f"- **Focused diff:** {pr_artifact(str(remediation.get('diff_artifact') or ''), out, repo)}",
         "",
         *render_pr_verification(out, repo, verification, review),

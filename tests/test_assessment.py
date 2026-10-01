@@ -118,6 +118,8 @@ def test_assessment_builds_complete_human_review_packet(tmp_path: Path) -> None:
             str(repo),
             "--patched-ref",
             patched,
+            "--diff-base",
+            baseline,
             "--post-fix",
             str(post_fix),
             "--legitimate",
@@ -156,6 +158,7 @@ def test_assessment_builds_complete_human_review_packet(tmp_path: Path) -> None:
     assert status["passed_gates"] == status["total_gates"]
     assert "The same transition is rejected." in pr_description
     assert patched in pr_description
+    assert f"**Focused diff base:** `{baseline}`" in pr_description
     assert str(tmp_path) not in pr_description
     assert "packet: `runtime/verification.log`" in pr_description
     assert "`test_security.py`" in pr_description
