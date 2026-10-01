@@ -106,8 +106,10 @@ def test_assessment_builds_complete_human_review_packet(tmp_path: Path) -> None:
     patched = git(repo, "rev-parse", "HEAD")
     post_fix = out / "runtime" / "post-fix.log"
     legitimate = out / "runtime" / "legitimate.log"
+    recorded_result = out / "runtime" / "verification.log"
     post_fix.write_text("attack blocked\n", encoding="utf-8")
     legitimate.write_text("authorized workflow passed\n", encoding="utf-8")
+    recorded_result.write_text(f"patched commit: {patched}\n1 passed\n", encoding="utf-8")
 
     result = main(
         [
@@ -126,8 +128,8 @@ def test_assessment_builds_complete_human_review_packet(tmp_path: Path) -> None:
             "pytest test_security.py",
             "--ticket-url",
             "https://tracker.example.invalid/SEC-1",
-            "--ci-url",
-            "https://ci.example.invalid/runs/1",
+            "--verification-result",
+            str(recorded_result),
             "--pre-fix-summary",
             "The unauthorized transition succeeds.",
             "--post-fix-summary",
@@ -152,6 +154,10 @@ def test_assessment_builds_complete_human_review_packet(tmp_path: Path) -> None:
     assert status["passed_gates"] == status["total_gates"]
     assert "The same transition is rejected." in pr_description
     assert patched in pr_description
+    assert str(tmp_path) not in pr_description
+    assert "packet: `runtime/verification.log`" in pr_description
+    assert "`test_security.py`" in pr_description
+    assert "Hosted CI: **PENDING" not in pr_description
     assert "[x] post-fix replay" in checklist
     assert (out / "assessment" / "remediation.diff").exists()
 
@@ -163,8 +169,23 @@ def test_strict_mode_rejects_an_incomplete_chain(tmp_path: Path) -> None:
     baseline = create_repo(repo)
     (out / "runtime").mkdir(parents=True)
     (out / "runtime" / "pre-fix.log").write_text("confirmed\n", encoding="utf-8")
+    recorded_result = out / "runtime" / "verification.log"
+    recorded_result.write_text("tests passed for a different commit\n", encoding="utf-8")
     write_json(out / "findings.json", findings_document(repo, baseline))
 
-    result = main([str(out), "--repo", str(repo), "--strict"])
+    result = main(
+        [
+            str(out),
+            "--repo",
+            str(repo),
+            "--patched-ref",
+            "not-the-recorded-commit",
+            "--verification-result",
+            str(recorded_result),
+            "--strict",
+        ]
+    )
 
     assert result == 4
+    status = json.loads((out / "assessment" / "status.json").read_text(encoding="utf-8"))
+    assert "CI or recorded verification tied to patched commit" in status["missing"]

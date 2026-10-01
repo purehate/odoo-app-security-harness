@@ -32,6 +32,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--test-command", help="Exact command used for pre/post-fix verification.")
     parser.add_argument("--pr-url", help="Focused remediation pull request URL.")
     parser.add_argument("--ci-url", help="CI result URL tied to the patched commit.")
+    parser.add_argument(
+        "--verification-result",
+        help="Recorded verification output containing the exact patched commit.",
+    )
     parser.add_argument("--ticket-url", help="Finding or remediation ticket URL.")
     parser.add_argument("--root-cause", help="Concise reviewer-facing root-cause explanation.")
     parser.add_argument("--fix-summary", help="Concise reviewer-facing remediation summary.")
@@ -200,6 +204,7 @@ def initial_record(
             "regression_test": "",
             "legitimate_behavior_artifact": "",
             "ci_url": "",
+            "result_artifact": "",
         },
         "review": {
             "root_cause": finding.get("attack_path") or "",
@@ -234,6 +239,7 @@ def update_record(record: dict[str, Any], args: argparse.Namespace) -> None:
         "regression_test": args.regression_test,
         "test_command": args.test_command,
         "ci_url": args.ci_url,
+        "result_artifact": args.verification_result,
     }
     for key, value in verification_updates.items():
         if value:
@@ -280,6 +286,32 @@ def artifact_gate(name: str, value: str | None, out: Path, repo: Path) -> dict[s
     }
 
 
+def verification_result_gate(verification: dict[str, Any], patched: str, out: Path, repo: Path) -> dict[str, Any]:
+    """Accept hosted CI or recorded output that names the exact patched commit."""
+    ci_url = str(verification.get("ci_url") or "")
+    if ci_url:
+        return {
+            "name": "CI or recorded verification tied to patched commit",
+            "status": "pass",
+            "artifact": ci_url,
+        }
+    value = str(verification.get("result_artifact") or "")
+    resolved = resolve_artifact(value, out, repo)
+    contains_commit = False
+    if resolved and resolved.is_file() and patched:
+        try:
+            contains_commit = patched in resolved.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            contains_commit = False
+    return {
+        "name": "CI or recorded verification tied to patched commit",
+        "status": "pass" if contains_commit else "missing",
+        "artifact": str(resolved) if contains_commit and resolved else value,
+        "sha256": sha256_file(resolved) if contains_commit and resolved else None,
+        "note": "Recorded output must name the exact patched commit." if resolved and not contains_commit else "",
+    }
+
+
 def build_gates(
     finding: dict[str, Any], record: dict[str, Any], out: Path, repo: Path, snapshot: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -316,11 +348,7 @@ def build_gates(
             "status": "pass" if verification.get("test_command") else "missing",
             "artifact": verification.get("test_command") or "",
         },
-        {
-            "name": "CI tied to patched commit",
-            "status": "pass" if verification.get("ci_url") else "missing",
-            "artifact": verification.get("ci_url") or "",
-        },
+        verification_result_gate(verification, patched, out, repo),
         {
             "name": "remediation delivery link",
             "status": "pass" if remediation.get("pr_url") or remediation.get("ticket_url") else "missing",
@@ -365,12 +393,26 @@ def markdown_link(path: str, base: Path) -> str:
     return f"[{label}]({label})"
 
 
+def pr_artifact(path: str, out: Path, repo: Path) -> str:
+    """Render packet and repository artifacts without workstation-absolute paths."""
+    if not path:
+        return "—"
+    candidate = Path(path).resolve()
+    for base, prefix in ((out.resolve(), "packet: "), (repo.resolve(), "")):
+        try:
+            relative = candidate.relative_to(base)
+        except ValueError:
+            continue
+        return f"{prefix}`{relative}`"
+    return f"`{Path(path).name}`"
+
+
 def reviewer_value(value: Any) -> str:
     """Render a review field without hiding incomplete evidence."""
     return str(value).strip() if value else "**PENDING — required before review**"
 
 
-def render_pr_body(out: Path, finding: dict[str, Any], record: dict[str, Any]) -> list[str]:
+def render_pr_body(out: Path, repo: Path, finding: dict[str, Any], record: dict[str, Any]) -> list[str]:
     """Render a self-contained remediation PR description."""
     baseline = record.get("baseline", {})
     remediation = record.get("remediation", {})
@@ -398,9 +440,9 @@ def render_pr_body(out: Path, finding: dict[str, Any], record: dict[str, Any]) -
         reviewer_value(review.get("fix_summary")),
         "",
         f"- **Patched commit:** `{reviewer_value(remediation.get('patched_commit'))}`",
-        f"- **Focused diff:** {markdown_link(str(remediation.get('diff_artifact') or ''), out)}",
+        f"- **Focused diff:** {pr_artifact(str(remediation.get('diff_artifact') or ''), out, repo)}",
         "",
-        *render_pr_verification(out, verification, review),
+        *render_pr_verification(out, repo, verification, review),
         "",
         "## Delivery and operations",
         "",
@@ -415,22 +457,24 @@ def render_pr_body(out: Path, finding: dict[str, Any], record: dict[str, Any]) -
     ]
 
 
-def render_pr_verification(out: Path, verification: dict[str, Any], review: dict[str, Any]) -> list[str]:
+def render_pr_verification(out: Path, repo: Path, verification: dict[str, Any], review: dict[str, Any]) -> list[str]:
     """Render the before/after and test-evidence sections of a PR body."""
+    ci_result = verification.get("ci_url") or "Not provided; recorded verification is supplied below."
     return [
         "## Before and after",
         "",
         "| State | Observed behavior | Evidence |",
         "| --- | --- | --- |",
-        f"| Vulnerable baseline | {reviewer_value(review.get('pre_fix_summary'))} | {markdown_link(str(verification.get('pre_fix_artifact') or ''), out)} |",
-        f"| Patched commit | {reviewer_value(review.get('post_fix_summary'))} | {markdown_link(str(verification.get('post_fix_artifact') or ''), out)} |",
-        f"| Legitimate workflow | {reviewer_value(review.get('legitimate_behavior_summary'))} | {markdown_link(str(verification.get('legitimate_behavior_artifact') or ''), out)} |",
+        f"| Vulnerable baseline | {reviewer_value(review.get('pre_fix_summary'))} | {pr_artifact(str(verification.get('pre_fix_artifact') or ''), out, repo)} |",
+        f"| Patched commit | {reviewer_value(review.get('post_fix_summary'))} | {pr_artifact(str(verification.get('post_fix_artifact') or ''), out, repo)} |",
+        f"| Legitimate workflow | {reviewer_value(review.get('legitimate_behavior_summary'))} | {pr_artifact(str(verification.get('legitimate_behavior_artifact') or ''), out, repo)} |",
         "",
         "## Verification",
         "",
         f"- **Exact command:** `{reviewer_value(verification.get('test_command'))}`",
-        f"- **Regression test:** {markdown_link(str(verification.get('regression_test') or ''), out)}",
-        f"- **CI result:** {reviewer_value(verification.get('ci_url'))}",
+        f"- **Regression test:** {pr_artifact(str(verification.get('regression_test') or ''), out, repo)}",
+        f"- **Hosted CI:** {ci_result}",
+        f"- **Recorded result:** {pr_artifact(str(verification.get('result_artifact') or ''), out, repo)}",
     ]
 
 
@@ -457,10 +501,15 @@ def render_reviewer_checklist(gates: list[dict[str, Any]]) -> list[str]:
 
 
 def write_pr_materials(
-    assessment_dir: Path, out: Path, finding: dict[str, Any], record: dict[str, Any], gates: list[dict[str, Any]]
+    assessment_dir: Path,
+    out: Path,
+    repo: Path,
+    finding: dict[str, Any],
+    record: dict[str, Any],
+    gates: list[dict[str, Any]],
 ) -> None:
     """Generate a self-contained PR body and human-review checklist."""
-    write_text(assessment_dir / "pr-description.md", "\n".join(render_pr_body(out, finding, record)) + "\n")
+    write_text(assessment_dir / "pr-description.md", "\n".join(render_pr_body(out, repo, finding, record)) + "\n")
     write_text(assessment_dir / "reviewer-checklist.md", "\n".join(render_reviewer_checklist(gates)) + "\n")
 
 
@@ -557,6 +606,7 @@ def write_demo_runbook(assessment_dir: Path, finding: dict[str, Any], record: di
 def write_outputs(
     assessment_dir: Path,
     out: Path,
+    repo: Path,
     finding: dict[str, Any],
     record: dict[str, Any],
     snapshot: dict[str, Any],
@@ -566,7 +616,7 @@ def write_outputs(
     write_status_and_index(assessment_dir, out, finding, snapshot, gates)
     write_ai_brief(assessment_dir, finding, record)
     write_demo_runbook(assessment_dir, finding, record)
-    write_pr_materials(assessment_dir, out, finding, record, gates)
+    write_pr_materials(assessment_dir, out, repo, finding, record, gates)
 
 
 def load_inputs(args: argparse.Namespace) -> tuple[Path, dict[str, Any], Path]:
@@ -635,7 +685,7 @@ def main(argv: list[str] | None = None) -> int:
     capture_remediation_diff(record, repo, assessment_dir)
     write_json(record_path, record)
     gates = build_gates(finding, record, out, repo, snapshot)
-    write_outputs(assessment_dir, out, finding, record, snapshot, gates)
+    write_outputs(assessment_dir, out, repo, finding, record, snapshot, gates)
 
     missing = [gate["name"] for gate in gates if gate["status"] != "pass"]
     print(f"Assessment packet: {assessment_dir}")
