@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import csv
 import datetime as dt
 import fnmatch
@@ -13,6 +14,8 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -30,6 +33,9 @@ DEFAULT_RULES = SKILL_DIR / "rules" / "odoo.yml"
 DEFAULT_MODEL = "qwen3:0.6b"
 CWE_MAP_SRC = SKILL_DIR / "references" / "cwe-map.json"
 CONFIG_FILES = [".odoo-review/config.toml", ".odoo-review.toml"]
+DETECT_SECRETS_EXCLUDE_RE = (
+    r"(^|/)(\.git|\.hg|\.svn|\.audit(?:-[^/]*)?|\.worktrees|__pycache__|\.venv|venv|node_modules)(/|$)"
+)
 
 MODEL_PACKS = {
     "default": {},
@@ -502,6 +508,73 @@ def should_skip(path: Path) -> bool:
 
 def which(name: str) -> str | None:
     return shutil.which(name)
+
+
+def detect_secrets_command(repo: Path) -> list[str]:
+    """Build a secrets scan that excludes VCS, prior audits, and vendored worktrees."""
+    return [
+        "detect-secrets",
+        "scan",
+        "--all-files",
+        "--exclude-files",
+        DETECT_SECRETS_EXCLUDE_RE,
+        str(repo),
+    ]
+
+
+@contextlib.contextmanager
+def isolated_precommit_repo(repo: Path) -> Iterator[Path]:
+    """Yield a temporary Git snapshot so formatter hooks cannot edit the target."""
+    listed = subprocess.run(
+        ["git", "-C", str(repo), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        capture_output=True,
+        check=True,
+    )
+    relative_paths = [Path(raw.decode("utf-8")) for raw in listed.stdout.split(b"\0") if raw]
+    with tempfile.TemporaryDirectory(prefix="odoo-review-precommit-") as temp_dir:
+        snapshot = Path(temp_dir) / "repo"
+        snapshot.mkdir()
+        for relative_path in relative_paths:
+            source = repo / relative_path
+            if not source.is_file() and not source.is_symlink():
+                continue
+            destination = snapshot / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination, follow_symlinks=False)
+        subprocess.run(
+            ["git", "init", "--quiet", str(snapshot)],
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(snapshot), "add", "--all", "--force"],
+            capture_output=True,
+            check=True,
+        )
+        yield snapshot
+
+
+def run_precommit_isolated(repo: Path, log_path: Path, output_path: Path) -> dict:
+    """Run project hooks against an isolated snapshot and preserve the worktree."""
+    try:
+        with isolated_precommit_repo(repo) as snapshot:
+            record = run(
+                ["pre-commit", "run", "--all-files", "--config", str(snapshot / ".pre-commit-config.yaml")],
+                snapshot,
+                log_path,
+                output_path,
+                timeout=2400,
+            )
+            record["isolated_from"] = str(repo)
+            return record
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as exc:
+        progress(f"error pre-commit snapshot: {exc}")
+        return {
+            "tool": "pre-commit",
+            "status": "snapshot_error",
+            "error": str(exc),
+            "isolated_from": str(repo),
+        }
 
 
 def run(cmd: list[str], cwd: Path, log_path: Path, stdout_path: Path | None = None, timeout: int = 1800) -> dict:
@@ -2678,15 +2751,7 @@ def run_scanners(args: argparse.Namespace, repo: Path, out: Path, log_path: Path
         records.append({"tool": "pylint", "status": "missing"})
 
     if which("pre-commit") and (repo / ".pre-commit-config.yaml").exists():
-        records.append(
-            run(
-                ["pre-commit", "run", "--all-files", "--config", str(repo / ".pre-commit-config.yaml")],
-                repo,
-                log_path,
-                scans / "oca-precommit" / "results.txt",
-                timeout=2400,
-            )
-        )
+        records.append(run_precommit_isolated(repo, log_path, scans / "oca-precommit" / "results.txt"))
     else:
         records.append({"tool": "pre-commit", "status": "missing_or_no_config"})
 
@@ -2781,7 +2846,7 @@ def run_scanners(args: argparse.Namespace, repo: Path, out: Path, log_path: Path
     if which("detect-secrets"):
         records.append(
             run(
-                ["detect-secrets", "scan", "--all-files", str(repo)],
+                detect_secrets_command(repo),
                 repo,
                 log_path,
                 scans / "secrets" / "detect-secrets.json",

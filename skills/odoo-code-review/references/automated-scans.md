@@ -291,6 +291,7 @@ Run `detect-secrets` as a deterministic lead generator:
 
 ```bash
 detect-secrets scan --all-files <repo> \
+  --exclude-files '(^|/)(\.git|\.hg|\.svn|\.audit(?:-[^/]*)?|\.worktrees|__pycache__|\.venv|venv|node_modules)(/|$)' \
   > <OUT>/scans/secrets/detect-secrets.json
 ```
 

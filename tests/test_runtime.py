@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import runpy
+import subprocess
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
@@ -516,6 +517,39 @@ class TestOdooMapRuntime:
 
 class TestOdooMapRunnerHints:
     """Test main-runner OdooMap runtime handoff artifacts."""
+
+    def test_detect_secrets_command_excludes_generated_and_vendored_trees(self, tmp_path: Path) -> None:
+        """Secret scanning should not ingest prior audits, VCS data, or worktree copies."""
+        namespace = runpy.run_path(str(RUN_SCRIPT), run_name="__test_odoo_run__")
+
+        command = namespace["detect_secrets_command"](tmp_path)
+
+        exclude_pattern = command[command.index("--exclude-files") + 1]
+        assert command[:3] == ["detect-secrets", "scan", "--all-files"]
+        assert command[-1] == str(tmp_path)
+        assert namespace["re"].search(exclude_pattern, ".git/objects/secret")
+        assert namespace["re"].search(exclude_pattern, ".audit-overnight/report.md")
+        assert namespace["re"].search(exclude_pattern, "nested/.audit/results.json")
+        assert namespace["re"].search(exclude_pattern, ".worktrees/feature/config.py")
+        assert not namespace["re"].search(exclude_pattern, "trustedsec/models/project.py")
+
+    def test_precommit_snapshot_preserves_dirty_source_worktree(self, tmp_path: Path) -> None:
+        """Formatter hooks should only be able to edit an isolated copy of current files."""
+        namespace = runpy.run_path(str(RUN_SCRIPT), run_name="__test_odoo_run__")
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+        source = repo / "module.py"
+        source.write_text("committed = True\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "module.py"], check=True)
+        source.write_text("dirty = True\n", encoding="utf-8")
+
+        with namespace["isolated_precommit_repo"](repo) as snapshot:
+            copied = snapshot / "module.py"
+            assert copied.read_text(encoding="utf-8") == "dirty = True\n"
+            copied.write_text("formatted = True\n", encoding="utf-8")
+
+        assert source.read_text(encoding="utf-8") == "dirty = True\n"
 
     def test_runner_extracts_aliased_constant_route_metadata(self, tmp_path: Path) -> None:
         """Route inventory should feed runtime probes from aliased decorators and constants."""
