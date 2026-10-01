@@ -462,7 +462,7 @@ class ControllerResponseScanner(ast.NodeVisitor):
         route = self._current_route()
         if (
             not route.is_route
-            or route.route_type == "json"
+            or route.route_type in {"json", "jsonrpc"}
             or self._is_response_object(node)
             or not self._expr_is_tainted(node)
         ):

@@ -17,7 +17,7 @@ The whole `lang-odoo.md` file is sharp-edge territory. Highlights for grep/audit
 - `record.with_context(no_validate=True)` / `skip_validation=True` / `tracking_disable=True` — custom flags that signal danger; grep for them.
 - `@http.route(auth='public')` — internet-reachable; verify what data is returned.
 - `@http.route(auth='none')` — no DB cursor, even more permissive than public; common on webhooks.
-- `@http.route(csrf=False)` — CSRF gone; only acceptable on `type='json'` or signed webhook routes. Verify justification.
+- `@http.route(csrf=False)` — CSRF gone. Odoo 19 `type='jsonrpc'` routes already disable CSRF by default; require bearer authentication or a signed webhook request for state changes.
 - `@http.route(... methods=...)` missing — both GET and POST allowed; state-changing GET = CSRF-trivial.
 - `request.params['x']` / `request.jsonrequest['x']` — attacker controls; never feed to `write()`/`create()`/domains directly.
 - `**kw` in route handler then `record.write(kw)` / `record.create(kw)` — mass assignment.

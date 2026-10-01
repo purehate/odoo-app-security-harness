@@ -39,7 +39,7 @@ Pair this file with:
 | `auth='user'`   | `'user'`          | `auth='public'` — internet-reachable. Verify what data leaves.                        |
 | `auth='none'`   | —                 | Even more permissive than `public` — no DB cursor. Often misused for callbacks.       |
 | `csrf=True`     | `True` for `http` | `csrf=False` on `type='http'` POST — CSRF gone, verify why.                           |
-| `type='json'`   | —                 | JSON-RPC: CSRF defaults different, body parsed as JSON. Mass-assignment via `params`. |
+| `type='jsonrpc'` | —                | Odoo 19 JSON-RPC: CSRF is disabled by default; review cookie auth, CORS, and mass-assignment via `params`. Legacy releases use `type='json'`. |
 | `methods=[...]` | any               | Missing → both GET and POST allowed; state-changing GET = CSRF-trivial.               |
 | `website=True`  | False             | Adds website-context (lang, currency, layout) — pulls in public visitor logic.        |
 | `sitemap=False` | True              | Hidden routes still reachable, just not crawled.                                      |
@@ -207,7 +207,7 @@ Groups inherit (`implied_ids`). `base.group_user` < `base.group_system` (admin).
 
 ```python
 class MyCtrl(http.Controller):
-    @http.route('/api/things', type='json', auth='user')
+    @http.route('/api/things', type='jsonrpc', auth='user')
     def list_things(self, **kw):
         domain = kw.get('domain', [])
         return request.env['my.model'].search_read(domain, kw.get('fields', []))
@@ -404,5 +404,5 @@ grep -rn 'domain_force' --include='*.xml' . | grep -E "\(1, *['\"]?=['\"]?, *1\)
 - "`sudo()` is used in this controller" — without showing the data flow / impact, that's a style nit.
 - "Missing record rule" — without naming the model AND the data it leaks, drop.
 - "Empty domain" — only a finding when reachable from a route AND the model holds sensitive data.
-- "`csrf=False`" — only a finding on a state-changing endpoint with cookie auth. JSON-RPC type='json' has different CSRF model.
+- "`csrf=False`" — only a finding on a state-changing endpoint with cookie auth. Odoo 19 `type='jsonrpc'` routes disable CSRF by default; legacy releases call this route type `json`. Route type and Content-Type are not substitutes for authorization or signed-request validation.
 - "Public route" — `auth='public'` itself is fine for legitimate public pages. The bug is what the public route then reads/writes.

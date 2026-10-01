@@ -139,12 +139,12 @@ Every engagement writes to a single `<OUT>` directory. Default `<repo>/.audit/`,
 
 ### Steps
 
-1. **Stack identification** — Odoo version (8/13/14/15/16/17/18), edition (community/enterprise), Python version, PostgreSQL version, Werkzeug version. Read from `__manifest__.py` (max version), `requirements.txt`, and (if available) running `odoo-bin --version`.
+1. **Stack identification** — Odoo version (8/13/14/15/16/17/18/19), edition (community/enterprise), Python version, PostgreSQL version, Werkzeug version. Read from `__manifest__.py` (max version), `requirements.txt`, and (if available) running `odoo-bin --version`.
 2. **HTTP entry points**:
    ```bash
    grep -rn '@http\.route' --include='*.py' . | tee inventory/routes.txt
    ```
-   Tag each route: `auth=public|none|user`, `csrf=True|False`, `type=http|json`, `methods=...`, `website=True|False`.
+   Tag each route: `auth=public|none|user|bearer`, `csrf=True|False`, `type=http|json|jsonrpc`, `methods=...`, `website=True|False`. Odoo 19 uses `jsonrpc`; `json` remains relevant to older releases.
 3. **RPC entry points** — `xmlrpc/2/db`, `xmlrpc/2/object`, `xmlrpc/2/common`, `jsonrpc` are exposed by Odoo core; map which models are reachable via `execute_kw` based on ACL/record-rules.
 4. **Models touched by public/portal routes** — backward trace from `auth='public'` and `/my/*` controllers to `env['model.name']` references.
 5. **ACL inventory**:
@@ -173,7 +173,7 @@ Every engagement writes to a single `<OUT>` directory. Default `<repo>/.audit/`,
 ## Attack Surface Map
 
 ### Stack
-- Odoo version: 17.0 (community + custom + OCA account-invoicing)
+- Odoo version: 19.0 (community + enterprise + custom addons)
 - Python: 3.10
 - PostgreSQL: 14
 - Werkzeug: 2.3.7
@@ -782,7 +782,7 @@ HTML sections, in order:
 # Tooling — Reproducibility Appendix
 
 ## Versions
-- Odoo: 17.0
+- Odoo: 19.0
 - Python: 3.10.12
 - PostgreSQL: 14.10
 - Semgrep: 1.45.0 + p/python p/owasp-top-ten p/trailofbits p/0xdea + .semgrep/odoo.yml@<sha>

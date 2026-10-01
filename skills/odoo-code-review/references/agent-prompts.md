@@ -148,7 +148,7 @@ Hunt for:
 - @http.route(auth='public') and auth='none' — list every one, then check what data is returned and what side-effects occur
 - @http.route(csrf=False) on type='http' POST handlers without webhook signature verification
 - @http.route without methods=[...] — both GET and POST allowed; state-changing GET is CSRF-trivial
-- @http.route(type='json') with cookie auth — requires custom Content-Type but still vulnerable to CSRF if framework version allows form-encoded body
+- @http.route(type='jsonrpc') with cookie auth on Odoo 19 (`type='json'` on older releases) — CSRF is disabled by default; verify CORS, accepted request encodings, and whether a cross-site request can reach a mutation
 - @http.route returning request.params['id'] -> record.read(...) without ownership check (IDOR)
 - request.params['x'] / request.jsonrequest['x'] passed directly to model.write(), model.create(), or domain construction (mass assignment, domain injection)
 - **kw in route signature then record.write(kw) / record.create(kw)

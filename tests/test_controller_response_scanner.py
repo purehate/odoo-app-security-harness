@@ -1638,6 +1638,27 @@ class Controller(http.Controller):
     assert not any(f.rule_id == "odoo-controller-tainted-html-response" for f in findings)
 
 
+def test_direct_tainted_jsonrpc_return_is_ignored_for_html(tmp_path: Path) -> None:
+    """Odoo 19 JSON-RPC payloads should not be treated as HTML responses."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "response.py").write_text(
+        """
+from odoo import http
+
+class Controller(http.Controller):
+    @http.route('/preview', auth='public', type='jsonrpc')
+    def preview(self, **kwargs):
+        return kwargs.get('body')
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_controller_responses(tmp_path)
+
+    assert not any(f.rule_id == "odoo-controller-tainted-html-response" for f in findings)
+
+
 def test_safe_public_response_payload_is_ignored(tmp_path: Path) -> None:
     """Ordinary public JSON payloads should not be treated as credential leakage."""
     controllers = tmp_path / "module" / "controllers"

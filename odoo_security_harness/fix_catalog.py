@@ -162,8 +162,9 @@ RULE_FIXES: dict[str, str] = {
         "If the route is an API endpoint, implement token-based authentication instead."
     ),
     "odoo-route-csrf-ignored-on-mutation": (
-        "Enable CSRF protection by removing `csrf=False` or switching to `type='json'`. "
-        "JSON-RPC routes validate CSRF via the `Content-Type` header automatically."
+        "For browser-backed HTTP routes, remove `csrf=False` and submit Odoo's CSRF token. "
+        "For external API or webhook routes, require `auth='bearer'` or verify a signed request with "
+        "`hmac.compare_digest()`, restrict methods, and do not rely on the route type or Content-Type as CSRF protection."
     ),
     # Model lifecycle
     "odoo-deep-onchange-database-mutation": (
@@ -495,8 +496,9 @@ RULE_FIXES: dict[str, str] = {
     ),
     # Medium: Deep analyzer
     "odoo-deep-csrf-write": (
-        "State-changing routes must not disable CSRF. "
-        "Remove `csrf=False` from POST/PUT/DELETE routes, or switch to `type='json'` which validates CSRF via headers."
+        "For browser-backed state changes, remove `csrf=False` and submit Odoo's CSRF token. "
+        "For non-browser APIs and webhooks, use bearer authentication or verify an HMAC signature with "
+        "`hmac.compare_digest()`; changing the route type does not provide CSRF protection."
     ),
     "odoo-deep-field-compute-sudo": (
         "Avoid `sudo()` in computed fields. "
