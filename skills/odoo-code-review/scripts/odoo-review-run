@@ -3071,7 +3071,9 @@ Read these artifacts first:
 - {out / 'inventory' / 'breadth' / 'leads.md'} if present
 - scanner outputs under {out / 'scans'} if present
 
-Output to this file only. Do not edit source.
+Return the complete report as your final response. The runner captures that
+response into the pass artifact with Codex's `-o` option. Do not call file-write
+tools and do not edit source.
 
 Output format:
 Reviewed:
