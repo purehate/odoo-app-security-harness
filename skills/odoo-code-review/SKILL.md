@@ -45,6 +45,7 @@ The runner writes `<OUT>/run-mode.json` and `<OUT>/00-run-mode.md` at the top of
 - `learn=true` (set by `--learn` or `-ks`) → after Phase 8.6, run `scripts/odoo-review-learn <OUT>` to promote `findings.json` → `<repo>/.audit-baseline/findings.json` and write accepted-risk/fix-list suggestions. Use `--apply` only when `non_interactive=true` or the user explicitly approved the suggestions. Iteration cap: `learn_cap` (default 3).
 - `baseline_stock_cc=true` (set by `--baseline-stock-cc` or `-ks`) → during Phase 1, dispatch one `subagent_type: general-purpose` Agent with the prompt at `<OUT>/baseline-stock/dispatch.md`. Before the run is considered complete, run `scripts/odoo-review-stock-diff <OUT>` and validate every stock-only entry in `<OUT>/baseline-stock/validation-leads.md` as a current-run lead. `odoo-review-finalize` fails while these remain unresolved. After disposition, optionally run `scripts/odoo-review-stock-diff <OUT> --apply-lessons` to append stock-only finding patterns to `references/agent-prompts.md`.
 - `weekly=true` (set by `-ks` / `--ks` / `--kitchensink`) → kitchen-sink mode: max-quality full review. Equivalent to `--joern --runtime --breadth-budget deep --json --learn --baseline-stock-cc` plus auto-detect of `<repo>/.audit-baseline/findings.json`, `<repo>/scope.yml`, `<repo>/.audit-accepted-risks.yml`, `<repo>/.audit-fix-list.yml`. Add `--yes` separately for zero prompts. Do not use `--allow-missing-lanes` for a serious `-ks` review unless you accept weaker coverage.
+- `assessment=true` (set only by `--assessment`) → after Phase 8.6, continue through one accepted finding's reproduction, minimal remediation, regression tests, legitimate-path verification, atomic commit, and complete human-review PR packet. This explicitly authorizes source edits for that one fix in an isolated branch or worktree. It never authorizes pushing, opening a PR, deployment, external-service calls, or production-data use.
 
 When `non_interactive=true` and `learn=true` are both set, the lead session runs end-to-end with NO user input from Phase 0 through Phase 8.7 baseline promotion. Otherwise, kitchen-sink mode is manual: full coverage, but the lead still presents suppression suggestions before applying them.
 
@@ -358,6 +359,23 @@ Have Codex draft `findings.md`, `findings.html`, `findings.json` when requested,
 
 Phase 8 also performs **fix-list reconciliation** against `inventory/fix-list.json`. Every ACCEPT finding fingerprint is matched against the fix-list; matches receive a tracking pill in `findings.html` (green `tracked: FIX-NNN`, red `REGRESSION`, or grey `wontfix`). The runner then emits `<OUT>/00-fix-list.md` with buckets in fixed read-order: REGRESSION → OVERDUE → TRACKED → CONFIRMED-FIXED → LIKELY-FIXED → WONTFIX → DRIFTED. Each finding card in `findings.html` carries two buttons — "Mark as accepted risk" (suppression) and "Add to fix-it list" (tracking) — so the human reader's per-finding triage is one of two clicks. See `references/fix-list.md` for the schema and `references/html-report.md` for the button spec.
 
+### Phase 9 — Assessment Remediation and Human-Review PR (Optional)
+
+Triggered only by `--assessment`. Run `odoo-review-assessment <OUT> [--finding F-N]` after finalization. The helper automatically selects the strongest reproducible ACCEPT finding when no ID is supplied and writes `<OUT>/assessment/` with repository-state hashes, completeness gates, an AI remediation brief, a neutral 60-minute runbook, a PR description, and a reviewer checklist.
+
+The lead AI then completes the generated brief:
+
+1. Preserve the vulnerable commit and any tracked worktree patch; use an isolated branch or worktree for the fix.
+2. Turn the existing reproduction into a deterministic security regression test.
+3. Run the same attacker-path test against the vulnerable baseline and retain its output.
+4. Implement the smallest server-side root-cause fix; avoid unrelated refactoring.
+5. Replay the identical test after the patch and retain its output.
+6. Add positive tests for authorized and unaffected workflows, then run the affected module suite and existing repository checks.
+7. Fill `assessment/record.json` with concise root cause, fix, before/after behavior, deployment, rollback, and residual-risk statements.
+8. Commit the remediation atomically and rerun `odoo-review-assessment` with the patched ref and evidence paths. `--strict` must pass before calling the PR review-ready.
+
+The generated PR material must let a human reviewer understand the issue, verify the exact fix, and replay the evidence without asking the author to reconstruct missing context. The harness may prepare the branch, commit, PR body, and evidence links. It must not push, open the PR, deploy, contact external services, or use production data without separate explicit authorization.
+
 ## Workflow Checklist (Track in TaskCreate)
 
 - [ ] Phase 0: create `<OUT>` dir, find every `__manifest__.py`, parse to JSON, build depends graph, tag origins.
@@ -388,6 +406,7 @@ Phase 8 also performs **fix-list reconciliation** against `inventory/fix-list.js
 - [ ] Phase 7.8 (only if `--requirements <file>`): extract claims, compile predicates, judges, repair-loop, R-N findings.
 - [ ] Phase 8: Codex draft + Claude final edit for `findings.md` + `findings.html` (unless `--no-html`) + `tooling.md`.
 - [ ] Phase 8: fix-list reconciliation against `inventory/fix-list.json` → `<OUT>/00-fix-list.md` REGRESSION/OVERDUE/TRACKED/CONFIRMED-FIXED/LIKELY-FIXED/WONTFIX/DRIFTED buckets.
+- [ ] Phase 9 (only if `--assessment`): run `odoo-review-assessment <OUT>`, execute the generated remediation brief, retain identical pre/post-fix proof and legitimate-path results, create the atomic fix commit, and pass `odoo-review-assessment <OUT> --strict`.
 - [ ] Engagement stats: modules, LOC, wall-clock, tokens, findings by severity.
 - [ ] Reproducibility appendix: `<OUT>/tooling.md` with tool versions + commands run.
 
@@ -403,6 +422,8 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 - `--allow-missing-lanes` — continue if the local Qwen or Codex lane is unavailable; record the skip in `tooling.md`.
 - `--joern` — enable Phase 3.5 Joern CPG graph review (skip on SMALL or `--quick`).
 - `--runtime` — enable Phase 7.5 sub-pass A and generate `runtime/probes/` route-probe templates. Use `odoo-review-runtime <OUT> --run-generated-probes` with Odoo launch details to boot Odoo and replay auto-safe probes plus hand-written PoCs.
+- `--assessment` — after finalization, authorize the lead AI to remediate one accepted finding in an isolated branch/worktree and assemble a complete human-review PR evidence packet. Implies `--runtime` and JSON output. Never implies push, PR creation, deployment, external-service access, or production-data use.
+- `--assessment-finding <F-N>` — choose the accepted finding for `--assessment`; otherwise the assessment helper ranks severity plus available reproduction evidence.
 - `--zap-target <url>` — also run Phase 7.5 sub-pass B (ZAP baseline). Requires `--runtime`.
 - Runtime helper OdooMap flags — `odoo-review-runtime <OUT> --odoomap-target <url|self> [--odoomap-modules] [--odoomap-cve] [--odoomap-enumerate --odoomap-database <db> --odoomap-username <user> --odoomap-password <pass>]`. OdooMap is disabled unless target is explicit; brute-force switches are not exposed; artifact commands redact the password.
 - `--no-codex` — skip Codex heavy-worker lane and Phase 7.7 adversarial check; Claude performs all review work locally.
@@ -432,8 +453,9 @@ Each Phase 5 hunter MUST be tracked as its own TaskCreate so the user sees progr
 
 The runner emits `findings.json` (after Phase 8). Four companion scripts process it:
 
-- **`odoo-review-finalize <OUT>`** — canonical Phase 8.6 wrapper. Runs export + diff, auto-detects baseline (`<OUT>/../.audit-baseline/findings.json` or `$ODOO_REVIEW_BASELINE`), runs the stock-CC unresolved-lead gate when `baseline_stock_cc=true`, stamps `finalize.log`, exits non-zero when ACCEPT severity ≥ `--fail-on` (default `high`) or stock-only leads remain unresolved. Use this from CI / non-Claude paths or manual re-export. `--fail-on none` disables only the severity gate; `--no-stock-gate` disables the stock gate.
+- **`odoo-review-finalize <OUT>`** — canonical Phase 8.6 wrapper. Runs export + diff, auto-detects baseline (`<OUT>/../.audit-baseline/findings.json` or `$ODOO_REVIEW_BASELINE`), runs the stock-CC unresolved-lead gate when `baseline_stock_cc=true`, and initializes the Phase 9 packet when `assessment=true`. It stamps `finalize.log` and exits non-zero when ACCEPT severity ≥ `--fail-on` (default `high`) or stock-only leads remain unresolved. Use this from CI / non-Claude paths or manual re-export. `--fail-on none` disables only the severity gate; `--no-stock-gate` disables the stock gate.
 - **`odoo-review-runtime <OUT>`** — Phase 7.5 runtime helper. Boots Odoo from explicit `--odoo-bin`/`--config`/`--database`/`--addons-path` inputs, waits for a health URL, captures logs/status, and runs PoC scripts with `ODOO_BASE_URL`. `--run-generated-probes` replays runner-generated safe route probes. Optional `--odoomap-target <url|self>` captures OdooMap runtime leads under `runtime/odoomap/` without brute-force switches.
+- **`odoo-review-assessment <OUT>`** — Phase 9 evidence state machine. Selects a demonstrable accepted finding, captures exact repository state and artifact hashes, generates the AI remediation brief and human-review PR materials, captures a baseline-to-patched diff, and gates completeness with `--strict`.
 - `odoo-review-export <.audit-dir>` — direct SARIF 2.1.0 + fingerprints + bounty/F-N.md emit. Called by `finalize`; expose for one-off re-export. Honors `scope.json` accepted_risks as SARIF `suppressions` unless `--no-suppress`.
 - `odoo-review-diff <baseline> <current>` — classifies findings new / fixed / unchanged / changed (severity OR triage delta) by `fingerprint`. Emits `delta.md` + `delta.json`. Called by `finalize` when baseline detected.
 - `odoo-review-rerun <directive>` — directive feedback-loop dispatcher (Qwen or Codex). See "Directive Feedback Loop" above.

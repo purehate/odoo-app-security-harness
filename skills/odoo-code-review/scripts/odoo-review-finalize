@@ -36,11 +36,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 EXPORT_BIN = SCRIPT_DIR / "odoo-review-export"
 DIFF_BIN = SCRIPT_DIR / "odoo-review-diff"
 STOCK_DIFF_BIN = SCRIPT_DIR / "odoo-review-stock-diff"
+ASSESSMENT_BIN = SCRIPT_DIR / "odoo-review-assessment"
 
 SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
 STOCK_RESOLVED_DISPOSITIONS = {"REJECT", "DOWNGRADE", "NEEDS-MANUAL"}
@@ -117,7 +117,7 @@ def shell(cmd: list[str], log_lines: list[str]) -> int:
 
 
 def count_accepts_by_severity(findings_doc: dict) -> dict[str, int]:
-    counts = {k: 0 for k in SEVERITY_RANK}
+    counts = dict.fromkeys(SEVERITY_RANK, 0)
     for f in findings_doc.get("findings", []):
         if (f.get("triage") or "").upper() != "ACCEPT":
             continue
@@ -224,7 +224,7 @@ def main() -> int:
         )
 
     log_lines: list[str] = [
-        f"# odoo-review-finalize",
+        "# odoo-review-finalize",
         f"started: {dt.datetime.now(dt.timezone.utc).isoformat()}",
         f"out: {out}",
         f"findings: {findings_path}",
@@ -258,6 +258,19 @@ def main() -> int:
         stock_rc, stock_msg = stock_gate(out, log_lines)
     log_lines.append(stock_msg)
 
+    assessment_rc = 0
+    mode = run_mode(out)
+    if mode.get("assessment"):
+        if ASSESSMENT_BIN.exists():
+            assessment_cmd = [sys.executable, str(ASSESSMENT_BIN), str(out)]
+        else:
+            assessment_cmd = [shutil.which("odoo-review-assessment") or "odoo-review-assessment", str(out)]
+        if mode.get("assessment_finding"):
+            assessment_cmd.extend(["--finding", str(mode["assessment_finding"])])
+        assessment_rc = shell(assessment_cmd, log_lines)
+    else:
+        log_lines.append("assessment: skipped (assessment=false)")
+
     findings_doc = load_findings(findings_path)
     counts = count_accepts_by_severity(findings_doc)
     log_lines.append(f"accepts_by_severity: {counts}")
@@ -265,7 +278,10 @@ def main() -> int:
     log_lines.append(gate_msg)
 
     log_lines.append(f"finished: {dt.datetime.now(dt.timezone.utc).isoformat()}")
-    log_lines.append(f"export_rc={export_rc} diff_rc={diff_rc} stock_rc={stock_rc} gate_rc={gate_rc}")
+    log_lines.append(
+        f"export_rc={export_rc} diff_rc={diff_rc} stock_rc={stock_rc} "
+        f"assessment_rc={assessment_rc} gate_rc={gate_rc}"
+    )
 
     log_path = out / "finalize.log"
     log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
@@ -278,6 +294,8 @@ def main() -> int:
         return diff_rc
     if stock_rc != 0:
         return stock_rc
+    if assessment_rc != 0:
+        return assessment_rc
     return gate_rc
 
 

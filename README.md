@@ -118,6 +118,8 @@ The direct runner is `odoo-review-run [target] [flags]`. The slash command forwa
 | `--allow-missing-lanes` | Continue if Codex or Qwen is unavailable. Records weaker coverage in `tooling.md`. |
 | `--joern` | Enable optional Joern CPG graph review. |
 | `--runtime` | Enable Phase 7.5 runtime path and generate `runtime/probes/` route-probe templates. |
+| `--assessment` | Continue after finalization through one focused remediation, regression verification, and complete human-review PR packet. Implies runtime and JSON output; never pushes or opens a PR. |
+| `--assessment-finding <F-N>` | Select the accepted finding for assessment remediation; otherwise rank by severity and reproduction evidence. |
 | `--zap-target <url>` | Run ZAP baseline against a QA target. Requires `--runtime`. |
 | `--odoomap-target <url\|self>` | Add optional OdooMap runtime recon against an authorized QA/staging target. Requires `--runtime`; brute-force modes are not enabled. |
 | `--no-codex` | Skip Codex hunter execution. |
@@ -175,6 +177,19 @@ Runtime helper:
 | `--keep-running` | Leave Odoo running and write `runtime/odoo.pid`. |
 | `--plan-only` | Write runtime command/plan artifacts without booting Odoo. |
 
+Assessment helper:
+
+| Command / flag | Purpose |
+| --- | --- |
+| `odoo-review-assessment <OUT>` | Select a strong accepted finding and build a discovery-to-remediation evidence packet and PR body. |
+| `--finding <F-N>` | Override automatic demonstrable-finding selection. |
+| `--patched-ref <ref>` | Record the patched commit and capture a focused baseline-to-patch diff. |
+| `--pre-fix`, `--post-fix <path>` | Link the same reproduction before and after the fix. |
+| `--regression-test <path>` | Link the retained security regression test. |
+| `--legitimate <path>` | Link positive-path verification output. |
+| `--test-command <command>` | Record the exact verification command. |
+| `--strict` | Exit non-zero until the complete human-review evidence chain passes. |
+
 ## Install
 
 ```bash
@@ -190,8 +205,9 @@ The installer copies:
 - convenience symlinks in `~/.local/bin/`:
   - `odoo-review-run` — main pipeline runner
   - `odoo-review-rerun` — directive dispatcher (Qwen/Codex re-task)
-  - `odoo-review-finalize` — Phase 8.6 wrapper: export + diff + severity/stock gates (default for CI / non-Claude paths and manual re-export)
+  - `odoo-review-finalize` — Phase 8.6 wrapper: export + diff + severity/stock gates, plus automatic assessment-packet initialization when requested
   - `odoo-review-runtime` — Phase 7.5 helper: boot Odoo, wait for readiness, run PoC scripts, capture evidence
+  - `odoo-review-assessment` — selects a demonstrable finding and generates hashed evidence gates, an AI remediation brief, PR description, reviewer checklist, and neutral assessment runbook
   - `odoo-review-export` — direct SARIF + fingerprints + bounty drafts (called by finalize)
   - `odoo-review-diff` — direct baseline vs current comparison (called by finalize)
   - `odoo-review-learn` — Phase 8.7 baseline/fix-list/accepted-risk learning helper
@@ -413,6 +429,14 @@ Emits:
 Exit code: `0` pass, `2` ACCEPT exceeds severity gate, `4` unresolved stock-CC leads, non-zero forwarded from export/diff failures.
 
 Baseline auto-detection order: `--baseline <path>` → `$ODOO_REVIEW_BASELINE` → `.audit-baseline/findings.json` → `.audit-baseline.json`.
+
+For an end-to-end remediation review, initialize the assessment packet after finalization:
+
+```bash
+odoo-review-assessment .audit-YYYYMMDD-HHMM
+```
+
+The command automatically ranks accepted findings by severity and available reproduction evidence. It writes `assessment/record.json`, `repository-state.json`, `status.json`, `ai-remediation-brief.md`, `pr-description.md`, `reviewer-checklist.md`, `evidence-index.md`, and `demo-runbook.md`. The lead AI completes the record while implementing and testing the focused fix. Run it again with `--strict` and the patched-ref, test artifacts, CI link, and delivery metadata to prevent an incomplete remediation packet from being presented for human review.
 
 If you only want one stage, the underlying scripts are still exposed:
 

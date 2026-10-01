@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import runpy
 import subprocess
+import sys
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
@@ -517,6 +518,22 @@ class TestOdooMapRuntime:
 
 class TestOdooMapRunnerHints:
     """Test main-runner OdooMap runtime handoff artifacts."""
+
+    def test_assessment_mode_implies_runtime_and_json(self, monkeypatch) -> None:
+        """Assessment remediation should always retain runtime and machine-readable evidence."""
+        namespace = runpy.run_path(str(RUN_SCRIPT), run_name="__test_odoo_run__")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["odoo-review-run", ".", "--assessment", "--assessment-finding", "F-1", "--no-json"],
+        )
+
+        args = namespace["parse_args"]()
+
+        assert args.assessment is True
+        assert args.assessment_finding == "F-1"
+        assert args.runtime is True
+        assert args.emit_json is True
 
     def test_detect_secrets_command_excludes_generated_and_vendored_trees(self, tmp_path: Path) -> None:
         """Secret scanning should not ingest prior audits, VCS data, or worktree copies."""

@@ -227,6 +227,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable Phase 7.5 runtime evidence path; use odoo-review-runtime <OUT> to boot Odoo and replay PoCs.",
     )
+    parser.add_argument(
+        "--assessment",
+        action="store_true",
+        help=(
+            "After final findings, continue through one finding's reproduction, focused remediation, regression "
+            "tests, and human-review PR packet. Never pushes or opens a PR automatically."
+        ),
+    )
+    parser.add_argument(
+        "--assessment-finding",
+        help="Finding ID to remediate under --assessment. Defaults to the strongest reproducible ACCEPT finding.",
+    )
     parser.add_argument("--zap-target", help="ZAP target URL; requires --runtime")
     parser.add_argument(
         "--odoomap-target",
@@ -364,8 +376,13 @@ def parse_args() -> argparse.Namespace:
         help="Kitchen sink: max-quality review path. Enables Joern, runtime evidence path, breadth, JSON, learn, stock-CC gate, and durable state auto-detect. Add --yes separately for zero prompts.",
     )
     args = parser.parse_args()
+    if args.assessment_finding and not args.assessment:
+        parser.error("--assessment-finding requires --assessment")
     # findings.json is now emitted by default. --json kept as compat no-op; --no-json opts out.
     args.emit_json = not args.no_emit_json
+    if args.assessment:
+        args.runtime = True
+        args.emit_json = True
     # -ks/--kitchensink expands to the max-quality config.
     if args.weekly:
         args.joern = True
@@ -2625,6 +2642,8 @@ def preflight(args: argparse.Namespace, repo: Path, out: Path) -> tuple[dict, li
         "ensemble": args.ensemble,
         "ensemble_passes": args.ensemble_passes,
         "runtime": args.runtime,
+        "assessment": bool(getattr(args, "assessment", False)),
+        "assessment_finding": getattr(args, "assessment_finding", None),
         "zap_target": args.zap_target,
         "odoomap_target": args.odoomap_target,
         "requirements": args.requirements,
@@ -3308,6 +3327,8 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
         "quick": bool(getattr(args, "quick", False)),
         "joern": bool(getattr(args, "joern", False)),
         "runtime": bool(getattr(args, "runtime", False)),
+        "assessment": bool(getattr(args, "assessment", False)),
+        "assessment_finding": getattr(args, "assessment_finding", None),
         "odoomap_target": getattr(args, "odoomap_target", None),
         "no_codex": bool(getattr(args, "no_codex", False)),
         "no_local_qwen": bool(getattr(args, "no_local_qwen", False)),
@@ -3370,6 +3391,9 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
         flag_lines.append("- **--joern** — Phase 3.5 CPG graph review")
     if mode["runtime"]:
         flag_lines.append("- **--runtime** — Phase 7.5 runtime evidence helper path")
+    if mode["assessment"]:
+        selection = mode["assessment_finding"] or "automatic demonstrable-finding selection"
+        flag_lines.append(f"- **--assessment** — continue through remediation PR evidence ({selection})")
     if mode["odoomap_target"]:
         flag_lines.append(
             f"- **--odoomap-target {mode['odoomap_target']}** — optional authorized OdooMap runtime lead capture"
@@ -3404,6 +3428,9 @@ def write_run_mode(out: Path, args: argparse.Namespace, repo: Path) -> None:
     )
     md.append(
         "- `breadth_budget` controls Phase 1.7 Claude Agent spend. Dispatch only chunks listed in `inventory/breadth/dispatch.json`; they are risk-prioritized and may be intentionally capped."
+    )
+    md.append(
+        "- `assessment=true` → after Phase 8.6, run `odoo-review-assessment <OUT>`, complete the generated AI remediation brief in an isolated branch/worktree, retain the identical pre/post-fix proof plus legitimate-path tests, commit atomically, and rerun the assessment command with `--strict`. Do not push or open a PR without explicit user authorization."
     )
     md.append("")
     (out / "00-run-mode.md").write_text("\n".join(md), encoding="utf-8")

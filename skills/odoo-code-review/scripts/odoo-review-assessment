@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Build an assessment evidence packet from a completed Odoo review."""
+
+import os
+import sys
+from pathlib import Path
+
+repo_root = Path(__file__).resolve().parents[3]
+venv_python = repo_root / ".venv" / "bin" / "python"
+if venv_python.exists() and Path(sys.executable).resolve() != venv_python.resolve():
+    # The interpreter is a fixed, repository-owned path; no shell or user-controlled executable is involved.
+    os.execv(str(venv_python), [str(venv_python), str(Path(__file__).resolve()), *sys.argv[1:]])  # noqa: S606
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+from odoo_security_harness.assessment import main  # noqa: E402
+
+if __name__ == "__main__":
+    raise SystemExit(main())

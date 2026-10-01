@@ -129,7 +129,7 @@ install_dir() {
 install_file "$ROOT/commands/odoo-code-review.md" "$CLAUDE_HOME/commands/odoo-code-review.md"
 install_dir "$ROOT/skills/odoo-code-review" "$CLAUDE_HOME/skills/odoo-code-review"
 
-for script in odoo-review-run odoo-review-rerun odoo-review-export odoo-review-diff odoo-review-finalize odoo-review-learn odoo-review-stock-diff odoo-review-runtime odoo-review-coverage odoo-review-validate-config odoo-deep-scan; do
+for script in odoo-review-run odoo-review-rerun odoo-review-export odoo-review-diff odoo-review-finalize odoo-review-learn odoo-review-stock-diff odoo-review-runtime odoo-review-assessment odoo-review-coverage odoo-review-validate-config odoo-deep-scan; do
   chmod +x "$CLAUDE_HOME/skills/odoo-code-review/scripts/$script"
   ln -sf "$CLAUDE_HOME/skills/odoo-code-review/scripts/$script" "$HOME/.local/bin/$script"
 done
@@ -148,6 +148,7 @@ echo "  odoo-review-finalize - Phase 8.6 wrapper (CI-friendly)"
 echo "  odoo-review-learn    - Learning artifacts helper"
 echo "  odoo-review-stock-diff - Stock-Claude control-lane diff"
 echo "  odoo-review-runtime  - Phase 7.5 runtime helper"
+echo "  odoo-review-assessment - Remediation PR evidence packet"
 echo "  odoo-review-coverage - Phase 5.6 coverage diff"
 echo "  odoo-review-validate-config - Config schema validator"
 echo "  odoo-deep-scan       - Standalone static deep scanner"
