@@ -128,6 +128,8 @@ def test_assessment_builds_complete_human_review_packet(tmp_path: Path) -> None:
             "pytest test_security.py",
             "--ticket-url",
             "https://tracker.example.invalid/SEC-1",
+            "--pr-url",
+            "https://git.example.invalid/pulls/1",
             "--verification-result",
             str(recorded_result),
             "--pre-fix-summary",
@@ -158,6 +160,7 @@ def test_assessment_builds_complete_human_review_packet(tmp_path: Path) -> None:
     assert "packet: `runtime/verification.log`" in pr_description
     assert "`test_security.py`" in pr_description
     assert "Hosted CI: **PENDING" not in pr_description
+    assert "**Remediation PR:** https://git.example.invalid/pulls/1" in pr_description
     assert "[x] post-fix replay" in checklist
     assert (out / "assessment" / "remediation.diff").exists()
 
