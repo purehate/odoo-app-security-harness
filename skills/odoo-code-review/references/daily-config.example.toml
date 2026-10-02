@@ -1,0 +1,33 @@
+[workflow]
+repo = "/absolute/path/to/your/odoo-addons-repository"
+external_url = "https://qa.example.com"
+include_paths = ["/quoteengine"]
+# Optional. Otherwise: develop, dev, staging, stage, qa, then test.
+integration_branch = "staging"
+base_branch = "main"
+remote = "origin"
+use_ai = true
+rate = 1.0
+crawl_max_pages = 50
+crawl_depth = 2
+timeout_seconds = 3600
+
+[tools]
+orca = "orca"
+internal = "odoo-deep-scan"
+
+[commands]
+verify = [
+  "python -m pytest tests/security",
+]
+build = [
+  "python -m pytest",
+]
+# Each command receives SECURITY_TARGET_URL, SECURITY_EVIDENCE_PHASE, and
+# SECURITY_EVIDENCE_DIR. It must write PNG/JPEG/WebP files into that directory.
+screenshots = [
+  "python scripts/capture_security_evidence.py",
+]
+
+[evidence]
+require_screenshots = true

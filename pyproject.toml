@@ -64,6 +64,7 @@ odoo-review-rerun = "odoo_security_harness.scripts.odoo_review_rerun:main"
 odoo-review-stock-diff = "odoo_security_harness.scripts.odoo_review_stock_diff:main"
 odoo-deep-scan = "odoo_security_harness.scripts.odoo_deep_scan:main"
 odoo-review-validate-config = "odoo_security_harness.scripts.validate_config:main"
+odoo-security-daily = "odoo_security_harness.scripts.odoo_security_daily:main"
 
 [project.urls]
 Homepage = "https://github.com/purehate/odoo-app-security-harness"

@@ -12,6 +12,7 @@ Provides one comprehensive command, `/odoo-code-review`. Claude Code remains the
 - Each REJECT explains _why_ it isn't a bug in Odoo's model so you internalize the framework's invariants (e.g., "ORM ALREADY parameterizes via `psycopg2.sql` for table identifiers — the f-string here is over a hardcoded constant, not user data").
 - Findings target the Odoo bug shapes that don't show up in generic Python scanners: multi-company isolation, prefetch leakage, `sudo()` propagation, `ir.model.access` vs `ir.rule` precedence, `_sql_constraints` gaps, computed-field-with-sudo recompute amplification, QWeb sinks (`t-raw` / `Markup` / `fields.Html(sanitize=False)`), portal `/my/*` exposure, `safe_eval` sandbox edges, `with_user(env.ref('base.user_admin'))` patterns, monkey-patching of `BaseModel`, `getattr`/`setattr` with tainted names, `@api.onchange` and `@api.constrains` database mutations, `Markup(f"...")` XSS, `tracking=True` without `mail.thread`, missing admin users in privileged `res.groups`, and font-awesome icon accessibility gaps.
 - The iteration loop builds your knowledge base: every `accepted_risks` reason in `scope.yml` becomes a paragraph of senior-level Odoo reasoning you can show to teammates.
+- `odoo-security-daily` combines the internal source scan with ORCA's unauthenticated external scan, prepares one focused Codex remediation in an isolated worktree, and can gate integration delivery plus a human-only promotion PR.
 
 If a finding could be lifted verbatim from `bandit -r .`, it doesn't belong in the report. The point is the Odoo expertise you absorb every iteration.
 
@@ -213,6 +214,7 @@ The installer copies:
   - `odoo-review-learn` — Phase 8.7 baseline/fix-list/accepted-risk learning helper
   - `odoo-review-stock-diff` — stock-Claude control-lane diff and lessons helper
   - `odoo-review-coverage` — Phase 5.6 hunter coverage diff and CI gap gate
+  - `odoo-security-daily` — combined daily outside-in/source-aware scan, isolated remediation, evidence, integration PR, and human-only main promotion
   - `odoo-review-validate-config` — schema validator for `.odoo-review/config.toml`, `scope.yml`, accepted-risk files, and fix-list files; use `--type accepted-risks` or `--type fix-list` for renamed governance files
   - `odoo-deep-scan` — standalone static scanner that emits JSON, Markdown, SARIF, PoCs, coverage inventories, and a CI gate
 
@@ -456,6 +458,43 @@ Drop-in GitHub Action template at `skills/odoo-code-review/templates/github-acti
 - Persists `findings.json` + `delta.md` + `bounty/` + `finalize.log` as 90-day artifacts.
 
 Copy to `.github/workflows/odoo-security.yml` in your addons repo and set `OPENAI_API_KEY` secret if Codex lane is desired.
+
+## Daily combined remediation controller
+
+The daily controller keeps ORCA and this harness as independent evidence engines
+but exposes one operational command. Start by copying
+`skills/odoo-code-review/references/daily-config.example.toml` to
+`.odoo-security-daily.toml` in the Odoo source repository and fill in the QA URL,
+custom paths, verification/build commands, and screenshot command.
+
+Always inspect the read-only plan first:
+
+```bash
+odoo-security-daily --config .odoo-security-daily.toml --mode plan
+```
+
+The modes are intentionally progressive:
+
+| Mode | Behavior |
+| --- | --- |
+| `plan` | Resolve an existing non-production integration branch and write the state-transition plan. No worktree, scans, pushes, or PRs. |
+| `scan` | Run the internal deep scan, ORCA crawl/scan, and required pre-fix screenshots in an isolated worktree. |
+| `remediate` | Add one structured Codex remediation, rerun the internal scan, execute every configured test/build command, and create a local atomic commit. No push. |
+| `deliver` | Push a remediation branch, open a PR to the integration branch, require successful checks, merge only to integration, rerun ORCA/screenshots against QA, then open or update an integration-to-main PR for a human. It never merges `main`/`master`. |
+
+Branch selection is explicit or resolves only an existing remote branch in this
+order: `develop`, `dev`, `staging`, `stage`, `qa`, `test`. The controller refuses
+to invent an integration branch or use `main`/`master` as one. It also refuses to
+deliver without configured verification/build commands and, by default, real
+before/after image artifacts. The evidence packet also includes machine-readable
+internal and external finding deltas with resolved, persistent, and new IDs.
+
+For unattended daily execution, copy
+`skills/odoo-code-review/templates/daily-remediation-github-action.yml` into the
+Odoo repository. It targets an isolated self-hosted runner because Codex, the
+private model endpoint, browser tooling, source code, and deployment credentials
+must remain under your control. The workflow uploads the full hashed packet as a
+90-day artifact; the final promotion PR remains a human merge gate.
 
 For a lighter static-only CI lane, use `skills/odoo-code-review/templates/deep-scan-github-action.yml`:
 

@@ -129,7 +129,7 @@ install_dir() {
 install_file "$ROOT/commands/odoo-code-review.md" "$CLAUDE_HOME/commands/odoo-code-review.md"
 install_dir "$ROOT/skills/odoo-code-review" "$CLAUDE_HOME/skills/odoo-code-review"
 
-for script in odoo-review-run odoo-review-rerun odoo-review-export odoo-review-diff odoo-review-finalize odoo-review-learn odoo-review-stock-diff odoo-review-runtime odoo-review-assessment odoo-review-coverage odoo-review-validate-config odoo-deep-scan; do
+for script in odoo-review-run odoo-review-rerun odoo-review-export odoo-review-diff odoo-review-finalize odoo-review-learn odoo-review-stock-diff odoo-review-runtime odoo-review-assessment odoo-review-coverage odoo-review-validate-config odoo-deep-scan odoo-security-daily; do
   chmod +x "$CLAUDE_HOME/skills/odoo-code-review/scripts/$script"
   ln -sf "$CLAUDE_HOME/skills/odoo-code-review/scripts/$script" "$HOME/.local/bin/$script"
 done

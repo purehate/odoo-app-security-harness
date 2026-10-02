@@ -47,6 +47,8 @@ def test_wheel_includes_complete_skill_assets_for_wrappers_and_templates() -> No
     assert Path("skills/odoo-code-review/scripts/odoo-review-run").exists()
     assert Path("skills/odoo-code-review/templates/github-action.yml").exists()
     assert Path("skills/odoo-code-review/templates/deep-scan-github-action.yml").exists()
+    assert Path("skills/odoo-code-review/templates/daily-remediation-github-action.yml").exists()
+    assert Path("skills/odoo-code-review/references/daily-config.example.toml").exists()
     assert Path("skills/odoo-code-review/references/workflow.md").exists()
 
 
@@ -72,6 +74,8 @@ def test_built_wheel_contains_skill_assets_and_executable_wrappers(tmp_path: Pat
         assert "skills/odoo-code-review/SKILL.md" in names
         assert "skills/odoo-code-review/templates/github-action.yml" in names
         assert "skills/odoo-code-review/templates/deep-scan-github-action.yml" in names
+        assert "skills/odoo-code-review/templates/daily-remediation-github-action.yml" in names
+        assert "skills/odoo-code-review/references/daily-config.example.toml" in names
         assert "skills/odoo-code-review/references/workflow.md" in names
         assert "skills/odoo-code-review/references/cwe-map.json" in names
         assert wheel_commands == packaged_commands

@@ -1,0 +1,50 @@
+name: Daily Odoo security remediation
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: daily-odoo-security-remediation
+  cancel-in-progress: false
+
+jobs:
+  remediate:
+    # Use an isolated self-hosted runner with Codex, ORCA, the harness, browser
+    # screenshot dependencies, and repository credentials already configured.
+    runs-on: odoo-security
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gated daily workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORCA_AI_PROVIDER: ${{ vars.ORCA_AI_PROVIDER }}
+          ORCA_AI_ENDPOINT: ${{ vars.ORCA_AI_ENDPOINT }}
+          ORCA_AI_MODEL: ${{ vars.ORCA_AI_MODEL }}
+          ORCA_AI_API_KEY: ${{ secrets.ORCA_AI_API_KEY }}
+        run: |
+          odoo-security-daily \
+            --config .odoo-security-daily.toml \
+            --mode deliver \
+            --out "$RUNNER_TEMP/odoo-security-${GITHUB_RUN_ID}"
+
+      - name: Upload evidence packet
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: odoo-security-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/odoo-security-${{ github.run_id }}
+            !${{ runner.temp }}/odoo-security-${{ github.run_id }}/worktree/**
+          if-no-files-found: error
+          retention-days: 90
