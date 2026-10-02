@@ -347,6 +347,18 @@ def test_installer_commands_are_packaged_console_scripts() -> None:
     assert installer_commands == packaged_commands
 
 
+def test_installer_exposes_portable_agent_entry_points() -> None:
+    """Claude, Codex, and Pi should share one skill with thin host adapters."""
+    install_sh = Path("install.sh").read_text(encoding="utf-8")
+    prompt = Path("prompts/odoo-code-review.md").read_text(encoding="utf-8")
+
+    assert '"$ODOO_AGENTS_DIR/skills/odoo-code-review"' in install_sh
+    assert '"$CLAUDE_HOME/commands/odoo-code-review.md"' in install_sh
+    assert '"$ODOO_PI_AGENT_DIR/prompts/odoo-code-review.md"' in install_sh
+    assert "$@" in prompt
+    assert "$odoo-code-review" in install_sh
+
+
 def test_installer_symlinks_all_advertised_commands() -> None:
     """The install loop should include every command printed in the installer summary."""
     install_sh = Path("install.sh").read_text(encoding="utf-8")

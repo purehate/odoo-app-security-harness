@@ -2,7 +2,7 @@
 
 > Built for the salty BackTrack-era Linux operator who still checks the evidence before believing the dashboard.
 
-Claude Code harness for repeatable Odoo source-code security reviews.
+Portable AI-agent harness for repeatable Odoo source-code security reviews.
 
 Provides one comprehensive command, `/odoo-code-review`. Claude Code remains the lead reviewer and final arbiter. Local Ollama/Qwen provides private hint-only triage. Codex/OpenAI handles token-heavy hunter passes, discourse drafts, chaining drafts, evidence packs, and report drafts.
 
@@ -203,8 +203,10 @@ cd odoo-app-security-harness
 
 The installer copies:
 
-- `commands/odoo-code-review.md` -> `~/.claude/commands/odoo-code-review.md`
-- `skills/odoo-code-review/` -> `~/.claude/skills/odoo-code-review/`
+- `skills/odoo-code-review/` -> `~/.agents/skills/odoo-code-review/` for shared Codex/Pi discovery
+- `commands/odoo-code-review.md` -> `~/.claude/commands/odoo-code-review.md` for Claude's `/odoo-code-review`
+- `skills/odoo-code-review/` -> `~/.claude/skills/odoo-code-review/` for Claude skill discovery
+- `prompts/odoo-code-review.md` -> `~/.pi/agent/prompts/odoo-code-review.md` for Pi's `/odoo-code-review`
 - convenience symlinks in `~/.local/bin/`:
   - `odoo-review-run` — main pipeline runner
   - `odoo-review-rerun` — directive dispatcher (Qwen/Codex re-task)

@@ -367,6 +367,12 @@ def parse_args() -> argparse.Namespace:
         help="Spawn one stock Claude Code control lane reviewing the same repo with no harness; stock-only findings become current-run validation leads and future hunter lessons.",
     )
     parser.add_argument(
+        "--no-baseline-stock-cc",
+        action="store_false",
+        dest="baseline_stock_cc",
+        help="Disable the stock Claude Code control lane, including when -ks is selected (for Codex/Pi hosts without Claude Code).",
+    )
+    parser.add_argument(
         "-ks",
         "--ks",
         "--kitchensink",
@@ -388,7 +394,8 @@ def parse_args() -> argparse.Namespace:
         args.joern = True
         args.runtime = True
         args.learn = True
-        args.baseline_stock_cc = True
+        if not cli_flag_present("--no-baseline-stock-cc"):
+            args.baseline_stock_cc = True
         # default-on lanes stay on unless the caller explicitly disabled them.
         if not cli_flag_present("--no-discourse"):
             args.no_discourse = False

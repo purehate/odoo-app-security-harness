@@ -1,6 +1,6 @@
 ---
 name: odoo-code-review
-description: Source-code security review for Odoo using one Claude Code command with three lanes: Claude Code as lead reviewer/orchestrator, local Ollama/Qwen for private advisory triage, and Codex/OpenAI as the heavy worker for Odoo specialist hunters, discourse, chaining drafts, variant analysis, PoC/artifact work, and report drafting. Structured 0–8 phase audit of any Odoo addon repo. Phase 0 inventories modules + manifests. Phase 1 maps Odoo attack surface (routes/ACL/cron/mail). Phase 1.5 runs local Ollama/Qwen advisory triage for private first-pass module summaries and scanner-hint review. Phases 2–4.5 run Semgrep+custom Odoo rules, Bandit, ruff, pylint-odoo, OCA pre-commit, CodeQL Python, Joern (optional), Pysa, pip-audit, osv-scanner, and detect-secrets. Phase 5 delegates Odoo specialist hunter passes to Codex by default. Phase 5.5 delegates discourse draft to Codex, with Claude resolving disputes. Phase 6 uses Codex for chaining draft, Claude finalizes. Phase 7 uses Codex evidence packs/variant drafts, Claude performs final 6-gate verdicts. Phase 7.5 runtime testing and Phase 7.6 attack graphs are Codex/script heavy. Phase 8 uses Codex report draft, Claude final edits. Use when the user asks for a security review, code review, "audit this Odoo repo", appsec review, vuln hunt, or pentest of Odoo source. Outputs evidence-backed findings only — no scanner noise, no theoretical concerns, no style nits.
+description: Portable Odoo source-code security review for Claude Code, Codex, and Pi. Runs a structured phase 0–8 audit with deterministic scanners, optional local Qwen triage, specialist hunter passes, cross-agent correlation, runtime evidence, and strict validation. Use for Odoo appsec reviews, source audits, vulnerability hunts, or pentests of addon code. Produces evidence-backed findings, remediation guidance, baselines, and reviewed learning artifacts rather than raw scanner noise.
 allowed-tools:
   - Read
   - Grep
@@ -18,6 +18,12 @@ allowed-tools:
 # Code Review — Odoo
 
 > Scanner output is a lead, not a verdict. Read the damn code.
+
+## Host portability
+
+This is a portable Agent Skill. In Claude Code, invoke `/odoo-code-review`; in Codex, invoke `$odoo-code-review`; in Pi, invoke `/odoo-code-review` or `/skill:odoo-code-review`.
+
+The older wording below uses “Lead Claude” for the orchestration role. On Codex or Pi, interpret that as the current lead agent and map `Agent`/`TaskCreate` operations to the host's native delegation and progress tools. The stock-Claude control lane is the exception: it genuinely requires Claude Code. When that lane is unavailable, use `-ks --no-baseline-stock-cc` and record the missing diversity lane in `tooling.md`; never pretend it ran.
 
 Structured, technique-organized AI security review of an Odoo source-code repository. Tuned for the two trust boundaries that matter in Odoo: **public-vs-authenticated** (`auth='public'`) and **user-vs-root** (`sudo()`).
 
@@ -123,7 +129,7 @@ Run them in order. Don't skip Phase 0/1 — without the module inventory and att
 Start every `/odoo-code-review` run by invoking the bundled runner:
 
 ```bash
-~/.claude/skills/odoo-code-review/scripts/odoo-review-run <target> <flags>
+odoo-review-run <target> <flags>
 ```
 
 The runner handles preflight, output directory creation, manifest inventory, attack-surface indexing, scanner execution, Ollama/Qwen advisory output, and Codex hunter launch/prompt prep. Claude Code then continues with discourse, chaining, Phase 7 validation, severity decisions, and final report editing.

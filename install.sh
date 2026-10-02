@@ -10,6 +10,8 @@ NC='\033[0m' # No Color
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
+ODOO_AGENTS_DIR="${AGENTS_HOME:-$HOME/.agents}"
+ODOO_PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 
 # Track missing tools
 MISSING_TOOLS=()
@@ -105,12 +107,17 @@ else
 fi
 echo ""
 
-mkdir -p "$CLAUDE_HOME/commands" "$CLAUDE_HOME/skills" "$HOME/.local/bin"
+mkdir -p \
+  "$CLAUDE_HOME/commands" \
+  "$CLAUDE_HOME/skills" \
+  "$ODOO_AGENTS_DIR/skills" \
+  "$ODOO_PI_AGENT_DIR/prompts" \
+  "$HOME/.local/bin"
 
 install_file() {
   local src="$1"
   local dst="$2"
-  if [[ -e "$dst" ]]; then
+  if [[ -e "$dst" || -L "$dst" ]]; then
     cp -R "$dst" "$dst.bak.$(date +%Y%m%d%H%M%S)"
   fi
   cp "$src" "$dst"
@@ -119,7 +126,7 @@ install_file() {
 install_dir() {
   local src="$1"
   local dst="$2"
-  if [[ -e "$dst" ]]; then
+  if [[ -e "$dst" || -L "$dst" ]]; then
     cp -R "$dst" "$dst.bak.$(date +%Y%m%d%H%M%S)"
     rm -rf "$dst"
   fi
@@ -127,17 +134,21 @@ install_dir() {
 }
 
 install_file "$ROOT/commands/odoo-code-review.md" "$CLAUDE_HOME/commands/odoo-code-review.md"
+install_file "$ROOT/prompts/odoo-code-review.md" "$ODOO_PI_AGENT_DIR/prompts/odoo-code-review.md"
+install_dir "$ROOT/skills/odoo-code-review" "$ODOO_AGENTS_DIR/skills/odoo-code-review"
 install_dir "$ROOT/skills/odoo-code-review" "$CLAUDE_HOME/skills/odoo-code-review"
 
 for script in odoo-review-run odoo-review-rerun odoo-review-export odoo-review-diff odoo-review-finalize odoo-review-learn odoo-review-stock-diff odoo-review-runtime odoo-review-assessment odoo-review-coverage odoo-review-validate-config odoo-deep-scan odoo-security-daily; do
-  chmod +x "$CLAUDE_HOME/skills/odoo-code-review/scripts/$script"
-  ln -sf "$CLAUDE_HOME/skills/odoo-code-review/scripts/$script" "$HOME/.local/bin/$script"
+  chmod +x "$ODOO_AGENTS_DIR/skills/odoo-code-review/scripts/$script"
+  ln -sf "$ODOO_AGENTS_DIR/skills/odoo-code-review/scripts/$script" "$HOME/.local/bin/$script"
 done
 
 echo ""
 echo -e "${GREEN}✓ Installation complete!${NC}"
 echo ""
-echo "Installed into: $CLAUDE_HOME"
+echo "Shared Agent Skill: $ODOO_AGENTS_DIR/skills/odoo-code-review"
+echo "Claude command:     $CLAUDE_HOME/commands/odoo-code-review.md"
+echo "Pi prompt:          $ODOO_PI_AGENT_DIR/prompts/odoo-code-review.md"
 echo ""
 echo "Available commands:"
 echo "  odoo-review-run      - Main pipeline runner"
@@ -153,7 +164,10 @@ echo "  odoo-review-coverage - Phase 5.6 coverage diff"
 echo "  odoo-review-validate-config - Config schema validator"
 echo "  odoo-deep-scan       - Standalone static deep scanner"
 echo ""
-echo "Claude Code command: /odoo-code-review"
+echo "Agent entry points:"
+echo "  Claude Code: /odoo-code-review"
+echo "  Pi:          /odoo-code-review"
+echo '  Codex:       $odoo-code-review'
 echo ""
 
 # Verify symlinks work

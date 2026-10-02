@@ -6,6 +6,8 @@ description: Odoo source-code security review — kicks off the odoo-code-review
 
 > Point it at the code, let the tools argue, and keep only what survives contact with the source.
 
+Invocation arguments: `$ARGUMENTS`
+
 Run a technique-organized Odoo security review of source code (Phases 0 → 1 → 2 → 2.5 → 2.6 → 3 → 3.5 → 4 → 4.5 → 5 → 5.5 → 6 → 7 → 7.5 → 7.6 → 7.7 → 7.8 → 8).
 
 ## Usage
@@ -29,6 +31,7 @@ Run a technique-organized Odoo security review of source code (Phases 0 → 1 �
 /odoo-code-review <path> --runtime --zap-target <url>  # also Phase 7.5 sub-pass B (ZAP baseline)
 /odoo-code-review <path> --runtime --odoomap-target <url>  # also Phase 7.5 OdooMap runtime leads
 /odoo-code-review <path> --no-codex                # skip Codex heavy-worker lane and Phase 7.7
+/odoo-code-review <path> -ks --no-baseline-stock-cc # max-quality Codex/Pi run when Claude Code is unavailable
 /odoo-code-review <path> --requirements <file>     # Phase 7.8 — judge-verified claims from spec/threat-model/SOC2 doc
 /odoo-code-review <path> --no-html                 # skip findings.html generation in Phase 8
 /odoo-code-review <path> --json                    # emit findings.json sidecar in Phase 8
@@ -76,7 +79,7 @@ Invokes the `odoo-code-review` skill which runs the full Odoo pipeline:
 Before manual review work, run the local harness runner to create the repeatable artifact base:
 
 ```bash
-~/.claude/skills/odoo-code-review/scripts/odoo-review-run <target> <flags>
+odoo-review-run <target> <flags>
 ```
 
 Use `--codex-mode prepare` when you want Claude to inspect/launch Codex prompts manually. Use the default `--codex-mode run` for the full one-command three-lane workflow.
@@ -97,7 +100,7 @@ If the lead session supports `/goals`, use `<OUT>/goals.md` after the runner com
 11. **Phase 5 — Codex Odoo Specialist Hunting.** Claude prepares compact packets; Codex runs the 9 expensive hunter passes: Access Control, Controller/Route, ORM/SQL/Domain, QWeb/XSS, Business Logic, Secrets/Config, External Integration, Data Exposure, Dependency. Hunter packets MUST include `<OUT>/inventory/py-files-by-module.json` and (if present) `<OUT>/inventory/breadth/leads.md`. Each hunter MUST emit a `Reviewed:` block at the top of its output listing the modules and concrete file:line ranges it inspected.
     11a. **Phase 5.1 — Ensemble Recall (only with `--ensemble`).** Runs additional focused recall passes under `<OUT>/ensemble/` for public-sudo, portal IDOR, CSRF/method weirdness, multi-company, QWeb/HTML, raw SQL/domain, attachment/report, and external/proxy context. These are noisy leads, not findings; Phase 7 validation remains mandatory.
 12. **Phase 5.5 — Discourse.** Codex drafts AGREE / CHALLENGE / CONNECT / SURFACE discourse. Claude resolves disputed CHALLENGE items.
-    12a. **Phase 5.6 — Coverage Diff (eve-cc gap closure).** Run `~/.claude/skills/odoo-code-review/scripts/odoo-review-coverage <OUT>`. Diffs hunter `Reviewed:` blocks against `inventory/py-files-by-module.json`. Re-dispatch any hunter listed in `<OUT>/coverage/gaps.md` with a tight per-module scope before proceeding.
+    12a. **Phase 5.6 — Coverage Diff (eve-cc gap closure).** Run `odoo-review-coverage <OUT>`. Diffs hunter `Reviewed:` blocks against `inventory/py-files-by-module.json`. Re-dispatch any hunter listed in `<OUT>/coverage/gaps.md` with a tight per-module scope before proceeding.
 13. **Phase 6 — Cross-Agent Correlation.** Codex drafts chained paths; Claude finalizes impact and severity.
 14. **Phase 7 — Validation.** Codex prepares evidence packs and variant-analysis drafts. Claude performs final 6-gate fp-check and triage: ACCEPT / DOWNGRADE / REJECT / NEEDS-MANUAL.
 15. **Phase 7.5 — Runtime Testing (only with `--runtime`).** The runner generates `runtime/probes/probes.json`, `runtime/probes/safe-pocs.txt`, and per-route probe scripts from the Phase 1 route map. Use `odoo-review-runtime <OUT> --run-generated-probes` with explicit Odoo launch details (`--odoo-bin`, `--config`/`--database`, `--addons-path`) to boot Odoo, wait for `/web/login`, replay auto-safe public `GET` probes plus any `--poc` scripts with `ODOO_BASE_URL`, and capture logs/status under `<OUT>/runtime/`. Authenticated, parameterized, JSON, mixed-method, or method-unbounded routes are manual templates unless `ODOO_REVIEW_ALLOW_UNSAFE_PROBES=1` is set. Run ZAP or OdooMap when requested; treat their output as leads until source/runtime evidence validates the finding. Claude reviews evidence.
@@ -178,7 +181,7 @@ Written to `<repo>/.audit-YYYYMMDD-HHMM/` (or `--out <dir>`):
 
 ## Skill Behavior
 
-The odoo-code-review skill handles dispatch, tracking via TaskCreate, and final report assembly. See `~/.claude/skills/odoo-code-review/SKILL.md` for the full contract and `references/` for hunter prompts (`agent-prompts.md`), triage rubric (`triage.md`), workflow detail (`workflow.md`), and Odoo language patterns (`lang-odoo.md`, `lang-qweb.md`).
+The odoo-code-review skill handles dispatch, tracking, and final report assembly. Read the installed `odoo-code-review/SKILL.md` for the full contract and its `references/` directory for hunter prompts (`agent-prompts.md`), triage rubric (`triage.md`), workflow detail (`workflow.md`), and Odoo language patterns (`lang-odoo.md`, `lang-qweb.md`).
 
 ## Philosophy
 
@@ -191,7 +194,7 @@ For Odoo, Semgrep + custom Odoo rules + CodeQL/Pysa + agent validation beats add
 If `$ARGUMENTS` contains `--help` or `-h` (anywhere in the string), do NOT invoke the skill or start a review. Instead run:
 
 ```bash
-~/.claude/skills/odoo-code-review/scripts/odoo-review-run --help
+odoo-review-run --help
 ```
 
 Print the runner's full argparse output verbatim to the user and stop. Do not proceed to Phase 0. The user wants a flag reference, not a review.
