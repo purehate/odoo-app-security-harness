@@ -177,11 +177,7 @@ def run_process(
     if env:
         merged_env.update(env)
     with contextlib.ExitStack() as stack:
-        stdin_handle = (
-            stack.enter_context(stdin_path.open("r", encoding="utf-8"))
-            if stdin_path
-            else None
-        )
+        stdin_handle = stack.enter_context(stdin_path.open("r", encoding="utf-8")) if stdin_path else None
         log_handle = stack.enter_context(log_path.open("w", encoding="utf-8"))
         result = subprocess.run(
             list(command),
@@ -195,9 +191,7 @@ def run_process(
             env=merged_env,
         )
     if result.returncode not in set(acceptable_codes):
-        raise DailyWorkflowError(
-            f"command failed with exit {result.returncode}; see {log_path}"
-        )
+        raise DailyWorkflowError(f"command failed with exit {result.returncode}; see {log_path}")
     return result
 
 
@@ -217,11 +211,7 @@ def git_output(repo: Path, *args: str) -> str:
 
 def resolve_integration_branch(config: DailyConfig) -> str:
     """Resolve an existing remote non-production branch without guessing a new one."""
-    candidates = (
-        (config.integration_branch,)
-        if config.integration_branch
-        else INTEGRATION_BRANCH_CANDIDATES
-    )
+    candidates = (config.integration_branch,) if config.integration_branch else INTEGRATION_BRANCH_CANDIDATES
     for branch in candidates:
         validate_branch(branch)
         ref = f"refs/remotes/{config.remote}/{branch}"
@@ -232,9 +222,7 @@ def resolve_integration_branch(config: DailyConfig) -> str:
         )
         if result.returncode == 0:
             return branch
-    raise DailyWorkflowError(
-        "no existing integration branch found; configure workflow.integration_branch"
-    )
+    raise DailyWorkflowError("no existing integration branch found; configure workflow.integration_branch")
 
 
 def validate_branch(branch: str) -> None:
@@ -324,9 +312,7 @@ def _finding_key(finding: Mapping[str, Any]) -> str:
     raise DailyWorkflowError("every finding must contain a fingerprint or id")
 
 
-def _finding_summaries(
-    findings: Mapping[str, Mapping[str, Any]], keys: set[str]
-) -> list[dict[str, str]]:
+def _finding_summaries(findings: Mapping[str, Mapping[str, Any]], keys: set[str]) -> list[dict[str, str]]:
     return [
         {
             "key": key,

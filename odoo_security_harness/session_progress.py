@@ -5,11 +5,12 @@ Inspired by Anthropic's long-running agent harness pattern:
 - A progress file tracks completion state across context windows
 - Each session reads progress, picks the next pending item, and updates state
 """
+
 from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -126,7 +127,7 @@ class SessionProgress:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SessionProgress":
+    def from_dict(cls, data: dict[str, Any]) -> SessionProgress:
         """Deserialize from a plain dict."""
         return cls(
             session_id=data.get("session_id", ""),
@@ -306,9 +307,7 @@ def add_hunter_pass(
             existing.target_files = target_files
             existing.status = status
             return
-    progress.hunter_passes.append(
-        HunterPassStatus(name=name, target_files=target_files, status=status)
-    )
+    progress.hunter_passes.append(HunterPassStatus(name=name, target_files=target_files, status=status))
 
 
 def add_directive(progress: SessionProgress, directive_path: str) -> None:

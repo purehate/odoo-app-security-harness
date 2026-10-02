@@ -4,9 +4,9 @@ Inspired by the DeepSec pattern: maintain an append-only per-file candidate
 record. Files with zero scanner findings and no sharp-edge index entries are
 skipped for hunter passes, saving tokens on low-signal surfaces.
 """
+
 from __future__ import annotations
 
-import ast
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -209,9 +209,7 @@ def build_candidate_ledger(
         findings_for_file = file_findings.get(resolved, [])
         severities = [str(f.get("severity", "")).lower() for f in findings_for_file if f.get("severity")]
         max_rank = max((_severity_rank(s) for s in severities), default=0)
-        max_severity = (
-            max(severities, key=lambda s: _severity_rank(s)) if severities else ""
-        )
+        max_severity = max(severities, key=lambda s: _severity_rank(s)) if severities else ""
 
         # Map max severity rank back to noise tier
         noise_tier = "silent"

@@ -1,15 +1,13 @@
 """Tests for session progress tracking."""
+
 from __future__ import annotations
 
 from pathlib import Path
-
-import pytest
 
 from odoo_security_harness.session_progress import (
     HunterPassStatus,
     PhaseRecord,
     ScannerStatus,
-    SessionProgress,
     add_directive,
     add_hunter_pass,
     add_note,
@@ -25,10 +23,10 @@ from odoo_security_harness.session_progress import (
     start_phase,
 )
 
-
 # ---------------------------------------------------------------------------
 # Serialization round-trip
 # ---------------------------------------------------------------------------
+
 
 def test_session_progress_round_trip(tmp_path: Path) -> None:
     """Saving and loading should preserve all fields."""
@@ -37,12 +35,8 @@ def test_session_progress_round_trip(tmp_path: Path) -> None:
         PhaseRecord(phase="inventory", status="completed", findings_count=5),
         PhaseRecord(phase="scanners", status="running"),
     ]
-    progress.scanner_status["raw_sql"] = ScannerStatus(
-        name="raw_sql", status="completed", findings_count=3
-    )
-    progress.hunter_passes = [
-        HunterPassStatus(name="sudo_patterns", target_files=["models/a.py"], status="pending")
-    ]
+    progress.scanner_status["raw_sql"] = ScannerStatus(name="raw_sql", status="completed", findings_count=3)
+    progress.hunter_passes = [HunterPassStatus(name="sudo_patterns", target_files=["models/a.py"], status="pending")]
     progress.directives = ["directives/D-0001-test.md"]
     progress.notes = ["Started scan"]
     progress.findings_count = 8
@@ -85,6 +79,7 @@ def test_load_corrupt_file_returns_none(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Phase lifecycle
 # ---------------------------------------------------------------------------
+
 
 def test_start_phase_creates_record() -> None:
     progress = create_session_progress("/repo", "/out")
@@ -151,6 +146,7 @@ def test_is_review_complete() -> None:
 # Scanner and hunter pass tracking
 # ---------------------------------------------------------------------------
 
+
 def test_add_scanner_status() -> None:
     progress = create_session_progress("/repo", "/out")
     add_scanner_status(progress, "raw_sql", "completed", findings_count=5)
@@ -193,6 +189,7 @@ def test_add_note() -> None:
 # ---------------------------------------------------------------------------
 # Create / save / load integration
 # ---------------------------------------------------------------------------
+
 
 def test_create_session_progress_has_uuid_and_timestamps() -> None:
     progress = create_session_progress("/repo", "/out")

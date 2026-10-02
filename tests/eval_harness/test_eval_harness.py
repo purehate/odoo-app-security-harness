@@ -10,6 +10,7 @@ Run with::
 
 Mark:: eval — excluded from default `make test` runs.
 """
+
 from __future__ import annotations
 
 import json
@@ -42,6 +43,7 @@ COMMON_ALLOWED_RULES = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _run_scan(module_dir: Path) -> list[dict]:
     """Run odoo-deep-scan against a single module and return findings."""
     output = module_dir / ".eval_findings"
@@ -57,9 +59,7 @@ def _run_scan(module_dir: Path) -> list[dict]:
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, (
-        f"Scan crashed for {module_dir.name}: {result.stderr[:500]}"
-    )
+    assert result.returncode == 0, f"Scan crashed for {module_dir.name}: {result.stderr[:500]}"
     findings_file = output / "deep-scan-findings.json"
     with findings_file.open(encoding="utf-8") as fh:
         data = json.load(fh)
@@ -144,6 +144,7 @@ TASKS: dict[str, dict] = {
 # Capability evals: can we find the expected bugs?
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.eval
 @pytest.mark.parametrize("module_name,spec", TASKS.items())
 def test_capability_finds_expected_rules(module_name: str, spec: dict) -> None:
@@ -161,9 +162,7 @@ def test_capability_line_accuracy(module_name: str, spec: dict) -> None:
     module_dir = FIXTURES_DIR / module_name
     findings = _run_scan(module_dir)
     for rule_id, expected_line in spec.get("line_hints", {}).items():
-        _assert_grader(
-            grader_line_accuracy(rule_id, expected_line, findings, tolerance=3)
-        )
+        _assert_grader(grader_line_accuracy(rule_id, expected_line, findings, tolerance=3))
 
 
 @pytest.mark.eval
@@ -181,6 +180,7 @@ def test_capability_minimum_severity(module_name: str, spec: dict) -> None:
 # Regression evals: clean modules should not produce false positives
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.eval
 @pytest.mark.skip(reason="Clean-module fixtures not yet created")
 def test_regression_no_false_positives_on_known_good_code() -> None:
@@ -189,16 +189,13 @@ def test_regression_no_false_positives_on_known_good_code() -> None:
     # For now this test is skipped until clean fixtures are available.
     module_dir = FIXTURES_DIR / "clean_module"
     findings = _run_scan(module_dir)
-    _assert_grader(
-        grader_no_false_positives_on_clean_module(
-            findings, allowed_rules=COMMON_ALLOWED_RULES
-        )
-    )
+    _assert_grader(grader_no_false_positives_on_clean_module(findings, allowed_rules=COMMON_ALLOWED_RULES))
 
 
 # ---------------------------------------------------------------------------
 # Meta tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.eval
 def test_all_fixture_modules_exist() -> None:

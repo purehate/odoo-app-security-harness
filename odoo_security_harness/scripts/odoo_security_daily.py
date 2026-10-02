@@ -172,9 +172,7 @@ def run_screenshots(run: DailyRun, phase: str) -> list[Path]:
         if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
     )
     if run.config.require_screenshots and not images:
-        raise DailyWorkflowError(
-            f"screenshot evidence is required but none was created for phase {phase!r}"
-        )
+        raise DailyWorkflowError(f"screenshot evidence is required but none was created for phase {phase!r}")
     return images
 
 

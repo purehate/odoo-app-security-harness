@@ -111,10 +111,12 @@ exclude = '''
   | dist
 )/
 '''
+extend-exclude = 'eval_fixtures'
 
 [tool.ruff]
 line-length = 120
 target-version = "py39"
+extend-exclude = ["eval_fixtures"]
 
 [tool.ruff.lint]
 select = [

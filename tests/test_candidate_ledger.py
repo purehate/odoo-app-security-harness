@@ -1,9 +1,8 @@
 """Tests for candidate ledger builder and hunter lane filter."""
+
 from __future__ import annotations
 
 from pathlib import Path
-
-import pytest
 
 from odoo_security_harness.candidate_ledger import (
     CandidateRecord,
@@ -13,10 +12,10 @@ from odoo_security_harness.candidate_ledger import (
     ledger_summary,
 )
 
-
 # ---------------------------------------------------------------------------
 # _is_sharp_edge_file
 # ---------------------------------------------------------------------------
+
 
 def test_sharp_edge_controller_file(tmp_path: Path) -> None:
     ctrl = tmp_path / "controllers" / "main.py"
@@ -64,6 +63,7 @@ def test_not_sharp_edge_utils_file(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # build_candidate_ledger
 # ---------------------------------------------------------------------------
+
 
 def test_ledger_skips_file_with_zero_findings_and_no_sharp_edge(tmp_path: Path) -> None:
     utils = tmp_path / "utils.py"
@@ -168,6 +168,7 @@ def test_ledger_multiple_files_mixed(tmp_path: Path) -> None:
 # filter_files_for_hunters
 # ---------------------------------------------------------------------------
 
+
 def test_filter_skips_plain_files_keeps_sharp_and_findings(tmp_path: Path) -> None:
     ledger = build_candidate_ledger(tmp_path, [])
     # No files -> empty result
@@ -207,6 +208,7 @@ def test_filter_keeps_sharp_edge_even_below_tier(tmp_path: Path) -> None:
 # ledger_summary
 # ---------------------------------------------------------------------------
 
+
 def test_summary_counts_are_accurate(tmp_path: Path) -> None:
     (tmp_path / "plain.py").write_text("pass\n", encoding="utf-8")
     ctrl = tmp_path / "controllers" / "main.py"
@@ -224,7 +226,7 @@ def test_summary_counts_are_accurate(tmp_path: Path) -> None:
 
     assert summary["total_files"] == 3
     assert summary["skipped_for_hunters"] == 1  # plain.py
-    assert summary["sharp_edge_files"] == 2     # controllers + models dirs
+    assert summary["sharp_edge_files"] == 2  # controllers + models dirs
     assert summary["files_with_findings"] == 1
     assert summary["hunter_eligible_files"] == 2
     assert "entries" in summary
@@ -234,6 +236,7 @@ def test_summary_counts_are_accurate(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # CandidateRecord serialization
 # ---------------------------------------------------------------------------
+
 
 def test_record_to_dict() -> None:
     record = CandidateRecord(

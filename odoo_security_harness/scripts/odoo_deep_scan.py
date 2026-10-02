@@ -113,6 +113,7 @@ from odoo_security_harness import (
     scan_website_forms,
     scan_wizards,
     scan_xml_data,
+    start_phase,
     validation_report,
 )
 from odoo_security_harness.base_scanner import _should_skip
@@ -5941,15 +5942,12 @@ def main() -> int:
     # Session progress tracking for resumable reviews
     git_head = ""
     try:
-        git_head = (
-            subprocess.run(
-                ["git", "-C", str(repo), "rev-parse", "HEAD"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            .stdout.strip()
-        )
+        git_head = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
     session_progress = create_session_progress(repo, out, git_head=git_head)
@@ -5960,7 +5958,6 @@ def main() -> int:
         return check_only_status
 
     all_findings: list[dict] = []
-    from odoo_security_harness.session_progress import start_phase, complete_phase
     start_phase(session_progress, "scanners")
 
     def _run_tracked_scanner(name: str, scanner_fn, repo_path: Path):
@@ -9572,11 +9569,7 @@ def _deep_scan_called_callables() -> set[str]:
         tree = ast.parse(Path(__file__).read_text(encoding="utf-8", errors="replace"))
     except Exception:
         return set()
-    called = {
-        node.func.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-    }
+    called = {node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
     # Scanners wrapped via _run_tracked_scanner pass the function name as a
     # string literal in the first positional argument.
     tracked = set()

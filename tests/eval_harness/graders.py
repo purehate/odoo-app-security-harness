@@ -3,6 +3,7 @@
 Grader functions take the scanner findings and expected ground truth,
 then return a pass/fail result with optional diagnostic details.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -82,9 +83,7 @@ def grader_no_false_positives_on_clean_module(
     """
     allowed = allowed_rules or set()
     unexpected = [
-        f for f in findings
-        if f.get("rule_id") not in allowed
-        and f.get("severity", "").lower() not in ("info",)
+        f for f in findings if f.get("rule_id") not in allowed and f.get("severity", "").lower() not in ("info",)
     ]
     if unexpected:
         rules = [f.get("rule_id") for f in unexpected]
@@ -111,8 +110,7 @@ def grader_minimum_severity(
                 return GraderResult(True)
             return GraderResult(
                 False,
-                f"Rule '{expected_rule_id}' severity '{actual}' "
-                f"below minimum '{minimum_severity}'",
+                f"Rule '{expected_rule_id}' severity '{actual}' " f"below minimum '{minimum_severity}'",
             )
     return GraderResult(
         False,
