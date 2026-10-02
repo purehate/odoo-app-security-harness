@@ -69,8 +69,8 @@ What the model can actually do in the environment:
 | Shell command | `bash` (Claude Code native) | Scanner execution, test runs, git ops |
 | AST traversal | `ast` module (Python) | Deep pattern analysis in `analyzer.py` |
 | Scanner invocation | `odoo_deep_scan.py` CLI | 75 deterministic scanners |
-| LLM call (triage) | Ollama HTTP API | Qwen offline triage |
-| LLM call (hunters) | OpenAI API / Codex CLI | Token-heavy passes |
+| LLM call (triage) | `ollama run <model>` subprocess | Local Qwen hint-only passes (module notes, scanner triage, reject candidates); no HTTP API |
+| LLM call (hunters) | `codex exec` subprocess | Read-only hunter and ensemble passes; `workspace-write` only for daily remediation |
 | Diff generation | `git diff` | PR review mode (`--pr <n>`) |
 | Report export | JSON, Markdown, SARIF | `--format` flag |
 | PoC generation | `generate_pocs()` | Evidence packs for critical findings |
@@ -202,11 +202,13 @@ A review session is considered successful when:
 | Risk | Mitigation | Status |
 |------|-----------|--------|
 | Stale `.audit/` artifacts | Doc-gardening scanner (planned) | 🔴 Open |
-| Session state loss on large reviews | Session-progress JSON (planned) | 🔴 Open |
-| No end-to-end eval harness | `tests/eval_harness/` (planned) | 🔴 Open |
-| Token burn on low-signal files | Candidate ledger (planned) | 🔴 Open |
+| Session state loss on large reviews | Session-progress JSON (`session_progress.py`) | 🟢 Mitigated |
+| No end-to-end eval harness | `tests/eval_harness/` | 🟢 Mitigated |
+| Token burn on low-signal files | Candidate ledger (`candidate_ledger.py`) | 🟢 Mitigated |
 | Harness not self-scanned for AI risks | Lurkr-inspired self-scan (planned) | 🔴 Open |
 | No trajectory grading for agent runs | Trace logging + grading (planned) | 🔴 Open |
+| Auto-approving writing agent in daily remediation | `codex exec --sandbox workspace-write --approve-for-me` runs only in an isolated worktree; protected branches (`main`/`master`) are rejected and delivery requires a human-only promotion PR | 🟡 Bounded |
+| Prompt injection from scanned source into a writing lane | Hunters/ensemble run `-s read-only`; only the daily remediation lane writes, and its worktree diff is verified and gated | 🟡 Bounded |
 | Scanner drift | Taxonomy gate + unit tests | 🟢 Mitigated |
 | False-positive flood | 6-gate fp-check + accepted-risks | 🟢 Mitigated |
 | Python version compatibility | CI matrix 3.9–3.13 | 🟢 Mitigated |

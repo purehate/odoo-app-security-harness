@@ -42,8 +42,14 @@ All notable changes to the Odoo Application Security Harness will be documented 
 - Enhanced error messages across all scripts
 
 ### Fixed
+- **Codex lane output clobbering** — `run_codex` and `run_ensemble` passed the same path to Codex's `-o` flag and the runner's stdout capture, so every hunter/ensemble artifact was overwritten with progress noise instead of the model's final report. Codex stdout now goes to a sibling `.stdout.log` and the report path is preserved.
+- **Local Qwen lane** — the runner now performs the three documented passes (module notes, scanner triage, reject candidates) as real `ollama run` calls instead of writing placeholder files for two of them.
+- **Lint/CI** — `ruff check .` and `black --check .` are green; `eval_fixtures/` (intentionally vulnerable test modules) is excluded from both.
 - Various edge cases in manifest parsing
 - Better handling of missing optional dependencies
+
+### Testing
+- **LLM lane coverage** — `tests/test_llm_lanes.py` drives the Qwen, Codex hunter, ensemble, and daily remediation lanes through fake `ollama`/`codex` shims, asserting command construction and output capture without a live model.
 
 ## [1.0.0] - 2024-01-01
 
