@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -175,6 +176,27 @@ def run_screenshots(run: DailyRun, phase: str) -> list[Path]:
             f"screenshot evidence is required but none was created for phase {phase!r}"
         )
     return images
+
+
+def collect_pre_fix_evidence(run: DailyRun) -> tuple[Path, Path, list[Path]]:
+    """Collect independent pre-fix evidence concurrently."""
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="security-evidence") as pool:
+        external_future = pool.submit(run_external_scan, run, "pre-fix")
+        internal_future = pool.submit(run_internal_scan, run, "pre-fix")
+        screenshots_future = pool.submit(run_screenshots, run, "pre-fix")
+        return (
+            external_future.result(),
+            internal_future.result(),
+            screenshots_future.result(),
+        )
+
+
+def collect_post_integration_evidence(run: DailyRun) -> tuple[Path, list[Path]]:
+    """Collect independent post-deploy outside-in evidence concurrently."""
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="security-evidence") as pool:
+        external_future = pool.submit(run_external_scan, run, "post-integration")
+        screenshots_future = pool.submit(run_screenshots, run, "post-integration")
+        return external_future.result(), screenshots_future.result()
 
 
 def write_agent_contract(run: DailyRun, internal_report: Path, external_report: Path) -> tuple[Path, Path]:
@@ -480,9 +502,7 @@ def execute(run: DailyRun, mode: str) -> dict[str, Any]:
 
     prepare_worktree(run)
     write_plan(run, mode)
-    pre_external = run_external_scan(run, "pre-fix")
-    internal = run_internal_scan(run, "pre-fix")
-    before_images = run_screenshots(run, "pre-fix")
+    pre_external, internal, before_images = collect_pre_fix_evidence(run)
     if mode == "scan":
         write_json(run.output_dir / "manifest.json", _artifact_manifest(run))
         return {"status": "scanned", "output_dir": str(run.output_dir)}
@@ -509,12 +529,11 @@ def execute(run: DailyRun, mode: str) -> dict[str, Any]:
         }
 
     integration_pr = deliver_to_integration(run, body)
-    post_external = run_external_scan(run, "post-integration")
+    post_external, after_images = collect_post_integration_evidence(run)
     write_json(
         run.output_dir / "external" / "finding-delta.json",
         compare_finding_reports(pre_external, post_external),
     )
-    after_images = run_screenshots(run, "post-integration")
     body = write_pr_body(run, agent_result, patched_commit)
     promotion_pr = open_promotion_pr(run, body)
     result = {

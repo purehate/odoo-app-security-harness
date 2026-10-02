@@ -462,7 +462,9 @@ Copy to `.github/workflows/odoo-security.yml` in your addons repo and set `OPENA
 ## Daily combined remediation controller
 
 The daily controller keeps ORCA and this harness as independent evidence engines
-but exposes one operational command. Start by copying
+but exposes one operational command. Independent scans and screenshot capture run
+concurrently to minimize wall-clock time without increasing the external request
+rate. Start by copying
 `skills/odoo-code-review/references/daily-config.example.toml` to
 `.odoo-security-daily.toml` in the Odoo source repository and fill in the QA URL,
 custom paths, verification/build commands, and screenshot command.
