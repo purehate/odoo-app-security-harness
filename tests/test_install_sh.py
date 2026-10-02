@@ -106,6 +106,18 @@ def test_installer_rejects_venv_path_with_whitespace(tmp_path: Path) -> None:
     _assert_nothing_installed(home)
 
 
+def test_installer_prints_plain_text_when_piped(tmp_path: Path) -> None:
+    """Like ORCA's installer, colors are for terminals; piped or logged output must not carry escape codes."""
+    home = tmp_path / "home"
+
+    # A whitespace venv path stops the run after the colored banner, table and error, before any install.
+    result = _run_installer(home, ODOO_HARNESS_VENV=str(tmp_path / "with space" / "venv"))
+
+    assert result.stdout.startswith("Odoo Application Security Harness - Installer\n")
+    assert "ERROR: venv path contains whitespace" in result.stdout
+    assert "\x1b[" not in result.stdout + result.stderr
+
+
 def test_installer_refuses_to_reuse_a_directory_that_is_not_a_venv(tmp_path: Path) -> None:
     """A pre-existing directory without pyvenv.cfg must not be cleared or installed into."""
     home = tmp_path / "home"
