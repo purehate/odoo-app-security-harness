@@ -1,5 +1,7 @@
 # Language Patterns — Python
 
+> “Readable” code can still hand an attacker the keys with excellent indentation.
+
 Generic Python AppSec patterns. For Odoo-specific framework misuse see `lang-odoo.md`. For QWeb templating sinks see `lang-qweb.md`.
 
 ## Web Frameworks

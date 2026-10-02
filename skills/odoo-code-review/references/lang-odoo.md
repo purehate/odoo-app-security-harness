@@ -1,5 +1,7 @@
 # Language Patterns — Odoo
 
+> `sudo()` is not seasoning. Stop sprinkling it on controllers.
+
 Odoo (8.0 → 18 / Enterprise + Community) is Python on top of an opinionated ORM, RPC layer, QWeb templating engine, and access-control model. **Generic Python AppSec misses the real bugs.** The money in Odoo audits is framework misuse: public route + `sudo()`, weak record rules, portal data leakage, unsafe QWeb, attachment/chatter exposure, cron/integration abuse.
 
 Pair this file with:

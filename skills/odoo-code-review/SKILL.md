@@ -17,6 +17,8 @@ allowed-tools:
 
 # Code Review — Odoo
 
+> Scanner output is a lead, not a verdict. Read the damn code.
+
 Structured, technique-organized AI security review of an Odoo source-code repository. Tuned for the two trust boundaries that matter in Odoo: **public-vs-authenticated** (`auth='public'`) and **user-vs-root** (`sudo()`).
 
 ## North Star

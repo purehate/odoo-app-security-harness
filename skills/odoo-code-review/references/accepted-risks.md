@@ -1,5 +1,7 @@
 # Accepted-Risks Suppression
 
+> “Accepted” means owned and documented, not quietly shoved under `/dev/null`.
+
 Mechanism for the `/odoo-code-review` pipeline to **skip findings the team has already triaged and accepted**, so audit cycles don't re-litigate known issues.
 
 This is the only suppression mechanism in the skill. It is opt-in (no file = nothing suppressed) and deterministic (no fuzzy matching).

@@ -1,5 +1,7 @@
 # findings.json Schema
 
+> If a finding cannot survive a schema, it has no business surviving into the report.
+
 Canonical machine-readable sidecar emitted when `--json` is set. Consumed by:
 
 - `odoo-review-export` — converts to SARIF, fingerprints, bounty drafts

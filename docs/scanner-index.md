@@ -1,5 +1,7 @@
 # Odoo Security Harness — Scanner Index
 
+> Know which tool found the corpse before you let it write the autopsy.
+
 Compact reference for agent context windows.
 For full implementation details, see individual scanner modules in `odoo_security_harness/`.
 
@@ -1294,4 +1296,3 @@ Scanner for executable/risky Odoo XML data records.
 - `odoo-xml-cron-external-sync-review`
 - `odoo-xml-cron-http-no-timeout`
 - ... and 22 more
-

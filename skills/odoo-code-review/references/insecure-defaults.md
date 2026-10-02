@@ -1,5 +1,7 @@
 # Insecure Defaults — Config-Level Bug Class
 
+> Defaults are executable opinions, and some of them deserve to be argued with.
+
 Bug class: software ships with a default configuration that is exploitable, and the application doesn't override it. Dataflow tools (CodeQL, Semgrep dataflow) usually miss these because the dangerous behaviour is **absent code** (a hardening flag was never set), not a tainted-flow path.
 
 Hunters #6 (Crypto), #7 (Business Logic), #8 (External Interfaces) own pieces of this. Insecure-defaults is a focused pass that runs as part of Phase 1.5 / Phase 2 to catch what the dataflow agents skip.

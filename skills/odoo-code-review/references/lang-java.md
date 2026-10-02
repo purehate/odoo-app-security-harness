@@ -1,5 +1,7 @@
 # Language Patterns — Java / JVM
 
+> Enterprise-grade does not mean attacker-resistant; sometimes it only means the stack trace has more pages.
+
 Spring, Jakarta EE, Hibernate, Jackson, JAXB, plain Java SE.
 
 ## Spring-Specific Hot Spots

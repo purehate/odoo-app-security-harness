@@ -1,5 +1,7 @@
 # Fix-It List Tracking
 
+> A vulnerability with no owner or state is not tracked; it is merely aging in public.
+
 Mechanism for the `/odoo-code-review` pipeline to **track findings the team has confirmed as real bugs and committed to fixing**, so successive audit runs report regressions and "fixed since last run" instead of re-litigating the same finding.
 
 This is the symmetric companion to accepted-risks suppression:

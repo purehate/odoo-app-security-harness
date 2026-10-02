@@ -1,5 +1,7 @@
 # Language Patterns — Systems
 
+> Memory safety is not optional just because the crash looks impressively low-level.
+
 Go and Rust.
 
 ## Go

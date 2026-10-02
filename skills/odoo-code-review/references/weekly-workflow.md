@@ -1,5 +1,7 @@
 # Weekly Audit Workflow
 
+> Security debt compounds while everyone is busy admiring the backlog.
+
 `odoo-code-review` is a recurring tool. One run produces a stamped
 `.audit-YYYYMMDD-HHMM/` directory; previous runs stay intact. State
 carries between runs through two master files at the repo root.

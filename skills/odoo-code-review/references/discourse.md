@@ -1,5 +1,7 @@
 # Discourse — Phase 2.5 (Cross-Hunter FP Reduction)
 
+> Make the hunters disagree in writing; consensus without evidence is just synchronized guessing.
+
 Runs **after** Phase 2 hunters return and **before** Phase 3 chaining. Hunters review each other's findings, agreeing, challenging, connecting, or surfacing new concerns. Cuts FPs and lifts confidence on consensus findings before they hit the validation gates.
 
 Adapted from spencermarx/open-code-review's discourse pattern. Distinct from Phase 4 fp-check: discourse is hunter-vs-hunter; fp-check is the orchestrator reading the bytes against the 6 gates.

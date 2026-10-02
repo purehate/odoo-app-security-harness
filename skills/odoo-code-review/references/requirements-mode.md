@@ -5,6 +5,8 @@ description: Phase 4.5 — verify a codebase against a requirements/spec/threat-
 
 # Requirements-Aware Mode (Phase 4.5)
 
+> If the requirement exists only in a PDF nobody tests, congratulations: it is fiction.
+
 Triggered by `--requirements <file>` flag. Runs **after** Phase 4 fp-check + variants and **before** the final report. Cross-checks a requirements / spec / threat-model document against the codebase to catch **missed-requirement bugs** — defects where the code never implemented a stated security claim, even though no hunter flagged a positive vulnerability.
 
 Adapted from IronCurtain's constitution → compile → generate-scenarios → verify-with-judge → repair pipeline. Source: https://github.com/provos/ironcurtain.

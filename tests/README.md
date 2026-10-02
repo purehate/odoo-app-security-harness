@@ -1,5 +1,7 @@
 # Odoo Application Security Harness - Test Suite
 
+> If it is not tested, it is a rumor with syntax highlighting.
+
 Comprehensive test suite for the Odoo Application Security Harness.
 
 ## Running Tests

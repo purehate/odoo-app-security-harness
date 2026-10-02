@@ -1,5 +1,7 @@
 # Language Patterns — TypeScript / Node.js
 
+> A type checker cannot save runtime input from your terrible life choices.
+
 Express, NestJS, Next.js, Fastify, and the surrounding Node ecosystem. For Python see `lang-python.md`. For Odoo see `lang-odoo.md`.
 
 ## Express / Fastify

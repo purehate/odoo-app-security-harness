@@ -1,5 +1,7 @@
 # Automated Scans — Phases 2, 2.5, 2.6, 3, 4, 4.5
 
+> Automation finds suspicious smoke; somebody still has to prove there is a fire.
+
 This skill is **Odoo/Python first**. The scan stack reflects that. Generic Python AppSec tools sit at the front; Odoo-specific Semgrep rules carry most of the framework-misuse signal.
 
 Scans run **after** the attack-surface map (Phase 1) and **before** the parallel Odoo hunters (Phase 5). Hunters consume scan output as additional context; they do **not** depend on it.

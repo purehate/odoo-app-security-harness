@@ -1,5 +1,7 @@
 # Odoo Application Security Harness
 
+> Built for the salty BackTrack-era Linux operator who still checks the evidence before believing the dashboard.
+
 Claude Code harness for repeatable Odoo source-code security reviews.
 
 Provides one comprehensive command, `/odoo-code-review`. Claude Code remains the lead reviewer and final arbiter. Local Ollama/Qwen provides private hint-only triage. Codex/OpenAI handles token-heavy hunter passes, discourse drafts, chaining drafts, evidence packs, and report drafts.

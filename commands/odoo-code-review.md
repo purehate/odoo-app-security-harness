@@ -4,6 +4,8 @@ description: Odoo source-code security review — kicks off the odoo-code-review
 
 # /odoo-code-review
 
+> Point it at the code, let the tools argue, and keep only what survives contact with the source.
+
 Run a technique-organized Odoo security review of source code (Phases 0 → 1 → 2 → 2.5 → 2.6 → 3 → 3.5 → 4 → 4.5 → 5 → 5.5 → 6 → 7 → 7.5 → 7.6 → 7.7 → 7.8 → 8).
 
 ## Usage

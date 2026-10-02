@@ -1,5 +1,7 @@
 # Triage — Rubric, Output Format, Stats
 
+> Severity without reachability and evidence is cosplay for spreadsheets.
+
 ## Triage Rubric
 
 For every finding the orchestrator must read the cited `file:line` and assign one of:

@@ -1,5 +1,7 @@
 # DeepSec Review Notes
 
+> Steal the good ideas, reject the cargo cult, and write down which is which.
+
 Reviewed source: `https://github.com/vercel-labs/deepsec` at commit `5d08800106e1c88cf6b09a9947d9354115e5977f` (`5d08800`, 2026-05-06).
 
 ## Summary

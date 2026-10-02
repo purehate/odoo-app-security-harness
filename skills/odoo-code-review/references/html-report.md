@@ -1,5 +1,7 @@
 # findings.html — Single-File Report Spec
 
+> Make it readable, portable, and brutally clear; nobody patches a dashboard-shaped hallucination.
+
 The Phase 8 HTML report is a deliverable. Treat it like one. Self-contained, no CDN dependencies, ships in a Slack DM or email and renders identically offline.
 
 ## Hard Requirements

@@ -1,5 +1,7 @@
 # Changelog
 
+> No confetti, no victory lap: this is where the bits that actually changed get written down.
+
 All notable changes to the Odoo Application Security Harness will be documented in this file.
 
 ## [Unreleased]

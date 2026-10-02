@@ -1,5 +1,7 @@
 # fp-check — 7-Gate Verification (Gate 0 + 6 substantive gates)
 
+> The scanner gets a vote, not root. Evidence decides what ships.
+
 Replaces the loose "read the bytes" Phase 4 with a structured pass per finding. Every finding (hunter-originated or scanner-originated) goes through Gate 0 first, then if not suppressed, all 6 substantive gates before triage.
 
 A finding can ACCEPT only if Gate 0 is **NOT-MATCH** AND every substantive gate is **PASS**. Gate 0 MATCH → SKIP (do not emit; track in `<OUT>/00-accepted-risks.md`). Any substantive FAIL → DOWNGRADE or REJECT (rubric in `triage.md`). Any "can't tell" → NEEDS-MANUAL-TESTING.

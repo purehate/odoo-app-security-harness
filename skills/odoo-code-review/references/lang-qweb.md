@@ -1,5 +1,7 @@
 # Language Patterns — QWeb (Odoo Templating)
 
+> Escaping is a security control, not an aesthetic preference for people afraid of angle brackets.
+
 QWeb is Odoo's XML-based templating engine. Two flavours:
 
 - **Server-side QWeb** — rendered by Python on request (controllers, reports, mail templates, website pages).

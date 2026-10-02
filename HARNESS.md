@@ -1,5 +1,7 @@
 # Odoo Application Security Harness — HarnessCard
 
+> The machinery is disclosed here because “trust me, bro” is not a security boundary.
+
 > Structured disclosure of the harness layer for the `odoo-app-security-harness` project.
 > Based on the Control–Agency–Runtime (CAR) decomposition from
 > *Harness Engineering for Language Agents* (He et al., 2026).

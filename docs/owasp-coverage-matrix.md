@@ -1,5 +1,7 @@
 # OWASP Top 10 2021 Coverage Matrix
 
+> A green matrix is worthless if the scanner cannot catch the ugly code that earned the square.
+
 This document maps the Odoo Application Security Harness detection rules to OWASP Top 10 2021 categories.
 
 ## Summary

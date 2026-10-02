@@ -1,5 +1,7 @@
 # Harness Engineering Review: Applying awesome-harness-engineering to Odoo App Security Harness
 
+> A pile of agents is not an engineering system until the controls, evidence, and failure modes are explicit.
+
 **Review date:** 2026-05-22
 **Source:** [walkinglabs/awesome-harness-engineering](https://github.com/walkinglabs/awesome-harness-engineering)
 **Scope:** Map curated harness-engineering resources to concrete improvements for the Odoo Application Security Harness.

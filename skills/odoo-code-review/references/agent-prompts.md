@@ -1,5 +1,7 @@
 # Hunter Prompts — 10 Odoo Specialist Templates
 
+> Give the hunters a sharp question or enjoy paying for beautifully formatted fog.
+
 Use one Agent dispatch per hunter. All 9 technique hunters fire in **a single message** for parallelism. The chaining hunter (#10) fires after the others return.
 
 Default execution: Claude prepares compact packets and delegates technique hunters to Codex via `codex exec`; Claude then spot-checks claims and makes final triage decisions. If Codex is unavailable or `--no-codex` is set, use Claude Code agents with `subagent_type: "everything-claude-code:security-reviewer"` for technique hunters and `general-purpose` for chaining.

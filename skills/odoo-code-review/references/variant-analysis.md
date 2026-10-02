@@ -1,5 +1,7 @@
 # Variant Analysis — Pattern Fan-Out
 
+> One copy-pasted bug is rarely lonely. Go find its ugly siblings.
+
 Runs **after** an ACCEPT triage in Phase 4. Goal: find sibling bugs of the same shape elsewhere in the codebase before the report ships. One ACCEPTed bug almost always has variants in nearby code.
 
 Distinct from **chaining** (#10 hunter): chaining combines multiple findings into a higher-impact path. Variant analysis fans out a single finding into more findings of the same class.

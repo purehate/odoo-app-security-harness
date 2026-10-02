@@ -1,5 +1,7 @@
 # Security Harness Benchmark Notes
 
+> Benchmarks beat vibes; reproducible benchmarks beat suspiciously convenient benchmarks.
+
 Reviewed during harness mining on 2026-05-06:
 
 - `vercel-labs/deepsec`

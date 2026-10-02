@@ -1,5 +1,7 @@
 # Workflow — Exhaustive Phase Detail (Odoo)
 
+> Run the phases in order. Skipping evidence because the vibes look clean is how incidents get retrospectives.
+
 The phases. Run in order. Don't skip.
 
 Pipeline:

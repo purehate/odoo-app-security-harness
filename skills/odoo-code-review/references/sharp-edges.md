@@ -1,5 +1,7 @@
 # Sharp Edges — Footgun APIs in Use
 
+> The API did exactly what you asked; the problem is that what you asked was catastrophically dumb.
+
 Bug class: an API is **safe in some uses, unsafe in others**, and the safety contract is non-obvious. The application called the API in the unsafe way. Dataflow tools often miss this because the call site looks clean — the bug is in **how** the API is being used, not in tainted-flow.
 
 Distinct from **insecure-defaults** (`insecure-defaults.md`): insecure-defaults are about a config flag the app didn't flip. Sharp-edges are about an API the app _did_ call, but in a way the API contract treats as "caller's responsibility to validate".
