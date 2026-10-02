@@ -17,6 +17,7 @@ except ImportError:
     import tomli as tomllib  # type: ignore
 
 import yaml
+from packaging.requirements import Requirement
 
 
 def test_project_console_script_modules_importable() -> None:
@@ -36,6 +37,16 @@ def test_dev_extra_includes_wheel_builder_used_by_packaging_tests() -> None:
     dev_dependencies = pyproject["project"]["optional-dependencies"]["dev"]
 
     assert any(dependency.startswith("hatchling") for dependency in dev_dependencies)
+
+
+def test_runtime_dependencies_cover_the_tomli_fallback() -> None:
+    """The installer skips dev extras, so the tomli fallback below Python 3.11 must be a runtime dependency."""
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    runtime_dependencies = {str(Requirement(dependency)) for dependency in pyproject["project"]["dependencies"]}
+    packaged_sources = [path.read_text(encoding="utf-8") for path in Path("odoo_security_harness").rglob("*.py")]
+
+    assert any("import tomli as tomllib" in source for source in packaged_sources)
+    assert str(Requirement("tomli>=1.1.0; python_version < '3.11'")) in runtime_dependencies
 
 
 def test_wheel_includes_complete_skill_assets_for_wrappers_and_templates() -> None:
@@ -99,14 +110,15 @@ def test_built_wheel_metadata_matches_project_runtime_contract(tmp_path: Path) -
     assert result.returncode == 0, result.stderr
 
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-    expected_dependencies = set(pyproject["project"]["dependencies"])
+    # Hatchling rewrites markers such as python_version<'3.11', so compare parsed requirements.
+    expected_dependencies = {str(Requirement(dependency)) for dependency in pyproject["project"]["dependencies"]}
     expected_scripts = pyproject["project"]["scripts"]
     wheel = next(tmp_path.glob("*.whl"))
 
     with zipfile.ZipFile(wheel) as zf:
         metadata_name = next(name for name in zf.namelist() if name.endswith(".dist-info/METADATA"))
         metadata = Parser().parsestr(zf.read(metadata_name).decode("utf-8"))
-        requires_dist = set(metadata.get_all("Requires-Dist", []))
+        requires_dist = {str(Requirement(requirement)) for requirement in metadata.get_all("Requires-Dist", [])}
 
         entry_points_name = next(name for name in zf.namelist() if name.endswith(".dist-info/entry_points.txt"))
         entry_points = zf.read(entry_points_name).decode("utf-8")

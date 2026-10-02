@@ -52,10 +52,6 @@ check_python() {
     echo -e "${RED}ERROR: Python 3.9+ is required. Found $PYTHON_VERSION${NC}"
     exit 1
   fi
-
-  if [[ "$PYTHON_MINOR" -lt 11 ]]; then
-    echo -e "${YELLOW}WARNING: Python 3.11+ recommended for best compatibility (tomllib support).${NC}"
-  fi
 }
 
 check_python
