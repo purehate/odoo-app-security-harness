@@ -23,6 +23,11 @@ MOVED_BACKUPS=0
 MISSING_TOOLS=()
 MISSING_REQUIRED=()
 
+if [[ $# -gt 0 ]]; then
+  echo "Usage: ./install.sh" >&2
+  exit 2
+fi
+
 echo -e "${BLUE}Odoo Application Security Harness - Installer${NC}"
 echo "=============================================="
 echo ""

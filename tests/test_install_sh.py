@@ -55,10 +55,10 @@ def _sandbox_env(home: Path, **overrides: str) -> dict[str, str]:
     return env
 
 
-def _run_installer(home: Path, **overrides: str) -> subprocess.CompletedProcess[str]:
+def _run_installer(home: Path, *args: str, **overrides: str) -> subprocess.CompletedProcess[str]:
     home.mkdir(parents=True, exist_ok=True)
     return subprocess.run(
-        ["bash", str(INSTALL_SH)],
+        ["bash", str(INSTALL_SH), *args],
         cwd=REPO_ROOT,
         env=_sandbox_env(home, **overrides),
         capture_output=True,
@@ -80,6 +80,18 @@ def _assert_nothing_installed(home: Path) -> None:
     assert not (home / ".agents" / "skills" / "odoo-code-review").exists()
     assert not (home / ".claude" / "skills" / "odoo-code-review").exists()
     assert not (home / ".local" / "bin" / "odoo-deep-scan").exists()
+
+
+def test_installer_rejects_arguments_without_installing(tmp_path: Path) -> None:
+    """Like ORCA's installer, any argument prints usage; it used to be ignored and ran a full install."""
+    home = tmp_path / "home"
+
+    result = _run_installer(home, "--help")
+
+    assert result.returncode == 2
+    assert "Usage: ./install.sh" in result.stderr
+    assert not (home / ".local" / "share" / "odoo-security-harness").exists()
+    _assert_nothing_installed(home)
 
 
 def test_installer_rejects_venv_path_with_whitespace(tmp_path: Path) -> None:
