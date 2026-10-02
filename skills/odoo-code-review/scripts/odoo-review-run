@@ -2902,20 +2902,18 @@ def run_qwen(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) ->
         text = clean_output(path.read_text(encoding="utf-8", errors="replace"))
         return text[:limit]
 
-    prompt = f"""You are a local HINT-only reviewer for an Odoo source audit.
+    module_prompt = f"""You are a local HINT-only reviewer for an Odoo source audit.
 Do not create final findings. Do not speculate about files you did not see.
 Only use the artifact excerpts pasted below. If evidence is insufficient, say so.
 
-Return three short sections:
-1. Module risk notes
-2. Scanner triage hints
-3. Obvious reject candidates
+Return short module risk notes: which modules carry the most risk, and which
+files or symbols the lead reviewer should inspect first.
 
 Rules:
 - HINT only: no ACCEPT/REJECT final verdicts.
 - Cite module names or file paths from the excerpts.
 - Do not mention missing validation/encryption unless an excerpt shows it.
-- Keep the response under 80 lines.
+- Keep the response under 60 lines.
 
 ## 00-modules.md excerpt
 {excerpt(out / '00-modules.md', 10000)}
@@ -2929,15 +2927,62 @@ Rules:
 ## sharp-edge-index.json excerpt
 {excerpt(out / 'inventory' / 'sharp-edge-index.json', 14000)}
 """
-    result = run(["ollama", "run", args.local_model, prompt], repo, log_path, qwen_dir / "module-notes.md", timeout=900)
-    (qwen_dir / "scanner-triage.md").write_text(
-        "See module-notes.md. Scanner-specific triage is advisory only.\n", encoding="utf-8"
+
+    triage_prompt = f"""You are a local HINT-only scanner triage reviewer for an Odoo source audit.
+Do not create final findings. Only use the artifact excerpts pasted below.
+
+Bucket the suspicious surfaces into:
+- HUNTER_LEAD — hand to the hunter passes.
+- LIKELY_NOISE — still verify before dropping.
+- NEEDS_CLAUDE_REVIEW — ambiguous or high-impact paths.
+
+Rules:
+- HINT only: no ACCEPT/REJECT final verdicts.
+- Cite rule IDs, module names, or file paths from the excerpts.
+- Keep the response under 60 lines.
+
+## module-risk.md excerpt
+{excerpt(out / 'module-risk.md', 12000)}
+
+## sharp-edge-index.json excerpt
+{excerpt(out / 'inventory' / 'sharp-edge-index.json', 16000)}
+"""
+
+    reject_prompt = f"""You are a local HINT-only reviewer for an Odoo source audit.
+List only obvious false-positive candidates for the lead reviewer to verify.
+Do not reject anything yourself. Only use the artifact excerpts pasted below.
+
+Rules:
+- HINT only: no ACCEPT/REJECT final verdicts.
+- For each candidate cite the module or file and the reason it may be benign.
+- Keep the response under 60 lines.
+
+## module-risk.md excerpt
+{excerpt(out / 'module-risk.md', 12000)}
+
+## accepted-risks.json excerpt
+{excerpt(out / 'inventory' / 'accepted-risks.json', 8000)}
+"""
+
+    passes = (
+        ("module-notes.md", module_prompt),
+        ("scanner-triage.md", triage_prompt),
+        ("reject-candidates.md", reject_prompt),
     )
-    (qwen_dir / "reject-candidates.md").write_text(
-        "See module-notes.md. Claude must verify before rejecting anything.\n", encoding="utf-8"
-    )
+    records: list[dict] = []
+    for filename, prompt in passes:
+        record = run(
+            ["ollama", "run", args.local_model, prompt],
+            repo,
+            log_path,
+            qwen_dir / filename,
+            timeout=900,
+        )
+        record["pass"] = filename
+        records.append(record)
     progress("Phase 1.5 local Qwen complete")
-    return result
+    status = "completed" if all(record.get("returncode") == 0 for record in records) else "partial"
+    return {"status": status, "passes": records}
 
 
 def codex_prompt(name: str, title: str, focus: str, repo: Path, out: Path, args: argparse.Namespace) -> str:

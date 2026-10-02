@@ -237,10 +237,10 @@ Build a compact packet from Phase 0/1:
 - ACL and `ir.rule` files
 - counts of `sudo()`, `with_user()`, `cr.execute`, `t-raw`, `Markup`, `ir.config_parameter`, `ir.attachment`, `mail.message`
 
-Run:
+The runner builds this packet inline and passes it as the prompt argument; Ollama writes the response to the output file:
 
 ```bash
-ollama run <local-model> < local-qwen/module-packet.txt > local-qwen/module-notes.md
+ollama run <local-model> "<module packet>" > local-qwen/module-notes.md
 ```
 
 Prompt constraints:
@@ -252,10 +252,10 @@ Prompt constraints:
 
 ### Pass B — Scanner Triage
 
-After Phases 2-4.5, pass scanner summaries and high-signal snippets to Qwen:
+After Phases 2-4.5, the runner passes the module-risk and sharp-edge excerpts to Qwen:
 
 ```bash
-ollama run <local-model> < local-qwen/scanner-packet.txt > local-qwen/scanner-triage.md
+ollama run <local-model> "<triage packet>" > local-qwen/scanner-triage.md
 ```
 
 Output buckets:
@@ -269,7 +269,7 @@ Output buckets:
 Ask Qwen for obvious false-positive candidates only:
 
 ```bash
-ollama run <local-model> < local-qwen/reject-packet.txt > local-qwen/reject-candidates.md
+ollama run <local-model> "<reject packet>" > local-qwen/reject-candidates.md
 ```
 
 Phase 7 may use this to prioritize review order, but Qwen cannot reject a finding by itself. Rejection still requires the 6-gate fp-check.
@@ -278,13 +278,12 @@ Phase 7 may use this to prioritize review order, but Qwen cannot reject a findin
 
 ```
 local-qwen/
-├── module-packet.txt
 ├── module-notes.md
-├── scanner-packet.txt
 ├── scanner-triage.md
-├── reject-packet.txt
 └── reject-candidates.md
 ```
+
+Each pass is one `ollama run` invocation, so a run makes three local model calls. If any pass fails, the lane is recorded as `partial` in `tooling.json`.
 
 ## Phase 2 — Semgrep Python/Odoo Rules
 
