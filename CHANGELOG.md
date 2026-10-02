@@ -40,6 +40,7 @@ All notable changes to the Odoo Application Security Harness will be documented 
 - Improved `install.sh` with Python version checking and colored output
 - Better prerequisite validation during installation
 - Enhanced error messages across all scripts
+- **Installer summary** — `install.sh` now ends with the same layout as ORCA's installer: the Claude Code, Pi, and Codex entry points first, then install paths, every installed command (including `odoo-security-daily`, which the list used to omit), the PATH check, and the quick start.
 
 ### Fixed
 - **Installer reported success on failed installs** — `install.sh` piped `pip install -e` through `grep ... || true`, so PEP 668 `externally-managed-environment` errors (Homebrew, Debian/Ubuntu Pythons) were swallowed and `odoo-deep-scan`, `odoo-review-assessment`, `odoo-review-validate-config`, and `odoo-security-daily` died with `ModuleNotFoundError` outside the repo. The installer now installs the package into a dedicated venv (`ODOO_HARNESS_VENV`, default `~/.local/share/odoo-security-harness/venv`), pins the installed skill scripts to it, smoke-tests `odoo-deep-scan`, and exits non-zero on any failure.
