@@ -224,6 +224,8 @@ The installer copies:
 
 The installer also creates a dedicated virtual environment at `~/.local/share/odoo-security-harness/venv` (override with `ODOO_HARNESS_VENV`), installs this checkout into it in editable mode, and pins the installed skill scripts to that interpreter. Homebrew and Debian/Ubuntu Pythons refuse system-wide `pip install` (PEP 668), so the harness never installs into them. On Debian/Ubuntu, install `python3-venv` first. Re-run `./install.sh` after upgrading the Python that created the venv.
 
+When the installer replaces an existing install, it backs up the old files to `~/.local/state/odoo-security-harness/backups/<timestamp>-<pid>/` (respects `XDG_STATE_HOME`). It never puts backups beside the installed copy, because Claude Code and Codex would load an old skill copy there as a duplicate skill. It moves `*.bak.*` backups that older installers left in the agent directories to `backups/legacy/`.
+
 ## Prerequisites
 
 Required for the full three-lane workflow:

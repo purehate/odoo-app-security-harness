@@ -14,6 +14,10 @@ ODOO_AGENTS_DIR="${AGENTS_HOME:-$HOME/.agents}"
 ODOO_PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 ODOO_HARNESS_VENV="${ODOO_HARNESS_VENV:-${XDG_DATA_HOME:-$HOME/.local/share}/odoo-security-harness/venv}"
 VENV_PY="$ODOO_HARNESS_VENV/bin/python"
+# Backups live outside the agent directories: a copy left beside a skill loads as a duplicate skill.
+BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/odoo-security-harness/backups"
+BACKUP_DIR="$BACKUP_ROOT/$(date +%Y%m%d%H%M%S)-$$"
+MOVED_BACKUPS=0
 
 # Track missing tools
 MISSING_TOOLS=()
@@ -130,11 +134,44 @@ mkdir -p \
   "$ODOO_PI_AGENT_DIR/prompts" \
   "$HOME/.local/bin"
 
+# Mirror an installed path under a backup root, relative to HOME when it lives there.
+backup_path() {
+  local root="$1"
+  local rel="${2#"$HOME"/}"
+  printf '%s/%s\n' "$root" "${rel#/}"
+}
+
+backup() {
+  local dst="$1"
+  local bak
+  bak="$(backup_path "$BACKUP_DIR" "$dst")"
+  mkdir -p "$(dirname "$bak")"
+  cp -R "$dst" "$bak"
+}
+
+# Older installers wrote "$dst.bak.<timestamp>" beside the installed file; move those out too.
+migrate_legacy_backups() {
+  local dst="$1"
+  local legacy target
+  for legacy in "$dst".bak.*; do
+    [[ -e "$legacy" || -L "$legacy" ]] || continue
+    target="$(backup_path "$BACKUP_ROOT/legacy" "$legacy")"
+    if [[ -e "$target" || -L "$target" ]]; then
+      echo -e "${YELLOW}WARNING: left $legacy in place because $target already exists.${NC}"
+      continue
+    fi
+    mkdir -p "$(dirname "$target")"
+    mv "$legacy" "$target"
+    MOVED_BACKUPS=$((MOVED_BACKUPS + 1))
+  done
+}
+
 install_file() {
   local src="$1"
   local dst="$2"
+  migrate_legacy_backups "$dst"
   if [[ -e "$dst" || -L "$dst" ]]; then
-    cp -R "$dst" "$dst.bak.$(date +%Y%m%d%H%M%S)"
+    backup "$dst"
   fi
   cp "$src" "$dst"
 }
@@ -142,8 +179,9 @@ install_file() {
 install_dir() {
   local src="$1"
   local dst="$2"
+  migrate_legacy_backups "$dst"
   if [[ -e "$dst" || -L "$dst" ]]; then
-    cp -R "$dst" "$dst.bak.$(date +%Y%m%d%H%M%S)"
+    backup "$dst"
     rm -rf "$dst"
   fi
   cp -R "$src" "$dst"
@@ -162,6 +200,9 @@ install_file "$ROOT/commands/odoo-code-review.md" "$CLAUDE_HOME/commands/odoo-co
 install_file "$ROOT/prompts/odoo-code-review.md" "$ODOO_PI_AGENT_DIR/prompts/odoo-code-review.md"
 install_dir "$ROOT/skills/odoo-code-review" "$ODOO_AGENTS_DIR/skills/odoo-code-review"
 install_dir "$ROOT/skills/odoo-code-review" "$CLAUDE_HOME/skills/odoo-code-review"
+if [[ $MOVED_BACKUPS -gt 0 ]]; then
+  echo "Moved $MOVED_BACKUPS old backup(s) out of the agent directories into $BACKUP_ROOT/legacy"
+fi
 
 for script in odoo-review-run odoo-review-rerun odoo-review-export odoo-review-diff odoo-review-finalize odoo-review-learn odoo-review-stock-diff odoo-review-runtime odoo-review-assessment odoo-review-coverage odoo-review-validate-config odoo-deep-scan odoo-security-daily; do
   pin_interpreter "$ODOO_AGENTS_DIR/skills/odoo-code-review/scripts/$script"
@@ -183,6 +224,7 @@ echo "Shared Agent Skill: $ODOO_AGENTS_DIR/skills/odoo-code-review"
 echo "Claude command:     $CLAUDE_HOME/commands/odoo-code-review.md"
 echo "Pi prompt:          $ODOO_PI_AGENT_DIR/prompts/odoo-code-review.md"
 echo "Python venv:        $ODOO_HARNESS_VENV"
+echo "Backups:            $BACKUP_ROOT"
 echo ""
 echo "Available commands:"
 echo "  odoo-review-run      - Main pipeline runner"

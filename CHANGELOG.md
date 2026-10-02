@@ -43,6 +43,7 @@ All notable changes to the Odoo Application Security Harness will be documented 
 
 ### Fixed
 - **Installer reported success on failed installs** — `install.sh` piped `pip install -e` through `grep ... || true`, so PEP 668 `externally-managed-environment` errors (Homebrew, Debian/Ubuntu Pythons) were swallowed and `odoo-deep-scan`, `odoo-review-assessment`, `odoo-review-validate-config`, and `odoo-security-daily` died with `ModuleNotFoundError` outside the repo. The installer now installs the package into a dedicated venv (`ODOO_HARNESS_VENV`, default `~/.local/share/odoo-security-harness/venv`), pins the installed skill scripts to it, smoke-tests `odoo-deep-scan`, and exits non-zero on any failure.
+- **Installer backups loaded as duplicate skills** — `install.sh` backed up the previous install to `odoo-code-review.bak.<timestamp>` beside it, inside `~/.claude/skills/` and `~/.agents/skills/`, so Claude Code and Codex loaded every old copy as another `odoo-code-review` skill. Backups now go to `~/.local/state/odoo-security-harness/backups/`, and the installer moves backups left by older versions to `backups/legacy/`.
 - **Codex lane output clobbering** — `run_codex` and `run_ensemble` passed the same path to Codex's `-o` flag and the runner's stdout capture, so every hunter/ensemble artifact was overwritten with progress noise instead of the model's final report. Codex stdout now goes to a sibling `.stdout.log` and the report path is preserved.
 - **Local Qwen lane** — the runner now performs the three documented passes (module notes, scanner triage, reject candidates) as real `ollama run` calls instead of writing placeholder files for two of them.
 - **Lint/CI** — `ruff check .` and `black --check .` are green; `eval_fixtures/` (intentionally vulnerable test modules) is excluded from both.
@@ -50,7 +51,7 @@ All notable changes to the Odoo Application Security Harness will be documented 
 - Better handling of missing optional dependencies
 
 ### Testing
-- **Installer coverage** — `tests/test_install_sh.py` runs `install.sh` against a sandboxed `HOME`: failure paths run offline, and a full install (needs PyPI) starts every command from outside the repo.
+- **Installer coverage** — `tests/test_install_sh.py` runs `install.sh` against a sandboxed `HOME`: failure paths run offline, a full install (needs PyPI) starts every command from outside the repo, and a reinstall over legacy backups keeps every backup out of the agent directories.
 - **LLM lane coverage** — `tests/test_llm_lanes.py` drives the Qwen, Codex hunter, ensemble, and daily remediation lanes through fake `ollama`/`codex` shims, asserting command construction and output capture without a live model.
 
 ## [1.0.0] - 2024-01-01

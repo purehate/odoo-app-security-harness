@@ -31,6 +31,21 @@ LEAKY_ENV_VARS = (
     "XDG_DATA_HOME",
     "XDG_STATE_HOME",
 )
+# Paths below are relative to the sandboxed HOME.
+BACKUP_ROOT = Path(".local/state/odoo-security-harness/backups")
+INSTALLED_FILES = (
+    Path(".claude/skills/odoo-code-review/SKILL.md"),
+    Path(".agents/skills/odoo-code-review/SKILL.md"),
+    Path(".claude/commands/odoo-code-review.md"),
+    Path(".pi/agent/prompts/odoo-code-review.md"),
+)
+# Older installers left these beside the installed files, where agents load them as duplicates.
+LEGACY_BACKUPS = (
+    Path(".claude/skills/odoo-code-review.bak.20200101000000/SKILL.md"),
+    Path(".agents/skills/odoo-code-review.bak.20200101000000/SKILL.md"),
+    Path(".claude/commands/odoo-code-review.md.bak.20200101000000"),
+    Path(".pi/agent/prompts/odoo-code-review.md.bak.20200101000000"),
+)
 
 
 def _sandbox_env(home: Path, **overrides: str) -> dict[str, str]:
@@ -109,15 +124,20 @@ def test_installer_fails_loudly_when_pip_install_fails(tmp_path: Path) -> None:
 
 @pytest.fixture(scope="module")
 def installed_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Run the real installer once into a sandboxed HOME; pip needs PyPI for the build backend."""
+    """Install twice into a sandboxed HOME that holds legacy backups; pip needs PyPI for the build backend."""
     if not _pypi_reachable():
         pytest.skip("install.sh end-to-end tests need network access to PyPI")
 
     home = tmp_path_factory.mktemp("installed") / "home"
-    result = _run_installer(home)
+    for legacy in LEGACY_BACKUPS:
+        (home / legacy).parent.mkdir(parents=True, exist_ok=True)
+        (home / legacy).write_text("legacy backup\n", encoding="utf-8")
 
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "Installation complete" in result.stdout
+    # The second run replaces an existing install, which is the path that writes backups.
+    for _ in range(2):
+        result = _run_installer(home)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "Installation complete" in result.stdout
     return home
 
 
@@ -133,6 +153,23 @@ def test_installed_skill_scripts_are_pinned_to_the_harness_venv(installed_home: 
             script = skill_root / "odoo-code-review" / "scripts" / command
             assert script.read_text(encoding="utf-8").splitlines()[0] == f"#!{venv_python}", script
             assert os.access(script, os.X_OK), script
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_install_backups_stay_out_of_agent_directories(installed_home: Path) -> None:
+    """A backup beside the installed skill loads as a duplicate skill, so every backup lives in the state dir."""
+    for agent_dir in (".claude/skills", ".agents/skills", ".claude/commands", ".pi/agent/prompts"):
+        assert not list((installed_home / agent_dir).glob("odoo-code-review*.bak.*")), agent_dir
+
+    backups = installed_home / BACKUP_ROOT
+    for legacy in LEGACY_BACKUPS:
+        assert (backups / "legacy" / legacy).read_text(encoding="utf-8") == "legacy backup\n", legacy
+
+    reinstall_backups = [path for path in backups.iterdir() if path.name != "legacy"]
+    assert len(reinstall_backups) == 1, reinstall_backups
+    for installed in INSTALLED_FILES:
+        assert (reinstall_backups[0] / installed).is_file(), installed
 
 
 @pytest.mark.integration
