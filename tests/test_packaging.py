@@ -215,6 +215,8 @@ def test_repo_ci_workflow_runs_quality_gate_jobs() -> None:
 
     security_runs = "\n".join(step.get("run", "") for step in jobs["security"]["steps"])
     assert "bandit -r skills/odoo-code-review/scripts/" in security_runs
+    # Audit the project's dependencies, not the packages preinstalled on the CI runner.
+    assert "pip-audit ." in security_runs
 
 
 def test_skill_script_wrappers_match_packaged_console_scripts() -> None:

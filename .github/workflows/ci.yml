@@ -90,10 +90,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install bandit safety
+        pip install bandit pip-audit
 
     - name: Run bandit
       run: bandit -r skills/odoo-code-review/scripts/
 
-    - name: Run safety check
-      run: safety check
+    # Audits the project's declared dependencies, not the packages preinstalled on the runner.
+    - name: Run pip-audit
+      run: pip-audit .
