@@ -12,6 +12,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 ODOO_AGENTS_DIR="${AGENTS_HOME:-$HOME/.agents}"
 ODOO_PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+ODOO_HARNESS_VENV="${ODOO_HARNESS_VENV:-${XDG_DATA_HOME:-$HOME/.local/share}/odoo-security-harness/venv}"
+VENV_PY="$ODOO_HARNESS_VENV/bin/python"
 
 # Track missing tools
 MISSING_TOOLS=()
@@ -41,12 +43,6 @@ check_python() {
 
   if [[ "$PYTHON_MINOR" -lt 11 ]]; then
     echo -e "${YELLOW}WARNING: Python 3.11+ recommended for best compatibility (tomllib support).${NC}"
-  fi
-
-  # Check for pip
-  if ! python3 -m pip --version >/dev/null 2>&1; then
-    echo -e "${RED}ERROR: pip is required but not installed.${NC}"
-    exit 1
   fi
 }
 
@@ -97,14 +93,34 @@ else
 fi
 echo ""
 
-# ---- Install Python dependencies ----
-echo "Installing Python dependencies..."
-if [[ -f "$ROOT/pyproject.toml" ]]; then
-  python3 -m pip install -e "$ROOT" 2>&1 | grep -v "already satisfied" || true
-  echo -e "${GREEN}Python package installed.${NC}"
-else
-  echo -e "${YELLOW}WARNING: pyproject.toml not found. Skipping Python package install.${NC}"
+# ---- Install Python package into a dedicated virtual environment ----
+# PEP 668 interpreters (Homebrew, Debian/Ubuntu) refuse system-wide pip installs, so the
+# package and its dependencies live in their own venv and installed scripts are pinned to it.
+echo "Installing Python package into $ODOO_HARNESS_VENV ..."
+case "$ODOO_HARNESS_VENV" in
+  *[[:space:]]*)
+    echo -e "${RED}ERROR: venv path contains whitespace, which script shebangs cannot handle: $ODOO_HARNESS_VENV${NC}"
+    echo "Set ODOO_HARNESS_VENV to a path without spaces and re-run."
+    exit 1
+    ;;
+esac
+
+if [[ -f "$ODOO_HARNESS_VENV/pyvenv.cfg" ]] && "$VENV_PY" -c 'import sys' >/dev/null 2>&1; then
+  echo "Reusing existing venv."
+elif [[ -e "$ODOO_HARNESS_VENV" && ! -f "$ODOO_HARNESS_VENV/pyvenv.cfg" && -n "$(ls -A "$ODOO_HARNESS_VENV")" ]]; then
+  echo -e "${RED}ERROR: $ODOO_HARNESS_VENV exists but is not a virtual environment. Refusing to touch it.${NC}"
+  echo "Remove it or set ODOO_HARNESS_VENV to another path."
+  exit 1
+elif ! python3 -m venv --clear "$ODOO_HARNESS_VENV"; then
+  echo -e "${RED}ERROR: python3 -m venv failed. On Debian/Ubuntu, install the python3-venv package.${NC}"
+  exit 1
 fi
+
+if ! "$VENV_PY" -m pip install --quiet --upgrade pip || ! "$VENV_PY" -m pip install --quiet -e "$ROOT"; then
+  echo -e "${RED}ERROR: pip install failed. See the pip output above.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}Python package installed.${NC}"
 echo ""
 
 mkdir -p \
@@ -133,15 +149,32 @@ install_dir() {
   cp -R "$src" "$dst"
 }
 
+# Point an installed skill script at the harness venv instead of whatever python3 is on PATH.
+pin_interpreter() {
+  local script="$1"
+  [[ "$(head -n 1 "$script")" == "#!/usr/bin/env python3" ]] || return 0
+  { printf '#!%s\n' "$VENV_PY"; tail -n +2 "$script"; } >"$script.tmp"
+  chmod 755 "$script.tmp"
+  mv "$script.tmp" "$script"
+}
+
 install_file "$ROOT/commands/odoo-code-review.md" "$CLAUDE_HOME/commands/odoo-code-review.md"
 install_file "$ROOT/prompts/odoo-code-review.md" "$ODOO_PI_AGENT_DIR/prompts/odoo-code-review.md"
 install_dir "$ROOT/skills/odoo-code-review" "$ODOO_AGENTS_DIR/skills/odoo-code-review"
 install_dir "$ROOT/skills/odoo-code-review" "$CLAUDE_HOME/skills/odoo-code-review"
 
 for script in odoo-review-run odoo-review-rerun odoo-review-export odoo-review-diff odoo-review-finalize odoo-review-learn odoo-review-stock-diff odoo-review-runtime odoo-review-assessment odoo-review-coverage odoo-review-validate-config odoo-deep-scan odoo-security-daily; do
+  pin_interpreter "$ODOO_AGENTS_DIR/skills/odoo-code-review/scripts/$script"
+  pin_interpreter "$CLAUDE_HOME/skills/odoo-code-review/scripts/$script"
   chmod +x "$ODOO_AGENTS_DIR/skills/odoo-code-review/scripts/$script"
   ln -sf "$ODOO_AGENTS_DIR/skills/odoo-code-review/scripts/$script" "$HOME/.local/bin/$script"
 done
+
+# Fail here, not mid-review, if an installed command cannot import the package.
+if ! "$HOME/.local/bin/odoo-deep-scan" --help >/dev/null; then
+  echo -e "${RED}ERROR: odoo-deep-scan failed to start from the installed skill copy.${NC}"
+  exit 1
+fi
 
 echo ""
 echo -e "${GREEN}✓ Installation complete!${NC}"
@@ -149,6 +182,7 @@ echo ""
 echo "Shared Agent Skill: $ODOO_AGENTS_DIR/skills/odoo-code-review"
 echo "Claude command:     $CLAUDE_HOME/commands/odoo-code-review.md"
 echo "Pi prompt:          $ODOO_PI_AGENT_DIR/prompts/odoo-code-review.md"
+echo "Python venv:        $ODOO_HARNESS_VENV"
 echo ""
 echo "Available commands:"
 echo "  odoo-review-run      - Main pipeline runner"

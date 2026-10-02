@@ -222,6 +222,8 @@ The installer copies:
   - `odoo-review-validate-config` — schema validator for `.odoo-review/config.toml`, `scope.yml`, accepted-risk files, and fix-list files; use `--type accepted-risks` or `--type fix-list` for renamed governance files
   - `odoo-deep-scan` — standalone static scanner that emits JSON, Markdown, SARIF, PoCs, coverage inventories, and a CI gate
 
+The installer also creates a dedicated virtual environment at `~/.local/share/odoo-security-harness/venv` (override with `ODOO_HARNESS_VENV`), installs this checkout into it in editable mode, and pins the installed skill scripts to that interpreter. Homebrew and Debian/Ubuntu Pythons refuse system-wide `pip install` (PEP 668), so the harness never installs into them. On Debian/Ubuntu, install `python3-venv` first. Re-run `./install.sh` after upgrading the Python that created the venv.
+
 ## Prerequisites
 
 Required for the full three-lane workflow:
