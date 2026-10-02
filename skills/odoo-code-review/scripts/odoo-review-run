@@ -3056,7 +3056,8 @@ def run_codex(args: argparse.Namespace, repo: Path, out: Path, log_path: Path) -
             str(output_path),
             prompt,
         ]
-        record = run(cmd, repo, log_path, output_path, timeout=3600)
+        record = run(cmd, repo, log_path, output_path.with_suffix(".stdout.log"), timeout=3600)
+        record["output"] = str(output_path)
         record["hunter"] = slug
         records.append(record)
         progress(f"Codex hunter {idx}/{len(HUNTERS)} done: {title} exit={record.get('returncode')}")
@@ -3196,7 +3197,8 @@ def run_ensemble(args: argparse.Namespace, repo: Path, out: Path, log_path: Path
             str(output_path),
             prompt,
         ]
-        record = run(cmd, repo, log_path, output_path, timeout=3600)
+        record = run(cmd, repo, log_path, output_path.with_suffix(".stdout.log"), timeout=3600)
+        record["output"] = str(output_path)
         record["pass"] = pass_id
         records.append(record)
     progress("Ensemble recall complete")
