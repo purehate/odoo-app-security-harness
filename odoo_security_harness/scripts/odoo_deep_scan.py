@@ -9646,7 +9646,7 @@ def _deep_scan_source_nodes(tree: ast.AST) -> list[tuple[int, str]]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Dict):
             continue
-        for key, value in zip(node.keys, node.values):
+        for key, value in zip(node.keys, node.values, strict=False):
             if (
                 isinstance(key, ast.Constant)
                 and key.value == "source"

@@ -1244,7 +1244,7 @@ def _jwt_decode_disables_verification(node: ast.Call, constants: dict[str, ast.A
         if keyword.arg == "verify" and _is_false_constant(value, constants):
             return True
         if keyword.arg == "options" and isinstance(value, ast.Dict):
-            for key, option_value in zip(value.keys, value.values):
+            for key, option_value in zip(value.keys, value.values, strict=False):
                 key = _resolve_constant(key, constants or {}) if key is not None else None
                 option_value = _resolve_constant(option_value, constants or {})
                 if isinstance(key, ast.Constant) and str(key.value).startswith("verify_"):

@@ -43,13 +43,13 @@ check_python() {
   fi
 
   PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
-  PYTHON_MAJOR=$(python3 -c 'import sys; print(sys.version_info[0])')
-  PYTHON_MINOR=$(python3 -c 'import sys; print(sys.version_info[1])')
+  PYTHON_MAJOR="${PYTHON_VERSION%%.*}"
+  PYTHON_MINOR="${PYTHON_VERSION#*.}"
 
   echo "Python version: $PYTHON_VERSION"
 
-  if [[ "$PYTHON_MAJOR" -lt 3 ]] || ([[ "$PYTHON_MAJOR" -eq 3 ]] && [[ "$PYTHON_MINOR" -lt 9 ]]); then
-    echo -e "${RED}ERROR: Python 3.9+ is required. Found $PYTHON_VERSION${NC}"
+  if [[ "$PYTHON_MAJOR" -lt 3 ]] || { [[ "$PYTHON_MAJOR" -eq 3 ]] && [[ "$PYTHON_MINOR" -lt 10 ]]; }; then
+    echo -e "${RED}ERROR: Python 3.10+ is required. Found $PYTHON_VERSION${NC}"
     exit 1
   fi
 }

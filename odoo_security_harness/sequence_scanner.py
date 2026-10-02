@@ -703,7 +703,7 @@ def _is_static_literal(node: ast.AST) -> bool:
     if isinstance(node, ast.Dict):
         return all(
             (key is None or _is_static_literal(key)) and _is_static_literal(value)
-            for key, value in zip(node.keys, node.values)
+            for key, value in zip(node.keys, node.values, strict=False)
         )
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _is_static_literal(node.left) and _is_static_literal(node.right)

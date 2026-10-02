@@ -313,7 +313,7 @@ class FileUploadScanner(ast.NodeVisitor):
             return
         dict_values = {
             key.value: value
-            for key, value in zip(values.keys, values.values)
+            for key, value in zip(values.keys, values.values, strict=False)
             if isinstance(key, ast.Constant) and isinstance(key.value, str)
         }
         attachment_from_request = "datas" in dict_values and self._expr_is_tainted(dict_values["datas"])

@@ -1053,7 +1053,7 @@ def _dict_with_field(values_node: ast.Dict, key: str, value: ast.AST) -> ast.Dic
 def _dict_fields(values_node: ast.Dict) -> dict[str, ast.AST]:
     return {
         key.value: value
-        for key, value in zip(values_node.keys, values_node.values)
+        for key, value in zip(values_node.keys, values_node.values, strict=False)
         if isinstance(key, ast.Constant) and isinstance(key.value, str)
     }
 

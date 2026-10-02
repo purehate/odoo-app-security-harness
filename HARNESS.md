@@ -149,7 +149,7 @@ Signals that shape agent behavior:
 | Unit tests | pytest (3,900+ tests, ~89% coverage) | Every PR |
 | Taxonomy gate | `test_taxonomy_coverage_maps_all_package_finding_rule_constants` | Every PR — blocks unmapped rule IDs |
 | Integration tests | OCA corpus smoke tests (`tests/corpus/`) | Manual / `--corpus` flag |
-| CI matrix | Python 3.9–3.13, lint, docker, security | Every push to `main` / `develop` |
+| CI matrix | Python 3.10–3.13, lint, docker, security | Every push to `main` / `develop` |
 | Code coverage | pytest-cov + Codecov | Every PR |
 | Self-review | Claude Code reviews its own changes | Per-session |
 | Human review | PR review on GitHub | Final gate before merge |
