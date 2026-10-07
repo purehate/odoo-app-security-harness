@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -277,4 +277,4 @@ def write_json(path: Path, data: dict[str, Any], indent: int = 2) -> None:
 
 def timestamp() -> str:
     """Return ISO timestamp in UTC."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

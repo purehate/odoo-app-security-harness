@@ -48,8 +48,8 @@ check_python() {
 
   echo "Python version: $PYTHON_VERSION"
 
-  if [[ "$PYTHON_MAJOR" -lt 3 ]] || { [[ "$PYTHON_MAJOR" -eq 3 ]] && [[ "$PYTHON_MINOR" -lt 10 ]]; }; then
-    echo -e "${RED}ERROR: Python 3.10+ is required. Found $PYTHON_VERSION${NC}"
+  if [[ "$PYTHON_MAJOR" -lt 3 ]] || { [[ "$PYTHON_MAJOR" -eq 3 ]] && [[ "$PYTHON_MINOR" -lt 11 ]]; }; then
+    echo -e "${RED}ERROR: Python 3.11+ is required. Found $PYTHON_VERSION${NC}"
     exit 1
   fi
 }

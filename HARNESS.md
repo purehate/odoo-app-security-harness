@@ -34,7 +34,7 @@ Durable instructions and constraints the agent reads on every session:
 | Scanner modules | `odoo_security_harness/*_scanner.py` (75 modules) | Deterministic detection of Odoo-specific security patterns |
 | `finding_schema.py` | `odoo_security_harness/finding_schema.py` | Schema validation, normalization, fingerprinting |
 | `fix_catalog.py` | `odoo_security_harness/fix_catalog.py` | 135 rule ID → Odoo-idiomatic fix mappings |
-| `pyproject.toml` | Repo root | Build system, deps, scripts, Python version matrix (3.9–3.13) |
+| `pyproject.toml` | Repo root | Build system, deps, scripts, Python version matrix (3.11–3.13) |
 | `.pre-commit-config.yaml` | Repo root | Lint/format gates (black, ruff, mypy) |
 | CI workflow | `.github/workflows/` | Test matrix, lint, docker, security (bandit, safety) |
 
@@ -149,7 +149,7 @@ Signals that shape agent behavior:
 | Unit tests | pytest (3,900+ tests, ~89% coverage) | Every PR |
 | Taxonomy gate | `test_taxonomy_coverage_maps_all_package_finding_rule_constants` | Every PR — blocks unmapped rule IDs |
 | Integration tests | OCA corpus smoke tests (`tests/corpus/`) | Manual / `--corpus` flag |
-| CI matrix | Python 3.10–3.13, lint, docker, security | Every push to `main` / `develop` |
+| CI matrix | Python 3.11–3.13, lint, docker, security | Every push to `main` / `develop` |
 | Code coverage | pytest-cov + Codecov | Every PR |
 | Self-review | Claude Code reviews its own changes | Per-session |
 | Human review | PR review on GitHub | Final gate before merge |
@@ -211,7 +211,7 @@ A review session is considered successful when:
 | Prompt injection from scanned source into a writing lane | Hunters/ensemble run `-s read-only`; only the daily remediation lane writes, and its worktree diff is verified and gated | 🟡 Bounded |
 | Scanner drift | Taxonomy gate + unit tests | 🟢 Mitigated |
 | False-positive flood | 6-gate fp-check + accepted-risks | 🟢 Mitigated |
-| Python version compatibility | CI matrix 3.9–3.13 | 🟢 Mitigated |
+| Python version compatibility | CI matrix 3.11–3.13 | 🟢 Mitigated |
 
 ---
 

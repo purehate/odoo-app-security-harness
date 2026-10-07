@@ -118,20 +118,20 @@ def test_installer_prints_plain_text_when_piped(tmp_path: Path) -> None:
     assert "\x1b[" not in result.stdout + result.stderr
 
 
-def test_installer_rejects_python_older_than_3_10(tmp_path: Path) -> None:
-    """macOS still ships Python 3.9 as /usr/bin/python3; the harness needs 3.10, so stop before installing."""
+def test_installer_rejects_python_older_than_3_11(tmp_path: Path) -> None:
+    """macOS ships an older system python3; the harness needs 3.11, so stop before installing."""
     home = tmp_path / "home"
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     # Like ORCA's fake, answer the version query and fail anything else.
     fake_python = fake_bin / "python3"
-    fake_python.write_text('#!/bin/sh\n[ "$1" = "-c" ] && echo 3.9 && exit 0\nexit 1\n', encoding="utf-8")
+    fake_python.write_text('#!/bin/sh\n[ "$1" = "-c" ] && echo 3.10 && exit 0\nexit 1\n', encoding="utf-8")
     fake_python.chmod(0o755)
 
     result = _run_installer(home, PATH=f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
 
     assert result.returncode == 1
-    assert "Python 3.10+ is required. Found 3.9" in result.stdout
+    assert "Python 3.11+ is required. Found 3.10" in result.stdout
     assert not (home / ".local" / "share" / "odoo-security-harness").exists()
     _assert_nothing_installed(home)
 

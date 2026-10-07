@@ -477,7 +477,7 @@ Before changing anything, note what already works well:
 4. **Multi-lane architecture:** Claude lead + Qwen triage + Codex hunters. Good separation of concerns.
 5. **6-gate validation:** Evidence-backed findings before shipping. Strong quality control.
 6. **OCA corpus testing:** Real-world validation against production Odoo modules.
-7. **Python 3.9–3.13 matrix:** Broad compatibility.
+7. **Python 3.11–3.13 matrix:** Broad compatibility.
 8. **3,900+ unit tests:** Solid regression protection for scanners.
 9. **Finding schema with fingerprinting:** Stable IDs for tracking findings across runs.
 10. **Directive system:** Targeted reruns via `D-NNNN-<slug>.md` files. Good iteration loop.

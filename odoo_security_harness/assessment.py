@@ -530,7 +530,7 @@ def write_status_and_index(
     missing = [gate["name"] for gate in gates if gate["status"] != "pass"]
     status = {
         "schema_version": "1.0",
-        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "generated_at": dt.datetime.now(dt.UTC).isoformat(),
         "finding_id": finding.get("id"),
         "demo_ready": not missing,
         "passed_gates": len(gates) - len(missing),

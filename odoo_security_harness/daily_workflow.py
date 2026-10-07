@@ -254,7 +254,7 @@ def validate_config(config: DailyConfig) -> None:
 def create_run(config: DailyConfig, output_dir: Path) -> DailyRun:
     """Resolve deterministic branches and paths for one isolated run."""
     integration = resolve_integration_branch(config)
-    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d-%H%M%S")
     branch = f"security/daily-{stamp}"
     validate_branch(branch)
     return DailyRun(

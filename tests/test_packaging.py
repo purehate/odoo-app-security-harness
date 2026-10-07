@@ -202,7 +202,8 @@ def test_repo_ci_workflow_runs_quality_gate_jobs() -> None:
 
     test_job = jobs["test"]
     matrix_versions = set(test_job["strategy"]["matrix"]["python-version"])
-    assert {"3.10", "3.11", "3.12", "3.13"} <= matrix_versions
+    assert {"3.11", "3.12", "3.13"} <= matrix_versions
+    assert "3.10" not in matrix_versions
 
     test_runs = "\n".join(step.get("run", "") for step in test_job["steps"])
     assert 'pip install -e ".[dev,scanners]"' in test_runs
