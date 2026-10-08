@@ -945,6 +945,31 @@ def test_sarif_rules_include_inferred_security_taxonomy(tmp_path: Path) -> None:
     assert {"id": "CWE-79", "name": "CWE-79"} in sarif["runs"][0]["taxonomies"][0]["taxa"]
 
 
+def test_sarif_leaves_github_location_fingerprints_unset(tmp_path: Path) -> None:
+    """Harness finding IDs must not masquerade as GitHub location hashes."""
+    findings = [
+        {
+            "rule_id": rule_id,
+            "title": rule_id,
+            "file": "controllers/main.py",
+            "line": 4,
+            "fingerprint": fingerprint,
+        }
+        for rule_id, fingerprint in (
+            ("odoo-route-auth-none", "sha256:" + "1" * 64),
+            ("odoo-route-unsafe-csrf-disabled", "sha256:" + "2" * 64),
+        )
+    ]
+
+    results = odoo_deep_scan.generate_sarif_report(tmp_path, findings)["runs"][0]["results"]
+
+    assert all("partialFingerprints" not in result for result in results)
+    assert [result["fingerprints"]["odoo-harness/v1"] for result in results] == [
+        "sha256:" + "1" * 64,
+        "sha256:" + "2" * 64,
+    ]
+
+
 def test_taxonomy_coverage_classifies_core_analyzer_and_multicompany_rules() -> None:
     """Legacy core analyzer and multi-company rule IDs should not fall through generic buckets."""
     coverage = odoo_deep_scan._taxonomy_coverage(
@@ -9995,7 +10020,8 @@ msgstr "<a href=\\"javascript:alert(1)\\">Ouvrir %(name)s</a>"
     assert first_result["ruleId"] in rule_ids
     assert first_result["level"] in {"error", "warning", "note"}
     assert first_result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
-    assert first_result["partialFingerprints"]["primaryLocationLineHash"].startswith("sha256:")
+    assert first_result["fingerprints"]["odoo-harness/v1"].startswith("sha256:")
+    assert "partialFingerprints" not in first_result
     for source in coverage["scanner_sources"]["zero_finding_sources"]:
         assert source_entries[source]["findings"] == 0
     if coverage["scanner_sources"]["zero_finding_sources"]:

@@ -8935,7 +8935,9 @@ def _sarif_result(repo: Path, finding: dict) -> dict[str, object]:
         result["suppressions"] = suppressions
     fingerprint = finding.get("fingerprint")
     if fingerprint:
-        result["partialFingerprints"] = {"primaryLocationLineHash": str(fingerprint)}
+        # GitHub reserves partialFingerprints.primaryLocationLineHash for a
+        # source-context hash that upload-sarif calculates when it is absent.
+        result["fingerprints"] = {"odoo-harness/v1": str(fingerprint)}
     return result
 
 
