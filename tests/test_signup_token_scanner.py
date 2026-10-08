@@ -7,6 +7,25 @@ from pathlib import Path
 from odoo_security_harness.signup_token_scanner import scan_signup_tokens
 
 
+def test_self_referential_local_collection_does_not_recurse(tmp_path: Path) -> None:
+    """Rebinding a local into a collection must not become a constant cycle."""
+    source = tmp_path / "module" / "models.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        """
+def normalize(partner_ids):
+    if not isinstance(partner_ids, list):
+        partner_ids = [partner_ids]
+    return partner_ids
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_signup_tokens(tmp_path)
+
+    assert findings == []
+
+
 def test_public_reset_route_token_lifecycle_risks_are_reported(tmp_path: Path) -> None:
     """Public reset routes must not trust request-selected tokens or passwords."""
     controllers = tmp_path / "module" / "controllers"
