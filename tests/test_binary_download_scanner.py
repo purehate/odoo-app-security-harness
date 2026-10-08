@@ -461,6 +461,33 @@ class Download(http.Controller):
     )
 
 
+def test_cyclic_constant_collections_do_not_recurse(tmp_path: Path) -> None:
+    """Cyclic static aliases must terminate without inventing a model name."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "download.py").write_text(
+        """
+from odoo import http
+from odoo.http import request
+
+MODEL_GROUP_A = (MODEL_GROUP_B,)
+MODEL_GROUP_B = (MODEL_GROUP_A,)
+
+class Download(http.Controller):
+    @http.route('/download', auth='user')
+    def download(self, **kwargs):
+        model = MODEL_GROUP_A
+        record = request.env[model].browse(int(kwargs.get('id')))
+        return request.make_response(record.data)
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_binary_downloads(tmp_path)
+
+    assert not any(finding.rule_id == "odoo-binary-attachment-data-response" for finding in findings)
+
+
 def test_class_constant_alias_public_auth_and_attachment_model_response(tmp_path: Path) -> None:
     """Class-scoped constants should expose public attachment model downloads."""
     controllers = tmp_path / "module" / "controllers"
