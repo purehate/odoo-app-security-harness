@@ -820,14 +820,18 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
 
 
 def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: set[str]) -> ast.AST:
-    if isinstance(node, ast.Name):
-        if node.id in seen:
-            return node
-        resolved = constants.get(node.id)
+    original = node
+    current = node
+    visited = set(seen)
+    while isinstance(current, ast.Name):
+        if current.id in visited:
+            return original
+        visited.add(current.id)
+        resolved = constants.get(current.id)
         if resolved is None:
-            return node
-        return _resolve_constant_seen(resolved, constants, {*seen, node.id})
-    return node
+            return current
+        current = resolved
+    return current
 
 
 def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
@@ -917,7 +921,8 @@ def _is_static_literal(node: ast.AST) -> bool:
 
 def _mark_local_constant_target(constants: dict[str, ast.AST], target: ast.AST, value: ast.AST) -> None:
     if isinstance(target, ast.Name):
-        if _is_static_literal(value):
+        references_target = any(isinstance(child, ast.Name) and child.id == target.id for child in ast.walk(value))
+        if _is_static_literal(value) and not references_target:
             constants[target.id] = value
         else:
             constants.pop(target.id, None)
@@ -1244,9 +1249,21 @@ def _is_elevated_identity_expr(
     elevated_identity_names: set[str] | None = None,
     constants: dict[str, ast.AST] | None = None,
     superuser_names: set[str] | None = None,
+    seen_constant_names: set[str] | None = None,
 ) -> bool:
     constants = constants or {}
-    node = _resolve_constant(node, constants)
+    seen_constant_names = seen_constant_names or set()
+    if isinstance(node, ast.Name) and node.id in constants:
+        if node.id in seen_constant_names:
+            return False
+        return _is_elevated_identity_expr(
+            constants[node.id],
+            identity_model_names,
+            elevated_identity_names,
+            constants,
+            superuser_names,
+            {*seen_constant_names, node.id},
+        )
     if isinstance(node, ast.Name):
         return node.id in (elevated_identity_names or set())
     if isinstance(node, ast.Subscript):
@@ -1254,13 +1271,23 @@ def _is_elevated_identity_expr(
     if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return any(
             _is_elevated_identity_expr(
-                element, identity_model_names, elevated_identity_names, constants, superuser_names
+                element,
+                identity_model_names,
+                elevated_identity_names,
+                constants,
+                superuser_names,
+                seen_constant_names,
             )
             for element in node.elts
         )
     if isinstance(node, ast.Starred):
         return _is_elevated_identity_expr(
-            node.value, identity_model_names, elevated_identity_names, constants, superuser_names
+            node.value,
+            identity_model_names,
+            elevated_identity_names,
+            constants,
+            superuser_names,
+            seen_constant_names,
         )
     if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
         return False
