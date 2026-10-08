@@ -190,6 +190,30 @@ class Controller(http.Controller):
     assert any(f.rule_id == "odoo-session-public-authenticate" for f in findings)
 
 
+def test_cyclic_constant_collections_do_not_recurse(tmp_path: Path) -> None:
+    """Cyclic static aliases must terminate while inspecting return values."""
+    controllers = tmp_path / "module" / "controllers"
+    controllers.mkdir(parents=True)
+    (controllers / "auth.py").write_text(
+        """
+from odoo import http
+
+RESPONSE_A = (RESPONSE_B,)
+RESPONSE_B = (RESPONSE_A,)
+
+class Controller(http.Controller):
+    @http.route('/status', auth='user')
+    def status(self):
+        return RESPONSE_A
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_session_auth(tmp_path)
+
+    assert findings == []
+
+
 def test_static_unpack_route_options_public_authenticate_is_reported(tmp_path: Path) -> None:
     """Static ** route options should not hide public authentication routes."""
     controllers = tmp_path / "module" / "controllers"

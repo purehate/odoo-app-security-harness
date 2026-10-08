@@ -921,14 +921,18 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
 
 
 def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: set[str]) -> ast.AST:
-    if isinstance(node, ast.Name):
-        if node.id in seen:
-            return node
-        resolved = constants.get(node.id)
+    original = node
+    current = node
+    visited = set(seen)
+    while isinstance(current, ast.Name):
+        if current.id in visited:
+            return original
+        visited.add(current.id)
+        resolved = constants.get(current.id)
         if resolved is None:
-            return node
-        return _resolve_constant_seen(resolved, constants, {*seen, node.id})
-    return node
+            return current
+        current = resolved
+    return current
 
 
 def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
@@ -1378,18 +1382,32 @@ def _samesite_is_restricted(node: ast.Call, constants: dict[str, ast.AST] | None
     return False
 
 
-def _expr_mentions_token(node: ast.AST, constants: dict[str, ast.AST] | None = None) -> bool:
+def _expr_mentions_token(
+    node: ast.AST,
+    constants: dict[str, ast.AST] | None = None,
+    seen_constant_names: set[str] | None = None,
+) -> bool:
     constants = constants or {}
-    node = _resolve_constant(node, constants)
+    seen_constant_names = seen_constant_names or set()
+    if isinstance(node, ast.Name) and node.id in constants:
+        if node.id in seen_constant_names:
+            return False
+        return _expr_mentions_token(
+            constants[node.id],
+            constants,
+            {*seen_constant_names, node.id},
+        )
     text = _safe_unparse(node).lower()
     if any(marker in text for marker in TOKEN_MARKERS):
         return True
     if isinstance(node, ast.Dict):
         return any(
-            key is not None and _expr_mentions_token(_resolve_constant(key, constants), constants) for key in node.keys
-        ) or any(_expr_mentions_token(value, constants) for value in node.values if value is not None)
+            key is not None and _expr_mentions_token(key, constants, seen_constant_names) for key in node.keys
+        ) or any(
+            _expr_mentions_token(value, constants, seen_constant_names) for value in node.values if value is not None
+        )
     if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
-        return any(_expr_mentions_token(element, constants) for element in node.elts)
+        return any(_expr_mentions_token(element, constants, seen_constant_names) for element in node.elts)
     return False
 
 
