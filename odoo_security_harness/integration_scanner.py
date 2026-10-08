@@ -647,7 +647,8 @@ class IntegrationScanner(ast.NodeVisitor):
             return
 
         if isinstance(target, ast.Name):
-            if _is_static_literal(value):
+            references_target = any(isinstance(child, ast.Name) and child.id == target.id for child in ast.walk(value))
+            if _is_static_literal(value) and not references_target:
                 self.local_constants[target.id] = value
             else:
                 self.local_constants.pop(target.id, None)
@@ -907,19 +908,38 @@ def _is_hardcoded_secret_value(node: ast.AST, constants: dict[str, ast.AST]) -> 
     return len(value) >= 12 or any(marker in lowered for marker in ("sk_live", "ghp_", "xoxb-", "eyj"))
 
 
-def _expr_contains_hardcoded_secret_value(node: ast.AST, constants: dict[str, ast.AST]) -> bool:
-    node = _resolve_constant(node, constants)
+def _expr_contains_hardcoded_secret_value(
+    node: ast.AST,
+    constants: dict[str, ast.AST],
+    seen_constant_names: set[str] | None = None,
+) -> bool:
+    seen_constant_names = seen_constant_names or set()
+    if isinstance(node, ast.Name) and node.id in constants:
+        if node.id in seen_constant_names:
+            return False
+        return _expr_contains_hardcoded_secret_value(
+            constants[node.id],
+            constants,
+            {*seen_constant_names, node.id},
+        )
     if isinstance(node, ast.Starred):
-        return _expr_contains_hardcoded_secret_value(node.value, constants)
+        return _expr_contains_hardcoded_secret_value(node.value, constants, seen_constant_names)
     if _is_hardcoded_secret_value(node, constants):
         return True
     if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
-        return any(_expr_contains_hardcoded_secret_value(element, constants) for element in node.elts)
+        return any(
+            _expr_contains_hardcoded_secret_value(element, constants, seen_constant_names) for element in node.elts
+        )
     if isinstance(node, ast.Dict):
-        return any(_expr_contains_hardcoded_secret_value(value, constants) for value in node.values)
+        return any(
+            _expr_contains_hardcoded_secret_value(value, constants, seen_constant_names) for value in node.values
+        )
     if isinstance(node, ast.Call):
-        return any(_expr_contains_hardcoded_secret_value(arg, constants) for arg in node.args) or any(
-            keyword.value is not None and _expr_contains_hardcoded_secret_value(keyword.value, constants)
+        return any(
+            _expr_contains_hardcoded_secret_value(arg, constants, seen_constant_names) for arg in node.args
+        ) or any(
+            keyword.value is not None
+            and _expr_contains_hardcoded_secret_value(keyword.value, constants, seen_constant_names)
             for keyword in node.keywords
         )
     return False
@@ -1078,14 +1098,18 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
 
 
 def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: set[str]) -> ast.AST:
-    if isinstance(node, ast.Name):
-        if node.id in seen:
-            return node
-        resolved = constants.get(node.id)
+    original = node
+    current = node
+    visited = set(seen)
+    while isinstance(current, ast.Name):
+        if current.id in visited:
+            return original
+        visited.add(current.id)
+        resolved = constants.get(current.id)
         if resolved is None:
-            return node
-        return _resolve_constant_seen(resolved, constants, {*seen, node.id})
-    return node
+            return current
+        current = resolved
+    return current
 
 
 def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:

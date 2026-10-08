@@ -7,6 +7,24 @@ from pathlib import Path
 from odoo_security_harness.integration_scanner import IntegrationScanner, scan_integrations
 
 
+def test_self_referential_local_collection_does_not_recurse(tmp_path: Path) -> None:
+    """Rebinding a local into a collection must not become a constant cycle."""
+    py = tmp_path / "integration.py"
+    py.write_text(
+        """
+def normalize(partner_ids):
+    if not isinstance(partner_ids, list):
+        partner_ids = [partner_ids]
+    return partner_ids
+""",
+        encoding="utf-8",
+    )
+
+    findings = IntegrationScanner(py).scan_file()
+
+    assert findings == []
+
+
 def test_http_call_without_timeout_is_reported(tmp_path: Path) -> None:
     """Outbound HTTP calls should be bounded by timeouts."""
     py = tmp_path / "integration.py"

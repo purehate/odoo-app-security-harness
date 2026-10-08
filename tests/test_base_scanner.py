@@ -39,6 +39,12 @@ class TestShouldSkip:
     def test_skips_venv(self) -> None:
         assert _should_skip(Path("project/.venv/lib/site.py")) is True
 
+    def test_skips_linked_worktrees(self) -> None:
+        assert _should_skip(Path("project/.worktrees/feature/models/sale.py")) is True
+
+    def test_skips_generated_audit_output(self) -> None:
+        assert _should_skip(Path("project/.audit-deep/pocs/reproduction.py")) is True
+
     def test_allows_source(self) -> None:
         assert _should_skip(Path("project/models/sale.py")) is False
 

@@ -748,14 +748,18 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
 
 
 def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: set[str]) -> ast.AST:
-    if isinstance(node, ast.Name):
-        if node.id in seen:
-            return node
-        value = constants.get(node.id)
+    original = node
+    current = node
+    visited = set(seen)
+    while isinstance(current, ast.Name):
+        if current.id in visited:
+            return original
+        visited.add(current.id)
+        value = constants.get(current.id)
         if value is None:
-            return node
-        return _resolve_constant_seen(value, constants, {*seen, node.id})
-    return node
+            return current
+        current = value
+    return current
 
 
 def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
@@ -1268,16 +1272,34 @@ def _model_name_in_expr(
     node: ast.AST,
     model_names: dict[str, str],
     constants: dict[str, ast.AST] | None = None,
+    seen_constant_names: set[str] | None = None,
 ) -> str:
     constants = constants or {}
-    resolved = _resolve_constant(node, constants)
-    if resolved is not node:
-        return _model_name_in_expr(resolved, model_names, constants)
+    seen_constant_names = seen_constant_names or set()
+    if isinstance(node, ast.Name) and node.id in constants:
+        if node.id in seen_constant_names:
+            return ""
+        return _model_name_in_expr(
+            constants[node.id],
+            model_names,
+            constants,
+            {*seen_constant_names, node.id},
+        )
     if isinstance(node, ast.Starred):
-        return _model_name_in_expr(node.value, model_names, constants)
+        return _model_name_in_expr(
+            node.value,
+            model_names,
+            constants,
+            seen_constant_names,
+        )
     if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         for element in node.elts:
-            model = _model_name_in_expr(element, model_names, constants)
+            model = _model_name_in_expr(
+                element,
+                model_names,
+                constants,
+                seen_constant_names,
+            )
             if model:
                 return model
         return ""

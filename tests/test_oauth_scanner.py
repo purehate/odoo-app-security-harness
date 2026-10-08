@@ -7,6 +7,27 @@ from pathlib import Path
 from odoo_security_harness.oauth_scanner import scan_oauth_flows
 
 
+def test_cyclic_constant_collections_do_not_recurse(tmp_path: Path) -> None:
+    """Cyclic static aliases must terminate during OAuth payload analysis."""
+    source = tmp_path / "module" / "oauth.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        """
+PAYLOAD_A = (PAYLOAD_B,)
+PAYLOAD_B = (PAYLOAD_A,)
+
+def build_payload():
+    payload = PAYLOAD_A
+    return payload
+""",
+        encoding="utf-8",
+    )
+
+    findings = scan_oauth_flows(tmp_path)
+
+    assert findings == []
+
+
 def test_public_oauth_callback_risks_are_reported(tmp_path: Path) -> None:
     """Public OAuth callbacks need explicit provider, token, and identity validation."""
     controllers = tmp_path / "module" / "controllers"
