@@ -844,14 +844,18 @@ def _resolve_constant(node: ast.AST, constants: dict[str, ast.AST]) -> ast.AST:
 
 
 def _resolve_constant_seen(node: ast.AST, constants: dict[str, ast.AST], seen: set[str]) -> ast.AST:
-    if isinstance(node, ast.Name):
-        if node.id in seen:
-            return node
-        resolved = constants.get(node.id)
+    original = node
+    current = node
+    visited = set(seen)
+    while isinstance(current, ast.Name):
+        if current.id in visited:
+            return original
+        visited.add(current.id)
+        resolved = constants.get(current.id)
         if resolved is None:
-            return node
-        return _resolve_constant_seen(resolved, constants, {*seen, node.id})
-    return node
+            return current
+        current = resolved
+    return current
 
 
 def _resolve_static_dict(node: ast.AST, constants: dict[str, ast.AST], seen: set[str] | None = None) -> ast.Dict | None:
@@ -1131,8 +1135,19 @@ def _expr_contains_tainted_key(
     key_name: str,
     is_tainted: Any,
     constants: dict[str, ast.AST],
+    seen_constant_names: set[str] | None = None,
 ) -> bool:
-    node = _resolve_constant(node, constants)
+    seen_constant_names = seen_constant_names or set()
+    if isinstance(node, ast.Name) and node.id in constants:
+        if node.id in seen_constant_names:
+            return False
+        return _expr_contains_tainted_key(
+            constants[node.id],
+            key_name,
+            is_tainted,
+            constants,
+            {*seen_constant_names, node.id},
+        )
     if isinstance(node, ast.Dict):
         for key, value in zip(node.keys, node.values, strict=False):
             if value is None:
@@ -1140,36 +1155,64 @@ def _expr_contains_tainted_key(
             key = _resolve_constant(key, constants) if key is not None else None
             if isinstance(key, ast.Constant) and str(key.value) == key_name and is_tainted(value):
                 return True
-            if _expr_contains_tainted_key(value, key_name, is_tainted, constants):
+            if _expr_contains_tainted_key(value, key_name, is_tainted, constants, seen_constant_names):
                 return True
         return False
     if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
-        return any(_expr_contains_tainted_key(element, key_name, is_tainted, constants) for element in node.elts)
+        return any(
+            _expr_contains_tainted_key(element, key_name, is_tainted, constants, seen_constant_names)
+            for element in node.elts
+        )
     if isinstance(node, ast.Call):
-        return any(_expr_contains_tainted_key(arg, key_name, is_tainted, constants) for arg in node.args) or any(
+        return any(
+            _expr_contains_tainted_key(arg, key_name, is_tainted, constants, seen_constant_names) for arg in node.args
+        ) or any(
             keyword.value is not None
             and (
                 (keyword.arg == key_name and is_tainted(keyword.value))
-                or _expr_contains_tainted_key(keyword.value, key_name, is_tainted, constants)
+                or _expr_contains_tainted_key(
+                    keyword.value,
+                    key_name,
+                    is_tainted,
+                    constants,
+                    seen_constant_names,
+                )
             )
             for keyword in node.keywords
         )
     return False
 
 
-def _expr_contains_key(node: ast.AST, key_name: str, constants: dict[str, ast.AST]) -> bool:
-    node = _resolve_constant(node, constants)
+def _expr_contains_key(
+    node: ast.AST,
+    key_name: str,
+    constants: dict[str, ast.AST],
+    seen_constant_names: set[str] | None = None,
+) -> bool:
+    seen_constant_names = seen_constant_names or set()
+    if isinstance(node, ast.Name) and node.id in constants:
+        if node.id in seen_constant_names:
+            return False
+        return _expr_contains_key(
+            constants[node.id],
+            key_name,
+            constants,
+            {*seen_constant_names, node.id},
+        )
     if isinstance(node, ast.Dict):
         for key in node.keys:
             key = _resolve_constant(key, constants) if key is not None else None
             if isinstance(key, ast.Constant) and str(key.value) == key_name:
                 return True
-        return any(value is not None and _expr_contains_key(value, key_name, constants) for value in node.values)
+        return any(
+            value is not None and _expr_contains_key(value, key_name, constants, seen_constant_names)
+            for value in node.values
+        )
     if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
-        return any(_expr_contains_key(element, key_name, constants) for element in node.elts)
+        return any(_expr_contains_key(element, key_name, constants, seen_constant_names) for element in node.elts)
     if isinstance(node, ast.Call):
-        return any(_expr_contains_key(arg, key_name, constants) for arg in node.args) or any(
-            keyword.value is not None and _expr_contains_key(keyword.value, key_name, constants)
+        return any(_expr_contains_key(arg, key_name, constants, seen_constant_names) for arg in node.args) or any(
+            keyword.value is not None and _expr_contains_key(keyword.value, key_name, constants, seen_constant_names)
             for keyword in node.keywords
         )
     return False
