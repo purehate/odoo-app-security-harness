@@ -588,6 +588,46 @@ def test_deep_scan_fail_on_unmapped_taxonomy_returns_ci_failure(tmp_path: Path, 
     assert coverage["taxonomy_gate"] == gate
 
 
+def test_relativize_finding_paths_produces_portable_fingerprints(tmp_path: Path) -> None:
+    """Findings scanned from different checkout roots must share a fingerprint."""
+    from odoo_security_harness.finding_schema import compute_fingerprint
+
+    repo_a = tmp_path / "checkout-a"
+    repo_b = tmp_path / "checkout-b"
+    (repo_a / "module" / "models").mkdir(parents=True)
+    (repo_b / "module" / "models").mkdir(parents=True)
+    (repo_a / "module" / "models" / "sale.py").write_text("x = 1\n", encoding="utf-8")
+    (repo_b / "module" / "models" / "sale.py").write_text("x = 1\n", encoding="utf-8")
+
+    finding_a = {
+        "rule_id": "odoo-demo",
+        "severity": "high",
+        "description": "demo",
+        "line": 5,
+        "file": str(repo_a / "module" / "models" / "sale.py"),
+    }
+    finding_b = {**finding_a, "file": str(repo_b / "module" / "models" / "sale.py")}
+
+    odoo_deep_scan.relativize_finding_paths(repo_a, [finding_a])
+    odoo_deep_scan.relativize_finding_paths(repo_b, [finding_b])
+
+    assert finding_a["file"] == "module/models/sale.py"
+    assert finding_b["file"] == "module/models/sale.py"
+    assert compute_fingerprint(finding_a) == compute_fingerprint(finding_b)
+
+
+def test_relativize_finding_paths_leaves_outside_paths_untouched(tmp_path: Path) -> None:
+    """Paths outside the repository must not be silently rewritten."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "elsewhere" / "x.py"
+    finding = {"file": str(outside)}
+
+    odoo_deep_scan.relativize_finding_paths(repo, [finding])
+
+    assert finding["file"] == outside.as_posix()
+
+
 def test_deep_scan_baseline_delta_returns_ci_failure_for_new_findings(tmp_path: Path, monkeypatch) -> None:
     """The CLI should emit delta artifacts and return 2 for new findings over threshold."""
     repo = tmp_path / "repo"

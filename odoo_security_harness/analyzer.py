@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from odoo_security_harness.base_scanner import _should_skip as _base_should_skip
+
 logger = logging.getLogger(__name__)
 
 
@@ -1523,8 +1525,7 @@ def analyze_directory(directory: Path) -> list[Finding]:
 
 def _should_skip_python_file(path: Path) -> bool:
     """Skip generated/cache/test files without dropping modules whose names contain 'test'."""
-    parts = set(path.parts)
-    return bool(parts & {"tests", "__pycache__", ".venv", "venv", ".git"})
+    return _base_should_skip(path)
 
 
 def _route_parameter_names(route_paths: list[str]) -> list[str]:

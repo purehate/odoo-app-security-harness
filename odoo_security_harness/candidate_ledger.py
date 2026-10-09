@@ -200,7 +200,10 @@ def build_candidate_ledger(
         fpath = finding.get("file")
         if not fpath or fpath == "<repository>":
             continue
-        resolved = str(Path(fpath).resolve())
+        resolved_path = Path(fpath)
+        if not resolved_path.is_absolute():
+            resolved_path = repo / resolved_path
+        resolved = str(resolved_path.resolve())
         if resolved in file_findings:
             file_findings[resolved].append(finding)
 

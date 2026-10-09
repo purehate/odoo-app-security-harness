@@ -7269,6 +7269,7 @@ def main() -> int:
     save_session_progress(session_progress, progress_file)
     start_phase(session_progress, "normalization")
 
+    relativize_finding_paths(repo, all_findings)
     all_findings = normalize_findings(all_findings)
     accepted_risks = load_deep_scan_accepted_risks(repo, args.accepted_risks)
     accepted_risk_report = apply_accepted_risks(repo, all_findings, accepted_risks)
@@ -7435,8 +7436,10 @@ def main() -> int:
     if args.pocs:
         print("\nGenerating PoC scripts...")
         pocs_dir = out / "pocs"
-        generated_pocs = generate_pocs(all_findings, pocs_dir, base_url=args.base_url, database=args.database)
-        poc_report = poc_coverage_report(all_findings, base_url=args.base_url, database=args.database)
+        generated_pocs = generate_pocs(
+            all_findings, pocs_dir, base_url=args.base_url, database=args.database, repo_root=repo
+        )
+        poc_report = poc_coverage_report(all_findings, base_url=args.base_url, database=args.database, repo_root=repo)
         poc_report["generated_files"] = sorted(str(path.relative_to(out)) for path in generated_pocs)
         coverage_report["poc_coverage"] = poc_report
         coverage_file.write_text(json.dumps(coverage_report, indent=2), encoding="utf-8")
@@ -8305,6 +8308,28 @@ def _accepted_risk_matches(repo: Path, finding: dict, entry: dict) -> bool:
     ):
         return False
     return True
+
+
+def relativize_finding_paths(repo: Path, findings: list[dict]) -> None:
+    """Rewrite absolute finding paths to repository-relative POSIX paths.
+
+    Fingerprints are derived from the finding path, so an absolute path makes
+    baselines and SARIF fingerprints depend on the checkout location (local
+    machine vs. CI runner). Normalizing to a repo-relative path keeps
+    fingerprints stable so a committed baseline stays valid everywhere.
+    """
+    for finding in findings:
+        raw = finding.get("file")
+        if not isinstance(raw, str) or not raw:
+            continue
+        path = Path(raw)
+        if not path.is_absolute():
+            finding["file"] = path.as_posix()
+            continue
+        try:
+            finding["file"] = path.resolve().relative_to(repo).as_posix()
+        except ValueError:
+            finding["file"] = path.as_posix()
 
 
 def _repo_relative_finding_file(repo: Path, finding: dict) -> str:
