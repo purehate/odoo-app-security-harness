@@ -30,9 +30,15 @@ class PoC:
 class PoCGenerator:
     """Generates reproduction scripts for Odoo security findings."""
 
-    def __init__(self, base_url: str = "http://localhost:8069", database: str = "odoo") -> None:
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8069",
+        database: str = "odoo",
+        repo_root: Path | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.database = database
+        self.repo_root = repo_root
 
     def generate_for_finding(self, finding: dict[str, Any]) -> PoC | None:
         """Generate a PoC for a specific finding."""
@@ -339,6 +345,8 @@ print("- Can you see internal/admin-only fields?")
         """Extract route path from a controller file."""
         try:
             path = Path(file_path)
+            if not path.is_absolute() and self.repo_root is not None:
+                path = self.repo_root / path
             if not path.exists():
                 return "/unknown"
 
@@ -361,9 +369,10 @@ def generate_pocs(
     output_dir: Path,
     base_url: str = "http://localhost:8069",
     database: str = "odoo",
+    repo_root: Path | None = None,
 ) -> list[Path]:
     """Generate PoC scripts for a list of findings."""
-    generator = PoCGenerator(base_url=base_url, database=database)
+    generator = PoCGenerator(base_url=base_url, database=database, repo_root=repo_root)
     output_dir.mkdir(parents=True, exist_ok=True)
     generated: list[Path] = []
 
@@ -400,9 +409,10 @@ def poc_coverage_report(
     findings: list[dict[str, Any]],
     base_url: str = "http://localhost:8069",
     database: str = "odoo",
+    repo_root: Path | None = None,
 ) -> dict[str, Any]:
     """Build a report describing which findings have generated PoCs."""
-    generator = PoCGenerator(base_url=base_url, database=database)
+    generator = PoCGenerator(base_url=base_url, database=database, repo_root=repo_root)
     rule_counts: Counter[str] = Counter()
     generated_counts: Counter[str] = Counter()
     unsupported_findings: list[dict[str, Any]] = []

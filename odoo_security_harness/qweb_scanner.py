@@ -20,6 +20,8 @@ from urllib.parse import urlparse
 
 from defusedxml import ElementTree
 
+from odoo_security_harness.base_scanner import iter_repo_files
+
 
 @dataclass
 class QWebFinding:
@@ -1777,7 +1779,7 @@ def scan_qweb_templates(directory: Path) -> list[QWebFinding]:
     """Scan all QWeb XML files in a directory."""
     findings: list[QWebFinding] = []
 
-    for xml_file in directory.rglob("*.xml"):
+    for xml_file in iter_repo_files(directory, "*.xml"):
         # Check if it's a QWeb/Odoo XML file
         try:
             content = xml_file.read_text(encoding="utf-8", errors="replace")

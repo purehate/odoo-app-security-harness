@@ -15,6 +15,7 @@ from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
 from odoo_security_harness.base_scanner import _line_for
+from odoo_security_harness.base_scanner import _should_skip as _base_should_skip
 
 
 @dataclass
@@ -797,7 +798,7 @@ def _redact(value: str) -> str:
 
 
 def _should_skip(path: Path) -> bool:
-    return bool(set(path.parts) & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", ".audit-deep"})
+    return _base_should_skip(path)
 
 
 def findings_to_json(findings: list[DeploymentFinding]) -> list[dict[str, Any]]:

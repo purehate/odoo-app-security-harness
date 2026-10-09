@@ -88,9 +88,27 @@ _SKIP_DIRS = {
 }
 
 
+# Generated audit output is timestamped (for example ``.audit-20261007-1200``),
+# so match the whole ``.audit-*`` family rather than only the exact names above.
+_SKIP_DIR_PREFIXES = (".audit-",)
+
+
 def _should_skip(path: Path) -> bool:
     """Return True if *path* should be skipped during repository traversal."""
-    return bool(set(path.parts) & _SKIP_DIRS)
+    parts = path.parts
+    if set(parts) & _SKIP_DIRS:
+        return True
+    return any(part.startswith(_SKIP_DIR_PREFIXES) for part in parts)
+
+
+def iter_repo_files(root: Path, pattern: str = "*") -> list[Path]:
+    """Return repository files matching *pattern*, skipping generated/vendored paths.
+
+    Scanners should walk the repository through this helper rather than
+    ``Path.rglob`` directly, so linked worktrees, timestamped audit output, and
+    other ignored directories are never scanned.
+    """
+    return [path for path in root.rglob(pattern) if path.is_file() and not _should_skip(path)]
 
 
 # ---------------------------------------------------------------------------

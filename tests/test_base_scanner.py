@@ -45,6 +45,9 @@ class TestShouldSkip:
     def test_skips_generated_audit_output(self) -> None:
         assert _should_skip(Path("project/.audit-deep/pocs/reproduction.py")) is True
 
+    def test_skips_timestamped_audit_output(self) -> None:
+        assert _should_skip(Path("project/.audit-20261007-1200/scans/results.json")) is True
+
     def test_allows_source(self) -> None:
         assert _should_skip(Path("project/models/sale.py")) is False
 

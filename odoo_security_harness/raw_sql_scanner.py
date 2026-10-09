@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from odoo_security_harness.base_scanner import _should_skip as _base_should_skip
+
 
 @dataclass
 class RawSqlFinding:
@@ -776,8 +778,8 @@ def _unpack_target_value_pairs(
 
 
 def _should_skip(path: Path) -> bool:
-    parts = set(path.parts)
-    return bool(parts & {"__pycache__", ".venv", "venv", ".git", "node_modules", "htmlcov", "tests", "migrations"})
+    # Raw SQL inside migration scripts is reviewed by the migration scanner.
+    return _base_should_skip(path) or "migrations" in path.parts
 
 
 def findings_to_json(findings: list[RawSqlFinding]) -> list[dict[str, Any]]:

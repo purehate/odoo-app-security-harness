@@ -18,6 +18,8 @@ from typing import Any
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
+from odoo_security_harness.base_scanner import iter_repo_files
+
 KNOWN_MODEL_EXTERNAL_IDS = {
     "model_ir_config_parameter": "ir.config_parameter",
 }
@@ -130,7 +132,7 @@ class AccessControlAnalyzer:
 
     def _analyze_acl_files(self) -> None:
         """Parse all ir.model.access.csv files."""
-        for csv_file in self.repo_path.rglob("ir.model.access.csv"):
+        for csv_file in iter_repo_files(self.repo_path, "ir.model.access.csv"):
             module = self._get_module_name(csv_file)
             try:
                 with csv_file.open("r", encoding="utf-8", newline="") as f:
@@ -163,7 +165,7 @@ class AccessControlAnalyzer:
 
     def _analyze_record_rules(self) -> None:
         """Parse all security XML files for ir.rule records."""
-        for xml_file in self.repo_path.rglob("security/*.xml"):
+        for xml_file in iter_repo_files(self.repo_path, "security/*.xml"):
             module = self._get_module_name(xml_file)
             try:
                 tree = ElementTree.parse(xml_file)

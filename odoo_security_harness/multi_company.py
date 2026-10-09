@@ -19,6 +19,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from odoo_security_harness.base_scanner import _should_skip as _base_should_skip
+from odoo_security_harness.base_scanner import iter_repo_files
+
 
 @dataclass
 class MultiCompanyFinding:
@@ -598,7 +601,7 @@ def check_multi_company_isolation(repo_path: Path) -> list[MultiCompanyFinding]:
         findings.extend(checker.check_file())
 
     # Check XML files
-    for xml_file in repo_path.rglob("security/*.xml"):
+    for xml_file in iter_repo_files(repo_path, "security/*.xml"):
         checker = MultiCompanyXmlChecker(str(xml_file))
         findings.extend(checker.check_file())
 
@@ -607,8 +610,7 @@ def check_multi_company_isolation(repo_path: Path) -> list[MultiCompanyFinding]:
 
 def _should_skip_python_file(path: Path) -> bool:
     """Skip test/cache files without excluding normal Odoo modules like test_module."""
-    parts = set(path.parts)
-    return bool(parts & {"tests", "__pycache__", ".venv", "venv", ".git"})
+    return _base_should_skip(path)
 
 
 def _call_has_superuser_arg(
